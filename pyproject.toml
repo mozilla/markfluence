@@ -38,9 +38,9 @@ extend-exclude = ["confluence_publish.py"]
 select = ["E", "F", "I", "W", "UP", "B"]
 
 [tool.ruff.lint.per-file-ignores]
-# update.py holds the conversion logic ported verbatim from confluence_publish.py.
-# Its long docstrings/comments/f-strings are left as-is until the Phase 2 refactor.
-"src/mzcld_confluence_cli/update.py" = ["E501"]
+# libmarkdown.py holds the conversion logic ported verbatim from
+# confluence_publish.py; its long docstrings/comments/f-strings are left as-is.
+"src/mzcld_confluence_cli/libmarkdown.py" = ["E501"]
 
 [tool.ty.src]
 # The legacy standalone script carries its own inline (PEP 723) deps and is kept

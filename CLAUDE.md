@@ -33,13 +33,15 @@ This repo contains **two coexisting programs**:
 
 ### Package layers
 
-- `cli.py` — the click group (`main`); loads dotenv, registers subcommands. Command taxonomy mirrors [pchuri/confluence-cli](https://github.com/pchuri/confluence-cli), but **only `update` is implemented**; other commands (read, create, delete, search, attachments, etc.) are intentionally not built yet.
-- `libclient.py` — `ConfluenceClient`, an **`httpx2`** wrapper (note: `httpx2` is Pydantic's maintained successor to the dead `httpx`; import name is `httpx2`). Holds auth + the API calls (`get_page`, `search_pages_by_title`, `update_page`). URLs are built as absolute strings off `base_url` rather than relying on relative-URL joining.
-- `update.py` — the `update` command plus the entire markdown→Confluence-storage conversion pipeline. This is where nearly all the logic lives.
+- `cli.py` — the click group (`main`); loads dotenv, registers subcommands. Command taxonomy mirrors [pchuri/confluence-cli](https://github.com/pchuri/confluence-cli), but **only `update` and `create` are implemented**; other commands (read, delete, search, attachments, etc.) are intentionally not built yet.
+- `libclient.py` — `ConfluenceClient`, an **`httpx2`** wrapper (note: `httpx2` is Pydantic's maintained successor to the dead `httpx`; import name is `httpx2`). Holds auth + the API calls (`get_page`/`get_page_or_none`/`page_exists`, `resolve_space_id`, `search_pages_by_title`, `update_page`, `create_page`). URLs are built as absolute strings off `base_url` rather than relying on relative-URL joining.
+- `libmarkdown.py` — all markdown/frontmatter logic: the frontmatter helpers (`extract_frontmatter` with inline-`#`-comment support, `update_frontmatter_field`) and the conversion pipeline, exposed as `md_to_confluence(md_body, filename, base_url, space_key)`. **Both** `update` and `create` call it. Carries the `E501` ruff ignore (verbatim long lines).
+- `update.py` — the `update` command + `process_file` flow (frontmatter resolution, mtime skip, calls `md_to_confluence`).
+- `create.py` — the `create` command: two-phase transactional create (validate all files → create parents-first in topological order), with hierarchy expressed via `parent:` (`null` | `.md` path | page_id). See `_plans/create-subcommand.md`.
 
 ### The conversion pipeline (the crux)
 
-`update.py`'s `process_file()` turns a markdown file into Confluence storage-format HTML through an **ordered sequence of regex transforms**, and the order encodes real dependencies. Preserve it when editing:
+`libmarkdown.py`'s `md_to_confluence()` turns a markdown body into Confluence storage-format HTML through an **ordered sequence of regex transforms**, and the order encodes real dependencies. Preserve it when editing:
 
 1. `gfm.convert()` (marko) → base HTML
 2. `rewrite_anchor_links` — must run **before** `replace_internal_doc_links` so corrected fragments carry through the `.md`→URL rewrite
@@ -52,8 +54,8 @@ The transforms map GitHub/Mark-style markdown constructs to Confluence macros (c
 
 ### Frontmatter-driven publishing
 
-Each markdown file's YAML frontmatter carries `title` and `page_id`. If `page_id` is absent, the page is looked up by `title` and the resolved id is **written back into the file**. Updates are skipped when the file's mtime predates the page's last version (unless `--force`). Multiple files are processed independently; the command exits non-zero if any fail.
+Each markdown file's YAML frontmatter carries `title`, `page_id`, and (written by `create`) `space` (a key) and `parent` (`null` for top-level, a `.md` path, or a page_id). `update` looks up a missing `page_id` by `title` and **writes it back into the file**; `create` writes `page_id`/`space`/`parent` back after creating. Updates are skipped when the file's mtime predates the page's last version (unless `--force`). Both commands process multiple files and exit non-zero if any fail.
 
 ## Project phasing
 
-Work is planned in `_plans/`. The current state is Phase 1 (scaffold + verbatim port). Phase 2 will refactor the conversion pipeline out of `update.py` and add real conversion tests (currently only a smoke test exists). The `E501` per-file ignore on `update.py` in `pyproject.toml` is a deliberate Phase-2 cleanup marker for the verbatim-ported long lines.
+Work is planned in `_plans/`; deferred work is tracked in `todo.md`. The conversion pipeline has been extracted into `libmarkdown.py` (shared by `update`/`create`). Still on paper (see `_plans/create-subcommand.md` and `todo.md`): `update` gaining space/parent enforcement + moves (via the legacy `content/{id}/move` endpoint), a `fix` command that infers frontmatter from a live page, and frontmatter value quoting. Tests are currently smoke-only.

@@ -62,14 +62,74 @@ class ConfluenceClient:
         resp.raise_for_status()
         return resp.json()
 
-    def search_pages_by_title(self, title):
-        """Search Confluence for pages matching the given title exactly."""
+    def get_page_or_none(self, page_id):
+        """Like :meth:`get_page`, but return ``None`` on HTTP 404.
+
+        Used to distinguish "page doesn't exist" from other HTTP errors, which
+        are still raised.
+        """
+        resp = self._client.get(f"{self.base_url}/wiki/api/v2/pages/{page_id}")
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return resp.json()
+
+    def page_exists(self, page_id):
+        """Return True if a page with this id currently exists."""
+        return self.get_page_or_none(page_id) is not None
+
+    def resolve_space_id(self, space_key):
+        """Resolve a space key to its numeric space id, or ``None`` if unknown."""
+        resp = self._client.get(
+            f"{self.base_url}/wiki/api/v2/spaces",
+            params={"keys": space_key},
+        )
+        resp.raise_for_status()
+        results = resp.json().get("results", [])
+        if not results:
+            return None
+        return results[0]["id"]
+
+    def search_pages_by_title(self, title, space_id=None):
+        """Search Confluence for pages matching the given title exactly.
+
+        When ``space_id`` is given, the search is restricted to that space.
+        """
+        params = {"title": title, "status": "current"}
+        if space_id is not None:
+            params["space-id"] = space_id
         resp = self._client.get(
             f"{self.base_url}/wiki/api/v2/pages",
-            params={"title": title, "status": "current"},
+            params=params,
         )
         resp.raise_for_status()
         return resp.json().get("results", [])
+
+    def create_page(self, space_id, title, html_body, parent_id=None):
+        """Create a new page in ``space_id`` with storage-format ``html_body``.
+
+        When ``parent_id`` is given the page is created as its child; otherwise
+        it is created at the top level of the space.
+        """
+        payload = {
+            "spaceId": space_id,
+            "status": "current",
+            "title": title,
+            "body": {
+                "representation": "storage",
+                "value": html_body,
+            },
+        }
+        if parent_id is not None:
+            payload["parentId"] = parent_id
+        resp = self._client.post(
+            f"{self.base_url}/wiki/api/v2/pages",
+            headers={"Content-Type": "application/json"},
+            json=payload,
+            timeout=60.0,
+        )
+        resp.raise_for_status()
+        return resp.json()
 
     def update_page(self, page_id, title, html_body, version, message):
         """Update a Confluence page with new HTML content."""
