@@ -9,10 +9,25 @@ Request URLs are built as absolute URLs off ``base_url`` (rather than relying on
 original ``confluence_publish.py`` script constructed them.
 """
 
+import hashlib
+import mimetypes
 import os
 
 import click
 import httpx2
+
+# Prefix under which we stash a file's checksum in the attachment's comment, so a
+# later run can tell whether the local image changed. Mirrors mark's approach.
+ATTACHMENT_CHECKSUM_PREFIX = "mzcld:checksum: "
+
+
+def _file_checksum(file_path):
+    """Return the hex SHA-256 of a file's contents."""
+    digest = hashlib.sha256()
+    with open(file_path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 class ConfluenceClient:
@@ -130,6 +145,82 @@ class ConfluenceClient:
         )
         resp.raise_for_status()
         return resp.json()
+
+    # --- Attachments -----------------------------------------------------
+    # Attachment write operations only exist in the v1 REST API (v2 is
+    # read-only for attachments), so these use /wiki/rest/api/... paths.
+
+    def list_attachments(self, page_id):
+        """List a page's attachments, with the checksum comment expanded."""
+        resp = self._client.get(
+            f"{self.base_url}/wiki/rest/api/content/{page_id}/child/attachment",
+            params={"expand": "metadata.comment", "limit": 250},
+        )
+        resp.raise_for_status()
+        return resp.json().get("results", [])
+
+    def create_attachment(self, page_id, filename, comment, file_path, content_type):
+        """Create a new attachment on a page (v1 multipart upload)."""
+        with open(file_path, "rb") as fh:
+            resp = self._client.post(
+                f"{self.base_url}/wiki/rest/api/content/{page_id}/child/attachment",
+                headers={"X-Atlassian-Token": "nocheck"},
+                data={"comment": comment, "minorEdit": "true"},
+                files={"file": (filename, fh, content_type)},
+                timeout=120.0,
+            )
+        resp.raise_for_status()
+        return resp.json()
+
+    def update_attachment(
+        self, page_id, attachment_id, filename, comment, file_path, content_type
+    ):
+        """Upload a new version of an existing attachment (v1 multipart)."""
+        with open(file_path, "rb") as fh:
+            resp = self._client.post(
+                f"{self.base_url}/wiki/rest/api/content/{page_id}"
+                f"/child/attachment/{attachment_id}/data",
+                headers={"X-Atlassian-Token": "nocheck"},
+                data={"comment": comment, "minorEdit": "true"},
+                files={"file": (filename, fh, content_type)},
+                timeout=120.0,
+            )
+        resp.raise_for_status()
+        return resp.json()
+
+    def sync_attachments(self, page_id, attachments):
+        """Create/update/skip attachments so the page matches the local files.
+
+        ``attachments`` is a list of ``{"path", "filename"}``. Each file's SHA-256
+        is stored in the attachment comment; on a later run an unchanged file is
+        skipped and a changed one is updated in place (stable filename). Returns a
+        list of ``(filename, action)`` where action is created/updated/skipped.
+        """
+        if not attachments:
+            return []
+
+        remote = {a["title"]: a for a in self.list_attachments(page_id)}
+        actions = []
+        for att in attachments:
+            filename = att["filename"]
+            path = att["path"]
+            comment = ATTACHMENT_CHECKSUM_PREFIX + _file_checksum(path)
+            content_type = (
+                mimetypes.guess_type(filename)[0] or "application/octet-stream"
+            )
+
+            existing = remote.get(filename)
+            if existing is None:
+                self.create_attachment(page_id, filename, comment, path, content_type)
+                actions.append((filename, "created"))
+            elif existing.get("metadata", {}).get("comment", "") == comment:
+                actions.append((filename, "skipped"))
+            else:
+                self.update_attachment(
+                    page_id, existing["id"], filename, comment, path, content_type
+                )
+                actions.append((filename, "updated"))
+        return actions
 
     def update_page(self, page_id, title, html_body, version, message):
         """Update a Confluence page with new HTML content."""

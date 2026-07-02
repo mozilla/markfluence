@@ -185,14 +185,22 @@ def _parent_field(parent, parent_id):
 
 def _create_one(record, parent_id, client):
     """Create the page for one record and write frontmatter back. Returns the URL."""
+    prefix = f"[{record['filename']}]"
     _, md_body = extract_frontmatter(record["md_content"])
-    html_content = md_to_confluence(
+    html_content, images = md_to_confluence(
         md_body, record["filename"], client.base_url, record["space_key"]
     )
+    for message in images["broken"] + images["warnings"]:
+        click.echo(f"{prefix} warning: {message}", err=True)
+
     result = client.create_page(
         record["space_id"], record["title"], html_content, parent_id
     )
     new_id = result["id"]
+
+    # Upload referenced local images now that the page (and its id) exists.
+    for att_name, action in client.sync_attachments(new_id, images["attachments"]):
+        click.echo(f"{prefix} attachment {action}: {att_name}")
 
     content = record["md_content"]
     content = update_frontmatter_field(content, "page_id", new_id)

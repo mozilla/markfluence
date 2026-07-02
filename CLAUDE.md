@@ -34,8 +34,8 @@ This repo contains **two coexisting programs**:
 ### Package layers
 
 - `cli.py` — the click group (`main`); loads dotenv, registers subcommands. Command taxonomy mirrors [pchuri/confluence-cli](https://github.com/pchuri/confluence-cli), but **only `update` and `create` are implemented**; other commands (read, delete, search, attachments, etc.) are intentionally not built yet.
-- `libclient.py` — `ConfluenceClient`, an **`httpx2`** wrapper (note: `httpx2` is Pydantic's maintained successor to the dead `httpx`; import name is `httpx2`). Holds auth + the API calls (`get_page`/`get_page_or_none`/`page_exists`, `resolve_space_id`, `search_pages_by_title`, `update_page`, `create_page`). URLs are built as absolute strings off `base_url` rather than relying on relative-URL joining.
-- `libmarkdown.py` — all markdown/frontmatter logic: the frontmatter helpers (`extract_frontmatter` with inline-`#`-comment support, `update_frontmatter_field`) and the conversion pipeline, exposed as `md_to_confluence(md_body, filename, base_url, space_key)`. **Both** `update` and `create` call it. Carries the `E501` ruff ignore (verbatim long lines).
+- `libclient.py` — `ConfluenceClient`, an **`httpx2`** wrapper (note: `httpx2` is Pydantic's maintained successor to the dead `httpx`; import name is `httpx2`). Holds auth + the API calls (`get_page`/`get_page_or_none`/`page_exists`, `resolve_space_id`, `search_pages_by_title`, `update_page`, `create_page`, and attachment ops `list_attachments`/`create_attachment`/`update_attachment`/`sync_attachments`). Everything is Confluence **v2** except attachment writes, which are **v1** (`/wiki/rest/api/...`) since v2 attachments are read-only. URLs are built as absolute strings off `base_url` rather than relying on relative-URL joining.
+- `libmarkdown.py` — all markdown/frontmatter logic: the frontmatter helpers (`extract_frontmatter` with inline-`#`-comment support, `update_frontmatter_field`) and the conversion pipeline, exposed as `md_to_confluence(md_body, filename, base_url, space_key)` which returns `(html, {"attachments", "broken"})`. **Both** `update` and `create` call it, then `sync_attachments` the returned local images. Carries the `E501` ruff ignore (verbatim long lines).
 - `update.py` — the `update` command + `process_file` flow (frontmatter resolution, mtime skip, calls `md_to_confluence`).
 - `create.py` — the `create` command: two-phase transactional create (validate all files → create parents-first in topological order), with hierarchy expressed via `parent:` (`null` | `.md` path | page_id). See `_plans/create-subcommand.md`.
 
@@ -47,10 +47,11 @@ This repo contains **two coexisting programs**:
 2. `rewrite_anchor_links` — must run **before** `replace_internal_doc_links` so corrected fragments carry through the `.md`→URL rewrite
 3. `replace_internal_doc_links` — needs the sibling-doc `page_id`/`title` map and the space key
 4. TOC / note / chart / layout / callout comment-directive substitutions
-5. `collapse_paragraph_newlines` — must run **before** `replace_code_blocks`; it stashes `<pre>` blocks so code survives the newline flattening
-6. `replace_code_blocks` — relies on that `<pre>` stash still being intact
+5. `replace_images` — rewrites `<img>` to `<ac:image>`; local files → `ri:attachment` (with a stable path-based filename, e.g. `assets/x.png`→`assets_x.png`) collected for upload; remote URLs → `ri:url`; missing/unsupported → `IMAGE BROKEN:` text. Image properties `title`/`width`/`height`/`align` ride in the markdown title as a JSON object (`![alt](x.png '{"width":"100"}')`), falling back to a plain `ac:title` when the title isn't JSON (`alt` is always native). Uploading happens in the command (needs a page id) via `sync_attachments`, which stores a SHA-256 in the attachment comment to skip/update-in-place on re-runs (mark's scheme).
+6. `collapse_paragraph_newlines` — must run **before** `replace_code_blocks`; it stashes `<pre>` blocks so code survives the newline flattening
+7. `replace_code_blocks` — relies on that `<pre>` stash still being intact
 
-The transforms map GitHub/Mark-style markdown constructs to Confluence macros (code, panels/callouts, charts, layouts, TOC) and rewrite cross-doc links + heading anchors to their published Confluence URLs/ids.
+The transforms map GitHub/Mark-style markdown constructs to Confluence macros (code, panels/callouts, charts, layouts, TOC, images) and rewrite cross-doc links + heading anchors to their published Confluence URLs/ids.
 
 ### Frontmatter-driven publishing
 

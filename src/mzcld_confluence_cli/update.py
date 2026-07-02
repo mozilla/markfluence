@@ -128,7 +128,16 @@ def process_file(filename, client, message, resolve_only, force):
 
     # Convert the markdown body (frontmatter stripped) to Confluence storage HTML.
     _, md_body = extract_frontmatter(md_content)
-    html_content = md_to_confluence(md_body, filename, client.base_url, space_key)
+    html_content, images = md_to_confluence(
+        md_body, filename, client.base_url, space_key
+    )
+    for message in images["broken"] + images["warnings"]:
+        click.echo(f"{prefix} warning: {message}", err=True)
+
+    # Upload referenced local images as attachments (the body references them by
+    # filename, so this must happen before the page renders).
+    for att_name, action in client.sync_attachments(page_id, images["attachments"]):
+        click.echo(f"{prefix} attachment {action}: {att_name}")
 
     current_version = page["version"]["number"]
 

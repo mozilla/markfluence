@@ -7,6 +7,7 @@ the ``update`` and ``create`` subcommands call it.
 """
 
 import html as html_lib
+import json
 import os
 import re
 import urllib.parse
@@ -561,12 +562,166 @@ def replace_layout_blocks(html):
     return html
 
 
+# Image extensions Confluence renders. Local images with other extensions are
+# treated as broken (see replace_images).
+SUPPORTED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp"}
+
+_IMG_RE = re.compile(r"<img\b([^>]*?)/?>", re.IGNORECASE)
+
+
+def _image_attr(attrs, name):
+    """Read the value of an HTML attribute from a captured tag-attribute string."""
+    match = re.search(rf'\b{name}\s*=\s*"([^"]*)"', attrs, re.IGNORECASE)
+    return match.group(1) if match else ""
+
+
+def _attachment_filename(src):
+    """Derive a stable, collision-free attachment filename from an image path.
+
+    The path (relative to the markdown file) has ``/`` replaced by ``_`` so images
+    from different directories don't collide; the name is independent of content so
+    editing an image updates the same attachment in place. Matches mark's scheme.
+    """
+    name = src[2:] if src.startswith("./") else src
+    return name.replace("/", "_")
+
+
+_ALLOWED_ALIGN = {"left", "center", "right"}
+
+
+def _parse_image_title(title_raw, src, warnings):
+    """Turn the markdown image title into extra ``<ac:image>`` attributes.
+
+    ``title_raw`` is the (marko-HTML-escaped) title attribute. If it decodes to a
+    JSON object, its ``title``/``width``/``height``/``align`` keys become image
+    attributes (``alt`` stays native and can't be overridden here); otherwise the
+    whole string is used verbatim as the tooltip (``ac:title``). Invalid
+    ``width``/``height``/``align`` values are dropped with a message appended to
+    ``warnings``. Returns a dict of attribute name -> value.
+    """
+    if not title_raw:
+        return {}
+
+    text = html_lib.unescape(title_raw)
+    try:
+        data = json.loads(text)
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        return {"title": text}
+
+    attrs = {}
+    if data.get("title"):
+        attrs["title"] = str(data["title"])
+    for dimension in ("width", "height"):
+        value = data.get(dimension)
+        if value in (None, ""):
+            continue
+        if str(value).isdigit():
+            attrs[dimension] = str(value)
+        else:
+            warnings.append(f"{src}: ignoring {dimension}={value!r} (must be a number)")
+    align = data.get("align")
+    if align:
+        if str(align) in _ALLOWED_ALIGN:
+            attrs["align"] = str(align)
+        else:
+            warnings.append(
+                f"{src}: ignoring align={align!r} (must be left, center, or right)"
+            )
+    return attrs
+
+
+def _ac_image(alt, attrs, *, ri_filename=None, ri_url=None):
+    """Build a Confluence ``<ac:image>`` referencing an attachment or an URL.
+
+    ``alt`` is the (raw) alt text; ``attrs`` may carry ``title``/``width``/
+    ``height``/``align``. All attribute values are XML-escaped.
+    """
+    parts = []
+    if alt:
+        parts.append(f'ac:alt="{html_lib.escape(alt, quote=True)}"')
+    for key in ("title", "width", "height", "align"):
+        value = attrs.get(key)
+        if value:
+            parts.append(f'ac:{key}="{html_lib.escape(str(value), quote=True)}"')
+    leading = (" " + " ".join(parts)) if parts else ""
+
+    if ri_filename is not None:
+        resource = f'<ri:attachment ri:filename="{ri_filename}" />'
+    else:
+        resource = f'<ri:url ri:value="{ri_url}" />'
+    return f"<ac:image{leading}>{resource}</ac:image>"
+
+
+def replace_images(html, base_dir):
+    """Rewrite ``<img>`` tags to Confluence images, collecting local uploads.
+
+    Returns ``(html, attachments, broken, warnings)``:
+
+    * remote images (``http(s)://``) become ``<ac:image><ri:url/></ac:image>`` (no
+      upload);
+    * a local file with a supported extension that exists becomes
+      ``<ac:image><ri:attachment/></ac:image>`` and is recorded in ``attachments``
+      (``{"path", "filename"}``, deduped by filename) for the caller to upload;
+    * a missing file or an unsupported extension is replaced with the literal text
+      ``IMAGE BROKEN: <src> (<reason>)`` (also collected in ``broken``).
+
+    The markdown title (``![alt](src "title")``) supplies extra attributes -- see
+    :func:`_parse_image_title`; invalid property values are collected in
+    ``warnings``. Paths resolve relative to ``base_dir``.
+    """
+    attachments = []
+    broken = []
+    warnings = []
+    seen = set()
+
+    def _sub(match):
+        attrs = match.group(1)
+        src = _image_attr(attrs, "src")
+        alt = html_lib.unescape(_image_attr(attrs, "alt"))
+        if not src:
+            return match.group(0)
+
+        img_attrs = _parse_image_title(_image_attr(attrs, "title"), src, warnings)
+
+        if src.startswith(("http://", "https://", "//")):
+            return _ac_image(alt, img_attrs, ri_url=src)
+
+        if os.path.splitext(src)[1].lower() not in SUPPORTED_IMAGE_EXTS:
+            message = f"IMAGE BROKEN: {src} (unsupported type)"
+            broken.append(message)
+            return html_lib.escape(message)
+
+        local_path = os.path.join(base_dir or ".", src)
+        if not os.path.isfile(local_path):
+            message = f"IMAGE BROKEN: {src} (not found)"
+            broken.append(message)
+            return html_lib.escape(message)
+
+        filename = _attachment_filename(src)
+        if filename not in seen:
+            seen.add(filename)
+            attachments.append(
+                {"path": os.path.abspath(local_path), "filename": filename}
+            )
+        return _ac_image(alt, img_attrs, ri_filename=filename)
+
+    return _IMG_RE.sub(_sub, html), attachments, broken, warnings
+
+
 def md_to_confluence(md_body, filename, base_url, space_key):
     """Convert a markdown body to Confluence storage-format HTML.
 
     ``md_body`` must already have its frontmatter stripped. ``filename`` is used
-    to locate sibling ``.md`` files for anchor/link rewriting; ``base_url`` and
-    ``space_key`` build the Confluence URLs those links point at.
+    to locate sibling ``.md`` files for anchor/link rewriting and to resolve image
+    paths; ``base_url`` and ``space_key`` build the Confluence URLs those links
+    point at.
+
+    Returns ``(html, images)`` where ``images`` is
+    ``{"attachments": [...], "broken": [...], "warnings": [...]}`` -- the local
+    images to upload, the human-readable broken-image messages, and any
+    image-property warnings, respectively.
 
     The step order encodes dependencies -- see the inline notes -- so keep it.
     """
@@ -610,6 +765,11 @@ def md_to_confluence(md_body, filename, base_url, space_key):
     # Replace GitHub-style callouts (> [!NOTE], etc.) with panel macros.
     html_content = replace_github_callouts(html_content)
 
+    # Rewrite <img> tags to Confluence images, collecting local files to upload.
+    html_content, attachments, broken, warnings = replace_images(
+        html_content, os.path.dirname(filename)
+    )
+
     # Collapse soft-wrapped newlines inside <p> tags to spaces so Confluence
     # doesn't render them as hard line breaks.
     html_content = collapse_paragraph_newlines(html_content)
@@ -618,4 +778,8 @@ def md_to_confluence(md_body, filename, base_url, space_key):
     # the <pre> stash protects them during the newline pass).
     html_content = replace_code_blocks(html_content)
 
-    return html_content
+    return html_content, {
+        "attachments": attachments,
+        "broken": broken,
+        "warnings": warnings,
+    }
