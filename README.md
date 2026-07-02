@@ -1,8 +1,18 @@
-# mzcld-confluence-cli
+# markfluence
 
 A CLI for publishing and manipulating Confluence pages and attachments.
 
 ## Install
+
+### From PyPI
+
+TBD
+
+### From GitHub
+
+TBD
+
+### From local git repository
 
 Uses [uv](https://docs.astral.sh/uv/).
 
@@ -20,18 +30,20 @@ CONFLUENCE_USERNAME=you@example.com
 CONFLUENCE_TOKEN=your-api-token
 ```
 
+(Optional): `alias mf=markfluence`
+
 ## Usage
 
 ```sh
-mzcld-confluence-cli --help
-mzcld-confluence-cli create --help
-mzcld-confluence-cli update --help
+markfluence --help
+markfluence create --help
+markfluence update --help
 ```
 
 ### `create`
 
 ```
-Usage: mzcld-confluence-cli create [OPTIONS] FILENAMES...
+Usage: markfluence create [OPTIONS] FILENAMES...
 ```
 
 Create new Confluence pages from Markdown files.
@@ -56,15 +68,15 @@ its parent's `.md` file, and `create` orders creation parents-first and fills in
 real ids (see the `parent` field below).
 
 ```sh
-mzcld-confluence-cli create docs/new_page.md --space ENG
-mzcld-confluence-cli create docs/child.md --space ENG --parent 123456
-mzcld-confluence-cli create docs/*.md --space ENG   # hierarchy via parent: paths
+markfluence create docs/new_page.md --space ENG
+markfluence create docs/child.md --space ENG --parent 123456
+markfluence create docs/*.md --space ENG   # hierarchy via parent: paths
 ```
 
 ### `update`
 
 ```
-Usage: mzcld-confluence-cli update [OPTIONS] FILENAMES...
+Usage: markfluence update [OPTIONS] FILENAMES...
 ```
 
 Update one or more Markdown files in Confluence.
@@ -74,9 +86,9 @@ Space, parent, page id, and title are all read from frontmatter.
 Each file is processed independently; the command exits non-zero if any file fails.
 
 ```sh
-mzcld-confluence-cli update docs/managing_an_incident.md
-mzcld-confluence-cli update docs/*.md --message "Bulk update"
-mzcld-confluence-cli update docs/foo.md --force     # ignore the mtime check
+markfluence update docs/managing_an_incident.md
+markfluence update docs/*.md --message "Bulk update"
+markfluence update docs/foo.md --force     # ignore the mtime check
 ```
 
 ## Markdown page structure

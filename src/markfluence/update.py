@@ -21,8 +21,8 @@ When multiple files are passed, each is processed independently -- failures on
 one file don't stop the others. The command exits non-zero if any file failed.
 
 The markdown-to-Confluence-storage conversion lives in
-:mod:`mzcld_confluence_cli.libmarkdown`; HTTP calls go through
-:class:`mzcld_confluence_cli.libclient.ConfluenceClient`.
+:mod:`markfluence.libmarkdown`; HTTP calls go through
+:class:`markfluence.libclient.ConfluenceClient`.
 """
 
 import datetime
@@ -176,7 +176,7 @@ def process_file(filename, client, message, resolve_only, force):
 @click.argument("filenames", nargs=-1, required=True)
 @click.option(
     "--message",
-    default="Updated via mzcld-confluence-cli",
+    default="Updated via markfluence",
     help="Version message.",
 )
 @click.option(

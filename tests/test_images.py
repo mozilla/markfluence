@@ -7,7 +7,7 @@
 import html
 import json
 
-from mzcld_confluence_cli.libmarkdown import replace_images
+from markfluence.libmarkdown import replace_images
 
 
 def _escaped_title(obj):

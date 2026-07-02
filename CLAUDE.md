@@ -11,7 +11,7 @@ Uses [uv](https://docs.astral.sh/uv/) for dependency management and [just](https
 - `just lint` / `just test` / `just typecheck` — the individual pieces
 - `uv run pytest tests/test_smoke.py::test_group_help` — run a single test
 - `uv run ruff format` — apply formatting
-- `uv run mzcld-confluence-cli update FILE...` — run the CLI (needs `.env`; see below)
+- `uv run markfluence update FILE...` — run the CLI (needs `.env`; see below)
 
 ## Configuration
 
@@ -29,7 +29,7 @@ This repo contains **two coexisting programs**:
 
 1. **`confluence_publish.py`** (repo root) — the original standalone script, run via `uv run confluence_publish.py` with its own inline PEP-723 dependencies (uses `requests`). It is **left untouched** and is explicitly excluded from ruff and ty (see `pyproject.toml`). Don't lint, format, or typecheck it, and don't modify it unless asked.
 
-2. **`mzcld-confluence-cli`** (the `src/mzcld_confluence_cli/` package) — the new click-based CLI that supersedes it. Its `update` subcommand is a **verbatim port** of the script's publishing logic.
+2. **`markfluence`** (the `src/markfluence/` package) — the new click-based CLI that supersedes it. Its `update` subcommand is a **verbatim port** of the script's publishing logic.
 
 ### Package layers
 

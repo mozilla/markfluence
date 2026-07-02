@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-"""Command-line entry point for mzcld-confluence-cli."""
+"""Command-line entry point for markfluence."""
 
 import click
 from dotenv import find_dotenv, load_dotenv

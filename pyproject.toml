@@ -1,5 +1,5 @@
 [project]
-name = "mzcld-confluence-cli"
+name = "markfluence"
 version = "0.1.0"
 description = "CLI for publishing and manipulating Confluence pages and attachments."
 readme = "README.md"
@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-mzcld-confluence-cli = "mzcld_confluence_cli.cli:main"
+markfluence = "markfluence.cli:main"
 
 [dependency-groups]
 dev = [
@@ -28,7 +28,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/mzcld_confluence_cli"]
+packages = ["src/markfluence"]
 
 [tool.ruff]
 line-length = 88
@@ -42,7 +42,7 @@ select = ["E", "F", "I", "W", "UP", "B"]
 [tool.ruff.lint.per-file-ignores]
 # libmarkdown.py holds the conversion logic ported verbatim from
 # confluence_publish.py; its long docstrings/comments/f-strings are left as-is.
-"src/mzcld_confluence_cli/libmarkdown.py" = ["E501"]
+"src/markfluence/libmarkdown.py" = ["E501"]
 
 [tool.ty.src]
 # The legacy standalone script carries its own inline (PEP 723) deps and is kept

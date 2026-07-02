@@ -6,7 +6,7 @@
 
 from click.testing import CliRunner
 
-from mzcld_confluence_cli.cli import main
+from markfluence.cli import main
 
 
 def test_group_help():
