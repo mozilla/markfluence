@@ -21,6 +21,8 @@ The CLI reads `CONFLUENCE_URL`, `CONFLUENCE_USERNAME`, `CONFLUENCE_TOKEN` from `
 
 Commits must follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/): `type(optional-scope): description`, e.g. `feat(update): add --dry-run flag`, `fix(libclient): handle 404 on missing page`. Common types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `build`.
 
+Do not add AI attribution to commits or pull requests — no `Co-Authored-By: Claude` trailers, no "Generated with Claude Code" lines, no similar attribution in commit messages or PR descriptions.
+
 ## Architecture
 
 This repo contains **two coexisting programs**:
