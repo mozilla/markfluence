@@ -56,6 +56,15 @@ Backlog of deferred work. Design detail for these lives in `_plans/`.
   - page id is bad / doesn't exist → say the page id is bad and should be removed
     (rather than silently creating a new page).
 
+- [ ] **Drop title-based page_id resolution from `update`.** `update` currently
+  searches Confluence by `title` when a file has no `page_id`, then writes the id
+  back. Remove that: `update` should require `page_id` in frontmatter and error if
+  it's missing (inference moves to the future `fix` command). Update the README,
+  which documents the lookup-by-title behavior.
+
+- [ ] **Remove the `--resolve` flag from `update`.** It's built on the title search
+  above; drop it (its find/write-back role belongs to the future `fix` command).
+
 - [ ] **Better error for a stale `page_id` on `update`.** When a markdown file's
   frontmatter has a `page_id` but that page no longer exists in Confluence, `update`
   currently fails with a raw HTTP 404 (surfacing from `get_page`, or from
