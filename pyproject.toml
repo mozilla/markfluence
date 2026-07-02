@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "CLI for publishing and manipulating Confluence pages and attachments."
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MPL-2.0"
+license-files = ["LICENSE"]
 dependencies = [
     "click",
     "python-dotenv",

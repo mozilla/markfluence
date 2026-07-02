@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
 """HTTP client for the Confluence REST API.
 
 Wraps an ``httpx2.Client`` with basic auth and the handful of API calls the
