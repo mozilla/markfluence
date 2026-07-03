@@ -113,23 +113,6 @@ def extract_frontmatter(md_content):
     return frontmatter, body
 
 
-def extract_title_from_markdown(md_content):
-    """Extract the page title from markdown content.
-
-    Looks for ``title:`` in YAML frontmatter first, then falls back to the
-    first H1 heading in the body.
-    """
-    frontmatter, body = extract_frontmatter(md_content)
-    title = frontmatter.get("title")
-    if title:
-        return title
-    for line in body.splitlines():
-        match = re.match(r"^#\s+(.+)$", line)
-        if match:
-            return match.group(1).strip()
-    return None
-
-
 def _quote_value(value):
     """Quote ``value`` for frontmatter. Prefers single quotes."""
     if "'" not in value:
