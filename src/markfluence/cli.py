@@ -8,6 +8,7 @@ import click
 from dotenv import find_dotenv, load_dotenv
 
 from .create import create
+from .fix import fix
 from .update import update
 
 load_dotenv(find_dotenv(usecwd=True))
@@ -19,6 +20,7 @@ def main():
 
 
 main.add_command(create)
+main.add_command(fix)
 main.add_command(update)
 
 
