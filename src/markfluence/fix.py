@@ -5,10 +5,10 @@
 """The ``fix`` subcommand: reconcile frontmatter coordinates to the live page.
 
 Given a markdown file, ``fix`` locates its live Confluence page and rewrites the
-frontmatter so ``page_id``, ``space`` (key), and ``parent`` (``null`` or a numeric
-page id) match reality. A missing ``title`` is filled in from the live page; a
-present ``title`` is never touched (it may be a pending rename that ``update``
-will push).
+frontmatter so ``page_id``, ``space`` (key), ``parent`` (``null`` or a numeric
+page id), and ``page_width`` (narrow/wide/max) match reality. A missing ``title``
+is filled in from the live page; a present ``title`` is never touched (it may be a
+pending rename that ``update`` will push).
 
 The page is located by ``page_id`` (fetched directly) or, if absent, by searching
 for the frontmatter ``title``. A ``page_id`` that no longer resolves is an error,
@@ -26,6 +26,7 @@ non-zero if any file failed.
 import sys
 
 import click
+import httpx2
 
 from .libclient import ConfluenceClient
 from .libmarkdown import (
@@ -33,6 +34,7 @@ from .libmarkdown import (
     extract_space_key,
     update_frontmatter_field,
 )
+from .pagewidth import read_page_width
 
 
 class _FixError(Exception):
@@ -87,13 +89,14 @@ def _locate_page(filename, frontmatter, client):
     return client.get_page(matches[0]["id"])
 
 
-def _planned_changes(frontmatter, page):
+def _planned_changes(frontmatter, page, live_width):
     """Compute the field changes needed to reconcile ``frontmatter`` to ``page``.
 
     Returns a list of ``(field, old_display, new_value)`` where ``new_value`` is
     what to write via :func:`update_frontmatter_field` and ``old_display`` is a
     human-readable rendering of the current value. Only fields that actually
-    differ are included.
+    differ are included. ``live_width`` is the page's current width (vocabulary),
+    or ``None`` to skip width reconciliation.
     """
     links = page.get("_links", {})
     live = {
@@ -121,6 +124,18 @@ def _planned_changes(frontmatter, page):
     if not str(frontmatter.get("title") or "").strip():
         changes.append(("title", "(none)", page["title"]))
 
+    # page_width: compare effective widths (an unset/blank page_width means the
+    # max default), and write the live value when they differ. An all-max page
+    # thus stays free of an explicit page_width line.
+    if live_width is not None:
+        raw = frontmatter.get("page_width")
+        declared = (str(raw).strip().lower() if raw is not None else "") or "max"
+        if declared != live_width:
+            old_display = (
+                raw if (raw is not None and str(raw).strip() != "") else "(none)"
+            )
+            changes.append(("page_width", old_display, live_width))
+
     return changes
 
 
@@ -133,7 +148,16 @@ def process_file(filename, client, dry_run):
     frontmatter, _ = extract_frontmatter(md_content)
 
     page = _locate_page(filename, frontmatter, client)
-    changes = _planned_changes(frontmatter, page)
+
+    # Read the live width to reconcile page_width. Best-effort: if the property
+    # read fails, warn and skip the width field rather than failing the file.
+    try:
+        live_width, _explicit = read_page_width(client, page["id"])
+    except httpx2.HTTPError as exc:
+        click.echo(f"{prefix} warning: could not read page width: {exc}", err=True)
+        live_width = None
+
+    changes = _planned_changes(frontmatter, page, live_width)
 
     if not changes:
         click.echo(f"{prefix} already consistent")
@@ -164,9 +188,9 @@ def process_file(filename, client, dry_run):
 def fix(filenames, dry_run):
     """Reconcile each markdown file's frontmatter to its live Confluence page.
 
-    Populates/refreshes page_id, space, and parent (and fills a missing title)
-    from the live page. Each file is processed independently; the command exits
-    non-zero if any file failed.
+    Populates/refreshes page_id, space, parent, and page_width (and fills a
+    missing title) from the live page. Each file is processed independently; the
+    command exits non-zero if any file failed.
     """
     client = ConfluenceClient.from_env()
 

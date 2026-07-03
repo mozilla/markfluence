@@ -33,6 +33,7 @@ from .libmarkdown import (
     md_to_confluence,
     update_frontmatter_field,
 )
+from .pagewidth import declared_width, set_page_width
 
 
 class _ValidationError(Exception):
@@ -110,6 +111,12 @@ def _resolve_file(filename, space_opt, parent_opt, client, in_set_abs, space_cac
     if not title:
         raise _ValidationError("no 'title' field found in frontmatter")
 
+    # Validate page_width up front (unset/blank -> the max default).
+    try:
+        page_width = declared_width(frontmatter)
+    except ValueError as exc:
+        raise _ValidationError(str(exc)) from exc
+
     # Space precedence: --space or frontmatter 'space'; both-and-differ -> error.
     fm_space = frontmatter.get("space")
     if space_opt and fm_space and space_opt != fm_space:
@@ -151,6 +158,7 @@ def _resolve_file(filename, space_opt, parent_opt, client, in_set_abs, space_cac
         "space_key": space_key,
         "space_id": space_id,
         "parent": parent,
+        "page_width": page_width,
     }
 
 
@@ -205,6 +213,10 @@ def _create_one(record, parent_id, client):
     # Upload referenced local images now that the page (and its id) exists.
     for att_name, action in client.sync_attachments(new_id, images["attachments"]):
         click.echo(f"{prefix} attachment {action}: {att_name}")
+
+    # Assert the page width (a content property, so a separate call). A failure
+    # here is non-fatal: the page itself was created.
+    set_page_width(client, new_id, record["page_width"], prefix)
 
     content = record["md_content"]
     content = update_frontmatter_field(content, "page_id", new_id)

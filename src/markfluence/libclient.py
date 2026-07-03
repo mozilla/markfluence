@@ -16,6 +16,7 @@ original ``confluence_publish.py`` script constructed them.
 import hashlib
 import mimetypes
 import os
+import time
 
 import click
 import httpx2
@@ -268,3 +269,60 @@ class ConfluenceClient:
         )
         resp.raise_for_status()
         return resp.json()
+
+    # --- Content properties ----------------------------------------------
+    # Page appearance (e.g. width) is stored as content properties rather than
+    # on the page body, so setting it is a separate get-then-create-or-update.
+
+    def get_content_property(self, page_id, key):
+        """Return a page's content property matching ``key``, or ``None``.
+
+        The returned dict includes ``value`` and ``version.number`` (needed to
+        update it).
+        """
+        resp = self._client.get(
+            f"{self.base_url}/wiki/api/v2/pages/{page_id}/properties",
+            params={"key": key},
+        )
+        resp.raise_for_status()
+        results = resp.json().get("results", [])
+        return results[0] if results else None
+
+    def set_content_property(self, page_id, key, value):
+        """Idempotently set a content property. Returns "set" or "unchanged".
+
+        Creates the property if absent, updates it (version-bumped) if it
+        differs, and does nothing if it already equals ``value``. Content-
+        property writes around a page write are known to occasionally return a
+        spurious 4xx/5xx even though they applied, so on any HTTP error this
+        pauses and retries once (the retry re-reads first, so an actually-
+        applied write resolves to "unchanged"). Raises if the retry also fails.
+        """
+        for attempt in (1, 2):
+            try:
+                existing = self.get_content_property(page_id, key)
+                if existing is not None and existing.get("value") == value:
+                    return "unchanged"
+                if existing is not None:
+                    self._client.put(
+                        f"{self.base_url}/wiki/api/v2/pages/{page_id}"
+                        f"/properties/{existing['id']}",
+                        headers={"Content-Type": "application/json"},
+                        json={
+                            "key": key,
+                            "value": value,
+                            "version": {"number": existing["version"]["number"] + 1},
+                        },
+                    ).raise_for_status()
+                else:
+                    self._client.post(
+                        f"{self.base_url}/wiki/api/v2/pages/{page_id}/properties",
+                        headers={"Content-Type": "application/json"},
+                        json={"key": key, "value": value},
+                    ).raise_for_status()
+                return "set"
+            except httpx2.HTTPError:
+                if attempt == 1:
+                    time.sleep(1)
+                    continue
+                raise

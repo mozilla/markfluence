@@ -38,6 +38,7 @@ from .libmarkdown import (
     md_to_confluence,
     update_frontmatter_field,
 )
+from .pagewidth import declared_width, set_page_width
 
 
 def process_file(filename, client, message, resolve_only, force):
@@ -59,6 +60,14 @@ def process_file(filename, client, message, resolve_only, force):
             f"the top of the file.",
             err=True,
         )
+        return False
+
+    # Validate page_width up front (unset/blank -> the max default). A typo'd
+    # value is surfaced even on files that would otherwise be mtime-skipped.
+    try:
+        page_width = declared_width(frontmatter)
+    except ValueError as exc:
+        click.echo(f"{prefix} Error: {exc}", err=True)
         return False
 
     # Resolve page ID from frontmatter; if absent, search by title and write back.
@@ -167,6 +176,11 @@ def process_file(filename, client, message, resolve_only, force):
         if webui
         else f"{client.base_url}/wiki/pages/viewpage.action?pageId={page_id}"
     )
+
+    # Assert the page width (a content property, so a separate call) as part of
+    # the publish. Skipped files never reach here, so width isn't reasserted on
+    # a no-op run. A failure here is non-fatal: the page update already landed.
+    set_page_width(client, page_id, page_width, prefix)
 
     click.echo(f"{prefix} Published v{current_version + 1}: {url}")
     return True

@@ -102,6 +102,7 @@ title: My Page Title
 space: ENG
 parent: null
 page_id: 1234567890
+page_width: max
 ---
 
 # Body starts here
@@ -120,6 +121,7 @@ inline ` # ...` comments (whitespace, then `#`) are ignored.
 | `parent` | `null`, a numeric page id, or a relative `.md` path | `null` = top-level page; a page id = an existing parent page; a `.md` path = a parent authored in the same run (`create` resolves it in dependency order, then rewrites the value to `<page_id>  # <original.md>`). Used by `create` (or `--parent`). |
 | `page_id` | a numeric page id, or `null` | The target page. `update` looks it up by `title` and writes it back when missing; `create` writes it after creating the page. `null`/absent means "no page yet." |
 | `title` | text (**required**) | The Confluence page title. |
+| `page_width` | `narrow`, `wide`, or `max` | The published page width (the UI's "Adjust width" options; `narrow`/`wide`/`max` map to the `default`/`full-width`/`max` appearance properties). Absent or blank defaults to `max`. `create`/`update` assert it on every publish (so a width set in the Confluence UI is overwritten unless the frontmatter matches); `fix` writes back the live page's width. |
 
 To create a page, you only need to specify the `title` in the frontmatter.
 

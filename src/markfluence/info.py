@@ -15,9 +15,11 @@ import os
 import sys
 
 import click
+import httpx2
 
 from .libclient import ConfluenceClient
 from .libmarkdown import extract_frontmatter, extract_space_key
+from .pagewidth import read_page_width
 
 
 class _InfoError(Exception):
@@ -71,6 +73,15 @@ def _format_page(page, client):
     created = page.get("createdAt", "")
     updated = version.get("createdAt", "")
 
+    # Page width is a content property (a separate call); tolerate a failure.
+    try:
+        width_value, width_explicit = read_page_width(client, page["id"])
+        page_width = (
+            width_value if width_explicit else f"{width_value} (Confluence default)"
+        )
+    except httpx2.HTTPError:
+        page_width = "unknown"
+
     rows = [
         ("id", page["id"]),
         ("title", page.get("title", "")),
@@ -78,14 +89,17 @@ def _format_page(page, client):
         ("space", space_key or ""),
         ("parent", parent),
         ("version", version.get("number", "")),
+        ("page_width", page_width),
         ("created", f"{created} by {creator}" if creator else created),
         ("updated", f"{updated} by {editor}" if editor else updated),
         ("message", version.get("message") or ""),
         ("url", url),
     ]
-    width = max(len(label) for label, _ in rows) + 1
+    label_width = max(len(label) for label, _ in rows) + 1
     return "\n".join(
-        f"{(label + ':').ljust(width)} {value}" for label, value in rows if value != ""
+        f"{(label + ':').ljust(label_width)} {value}"
+        for label, value in rows
+        if value != ""
     )
 
 
