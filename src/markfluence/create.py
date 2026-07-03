@@ -187,12 +187,15 @@ def _topo_sort(records, records_by_abs):
 
 
 def _parent_field(parent, parent_id):
-    """Build the frontmatter ``parent`` value written after creation."""
+    """Build the ``(value, comment)`` for the frontmatter ``parent`` line.
+
+    The comment (the original ``.md`` path, when the parent was a sibling doc) is
+    kept separate from the value so ``update_frontmatter_field`` writes it as a
+    trailing annotation rather than folding it into the value.
+    """
     if parent["kind"] == "top":
-        return "null"
-    if parent["display"]:
-        return f"{parent_id}  # {parent['display']}"
-    return str(parent_id)
+        return "null", None
+    return str(parent_id), parent["display"]
 
 
 def _create_one(record, parent_id, client):
@@ -218,11 +221,12 @@ def _create_one(record, parent_id, client):
     # here is non-fatal: the page itself was created.
     set_page_width(client, new_id, record["page_width"], prefix)
 
+    parent_value, parent_comment = _parent_field(record["parent"], parent_id)
     content = record["md_content"]
     content = update_frontmatter_field(content, "page_id", new_id)
     content = update_frontmatter_field(content, "space", record["space_key"])
     content = update_frontmatter_field(
-        content, "parent", _parent_field(record["parent"], parent_id)
+        content, "parent", parent_value, comment=parent_comment
     )
     with open(record["filename"], "w") as f:
         f.write(content)

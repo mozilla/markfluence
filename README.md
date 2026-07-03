@@ -115,6 +115,12 @@ Frontmatter is a block delimited by `---` lines containing flat `key: value` pai
 (no nesting, lists, or multi-line values). Full-line `#` comments and trailing
 inline ` # ...` comments (whitespace, then `#`) are ignored.
 
+To include a literal ` #` (or leading/trailing whitespace, or a leading quote) in a
+value, quote it with single or double quotes — e.g. `title: "Detect # Verify"`.
+Single quotes are literal (`''` escapes a quote); double quotes honor `\"` and `\\`.
+markfluence adds quotes automatically when it writes a value back if they're needed
+to round-trip.
+
 | Field | Value domain | Notes |
 | --- | --- | --- |
 | `space` | a space key (e.g. `ENG`, or a personal space like `~1234abcd`) | Target space for `create` (or pass `--space`); written back by `create`. Always a key, never a numeric space id. |

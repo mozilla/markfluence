@@ -24,13 +24,63 @@ def _strip_inline_comment(value):
 
     A comment begins at the first ``#`` preceded by whitespace (matching YAML).
     Returns the value with the comment removed and surrounding whitespace stripped.
-    There is no quoting support, so a value that needs a literal `` #`` cannot be
-    expressed yet (see todo.md).
+    Used for unquoted values; quoted values are handled by :func:`parse_value`,
+    which suppresses inline-comment parsing inside the quotes.
     """
     match = re.search(r"\s#", value)
     if match:
         value = value[: match.start()]
     return value.strip()
+
+
+def _scan_quoted(s):
+    """Parse a leading quoted token from ``s`` (which starts with ``'`` or ``"``).
+
+    Returns the unquoted value, or ``None`` if the quote is unterminated. Single
+    quotes are literal with ``''`` -> ``'``; double quotes honor ``\\"`` and
+    ``\\\\`` escapes. Anything after the closing quote (e.g. a trailing inline
+    comment) is ignored.
+    """
+    quote = s[0]
+    out = []
+    i = 1
+    while i < len(s):
+        c = s[i]
+        if quote == "'":
+            if c == "'":
+                if s[i + 1 : i + 2] == "'":  # doubled '' -> literal '
+                    out.append("'")
+                    i += 2
+                    continue
+                return "".join(out)  # closing quote
+            out.append(c)
+            i += 1
+        else:  # double quote
+            if c == "\\" and s[i + 1 : i + 2] in ('"', "\\"):
+                out.append(s[i + 1])
+                i += 2
+                continue
+            if c == '"':
+                return "".join(out)  # closing quote
+            out.append(c)
+            i += 1
+    return None  # unterminated
+
+
+def parse_value(raw):
+    """Parse a frontmatter value (the text after the first ``:``).
+
+    A value whose first non-space character is ``'`` or ``"`` is read as a quoted
+    string (inline ``#`` comments inside it are preserved); otherwise a trailing
+    inline comment is stripped. An unterminated quote falls back to unquoted
+    handling.
+    """
+    stripped = raw.lstrip()
+    if stripped[:1] in ("'", '"'):
+        value = _scan_quoted(stripped)
+        if value is not None:
+            return value
+    return _strip_inline_comment(raw)
 
 
 def extract_frontmatter(md_content):
@@ -42,7 +92,9 @@ def extract_frontmatter(md_content):
 
     Only handles flat ``key: value`` pairs -- no nested structures, lists, or
     multiline values. Full-line ``#`` comments are skipped, and a trailing
-    inline ``#`` comment (whitespace then ``#``) is stripped from each value.
+    inline ``#`` comment (whitespace then ``#``) is stripped from each unquoted
+    value. Values may be single- or double-quoted to include characters that
+    inline-comment stripping would otherwise eat (see :func:`parse_value`).
     """
     match = re.match(r"^---\n(.*?)\n---\n", md_content, re.DOTALL)
     if not match:
@@ -58,7 +110,7 @@ def extract_frontmatter(md_content):
             continue
         if ":" in line:
             key, _, value = line.partition(":")
-            frontmatter[key.strip()] = _strip_inline_comment(value)
+            frontmatter[key.strip()] = parse_value(value)
     return frontmatter, body
 
 
@@ -79,18 +131,49 @@ def extract_title_from_markdown(md_content):
     return None
 
 
-def update_frontmatter_field(md_content, key, value):
+def _quote_value(value):
+    """Quote ``value`` for frontmatter. Prefers single quotes."""
+    if "'" not in value:
+        return f"'{value}'"
+    if '"' not in value:
+        return f'"{value}"'
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _render_value(value):
+    """Render a value for a frontmatter line, quoting it only when necessary.
+
+    A value is quoted iff it wouldn't survive a bare round-trip through
+    :func:`parse_value` (e.g. it contains a whitespace-then-``#``, has
+    significant leading/trailing whitespace, or starts with a quote character).
+    """
+    text = str(value)
+    if parse_value(f" {text}") != text:
+        return _quote_value(text)
+    return text
+
+
+def update_frontmatter_field(md_content, key, value, comment=None):
     """Add or update a key in the markdown's YAML frontmatter.
 
     If the key already exists, its value is replaced. If the key doesn't
     exist, it's appended to the end of the frontmatter block. If there's no
-    frontmatter block, one is created at the top of the document.
+    frontmatter block, one is created at the top of the document. The value is
+    quoted automatically when needed to round-trip. An optional ``comment`` is
+    written as a trailing ``  # comment`` annotation (kept distinct from the
+    value, which is what lets the value round-trip cleanly).
 
     Returns the new markdown content as a string.
     """
+    rendered = _render_value(value)
+    if comment:
+        rendered = f"{rendered}  # {comment}"
+    new_line = f"{key}: {rendered}"
+
     match = re.match(r"^---\n(.*?)\n---\n", md_content, re.DOTALL)
     if not match:
-        return f"---\n{key}: {value}\n---\n{md_content}"
+        return f"---\n{new_line}\n---\n{md_content}"
 
     fm_text = match.group(1)
     body = md_content[match.end() :]
@@ -100,12 +183,12 @@ def update_frontmatter_field(md_content, key, value):
     key_pattern = re.compile(rf"^\s*{re.escape(key)}\s*:")
     for line in fm_text.splitlines():
         if key_pattern.match(line):
-            new_lines.append(f"{key}: {value}")
+            new_lines.append(new_line)
             replaced = True
         else:
             new_lines.append(line)
     if not replaced:
-        new_lines.append(f"{key}: {value}")
+        new_lines.append(new_line)
 
     new_fm = "\n".join(new_lines)
     return f"---\n{new_fm}\n---\n{body}"

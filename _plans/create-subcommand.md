@@ -103,9 +103,11 @@ The `parent: <id>  # <file>` form requires **inline `#`-comment support** in
 value as `"<id>  # <file>"`). Add inline-comment stripping in `libmarkdown`, applied
 to all fields, using the YAML convention: a comment starts at whitespace-then-`#`.
 
-- **Known limitation:** this parser has no quoting, so a value like
-  `title: Detect # Verify` would truncate to `Detect`. Matches real YAML behavior;
-  document it, add quoting only if it bites.
+- **Quoting (now implemented):** single/double-quoted values suppress inline-comment
+  parsing, so `title: "Detect # Verify"` round-trips; `update_frontmatter_field`
+  auto-quotes on write-back when needed and takes a separate `comment=` for the
+  `parent` annotation. (Was a known limitation — unquoted `title: Detect # Verify`
+  still truncates to `Detect`, matching YAML.)
 
 ## `md_to_confluence` extraction (`libmarkdown.py`)
 

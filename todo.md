@@ -10,12 +10,6 @@ Backlog of deferred work. Design detail for these lives in `_plans/`.
   accountId}` objects (JSON always carries the raw `accountId`; text shows only
   the resolved name). (See `_plans/info-subcommand.md`.)
 
-- [ ] **Quoting support for frontmatter values.** The simplified frontmatter parser
-  has no quoting, so a value containing whitespace-then-`#` gets truncated by inline
-  comment stripping (e.g. `title: Detect # Verify` → `Detect`). Add single/double
-  quoted values that suppress inline-comment parsing so such values round-trip.
-  (See `_plans/create-subcommand.md` → "Frontmatter parser change".)
-
 - [ ] **`update` space/parent enforcement + moves.** Require `space` and `parent`
   in frontmatter; reconcile against the live page via the legacy move endpoint
   (`PUT /wiki/rest/api/content/{id}/move/{position}/{targetId}`).
