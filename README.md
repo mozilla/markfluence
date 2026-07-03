@@ -181,10 +181,39 @@ URL; **heading anchors** are rewritten to Confluence's anchor scheme.
 
 **Comment directives:**
 - `<!-- confluence-toc -->` — table-of-contents macro.
-- `<!-- confluence-note --> … <!-- /confluence-note -->` — note panel.
-- `<!-- chart:pie|bar [stacked] -->` immediately before a table — chart macro.
-- `<!-- ac:layout --> … <!-- ac:layout-section type:… --> …` — multi-column
-  layouts (mirrors [mark](https://github.com/kovetskiy/mark)'s directives).
+
+**Raw Confluence storage format.** You can paste Confluence
+[storage format](https://confluence.atlassian.com/doc/confluence-storage-format-790796544.html)
+markup (`<ac:…>` / `<ri:…>` elements — any macro, layout, etc.) straight from a
+page's **⋯ → View storage format** into your markdown, and it's emitted verbatim.
+Two conventions:
+
+- **Leave a blank line** between an `ac:`/`ri:` tag and any markdown you want
+  converted (e.g. a macro or layout-cell body). With a blank line the content is
+  parsed as markdown; tight against the tags it passes through literally.
+- **Put the opening tag on its own line** (or self-close it) so it isn't wrapped in
+  a paragraph.
+
+For example, a two-column layout with markdown in each cell:
+
+```
+<ac:layout>
+<ac:layout-section ac:type="two_equal">
+<ac:layout-cell>
+
+Left column with **markdown**.
+
+</ac:layout-cell>
+<ac:layout-cell>
+
+Right column.
+
+</ac:layout-cell>
+</ac:layout-section>
+</ac:layout>
+```
+
+Storage markup shown inside a fenced code block stays literal (it isn't activated).
 
 ## Development
 

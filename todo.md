@@ -23,15 +23,6 @@ Backlog of deferred work. Design detail for these lives in `_plans/`.
   frontmatter field) to control the published page's layout/appearance. Exact scope
   TBD.
 
-- [ ] **Raw Confluence storage escape hatch.** Give authors a way to emit arbitrary
-  Confluence storage markup for macros/elements we don't explicitly support. Raw
-  `ac:`/`ri:` tags can't be written directly in markdown -- marko HTML-escapes them
-  because their tag names contain colons -- so use the established comment-directive
-  pattern: e.g. `<!-- confluence-raw -->` ... `<!-- /confluence-raw -->`, with a
-  transform in `libmarkdown.py` that replaces the block with its inner content
-  verbatim (emitted as-is into the storage body, not escaped). Mirrors how
-  `confluence-note` / `ac:layout` / `chart` directives already work.
-
 - [ ] **URL-decode image `src` before the filesystem lookup.** marko URL-encodes
   image destinations (e.g. `![alt](<my file.png>)` → `src="my%20file.png"`), so a
   local image whose filename contains a space or other special character is looked

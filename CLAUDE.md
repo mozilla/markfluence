@@ -42,15 +42,15 @@ Do not add AI attribution to commits or pull requests — no `Co-Authored-By: Cl
 
 `libmarkdown.py`'s `md_to_confluence()` turns a markdown body into Confluence storage-format HTML through an **ordered sequence of regex transforms**, and the order encodes real dependencies. Preserve it when editing:
 
-1. `gfm.convert()` (marko) → base HTML
+1. `gfm.convert()` (marko) → base HTML, wrapped in `_shield_storage`: raw Confluence storage tags (`<ac:…>`/`<ri:…>`) are renamed to a colon-free per-document sentinel *before* marko (which would otherwise escape/linkify them) and restored *immediately after*, so authors can paste storage format directly and the rest of the pipeline sees real tags
 2. `rewrite_anchor_links` — must run **before** `replace_internal_doc_links` so corrected fragments carry through the `.md`→URL rewrite
 3. `replace_internal_doc_links` — needs the sibling-doc `page_id`/`title` map and the space key
-4. TOC / note / chart / layout / callout comment-directive substitutions
+4. TOC / callout comment-directive substitutions
 5. `replace_images` — rewrites `<img>` to `<ac:image>`; local files → `ri:attachment` (with a stable path-based filename, e.g. `assets/x.png`→`assets_x.png`) collected for upload; remote URLs → `ri:url`; missing/unsupported → `IMAGE BROKEN:` text. Image properties `title`/`width`/`height`/`align` ride in the markdown title as a JSON object (`![alt](x.png '{"width":"100"}')`), falling back to a plain `ac:title` when the title isn't JSON (`alt` is always native). Uploading happens in the command (needs a page id) via `sync_attachments`, which stores a SHA-256 in the attachment comment to skip/update-in-place on re-runs (mark's scheme).
 6. `collapse_paragraph_newlines` — must run **before** `replace_code_blocks`; it stashes `<pre>` blocks so code survives the newline flattening
 7. `replace_code_blocks` — relies on that `<pre>` stash still being intact
 
-The transforms map GitHub/Mark-style markdown constructs to Confluence macros (code, panels/callouts, charts, layouts, TOC, images) and rewrite cross-doc links + heading anchors to their published Confluence URLs/ids.
+The transforms map GitHub/Mark-style markdown constructs to Confluence macros (code, panels/callouts, TOC, images) and rewrite cross-doc links + heading anchors to their published Confluence URLs/ids. Arbitrary macros/layouts are authored as raw storage format directly (see the shield step above), not via bespoke directives.
 
 ### Frontmatter-driven publishing
 

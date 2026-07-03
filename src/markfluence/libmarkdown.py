@@ -176,33 +176,6 @@ def update_frontmatter_field(md_content, key, value, comment=None):
     return f"---\n{new_fm}\n---\n{body}"
 
 
-def replace_confluence_notes(html):
-    """Replace <!-- confluence-note --> ... <!-- /confluence-note --> with a Confluence note macro.
-
-    Usage in markdown::
-
-        <!-- confluence-note -->
-        Content here (can include HTML from marko conversion).
-        <!-- /confluence-note -->
-    """
-    pattern = re.compile(
-        r"<!--\s*confluence-note\s*-->"
-        r"(.*?)"
-        r"<!--\s*/confluence-note\s*-->",
-        re.DOTALL,
-    )
-
-    def _build_macro(match):
-        body = match.group(1).strip()
-        return (
-            '<ac:structured-macro ac:name="note" ac:schema-version="1">'
-            f"<ac:rich-text-body>{body}</ac:rich-text-body>"
-            "</ac:structured-macro>"
-        )
-
-    return pattern.sub(_build_macro, html)
-
-
 def collapse_paragraph_newlines(html):
     """Collapse soft-wrap newlines in HTML text content.
 
@@ -549,88 +522,6 @@ def replace_internal_doc_links(html, page_map, base_url, space_key):
     return pattern.sub(_rewrite, html)
 
 
-def replace_chart_directives(html):
-    """Replace <!-- chart:TYPE [OPTIONS] --> + following <table> with a Confluence chart macro.
-
-    Supported directives:
-        <!-- chart:pie -->        -- pie chart from the next table
-        <!-- chart:bar -->        -- bar chart from the next table
-        <!-- chart:bar stacked --> -- stacked bar chart from the next table
-
-    The directive and the table it references are replaced by an
-    <ac:structured-macro ac:name="chart"> element.  The table that follows
-    the directive is consumed by the chart (not displayed separately).
-    """
-    pattern = re.compile(
-        r"<!--\s*chart:(\w+)"  # chart type (pie, bar, ...)
-        r"(?:\s+([\w\s]+?))?"  # optional space-separated options (e.g. "stacked")
-        r"\s*-->"
-        r"(.*?)"  # any whitespace / stray tags between comment and table
-        r"(<table.*?</table>)",  # the next table element
-        re.DOTALL,
-    )
-
-    def _build_macro(match):
-        chart_type = match.group(1)
-        options = (match.group(2) or "").split()
-        table_html = match.group(4)
-
-        params = f'<ac:parameter ac:name="type">{chart_type}</ac:parameter>'
-        if "stacked" in options:
-            params += '<ac:parameter ac:name="stacked">true</ac:parameter>'
-
-        return (
-            f'<ac:structured-macro ac:name="chart" ac:schema-version="1">'
-            f"{params}"
-            f"<ac:rich-text-body>{table_html}</ac:rich-text-body>"
-            f"</ac:structured-macro>"
-        )
-
-    return pattern.sub(_build_macro, html)
-
-
-def replace_layout_blocks(html):
-    """Replace Mark-style layout directives with Confluence layout macros.
-
-    Mirrors the directive syntax used by https://github.com/kovetskiy/mark::
-
-        <!-- ac:layout -->
-        <!-- ac:layout-section type:two_right_sidebar -->
-        <!-- ac:layout-cell -->
-        Left column content.
-        <!-- ac:layout-cell end -->
-        <!-- ac:layout-cell -->
-        Right column content.
-        <!-- ac:layout-cell end -->
-        <!-- ac:layout-section end -->
-        <!-- ac:layout end -->
-
-    Each marker is a standalone HTML comment, so this is a sequence of
-    independent substitutions -- no structural parsing or validation. A
-    malformed layout will be caught by Confluence at publish time. The
-    ``end`` substitutions run before their open counterparts so the open
-    patterns don't accidentally match the close.
-
-    Supported ``type:`` values are Confluence's standard set: ``single``,
-    ``two_equal``, ``two_left_sidebar``, ``two_right_sidebar``,
-    ``three_equal``, ``three_with_sidebars``.
-    """
-    substitutions = [
-        (r"<!--\s*ac:layout-cell\s+end\s*-->", "</ac:layout-cell>"),
-        (r"<!--\s*ac:layout-cell\s*-->", "<ac:layout-cell>"),
-        (r"<!--\s*ac:layout-section\s+end\s*-->", "</ac:layout-section>"),
-        (
-            r"<!--\s*ac:layout-section\s+type:(\w+)\s*-->",
-            r'<ac:layout-section ac:type="\1">',
-        ),
-        (r"<!--\s*ac:layout\s+end\s*-->", "</ac:layout>"),
-        (r"<!--\s*ac:layout\s*-->", "<ac:layout>"),
-    ]
-    for pattern, replacement in substitutions:
-        html = re.sub(pattern, replacement, html)
-    return html
-
-
 # Image extensions Confluence renders. Local images with other extensions are
 # treated as broken (see replace_images).
 SUPPORTED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp"}
@@ -779,6 +670,41 @@ def replace_images(html, base_dir):
     return _IMG_RE.sub(_sub, html), attachments, broken, warnings
 
 
+def _storage_sentinel(base, text):
+    """Return a variant of ``base`` (growing by 'F') that doesn't occur in ``text``.
+
+    Deriving the sentinel from the source guarantees it can't collide with real
+    content, so the shield round-trip below never corrupts anything.
+    """
+    sentinel = base
+    while sentinel in text:
+        sentinel += "F"
+    return sentinel
+
+
+def _shield_storage(md):
+    """Rename ``ac:``/``ri:`` to colon-free sentinels so marko passes tags through.
+
+    marko mangles raw Confluence storage tags (colons are invalid in HTML tag
+    names, and ``ac:`` reads as an autolink scheme), so authors can't write
+    ``<ac:...>`` directly. Renaming the colon away makes ``<MFACstructured-macro>``
+    a valid pass-through tag. Returns ``(shielded_md, unshield)`` where
+    ``unshield(html)`` restores the tags. Sentinels are alphabetic (so the tag
+    names stay valid) and derived from ``md`` (so they can't collide).
+    """
+    ac = _storage_sentinel("MFAC", md)
+    ri = _storage_sentinel("MFRI", md)
+    shielded = md.replace("ac:", ac).replace("ri:", ri)
+    # Single pass so restoring one sentinel can't corrupt the other.
+    restore = {ac: "ac:", ri: "ri:"}
+    pattern = re.compile("|".join(re.escape(s) for s in (ac, ri)))
+
+    def unshield(html):
+        return pattern.sub(lambda m: restore[m.group(0)], html)
+
+    return shielded, unshield
+
+
 def md_to_confluence(md_body, filename, base_url, space_key):
     """Convert a markdown body to Confluence storage-format HTML.
 
@@ -794,8 +720,11 @@ def md_to_confluence(md_body, filename, base_url, space_key):
 
     The step order encodes dependencies -- see the inline notes -- so keep it.
     """
-    # Convert to HTML using GFM for table support.
-    html_content = gfm.convert(md_body)
+    # Convert to HTML using GFM for table support. Shield raw Confluence storage
+    # tags (<ac:...>/<ri:...>) across the marko step only -- marko would otherwise
+    # escape/linkify them -- then restore them for the rest of the pipeline.
+    shielded, unshield = _shield_storage(md_body)
+    html_content = unshield(gfm.convert(shielded))
 
     # Rewrite GitHub-style anchor fragments (e.g. "#is-this-an-incident") to
     # the Confluence-style ids the published pages actually use
@@ -820,16 +749,6 @@ def md_to_confluence(md_body, filename, base_url, space_key):
         "<!-- confluence-toc -->",
         '<ac:structured-macro ac:name="toc" ac:schema-version="1" />',
     )
-
-    # Replace <!-- confluence-note --> ... <!-- /confluence-note --> with a
-    # Confluence note macro (yellow info panel).
-    html_content = replace_confluence_notes(html_content)
-
-    # Replace <!-- chart:TYPE [OPTIONS] --> + next <table> with a chart macro.
-    html_content = replace_chart_directives(html_content)
-
-    # Replace Mark-style <!-- ac:layout --> directives with layout macros.
-    html_content = replace_layout_blocks(html_content)
 
     # Replace GitHub-style callouts (> [!NOTE], etc.) with panel macros.
     html_content = replace_github_callouts(html_content)
