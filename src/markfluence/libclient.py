@@ -9,8 +9,7 @@ CLI needs. Configuration is read from the environment (see
 :meth:`ConfluenceClient.from_env`).
 
 Request URLs are built as absolute URLs off ``base_url`` (rather than relying on
-``httpx2``'s relative-URL joining against a ``base_url`` path), matching how the
-original ``confluence_publish.py`` script constructed them.
+``httpx2``'s relative-URL joining against a ``base_url`` path).
 """
 
 import hashlib

@@ -5,9 +5,8 @@
 """Markdown -> Confluence storage-format conversion.
 
 The frontmatter helpers and the ordered pipeline of regex transforms were ported
-verbatim from the original ``confluence_publish.py`` script (and previously lived
-inline in ``update.py``). :func:`md_to_confluence` runs the whole pipeline; both
-the ``update`` and ``create`` subcommands call it.
+verbatim from the original standalone publishing script. :func:`md_to_confluence`
+runs the whole pipeline; both the ``update`` and ``create`` subcommands call it.
 """
 
 import html as html_lib

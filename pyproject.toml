@@ -33,18 +33,11 @@ packages = ["src/markfluence"]
 [tool.ruff]
 line-length = 88
 src = ["src", "tests"]
-# The legacy standalone script is kept untouched alongside the package.
-extend-exclude = ["confluence_publish.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP", "B"]
 
 [tool.ruff.lint.per-file-ignores]
-# libmarkdown.py holds the conversion logic ported verbatim from
-# confluence_publish.py; its long docstrings/comments/f-strings are left as-is.
+# libmarkdown.py holds the verbatim-ported conversion logic; its long
+# docstrings/comments/f-strings are left as-is.
 "src/markfluence/libmarkdown.py" = ["E501"]
-
-[tool.ty.src]
-# The legacy standalone script carries its own inline (PEP 723) deps and is kept
-# untouched; don't typecheck it against the package's environment.
-exclude = ["confluence_publish.py"]

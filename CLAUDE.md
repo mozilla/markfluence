@@ -25,11 +25,7 @@ Do not add AI attribution to commits or pull requests — no `Co-Authored-By: Cl
 
 ## Architecture
 
-This repo contains **two coexisting programs**:
-
-1. **`confluence_publish.py`** (repo root) — the original standalone script, run via `uv run confluence_publish.py` with its own inline PEP-723 dependencies (uses `requests`). It is **left untouched** and is explicitly excluded from ruff and ty (see `pyproject.toml`). Don't lint, format, or typecheck it, and don't modify it unless asked.
-
-2. **`markfluence`** (the `src/markfluence/` package) — the new click-based CLI that supersedes it. Its `update` subcommand is a **verbatim port** of the script's publishing logic.
+**`markfluence`** (the `src/markfluence/` package) is a click-based CLI for publishing markdown to Confluence. Its `update` subcommand is a **verbatim port** of the publishing logic from an earlier standalone script (since removed; `requests`-based, PEP-723 deps).
 
 ### Package layers
 

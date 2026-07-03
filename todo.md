@@ -45,10 +45,10 @@ Backlog of deferred work. Design detail for these lives in `_plans/`.
   create/update/skip decisions and error handling, using a mocked HTTP layer.
 
 - [ ] **Clean up and test `libmarkdown.py`.** The conversion pipeline was ported
-  verbatim from `confluence_publish.py`; refactor it for clarity (and drop the
-  `E501` per-file ignore once the long verbatim lines are gone) and add real unit
-  tests for the transforms (frontmatter parsing, macros, anchor/link rewriting,
-  code blocks) beyond the image tests that already exist.
+  verbatim from the original standalone script; refactor it for clarity (and drop
+  the `E501` per-file ignore once the long verbatim lines are gone) and add real
+  unit tests for the transforms (frontmatter parsing, macros, anchor/link
+  rewriting, code blocks) beyond the image tests that already exist.
 
 - [ ] **Improve `create` handling of a frontmatter `page_id`.** Today a file with a
   `page_id` either errors `Page exists.` (if the page exists) or silently creates a
