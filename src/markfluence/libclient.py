@@ -226,6 +226,25 @@ class ConfluenceClient:
                 actions.append((filename, "updated"))
         return actions
 
+    def get_user(self, account_id):
+        """Look up a user's display name by account id (best-effort).
+
+        Uses the v1 user endpoint since v2 has no clean by-id user fetch.
+        Returns the display name, or ``None`` if the lookup fails for any
+        reason -- callers fall back to showing the raw account id.
+        """
+        if not account_id:
+            return None
+        try:
+            resp = self._client.get(
+                f"{self.base_url}/wiki/rest/api/user",
+                params={"accountId": account_id},
+            )
+            resp.raise_for_status()
+        except httpx2.HTTPError:
+            return None
+        return resp.json().get("displayName")
+
     def update_page(self, page_id, title, html_body, version, message):
         """Update a Confluence page with new HTML content."""
         payload = {

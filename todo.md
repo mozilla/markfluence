@@ -2,6 +2,14 @@
 
 Backlog of deferred work. Design detail for these lives in `_plans/`.
 
+- [ ] **JSON / machine-readable output for commands.** Add a consistent `--json`
+  flag across commands (starting with `info`) that emits structured metadata
+  instead of the human-readable text. For `info`, a nested shape was sketched in
+  the interview: top-level `id`/`title`/`status`/`spaceKey`/`parentId`/`version`/
+  `versionMessage`/`url`, with `created`/`updated` each as `{date, author,
+  accountId}` objects (JSON always carries the raw `accountId`; text shows only
+  the resolved name). (See `_plans/info-subcommand.md`.)
+
 - [ ] **Quoting support for frontmatter values.** The simplified frontmatter parser
   has no quoting, so a value containing whitespace-then-`#` gets truncated by inline
   comment stripping (e.g. `title: Detect # Verify` → `Detect`). Add single/double
