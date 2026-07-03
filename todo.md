@@ -55,9 +55,6 @@ Backlog of deferred work. Design detail for these lives in `_plans/`.
   it's missing (inference moves to the future `fix` command). Update the README,
   which documents the lookup-by-title behavior.
 
-- [ ] **Remove the `--resolve` flag from `update`.** It's built on the title search
-  above; drop it (its find/write-back role belongs to the future `fix` command).
-
 - [ ] **Better error for a stale `page_id` on `update`.** When a markdown file's
   frontmatter has a `page_id` but that page no longer exists in Confluence, `update`
   currently fails with a raw HTTP 404 (surfacing from `get_page`, or from

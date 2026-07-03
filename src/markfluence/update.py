@@ -41,8 +41,8 @@ from .libmarkdown import (
 from .pagewidth import declared_width, set_page_width
 
 
-def process_file(filename, client, message, resolve_only, force):
-    """Publish (or resolve) a single markdown file. Returns True on success."""
+def process_file(filename, client, message, force):
+    """Publish a single markdown file. Returns True on success."""
     prefix = f"[{filename}]"
 
     # Read markdown and parse frontmatter
@@ -110,20 +110,7 @@ def process_file(filename, client, message, resolve_only, force):
     page = client.get_page(page_id)
     links = page.get("_links", {})
     webui = links.get("webui", "")
-    base = links.get("base", client.base_url + "/wiki")
     space_key = extract_space_key(webui)
-
-    if resolve_only:
-        page_url = (
-            base + webui
-            if webui
-            else f"{client.base_url}/wiki/pages/viewpage.action?pageId={page_id}"
-        )
-        click.echo(f"{prefix} page_id: {page_id}")
-        click.echo(f"{prefix} title: {page['title']}")
-        click.echo(f"{prefix} version: {page['version']['number']}")
-        click.echo(f"{prefix} url: {page_url}")
-        return True
 
     # Skip if the file hasn't been modified since the last Confluence update.
     # Both mtime (float, UTC seconds since epoch) and version.createdAt (ISO
@@ -194,18 +181,11 @@ def process_file(filename, client, message, resolve_only, force):
     help="Version message.",
 )
 @click.option(
-    "--resolve",
-    "resolve_only",
-    is_flag=True,
-    help="Only resolve the page ID (search by frontmatter title if not in "
-    "frontmatter) and print page info, then exit.",
-)
-@click.option(
     "--force",
     is_flag=True,
     help="Skip the file-mtime check and always update the page.",
 )
-def update(filenames, message, resolve_only, force):
+def update(filenames, message, force):
     """Publish one or more markdown FILENAMES to Confluence pages.
 
     Title and page ID are read from each file's YAML frontmatter. Each file is
@@ -216,7 +196,7 @@ def update(filenames, message, resolve_only, force):
     failures = 0
     for filename in filenames:
         try:
-            ok = process_file(filename, client, message, resolve_only, force)
+            ok = process_file(filename, client, message, force)
         except Exception as exc:
             click.echo(f"[{filename}] Error: {exc}", err=True)
             ok = False
