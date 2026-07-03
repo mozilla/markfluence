@@ -80,3 +80,24 @@ new `ConfluenceClient.get_user(account_id)` hitting the v1 endpoint
   (not a raw HTTP 404).
 
 Exit non-zero on failure.
+
+## `--properties`: list all content properties (added later)
+
+confluence-cli keeps property listing in a separate `property-list` command; we
+fold it into `info` behind an opt-in flag instead, so default `info` stays compact.
+
+- **Flag-gated.** `info ARG --properties` lists every content property; without the
+  flag the output is unchanged.
+- **One fetch.** With the flag, `list_content_properties(page_id)` fetches *all*
+  properties (following the v2 `_links.next` cursor to completion — no
+  limit/start/all sub-flags), and `page_width` is derived from that list via
+  `width_from_properties` (so no separate keyed read). Without the flag, the keyed
+  `read_page_width` is used as before.
+- **Rendering.** A `content properties:` section, keys **sorted alphabetically**,
+  one `  key: value` line each. Values are compact JSON (a bare string shows
+  unquoted), **truncated to ~100 chars** with `…` so a large app blob can't swamp
+  the output. The two `content-appearance-*` keys appear here *and* as the derived
+  `page_width` summary — the raw list is intentionally unfiltered.
+- **Empty / error.** No properties → `content properties: (none)`. A fetch failure →
+  `content properties: (could not fetch: <error>)` and **exit 0** (tolerant, like
+  the width read — `info` is a display command and the core metadata still renders).

@@ -6,11 +6,13 @@
 
 The page is identified either by a numeric page id or by a markdown file whose
 frontmatter carries a ``page_id``. Output is metadata only (no page body),
-modeled on confluence-cli's ``info`` command.
+modeled on confluence-cli's ``info`` command. With ``--properties`` it also lists
+all of the page's content properties.
 
 ``info`` is read-only: it never modifies Confluence or local files.
 """
 
+import json
 import os
 import sys
 
@@ -19,7 +21,11 @@ import httpx2
 
 from .libclient import ConfluenceClient
 from .libmarkdown import extract_frontmatter, extract_space_key
-from .pagewidth import read_page_width
+from .pagewidth import read_page_width, width_from_properties
+
+# Content-property values can be large JSON blobs (apps store data here); cap
+# each rendered value so one property can't swamp the output.
+_VALUE_MAX = 100
 
 
 class _InfoError(Exception):
@@ -49,8 +55,33 @@ def _author_name(client, account_id, cache):
     return cache[account_id]
 
 
-def _format_page(page, client):
-    """Build the aligned ``label: value`` lines for a v2 page dict."""
+def _render_value(value):
+    """Render a content-property value as compact JSON, truncated if long."""
+    text = value if isinstance(value, str) else json.dumps(value, separators=(",", ":"))
+    if len(text) > _VALUE_MAX:
+        text = text[: _VALUE_MAX - 1] + "…"
+    return text
+
+
+def _properties_section(properties, error):
+    """Build the ``content properties:`` block."""
+    if error is not None:
+        return f"content properties: (could not fetch: {error})"
+    if not properties:
+        return "content properties: (none)"
+    lines = ["content properties:"]
+    for prop in sorted(properties, key=lambda p: p.get("key", "")):
+        lines.append(f"  {prop.get('key')}: {_render_value(prop.get('value'))}")
+    return "\n".join(lines)
+
+
+def _format_page(page, client, show_properties):
+    """Build the aligned ``label: value`` lines for a v2 page dict.
+
+    When ``show_properties`` is set, all content properties are fetched (and the
+    page width is derived from that list), and a ``content properties:`` section
+    is appended.
+    """
     links = page.get("_links", {})
     version = page.get("version", {})
 
@@ -74,13 +105,21 @@ def _format_page(page, client):
     updated = version.get("createdAt", "")
 
     # Page width is a content property (a separate call); tolerate a failure.
+    # With --properties we fetch the whole list once and derive width from it;
+    # otherwise a single keyed read suffices.
+    properties, properties_error = None, None
     try:
-        width_value, width_explicit = read_page_width(client, page["id"])
+        if show_properties:
+            properties = client.list_content_properties(page["id"])
+            width_value, width_explicit = width_from_properties(properties)
+        else:
+            width_value, width_explicit = read_page_width(client, page["id"])
         page_width = (
             width_value if width_explicit else f"{width_value} (Confluence default)"
         )
-    except httpx2.HTTPError:
+    except httpx2.HTTPError as exc:
         page_width = "unknown"
+        properties_error = str(exc)
 
     rows = [
         ("id", page["id"]),
@@ -96,16 +135,25 @@ def _format_page(page, client):
         ("url", url),
     ]
     label_width = max(len(label) for label, _ in rows) + 1
-    return "\n".join(
+    text = "\n".join(
         f"{(label + ':').ljust(label_width)} {value}"
         for label, value in rows
         if value != ""
     )
+    if show_properties:
+        text += "\n" + _properties_section(properties, properties_error)
+    return text
 
 
 @click.command()
 @click.argument("arg")
-def info(arg):
+@click.option(
+    "--properties",
+    "show_properties",
+    is_flag=True,
+    help="Also list all of the page's content properties.",
+)
+def info(arg, show_properties):
     """Print metadata about a Confluence page.
 
     ARG is a numeric page id or a markdown file whose frontmatter has a page_id.
@@ -117,7 +165,7 @@ def info(arg):
         page = client.get_page_or_none(page_id)
         if page is None:
             raise _InfoError(f"page {page_id} not found")
-        click.echo(_format_page(page, client))
+        click.echo(_format_page(page, client, show_properties))
     except _InfoError as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)

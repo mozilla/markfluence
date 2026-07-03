@@ -104,6 +104,20 @@ def test_set_content_property_updates_when_different():
     assert client._client.calls == ["GET", "PUT"]
 
 
+def test_list_content_properties_follows_pagination():
+    page1 = _Resp(
+        {
+            "results": [{"key": "a"}],
+            "_links": {"next": "/wiki/api/v2/pages/1/properties?cursor=X"},
+        }
+    )
+    page2 = _Resp({"results": [{"key": "b"}], "_links": {}})
+    client = _client([page1, page2])
+    props = client.list_content_properties("1")
+    assert [p["key"] for p in props] == ["a", "b"]
+    assert client._client.calls == ["GET", "GET"]
+
+
 def test_set_content_property_retries_once_and_detects_applied_write():
     # First GET throws; the retry re-reads and finds the value already applied.
     client = _client([_Resp(boom=True), _prop("max")])
@@ -124,3 +138,15 @@ def test_read_page_width_reverse_maps_and_flags_unset():
     assert pw.read_page_width(_client([_none()]), "1") == ("narrow", False)
     assert pw.read_page_width(_client([_prop("full-width")]), "1") == ("wide", True)
     assert pw.read_page_width(_client([_prop("max")]), "1") == ("max", True)
+
+
+def test_width_from_properties_reverse_maps_and_flags_unset():
+    props = [
+        {"key": pw.PUBLISHED_KEY, "value": "full-width"},
+        {"key": "editor", "value": "v2"},
+    ]
+    assert pw.width_from_properties(props) == ("wide", True)
+    assert pw.width_from_properties([{"key": "editor", "value": "v2"}]) == (
+        "narrow",
+        False,
+    )

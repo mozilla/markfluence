@@ -288,6 +288,25 @@ class ConfluenceClient:
         results = resp.json().get("results", [])
         return results[0] if results else None
 
+    def list_content_properties(self, page_id):
+        """Return all of a page's content properties, following pagination.
+
+        Each result is a dict with ``key``, ``value``, and ``version``.
+        """
+        results = []
+        url = f"{self.base_url}/wiki/api/v2/pages/{page_id}/properties"
+        params = {"limit": 250}
+        while url:
+            resp = self._client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            results.extend(data.get("results", []))
+            # The `next` link already carries the cursor + limit as query params.
+            next_link = data.get("_links", {}).get("next")
+            url = f"{self.base_url}{next_link}" if next_link else None
+            params = None
+        return results
+
     def set_content_property(self, page_id, key, value):
         """Idempotently set a content property. Returns "set" or "unchanged".
 

@@ -105,3 +105,15 @@ def read_page_width(client, page_id):
     if prop is None:
         return ("narrow", False)
     return (_PROPERTY_TO_VOCAB.get(prop.get("value"), "narrow"), True)
+
+
+def width_from_properties(properties):
+    """Like :func:`read_page_width` but from an already-fetched property list.
+
+    Returns ``(width, explicit)``; ``explicit`` is False when the published
+    appearance property isn't present.
+    """
+    for prop in properties:
+        if prop.get("key") == PUBLISHED_KEY:
+            return (_PROPERTY_TO_VOCAB.get(prop.get("value"), "narrow"), True)
+    return ("narrow", False)
