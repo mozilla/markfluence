@@ -29,7 +29,7 @@ import click
 
 from .libclient import ConfluenceClient
 from .libmarkdown import (
-    extract_frontmatter,
+    MarkdownFile,
     md_to_confluence,
     update_frontmatter_field,
 )
@@ -73,10 +73,8 @@ def _resolve_parent(filename, frontmatter, parent_opt, in_set_abs, client, space
                 "display": parent_value,
             }
         # Already-published sibling: read its page_id from frontmatter.
-        with open(parent_path) as f:
-            p_fm, _ = extract_frontmatter(f.read())
-        p_id = p_fm.get("page_id")
-        if not p_id or p_id == "null":
+        p_id = MarkdownFile.from_path(parent_path).page_id
+        if not p_id:
             raise _ValidationError(
                 f"parent not yet published (no page_id): {parent_value}"
             )
@@ -100,25 +98,22 @@ def _check_parent_in_space(client, parent_id, space_id):
 def _resolve_file(filename, space_opt, parent_opt, client, in_set_abs, space_cache):
     """Validate one file and return its resolved record. Raises _ValidationError."""
     try:
-        with open(filename) as f:
-            md_content = f.read()
+        mdfile = MarkdownFile.from_path(filename)
     except OSError as exc:
         raise _ValidationError(str(exc)) from exc
 
-    frontmatter, _ = extract_frontmatter(md_content)
-
-    title = frontmatter.get("title")
+    title = mdfile.title
     if not title:
         raise _ValidationError("no 'title' field found in frontmatter")
 
     # Validate page_width up front (unset/blank -> the max default).
     try:
-        page_width = declared_width(frontmatter)
+        page_width = declared_width(mdfile.frontmatter)
     except ValueError as exc:
         raise _ValidationError(str(exc)) from exc
 
     # Space precedence: --space or frontmatter 'space'; both-and-differ -> error.
-    fm_space = frontmatter.get("space")
+    fm_space = mdfile.space
     if space_opt and fm_space and space_opt != fm_space:
         raise _ValidationError(
             f"--space {space_opt!r} conflicts with frontmatter space {fm_space!r}"
@@ -135,14 +130,12 @@ def _resolve_file(filename, space_opt, parent_opt, client, in_set_abs, space_cac
         raise _ValidationError(f"space {space_key!r} not found")
 
     parent = _resolve_parent(
-        filename, frontmatter, parent_opt, in_set_abs, client, space_id
+        filename, mdfile.frontmatter, parent_opt, in_set_abs, client, space_id
     )
 
     # A frontmatter page_id that points at a live page blocks creation.
-    existing_page_id = frontmatter.get("page_id")
-    if existing_page_id and existing_page_id != "null":
-        if client.page_exists(existing_page_id):
-            raise _ValidationError("Page exists.")
+    if mdfile.page_id and client.page_exists(mdfile.page_id):
+        raise _ValidationError("Page exists.")
 
     # Confluence requires unique titles per space.
     if client.search_pages_by_title(title, space_id=space_id):
@@ -153,7 +146,7 @@ def _resolve_file(filename, space_opt, parent_opt, client, in_set_abs, space_cac
     return {
         "filename": filename,
         "abs_path": os.path.abspath(filename),
-        "md_content": md_content,
+        "mdfile": mdfile,
         "title": title,
         "space_key": space_key,
         "space_id": space_id,
@@ -201,20 +194,19 @@ def _parent_field(parent, parent_id):
 def _create_one(record, parent_id, client):
     """Create the page for one record and write frontmatter back. Returns the URL."""
     prefix = f"[{record['filename']}]"
-    _, md_body = extract_frontmatter(record["md_content"])
-    html_content, images = md_to_confluence(
-        md_body, record["filename"], client.base_url, record["space_key"]
+    page_content = md_to_confluence(
+        record["mdfile"], client.base_url, record["space_key"]
     )
-    for message in images["broken"] + images["warnings"]:
+    for message in page_content.broken + page_content.warnings:
         click.echo(f"{prefix} warning: {message}", err=True)
 
     result = client.create_page(
-        record["space_id"], record["title"], html_content, parent_id
+        record["space_id"], record["title"], page_content.html, parent_id
     )
     new_id = result["id"]
 
     # Upload referenced local images now that the page (and its id) exists.
-    for att_name, action in client.sync_attachments(new_id, images["attachments"]):
+    for att_name, action in client.sync_attachments(new_id, page_content.attachments):
         click.echo(f"{prefix} attachment {action}: {att_name}")
 
     # Assert the page width (a content property, so a separate call). A failure
@@ -222,7 +214,7 @@ def _create_one(record, parent_id, client):
     set_page_width(client, new_id, record["page_width"], prefix)
 
     parent_value, parent_comment = _parent_field(record["parent"], parent_id)
-    content = record["md_content"]
+    content = record["mdfile"].content
     content = update_frontmatter_field(content, "page_id", new_id)
     content = update_frontmatter_field(content, "space", record["space_key"])
     content = update_frontmatter_field(

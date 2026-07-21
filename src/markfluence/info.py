@@ -20,7 +20,7 @@ import click
 import httpx2
 
 from .libclient import ConfluenceClient
-from .libmarkdown import extract_frontmatter, extract_space_key
+from .libmarkdown import MarkdownFile, extract_space_key
 from .pagewidth import read_page_width, width_from_properties
 
 # Content-property values can be large JSON blobs (apps store data here); cap
@@ -35,12 +35,10 @@ class _InfoError(Exception):
 def _resolve_page_id(arg):
     """Resolve the CLI argument to a page id. Raises :class:`_InfoError`."""
     if os.path.isfile(arg):
-        with open(arg) as f:
-            frontmatter, _ = extract_frontmatter(f.read())
-        page_id = frontmatter.get("page_id")
-        if page_id is None or str(page_id).strip() == "":
+        page_id = MarkdownFile.from_path(arg).page_id
+        if page_id is None:
             raise _InfoError(f"no page_id in frontmatter of {arg}")
-        return str(page_id).strip()
+        return page_id
     if arg.isdigit():
         return arg
     raise _InfoError(f"{arg} is not a file or a numeric page id")

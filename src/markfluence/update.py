@@ -33,7 +33,7 @@ import click
 
 from .libclient import ConfluenceClient
 from .libmarkdown import (
-    extract_frontmatter,
+    MarkdownFile,
     extract_space_key,
     md_to_confluence,
     update_frontmatter_field,
@@ -45,14 +45,11 @@ def process_file(filename, client, message, force):
     """Publish a single markdown file. Returns True on success."""
     prefix = f"[{filename}]"
 
-    # Read markdown and parse frontmatter
-    with open(filename) as f:
-        md_content = f.read()
-
-    frontmatter, _ = extract_frontmatter(md_content)
+    # Read and parse the markdown once.
+    mdfile = MarkdownFile.from_path(filename)
 
     # The page title must come from the frontmatter.
-    page_title = frontmatter.get("title")
+    page_title = mdfile.title
     if not page_title:
         click.echo(
             f"{prefix} Error: no 'title' field found in frontmatter.\n"
@@ -65,13 +62,13 @@ def process_file(filename, client, message, force):
     # Validate page_width up front (unset/blank -> the max default). A typo'd
     # value is surfaced even on files that would otherwise be mtime-skipped.
     try:
-        page_width = declared_width(frontmatter)
+        page_width = declared_width(mdfile.frontmatter)
     except ValueError as exc:
         click.echo(f"{prefix} Error: {exc}", err=True)
         return False
 
     # Resolve page ID from frontmatter; if absent, search by title and write back.
-    page_id = frontmatter.get("page_id")
+    page_id = mdfile.page_id
     if not page_id:
         click.echo(f"{prefix} Searching for page titled '{page_title}'...")
         matches = client.search_pages_by_title(page_title)
@@ -101,9 +98,9 @@ def process_file(filename, client, message, force):
 
         # Persist the page_id back to the markdown file's frontmatter so future
         # runs skip the title search.
-        md_content = update_frontmatter_field(md_content, "page_id", page_id)
+        new_content = update_frontmatter_field(mdfile.content, "page_id", page_id)
         with open(filename, "w") as f:
-            f.write(md_content)
+            f.write(new_content)
 
     # Fetch page metadata once: we need the version for the update call, and
     # the webui link to derive the space key for rewriting internal .md links.
@@ -127,16 +124,14 @@ def process_file(filename, client, message, force):
                 return True
 
     # Convert the markdown body (frontmatter stripped) to Confluence storage HTML.
-    _, md_body = extract_frontmatter(md_content)
-    html_content, images = md_to_confluence(
-        md_body, filename, client.base_url, space_key
-    )
-    for message in images["broken"] + images["warnings"]:
+    page_content = md_to_confluence(mdfile, client.base_url, space_key)
+    html_content = page_content.html
+    for message in page_content.broken + page_content.warnings:
         click.echo(f"{prefix} warning: {message}", err=True)
 
     # Upload referenced local images as attachments (the body references them by
     # filename, so this must happen before the page renders).
-    for att_name, action in client.sync_attachments(page_id, images["attachments"]):
+    for att_name, action in client.sync_attachments(page_id, page_content.attachments):
         click.echo(f"{prefix} attachment {action}: {att_name}")
 
     current_version = page["version"]["number"]

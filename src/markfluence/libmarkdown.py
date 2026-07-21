@@ -14,8 +14,106 @@ import json
 import os
 import re
 import urllib.parse
+from dataclasses import asdict, dataclass, field
 
 from marko.ext.gfm import gfm
+
+
+@dataclass
+class ConfluencePage:
+    """A markdown body converted to Confluence storage format.
+
+    The result of :func:`md_to_confluence`. ``html`` is the storage-format body
+    ready to publish; the remaining fields describe the local images the body
+    references:
+
+    * ``attachments`` -- local images to upload, each ``{"path", "filename"}``,
+      deduped by filename (fed to ``ConfluenceClient.sync_attachments``);
+    * ``broken`` -- human-readable ``IMAGE BROKEN: ...`` messages for missing or
+      unsupported images;
+    * ``warnings`` -- image-property warnings (e.g. a bad ``width``/``align``).
+    """
+
+    html: str
+    attachments: list[dict[str, str]] = field(default_factory=list)
+    broken: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+    def to_json(self):
+        """Return the page as a JSON-encoded string of all its fields."""
+        return json.dumps(asdict(self))
+
+
+@dataclass
+class MarkdownFile:
+    """A parsed markdown source file: its path, raw text, frontmatter, and body.
+
+    Built once per file via :meth:`from_path` / :meth:`from_content` so the
+    frontmatter block is parsed a single time and both halves travel together.
+    ``frontmatter`` is the flat ``{key: str}`` dict from
+    :func:`extract_frontmatter`; ``body`` is the content with the frontmatter
+    block stripped (what :func:`md_to_confluence` converts).
+
+    The typed accessors are conveniences over that dict:
+    :attr:`page_id` / :attr:`space` / :attr:`parent` treat a missing, blank, or
+    literal ``"null"`` value as ``None`` (the frontmatter's no-value sentinel),
+    while :attr:`title` only collapses missing/blank to ``None`` -- a title is
+    free text, so a literal ``"null"`` is kept. Callers that must distinguish
+    *absent* from *present-but-blank* (e.g. ``fix``) read :attr:`frontmatter`
+    directly.
+    """
+
+    filename: str
+    content: str
+    frontmatter: dict[str, str]
+    body: str
+
+    @classmethod
+    def from_content(cls, filename, content):
+        """Build from an in-memory ``content`` string tagged with ``filename``."""
+        frontmatter, body = extract_frontmatter(content)
+        return cls(
+            filename=filename,
+            content=content,
+            frontmatter=frontmatter,
+            body=body,
+        )
+
+    @classmethod
+    def from_path(cls, filename):
+        """Read ``filename`` from disk and parse it. May raise ``OSError``."""
+        with open(filename) as f:
+            content = f.read()
+        return cls.from_content(filename, content)
+
+    def _coordinate(self, key):
+        """Read a page-coordinate field, mapping the no-value sentinels to None."""
+        value = self.frontmatter.get(key)
+        if value is None:
+            return None
+        value = value.strip()
+        if not value or value == "null":
+            return None
+        return value
+
+    @property
+    def title(self):
+        value = self.frontmatter.get("title")
+        if value is None:
+            return None
+        return value.strip() or None
+
+    @property
+    def page_id(self):
+        return self._coordinate("page_id")
+
+    @property
+    def space(self):
+        return self._coordinate("space")
+
+    @property
+    def parent(self):
+        return self._coordinate("parent")
 
 
 def _strip_inline_comment(value):
@@ -705,25 +803,26 @@ def _shield_storage(md):
     return shielded, unshield
 
 
-def md_to_confluence(md_body, filename, base_url, space_key):
-    """Convert a markdown body to Confluence storage-format HTML.
+def md_to_confluence(markdown_file, base_url, space_key):
+    """Convert a :class:`MarkdownFile` to Confluence storage-format HTML.
 
-    ``md_body`` must already have its frontmatter stripped. ``filename`` is used
-    to locate sibling ``.md`` files for anchor/link rewriting and to resolve image
-    paths; ``base_url`` and ``space_key`` build the Confluence URLs those links
-    point at.
+    The file's ``body`` (frontmatter already stripped) is converted; its
+    ``filename`` locates sibling ``.md`` files for anchor/link rewriting and
+    resolves image paths. ``base_url`` and ``space_key`` build the Confluence
+    URLs those links point at.
 
-    Returns ``(html, images)`` where ``images`` is
-    ``{"attachments": [...], "broken": [...], "warnings": [...]}`` -- the local
-    images to upload, the human-readable broken-image messages, and any
-    image-property warnings, respectively.
+    Returns a :class:`ConfluencePage` carrying the storage-format ``html`` plus
+    the local images to upload, the human-readable broken-image messages, and any
+    image-property warnings.
 
     The step order encodes dependencies -- see the inline notes -- so keep it.
     """
+    filename = markdown_file.filename
+
     # Convert to HTML using GFM for table support. Shield raw Confluence storage
     # tags (<ac:...>/<ri:...>) across the marko step only -- marko would otherwise
     # escape/linkify them -- then restore them for the rest of the pipeline.
-    shielded, unshield = _shield_storage(md_body)
+    shielded, unshield = _shield_storage(markdown_file.body)
     html_content = unshield(gfm.convert(shielded))
 
     # Rewrite GitHub-style anchor fragments (e.g. "#is-this-an-incident") to
@@ -766,8 +865,9 @@ def md_to_confluence(md_body, filename, base_url, space_key):
     # the <pre> stash protects them during the newline pass).
     html_content = replace_code_blocks(html_content)
 
-    return html_content, {
-        "attachments": attachments,
-        "broken": broken,
-        "warnings": warnings,
-    }
+    return ConfluencePage(
+        html=html_content,
+        attachments=attachments,
+        broken=broken,
+        warnings=warnings,
+    )

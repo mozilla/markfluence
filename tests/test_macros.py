@@ -4,16 +4,18 @@
 
 """Tests for raw Confluence storage-format passthrough (shield/unshield)."""
 
-from markfluence.libmarkdown import _shield_storage, md_to_confluence
+from markfluence.libmarkdown import MarkdownFile, _shield_storage, md_to_confluence
 
 
 def _convert(md, tmp_path):
-    # md_to_confluence needs a filename for sibling-doc/image resolution; an
-    # empty file in tmp_path is enough for these body-only cases.
+    # md_to_confluence takes a MarkdownFile; write the body to a real file in
+    # tmp_path so sibling-doc/image resolution has a directory to scan.
     f = tmp_path / "page.md"
-    f.write_text("")
-    html, _images = md_to_confluence(md, str(f), "https://ex.atlassian.net", "ENG")
-    return html
+    f.write_text(md)
+    page = md_to_confluence(
+        MarkdownFile.from_path(str(f)), "https://ex.atlassian.net", "ENG"
+    )
+    return page.html
 
 
 # --- sentinel scheme ---------------------------------------------------------

@@ -30,7 +30,7 @@ import httpx2
 
 from .libclient import ConfluenceClient
 from .libmarkdown import (
-    extract_frontmatter,
+    MarkdownFile,
     extract_space_key,
     update_frontmatter_field,
 )
@@ -143,11 +143,9 @@ def process_file(filename, client, dry_run):
     """Reconcile a single file's frontmatter. Returns True on success."""
     prefix = f"[{filename}]"
 
-    with open(filename) as f:
-        md_content = f.read()
-    frontmatter, _ = extract_frontmatter(md_content)
+    mdfile = MarkdownFile.from_path(filename)
 
-    page = _locate_page(filename, frontmatter, client)
+    page = _locate_page(filename, mdfile.frontmatter, client)
 
     # Read the live width to reconcile page_width. Best-effort: if the property
     # read fails, warn and skip the width field rather than failing the file.
@@ -157,7 +155,7 @@ def process_file(filename, client, dry_run):
         click.echo(f"{prefix} warning: could not read page width: {exc}", err=True)
         live_width = None
 
-    changes = _planned_changes(frontmatter, page, live_width)
+    changes = _planned_changes(mdfile.frontmatter, page, live_width)
 
     if not changes:
         click.echo(f"{prefix} already consistent")
@@ -170,10 +168,11 @@ def process_file(filename, client, dry_run):
     if dry_run:
         return True
 
+    content = mdfile.content
     for field, _old, new_value in changes:
-        md_content = update_frontmatter_field(md_content, field, new_value)
+        content = update_frontmatter_field(content, field, new_value)
     with open(filename, "w") as f:
-        f.write(md_content)
+        f.write(content)
 
     return True
 
