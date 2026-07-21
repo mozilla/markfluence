@@ -22,3 +22,8 @@ uv.lock
 # Tooling caches
 .ruff_cache/
 .pytest_cache/
+
+# Go build artifacts (Go port)
+/bin/
+/dist/
+/markfluence

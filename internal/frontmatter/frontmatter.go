@@ -1,0 +1,223 @@
+// Package frontmatter parses and rewrites the flat YAML frontmatter block that
+// markfluence markdown files carry, and models a parsed file as a MarkdownFile.
+//
+// It handles flat key: value pairs only -- no nested structures, lists, or
+// multiline values -- with single/double-quote support and inline-`#`-comment
+// stripping, plus surgical single-line write-back.
+package frontmatter
+
+import (
+	"os"
+	"regexp"
+	"strings"
+	"unicode"
+)
+
+// frontmatterRE matches a leading `---\n...\n---\n` block (DOTALL, non-greedy),
+// anchored at the start of the document.
+var frontmatterRE = regexp.MustCompile(`(?s)^---\n(.*?)\n---\n`)
+
+// inlineCommentRE finds the first whitespace-then-`#` (a YAML inline comment).
+var inlineCommentRE = regexp.MustCompile(`\s#`)
+
+// Extract pulls the YAML frontmatter from content, returning the flat
+// key->value map and the body (content with the frontmatter block removed). With
+// no frontmatter it returns an empty map and content unchanged.
+//
+// Full-line `#` comments are skipped; a trailing inline `#` comment is stripped
+// from each unquoted value; quoted values are read via ParseValue.
+func Extract(content string) (map[string]string, string) {
+	loc := frontmatterRE.FindStringSubmatchIndex(content)
+	if loc == nil {
+		return map[string]string{}, content
+	}
+	fmText := content[loc[2]:loc[3]]
+	body := content[loc[1]:]
+
+	fm := map[string]string{}
+	for _, line := range strings.Split(fmText, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if i := strings.Index(line, ":"); i >= 0 {
+			key := strings.TrimSpace(line[:i])
+			fm[key] = ParseValue(line[i+1:])
+		}
+	}
+	return fm, body
+}
+
+// ParseValue parses a frontmatter value (the text after the first `:`). A value
+// whose first non-space rune is `'` or `"` is read as a quoted string (inline
+// `#` comments inside it are preserved); otherwise a trailing inline comment is
+// stripped. An unterminated quote falls back to unquoted handling.
+func ParseValue(raw string) string {
+	stripped := strings.TrimLeftFunc(raw, unicode.IsSpace)
+	if len(stripped) > 0 && (stripped[0] == '\'' || stripped[0] == '"') {
+		if v, ok := scanQuoted(stripped); ok {
+			return v
+		}
+	}
+	return stripInlineComment(raw)
+}
+
+// scanQuoted parses a leading quoted token from s (which starts with `'` or `"`).
+// It returns the unquoted value, or ok=false if the quote is unterminated. Single
+// quotes are literal with `”` -> `'`; double quotes honor `\"` and `\\` escapes.
+// Anything after the closing quote is ignored.
+func scanQuoted(s string) (string, bool) {
+	r := []rune(s)
+	quote := r[0]
+	var out []rune
+	for i := 1; i < len(r); {
+		c := r[i]
+		if quote == '\'' {
+			if c == '\'' {
+				if i+1 < len(r) && r[i+1] == '\'' { // doubled '' -> literal '
+					out = append(out, '\'')
+					i += 2
+					continue
+				}
+				return string(out), true // closing quote
+			}
+			out = append(out, c)
+			i++
+		} else { // double quote
+			if c == '\\' && i+1 < len(r) && (r[i+1] == '"' || r[i+1] == '\\') {
+				out = append(out, r[i+1])
+				i += 2
+				continue
+			}
+			if c == '"' {
+				return string(out), true // closing quote
+			}
+			out = append(out, c)
+			i++
+		}
+	}
+	return "", false // unterminated
+}
+
+// stripInlineComment removes a trailing whitespace-then-`#` comment and trims.
+func stripInlineComment(value string) string {
+	if loc := inlineCommentRE.FindStringIndex(value); loc != nil {
+		value = value[:loc[0]]
+	}
+	return strings.TrimSpace(value)
+}
+
+// quoteValue quotes value for frontmatter, preferring single quotes.
+func quoteValue(value string) string {
+	if !strings.Contains(value, "'") {
+		return "'" + value + "'"
+	}
+	if !strings.Contains(value, `"`) {
+		return `"` + value + `"`
+	}
+	escaped := strings.ReplaceAll(value, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+	return `"` + escaped + `"`
+}
+
+// renderValue renders a value for a frontmatter line, quoting it only when a bare
+// round-trip through ParseValue wouldn't reproduce it.
+func renderValue(value string) string {
+	if ParseValue(" "+value) != value {
+		return quoteValue(value)
+	}
+	return value
+}
+
+// UpdateField adds or updates key in content's frontmatter, returning the new
+// content. An existing key's value is replaced; a missing key is appended; with
+// no frontmatter block one is created at the top. The value is auto-quoted when
+// needed to round-trip. A non-empty comment is written as a trailing `  # ...`
+// annotation, kept distinct from the value so the value round-trips cleanly.
+func UpdateField(content, key, value, comment string) string {
+	rendered := renderValue(value)
+	if comment != "" {
+		rendered += "  # " + comment
+	}
+	newLine := key + ": " + rendered
+
+	loc := frontmatterRE.FindStringSubmatchIndex(content)
+	if loc == nil {
+		return "---\n" + newLine + "\n---\n" + content
+	}
+	fmText := content[loc[2]:loc[3]]
+	body := content[loc[1]:]
+
+	keyRE := regexp.MustCompile(`^\s*` + regexp.QuoteMeta(key) + `\s*:`)
+	var newLines []string
+	replaced := false
+	for _, line := range strings.Split(fmText, "\n") {
+		if keyRE.MatchString(line) {
+			newLines = append(newLines, newLine)
+			replaced = true
+		} else {
+			newLines = append(newLines, line)
+		}
+	}
+	if !replaced {
+		newLines = append(newLines, newLine)
+	}
+	return "---\n" + strings.Join(newLines, "\n") + "\n---\n" + body
+}
+
+// MarkdownFile is a markdown source file parsed once: its path, raw text,
+// frontmatter map, and body (content with the frontmatter block stripped).
+//
+// Frontmatter is exported so callers that must distinguish absent from
+// present-but-blank (e.g. the fix command) can read it directly. The accessor
+// methods provide normalized reads: PageID/Space/Parent treat missing, blank, or
+// literal "null" as unset (returning ""), while Title only collapses missing or
+// blank -- a title is free text, so a literal "null" is kept.
+type MarkdownFile struct {
+	Filename    string
+	Content     string
+	Frontmatter map[string]string
+	Body        string
+}
+
+// Parse builds a MarkdownFile from an in-memory content string tagged with filename.
+func Parse(filename, content string) *MarkdownFile {
+	fm, body := Extract(content)
+	return &MarkdownFile{Filename: filename, Content: content, Frontmatter: fm, Body: body}
+}
+
+// ParseFile reads filename from disk and parses it.
+func ParseFile(filename string) (*MarkdownFile, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	return Parse(filename, string(data)), nil
+}
+
+// coordinate reads a page-coordinate field, mapping the no-value sentinels to "".
+func (m *MarkdownFile) coordinate(key string) string {
+	v, ok := m.Frontmatter[key]
+	if !ok {
+		return ""
+	}
+	v = strings.TrimSpace(v)
+	if v == "" || v == "null" {
+		return ""
+	}
+	return v
+}
+
+// Title returns the title, "" if missing or blank ("null" is a legal title).
+func (m *MarkdownFile) Title() string {
+	return strings.TrimSpace(m.Frontmatter["title"])
+}
+
+// PageID returns the page id, "" if missing, blank, or "null".
+func (m *MarkdownFile) PageID() string { return m.coordinate("page_id") }
+
+// Space returns the space key, "" if missing, blank, or "null".
+func (m *MarkdownFile) Space() string { return m.coordinate("space") }
+
+// Parent returns the parent, "" if missing, blank, or "null".
+func (m *MarkdownFile) Parent() string { return m.coordinate("parent") }
