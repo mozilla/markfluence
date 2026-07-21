@@ -1,0 +1,6 @@
+{
+  "attachments": [],
+  "broken": [],
+  "html": "<h1>Internal Doc Links (no space key)</h1> <p>With no resolvable space key, a sibling link falls back to the universal <code>viewpage.action</code> form: <a href=\"https://wiki.example.net/wiki/pages/viewpage.action?pageId=4242\">the sibling page</a>.</p> ",
+  "warnings": []
+}

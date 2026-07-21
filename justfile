@@ -17,3 +17,7 @@ test:
 # Typecheck with ty
 typecheck:
     uv run ty check
+
+# Regenerate the md_to_confluence regression goldens (review the diff before committing)
+regen-regressions:
+    uv run python tests/generate_regression_goldens.py

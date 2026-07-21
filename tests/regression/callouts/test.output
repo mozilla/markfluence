@@ -1,0 +1,6 @@
+{
+  "attachments": [],
+  "broken": [],
+  "html": "<h1>Callouts</h1> <ac:structured-macro ac:name=\"info\" ac:schema-version=\"1\"><ac:rich-text-body><p>This is a note callout.</p></ac:rich-text-body></ac:structured-macro> <ac:structured-macro ac:name=\"tip\" ac:schema-version=\"1\"><ac:rich-text-body><p>This is a tip callout.</p></ac:rich-text-body></ac:structured-macro> <ac:structured-macro ac:name=\"note\" ac:schema-version=\"1\"><ac:rich-text-body><p>This is an important callout.</p></ac:rich-text-body></ac:structured-macro> <ac:structured-macro ac:name=\"warning\" ac:schema-version=\"1\"><ac:rich-text-body><p>This is a warning callout.</p></ac:rich-text-body></ac:structured-macro> <ac:structured-macro ac:name=\"warning\" ac:schema-version=\"1\"><ac:rich-text-body><p>This is a caution callout.</p></ac:rich-text-body></ac:structured-macro> ",
+  "warnings": []
+}

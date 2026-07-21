@@ -1,0 +1,6 @@
+{
+  "attachments": [],
+  "broken": [],
+  "html": "<h1>Anchor Demo</h1> <p>Jump to a <a href=\"https://wiki.example.net/wiki/spaces/ENG/pages/111/Anchor+Demo#Getting-Started\">same-page section</a>, or over to a <a href=\"https://wiki.example.net/wiki/spaces/ENG/pages/222/Sibling+Doc#Advanced-Topics\">sibling section</a>.</p> <h2>Getting Started</h2> <p>Some getting-started content.</p> <h2>Detect &amp; Verify</h2> <p>A heading whose slug differs between GitHub and Confluence.</p> ",
+  "warnings": []
+}

@@ -1,0 +1,6 @@
+{
+  "attachments": [],
+  "broken": [],
+  "html": "<h1>Remote Image</h1> <p>A remote image becomes an <code>ri:url</code> reference with no upload:</p> <p><ac:image ac:alt=\"a remote diagram\"><ri:url ri:value=\"https://cdn.example.net/diagram.png\" /></ac:image></p> ",
+  "warnings": []
+}

@@ -1,0 +1,11 @@
+{
+  "attachments": [
+    {
+      "filename": "assets_logo.png",
+      "path": "<ROOT>/assets/logo.png"
+    }
+  ],
+  "broken": [],
+  "html": "<h1>Release Notes</h1> <ac:structured-macro ac:name=\"toc\" ac:schema-version=\"1\" /> <p>See the <a href=\"https://wiki.example.net/wiki/spaces/ENG/pages/5001/Upgrade+Guide\">upgrade guide</a> before starting.</p> <ac:structured-macro ac:name=\"warning\" ac:schema-version=\"1\"><ac:rich-text-body><p>Back up your data before upgrading.</p></ac:rich-text-body></ac:structured-macro> <h2>What's New</h2> <p>A soft-wrapped paragraph describing the release across multiple source lines that collapse into one.</p> <p><ac:image ac:alt=\"the new dashboard\" ac:width=\"480\" ac:align=\"center\"><ri:attachment ri:filename=\"assets_logo.png\" /></ac:image></p> <h2>Configuration</h2> <table> <thead> <tr> <th align=\"left\">Setting</th> <th align=\"left\">Default</th> </tr> </thead> <tbody> <tr> <td align=\"left\">retries</td> <td align=\"left\">3</td> </tr> <tr> <td align=\"left\">timeout</td> <td align=\"left\">30s</td> </tr> </tbody></table><ac:structured-macro ac:name=\"code\" ac:schema-version=\"1\"><ac:parameter ac:name=\"language\">python</ac:parameter><ac:plain-text-body><![CDATA[config = {\"retries\": 3, \"timeout\": \"30s\"}]]></ac:plain-text-body></ac:structured-macro> <p>A pasted status macro: <ac:structured-macro ac:name=\"status\" ac:schema-version=\"1\"><ac:parameter ac:name=\"title\">Stable</ac:parameter></ac:structured-macro></p> ",
+  "warnings": []
+}

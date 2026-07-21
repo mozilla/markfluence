@@ -1,0 +1,9 @@
+{
+  "attachments": [],
+  "broken": [
+    "IMAGE BROKEN: assets/missing.png (not found)",
+    "IMAGE BROKEN: notes.pdf (unsupported type)"
+  ],
+  "html": "<h1>Broken Images</h1> <p>A reference to a file that isn't there:</p> <p>IMAGE BROKEN: assets/missing.png (not found)</p> <p>A reference to a file with an unsupported extension:</p> <p>IMAGE BROKEN: notes.pdf (unsupported type)</p> ",
+  "warnings": []
+}

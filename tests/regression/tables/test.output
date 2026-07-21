@@ -1,0 +1,6 @@
+{
+  "attachments": [],
+  "broken": [],
+  "html": "<h1>Tables</h1> <p>A GFM table with alignment:</p> <table> <thead> <tr> <th align=\"left\">Name</th> <th align=\"center\">Role</th> <th align=\"right\">Count</th> </tr> </thead> <tbody> <tr> <td align=\"left\">Alice</td> <td align=\"center\">Maintainer</td> <td align=\"right\">12</td> </tr> <tr> <td align=\"left\">Bob</td> <td align=\"center\">Contributor</td> <td align=\"right\">3</td> </tr> </tbody></table><p>Text after the table.</p> ",
+  "warnings": []
+}

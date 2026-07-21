@@ -1,0 +1,14 @@
+{
+  "attachments": [
+    {
+      "filename": "assets_shot.png",
+      "path": "<ROOT>/assets/shot.png"
+    }
+  ],
+  "broken": [],
+  "html": "<h1>Image Properties</h1> <p>A JSON title sets title/width/height/align attributes:</p> <p><ac:image ac:alt=\"sized shot\" ac:title=\"A Tooltip\" ac:width=\"300\" ac:height=\"150\" ac:align=\"center\"><ri:attachment ri:filename=\"assets_shot.png\" /></ac:image></p> <p>A plain-string title becomes a tooltip (<code>ac:title</code>):</p> <p><ac:image ac:alt=\"tooltip shot\" ac:title=\"Just a tooltip\"><ri:attachment ri:filename=\"assets_shot.png\" /></ac:image></p> <p>Invalid width/align values are dropped with warnings:</p> <p><ac:image ac:alt=\"bad props\"><ri:attachment ri:filename=\"assets_shot.png\" /></ac:image></p> ",
+  "warnings": [
+    "assets/shot.png: ignoring width='wide' (must be a number)",
+    "assets/shot.png: ignoring align='middle' (must be left, center, or right)"
+  ]
+}
