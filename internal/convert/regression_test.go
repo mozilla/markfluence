@@ -71,7 +71,8 @@ func runCase(t *testing.T, caseDir string) []byte {
 	if err != nil {
 		t.Fatalf("parsing primary file: %v", err)
 	}
-	page, err := convert.MdToConfluence(md, cfg.baseURL, cfg.spaceKey)
+	// A fixed version stamp keeps goldens deterministic; no case uses the token.
+	page, err := convert.MdToConfluence(md, cfg.baseURL, cfg.spaceKey, "markfluence vtest")
 	if err != nil {
 		t.Fatalf("MdToConfluence: %v", err)
 	}

@@ -19,8 +19,13 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
-// tocMacro replaces the <!-- confluence-toc --> placeholder.
-const tocMacro = `<ac:structured-macro ac:name="toc" ac:schema-version="1" />`
+const (
+	// tocToken is replaced by the Confluence table-of-contents macro.
+	tocToken = "<!-- confluence-toc -->"
+	tocMacro = `<ac:structured-macro ac:name="toc" ac:schema-version="1" />`
+	// versionToken is replaced by the build version stamp passed to MdToConfluence.
+	versionToken = "<!-- markfluence-version -->"
+)
 
 // newMarkdown builds the goldmark instance: GFM for tables/strikethrough/
 // task-lists/autolinks, the callout AST transformer, XHTML self-closing tags and
@@ -44,8 +49,9 @@ func newMarkdown(r *storageRenderer) goldmark.Markdown {
 // MdToConfluence converts a markdown file's body to Confluence storage-format
 // HTML. baseURL and spaceKey build the Confluence URLs that internal document
 // links point at; md.Filename locates sibling files for link/anchor rewriting
-// and resolves image paths.
-func MdToConfluence(md *frontmatter.MarkdownFile, baseURL, spaceKey string) (*ConfluencePage, error) {
+// and resolves image paths. version is the build stamp substituted for the
+// <!-- markfluence-version --> token.
+func MdToConfluence(md *frontmatter.MarkdownFile, baseURL, spaceKey, version string) (*ConfluencePage, error) {
 	// Shield raw ac:/ri: storage tags so goldmark passes them through instead of
 	// escaping them; restore them after rendering.
 	shielded, unshield := shieldStorage(md.Body)
@@ -63,7 +69,8 @@ func MdToConfluence(md *frontmatter.MarkdownFile, baseURL, spaceKey string) (*Co
 		return nil, err
 	}
 	out := unshield(buf.String())
-	out = strings.ReplaceAll(out, "<!-- confluence-toc -->", tocMacro)
+	out = strings.ReplaceAll(out, tocToken, tocMacro)
+	out = strings.ReplaceAll(out, versionToken, version)
 
 	page := &ConfluencePage{
 		HTML:        out,
