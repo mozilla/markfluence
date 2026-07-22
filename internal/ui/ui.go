@@ -4,11 +4,17 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/charmbracelet/lipgloss"
 )
+
+// ErrSilent marks a failure a command has already reported (via Error). The root
+// exits non-zero on it without printing anything further; any other error
+// reaching the root is cobra-generated (bad args/flags) and is printed.
+var ErrSilent = errors.New("reported")
 
 var debug bool
 

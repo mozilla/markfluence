@@ -15,3 +15,13 @@ func TestRootCommandWiring(t *testing.T) {
 		}
 	}
 }
+
+func TestSubcommandsRegistered(t *testing.T) {
+	want := map[string]bool{"update": false, "create": false, "fix": false, "info": false}
+	for _, c := range rootCmd.Commands() {
+		delete(want, c.Name())
+	}
+	for name := range want {
+		t.Errorf("subcommand %q not registered", name)
+	}
+}

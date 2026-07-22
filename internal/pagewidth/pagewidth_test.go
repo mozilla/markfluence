@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 )
 
@@ -79,7 +80,7 @@ func TestVocabFromPropertyValue(t *testing.T) {
 }
 
 func TestWidthFromProperties(t *testing.T) {
-	present := []pagewidth.Property{
+	present := []client.Property{
 		{Key: pagewidth.PublishedKey, Value: "full-width"},
 		{Key: "editor", Value: "v2"},
 	}
@@ -87,7 +88,7 @@ func TestWidthFromProperties(t *testing.T) {
 		t.Errorf("WidthFromProperties(present) = (%q, %v), want (wide, true)", w, explicit)
 	}
 
-	absent := []pagewidth.Property{{Key: "editor", Value: "v2"}}
+	absent := []client.Property{{Key: "editor", Value: "v2"}}
 	if w, explicit := pagewidth.WidthFromProperties(absent); w != pagewidth.Narrow || explicit {
 		t.Errorf("WidthFromProperties(absent) = (%q, %v), want (narrow, false)", w, explicit)
 	}

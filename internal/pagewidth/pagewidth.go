@@ -15,13 +15,15 @@
 // of truth for width, so publishing asserts it on both the published and draft
 // appearance properties (so the viewed page and the editor agree).
 //
-// This package holds only the pure vocabulary logic. Applying and reading the
-// properties over the network lives with the client and command layers.
+// The vocabulary logic is pure; Apply and Read orchestrate the underlying
+// content-property calls against the client.
 package pagewidth
 
 import (
 	"fmt"
 	"strings"
+
+	"github.com/mozilla/markfluence/internal/client"
 )
 
 // The two content properties Confluence uses for page appearance/width. Both are
@@ -89,22 +91,52 @@ func VocabFromPropertyValue(value string) Width {
 	return Narrow
 }
 
-// Property is a Confluence content property reduced to the fields width logic
-// needs: its key and value.
-type Property struct {
-	Key   string
-	Value string
-}
-
 // WidthFromProperties reads the effective Width from a page's content properties.
 // It returns (width, explicit); explicit is false when the published appearance
 // property isn't present (the page renders at Confluence's site default, which we
 // surface as Narrow).
-func WidthFromProperties(properties []Property) (width Width, explicit bool) {
+func WidthFromProperties(properties []client.Property) (width Width, explicit bool) {
 	for _, p := range properties {
 		if p.Key == PublishedKey {
-			return VocabFromPropertyValue(p.Value), true
+			value, _ := p.Value.(string)
+			return VocabFromPropertyValue(value), true
 		}
 	}
 	return Narrow, false
+}
+
+// Action reports the outcome of setting one appearance property.
+type Action struct {
+	Key    string
+	Action string // "set" or "unchanged"
+}
+
+// Apply sets both appearance properties for a page to match w. It returns one
+// Action per property (in published, draft order).
+func Apply(c *client.ConfluenceClient, pageID string, w Width) ([]Action, error) {
+	value := PropertyValue(w)
+	var actions []Action
+	for _, key := range []string{PublishedKey, DraftKey} {
+		result, err := c.SetContentProperty(pageID, key, value)
+		if err != nil {
+			return nil, err
+		}
+		actions = append(actions, Action{Key: key, Action: result})
+	}
+	return actions, nil
+}
+
+// Read returns a live page's Width from its published appearance property, plus
+// whether it was explicitly set (false means Confluence's site default, surfaced
+// as Narrow).
+func Read(c *client.ConfluenceClient, pageID string) (width Width, explicit bool, err error) {
+	prop, err := c.GetContentProperty(pageID, PublishedKey)
+	if err != nil {
+		return "", false, err
+	}
+	if prop == nil {
+		return Narrow, false, nil
+	}
+	value, _ := prop.Value.(string)
+	return VocabFromPropertyValue(value), true, nil
 }

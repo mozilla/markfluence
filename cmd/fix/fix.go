@@ -1,0 +1,212 @@
+// Package fix implements the `markfluence fix` command: reconcile a file's
+// frontmatter coordinates to its live Confluence page. It never writes the
+// server; it writes a file only when a field actually changed.
+package fix
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/frontmatter"
+	"github.com/mozilla/markfluence/internal/pagewidth"
+	"github.com/mozilla/markfluence/internal/ui"
+	"github.com/spf13/cobra"
+)
+
+var dryRun bool
+
+// Cmd is the fix command.
+var Cmd = &cobra.Command{
+	Use:   "fix FILE...",
+	Short: "Reconcile each markdown file's frontmatter to its live Confluence page",
+	Long: "Reconcile each markdown file's frontmatter to its live Confluence page.\n\n" +
+		"Populates/refreshes page_id, space, parent, and page_width (and fills a\n" +
+		"missing title) from the live page. Each file is processed independently;\n" +
+		"the command exits non-zero if any file failed.",
+	Args: cobra.MinimumNArgs(1),
+	RunE: run,
+}
+
+func init() {
+	Cmd.Flags().BoolVar(&dryRun, "dry-run", false,
+		"Report the changes fix would make without writing any files.")
+}
+
+func run(cmd *cobra.Command, args []string) error {
+	url, _ := cmd.Flags().GetString("url")
+	username, _ := cmd.Flags().GetString("username")
+	c, err := client.Resolve(url, username)
+	if err != nil {
+		ui.Error(err.Error())
+		return ui.ErrSilent
+	}
+
+	failures := 0
+	for _, filename := range args {
+		if !processFile(filename, c) {
+			failures++
+		}
+	}
+	if failures > 0 {
+		ui.Error(fmt.Sprintf("%d of %d file(s) failed.", failures, len(args)))
+		return ui.ErrSilent
+	}
+	return nil
+}
+
+// change is a planned frontmatter edit.
+type change struct {
+	field, oldDisplay, newValue string
+}
+
+func processFile(filename string, c *client.ConfluenceClient) bool {
+	prefix := "[" + filename + "]"
+	mf, err := frontmatter.ParseFile(filename)
+	if err != nil {
+		ui.Error(prefix + " " + err.Error())
+		return false
+	}
+	page, err := locatePage(mf.Frontmatter, c)
+	if err != nil {
+		ui.Error(prefix + " " + err.Error())
+		return false
+	}
+
+	// Read the live width to reconcile page_width; a read failure is non-fatal.
+	liveWidth := ""
+	if w, _, err := pagewidth.Read(c, page.ID); err != nil {
+		ui.Warn(prefix + " could not read page width: " + err.Error())
+	} else {
+		liveWidth = string(w)
+	}
+
+	changes := plannedChanges(mf.Frontmatter, page, liveWidth)
+	if len(changes) == 0 {
+		ui.Info(prefix + " already consistent")
+		return true
+	}
+	for _, ch := range changes {
+		verb := "set"
+		if dryRun {
+			verb = "would set"
+		}
+		ui.Info(fmt.Sprintf("%s %s %s: %s -> %s", prefix, verb, ch.field, ch.oldDisplay, ch.newValue))
+	}
+	if dryRun {
+		return true
+	}
+
+	content := mf.Content
+	for _, ch := range changes {
+		content = frontmatter.UpdateField(content, ch.field, ch.newValue, "")
+	}
+	if err := os.WriteFile(filename, []byte(content), 0o644); err != nil {
+		ui.Error(prefix + " " + err.Error())
+		return false
+	}
+	return true
+}
+
+// locatePage finds the live page for a file: by page_id if present, else by
+// searching for the frontmatter title.
+func locatePage(fm map[string]string, c *client.ConfluenceClient) (*client.Page, error) {
+	if pageID := fm["page_id"]; norm(pageID) != "" {
+		page, err := c.GetPageOrNil(pageID)
+		if err != nil {
+			return nil, err
+		}
+		if page == nil {
+			return nil, fmt.Errorf(
+				"page_id %s not found (deleted, trashed, or wrong); "+
+					"remove it to search by title, or correct it", pageID)
+		}
+		return page, nil
+	}
+
+	title := fm["title"]
+	if title == "" {
+		return nil, errors.New("no page_id or title in frontmatter; add one so the page can be located")
+	}
+	matches, err := c.SearchPagesByTitle(title, "")
+	if err != nil {
+		return nil, err
+	}
+	switch len(matches) {
+	case 0:
+		return nil, fmt.Errorf("no Confluence page found with title %q", title)
+	case 1:
+		return c.GetPage(matches[0].ID)
+	default:
+		var b strings.Builder
+		fmt.Fprintf(&b, "found %d pages with title %q:", len(matches), title)
+		for _, m := range matches {
+			fmt.Fprintf(&b, "\n  - %s: %s (%s/wiki/pages/viewpage.action?pageId=%s)",
+				m.ID, m.Title, c.BaseURL(), m.ID)
+		}
+		b.WriteString("\nadd a page_id to the frontmatter to disambiguate")
+		return nil, errors.New(b.String())
+	}
+}
+
+// plannedChanges computes the field edits needed to reconcile fm to page. Only
+// fields that actually differ are returned.
+func plannedChanges(fm map[string]string, page *client.Page, liveWidth string) []change {
+	live := []struct{ field, value string }{
+		{"page_id", page.ID},
+		{"space", client.SpaceKeyFromWebUI(page.Links.WebUI)},
+		{"parent", orNull(norm(page.ParentID))},
+	}
+
+	var changes []change
+	for _, lv := range live {
+		if lv.value == "" {
+			continue // e.g. space key couldn't be derived
+		}
+		current, present := fm[lv.field]
+		switch {
+		case !present || strings.TrimSpace(current) == "":
+			changes = append(changes, change{lv.field, "(none)", lv.value})
+		case norm(current) != norm(lv.value):
+			changes = append(changes, change{lv.field, current, lv.value})
+		}
+	}
+
+	if strings.TrimSpace(fm["title"]) == "" {
+		changes = append(changes, change{"title", "(none)", page.Title})
+	}
+
+	if liveWidth != "" {
+		raw, present := fm["page_width"]
+		declared := "max"
+		if s := strings.ToLower(strings.TrimSpace(raw)); s != "" {
+			declared = s
+		}
+		if declared != liveWidth {
+			old := "(none)"
+			if present && strings.TrimSpace(raw) != "" {
+				old = raw
+			}
+			changes = append(changes, change{"page_width", old, liveWidth})
+		}
+	}
+	return changes
+}
+
+// norm treats "", whitespace-only, and the literal "null" all as no value.
+func norm(value string) string {
+	t := strings.TrimSpace(value)
+	if t == "" || t == "null" {
+		return ""
+	}
+	return t
+}
+
+func orNull(s string) string {
+	if s == "" {
+		return "null"
+	}
+	return s
+}
