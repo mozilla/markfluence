@@ -1,0 +1,58 @@
+version: 2
+project_name: markfluence
+dist: dist
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: markfluence
+    main: .
+    binary: markfluence
+    env:
+      - CGO_ENABLED=0
+      - GOWORK=off
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - arm64
+      - amd64
+    ignore:
+      - goos: darwin
+        goarch: amd64
+    ldflags:
+      - -s -w
+      - -X github.com/mozilla/markfluence/internal/buildinfo.Version={{.Version}}
+
+archives:
+  - id: markfluence
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ .Tag }}-{{ .ShortCommit }}-SNAPSHOT"
+
+changelog:
+  use: github
+  sort: asc
+
+# Homebrew cask, published to a tap on release.
+# NOTE: `repository` must point at a real Homebrew tap the release can push to
+# (create it and adjust owner/name/token before the first `goreleaser release`).
+homebrew_casks:
+  - name: markfluence
+    homepage: "https://github.com/mozilla/markfluence"
+    description: "CLI for publishing and manipulating Confluence pages from markdown"
+    repository:
+      owner: mozilla
+      name: homebrew-markfluence
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    commit_author:
+      name: "github-actions[bot]"
+      email: "41898282+github-actions[bot]@users.noreply.github.com"
+    commit_msg_template: "chore: bump markfluence cask to {{ .Tag }}"
