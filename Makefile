@@ -10,7 +10,7 @@ LDFLAGS = -ldflags "-X github.com/mozilla/markfluence/internal/buildinfo.Version
 GOLANGCI_LINT_VERSION ?= v2.6.0
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
 
-.PHONY: help all build install lint vet fmt test regen-regressions parity
+.PHONY: help all build install lint vet fmt test regen-regressions
 
 help:  ## Show this help
 	@echo "Available rules:"
@@ -38,9 +38,6 @@ test:  ## Run tests
 
 regen-regressions:  ## Regenerate the converter regression goldens
 	go test ./internal/convert -run TestRegression -update
-
-parity:  ## Compare the Python and Go regression outputs (phase-1 aid)
-	go run ./tools/paritycheck
 
 # golangci-lint (version/path defined near the top so `lint` can depend on it).
 # Order-only dependency on $(LOCALBIN) so adding files to bin/ (e.g. `make

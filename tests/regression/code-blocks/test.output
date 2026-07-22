@@ -1,6 +1,0 @@
-{
-  "attachments": [],
-  "broken": [],
-  "html": "<h1>Code Blocks</h1> <p>A fenced block with a language:</p> <ac:structured-macro ac:name=\"code\" ac:schema-version=\"1\"><ac:parameter ac:name=\"language\">python</ac:parameter><ac:plain-text-body><![CDATA[def greet(name):\n    return f\"hello, {name}\"]]></ac:plain-text-body></ac:structured-macro> <p>A fenced block with no language:</p> <ac:structured-macro ac:name=\"code\" ac:schema-version=\"1\"><ac:plain-text-body><![CDATA[plain text\n  indented line]]></ac:plain-text-body></ac:structured-macro> <p>A block containing a CDATA terminator that must be escaped:</p> <ac:structured-macro ac:name=\"code\" ac:schema-version=\"1\"><ac:parameter ac:name=\"language\">xml</ac:parameter><ac:plain-text-body><![CDATA[<note><![CDATA[danger ]]]]><![CDATA[> here]]]]><![CDATA[></note>]]></ac:plain-text-body></ac:structured-macro> ",
-  "warnings": []
-}

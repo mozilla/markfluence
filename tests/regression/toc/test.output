@@ -1,6 +1,0 @@
-{
-  "attachments": [],
-  "broken": [],
-  "html": "<h1>Document With a TOC</h1> <ac:structured-macro ac:name=\"toc\" ac:schema-version=\"1\" /> <h2>First Section</h2> <p>Content of the first section.</p> <h2>Second Section</h2> <p>Content of the second section.</p> ",
-  "warnings": []
-}

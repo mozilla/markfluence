@@ -1,6 +1,0 @@
-{
-  "attachments": [],
-  "broken": [],
-  "html": "<h1>Newline Collapse</h1> <p>This paragraph is soft-wrapped across several source lines that Confluence would otherwise render as hard breaks, so they collapse to spaces.</p> <ac:structured-macro ac:name=\"code\" ac:schema-version=\"1\"><ac:plain-text-body><![CDATA[code lines\nkeep their\nnewlines]]></ac:plain-text-body></ac:structured-macro> <p>A final soft-wrapped paragraph.</p> ",
-  "warnings": []
-}

@@ -1,6 +1,0 @@
-{
-  "attachments": [],
-  "broken": [],
-  "html": "<h1>Raw Confluence Storage</h1> <p>A pasted status macro passes straight through:</p> <ac:structured-macro ac:name=\"status\" ac:schema-version=\"1\"> <ac:parameter ac:name=\"colour\">Green</ac:parameter> <ac:parameter ac:name=\"title\">Done</ac:parameter> </ac:structured-macro> <p>A layout whose cells contain markdown that still gets converted:</p> <ac:layout> <ac:layout-section ac:type=\"two_equal\"> <ac:layout-cell> <p>Left column with <strong>bold</strong> and a <a href=\"https://example.net\">link</a>.</p> </ac:layout-cell> <ac:layout-cell> <p>Right column with a list:</p> <ul> <li>one</li> <li>two</li> </ul> </ac:layout-cell> </ac:layout-section> </ac:layout> <p>Storage format inside a code fence stays literal:</p> <ac:structured-macro ac:name=\"code\" ac:schema-version=\"1\"><ac:plain-text-body><![CDATA[<ac:structured-macro ac:name=\"info\"/>]]></ac:plain-text-body></ac:structured-macro> ",
-  "warnings": []
-}

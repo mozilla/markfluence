@@ -1,6 +1,0 @@
-{
-  "attachments": [],
-  "broken": [],
-  "html": "<h1>Internal Doc Links</h1> <p>A link to a sibling doc is rewritten to its Confluence URL: <a href=\"https://wiki.example.net/wiki/spaces/ENG/pages/4242/The+Sibling+Page\">the sibling page</a>.</p> <p>A link to a doc that isn't in this set is left untouched: <a href=\"unknown.md\">unknown</a>.</p> <p>An absolute URL is never rewritten: <a href=\"https://example.net/page.md\">external</a>.</p> ",
-  "warnings": []
-}
