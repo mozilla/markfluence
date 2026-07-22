@@ -19,7 +19,16 @@ import (
 // upload, broken-image messages, and image-property warnings. A fresh renderer is
 // used per conversion, so this state does not leak between documents.
 type storageRenderer struct {
-	baseDir     string
+	baseDir string
+
+	// Link/anchor rewriting context, populated per conversion.
+	currentBasename string
+	baseURL         string
+	spaceKey        string
+	anchorMap       map[string]map[string]string // filename -> github slug -> confluence slug
+	pageMap         map[string]pageEntry         // filename -> page id + title
+
+	// Image side effects.
 	attachments []Attachment
 	broken      []string
 	warnings    []string
@@ -33,6 +42,7 @@ func (r *storageRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer)
 	reg.Register(ast.KindCodeBlock, r.renderCodeBlock)
 	reg.Register(ast.KindBlockquote, r.renderBlockquote)
 	reg.Register(ast.KindImage, r.renderImage)
+	reg.Register(ast.KindLink, r.renderLink)
 }
 
 // renderText renders inline text, collapsing soft line breaks to a single space

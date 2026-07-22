@@ -49,7 +49,15 @@ func MdToConfluence(md *frontmatter.MarkdownFile, baseURL, spaceKey string) (*Co
 	// Shield raw ac:/ri: storage tags so goldmark passes them through instead of
 	// escaping them; restore them after rendering.
 	shielded, unshield := shieldStorage(md.Body)
-	r := &storageRenderer{baseDir: filepath.Dir(md.Filename)}
+	dir := filepath.Dir(md.Filename)
+	r := &storageRenderer{
+		baseDir:         dir,
+		currentBasename: filepath.Base(md.Filename),
+		baseURL:         baseURL,
+		spaceKey:        spaceKey,
+		anchorMap:       buildAnchorMap(dir),
+		pageMap:         buildPageMap(dir),
+	}
 	var buf bytes.Buffer
 	if err := newMarkdown(r).Convert([]byte(shielded), &buf); err != nil {
 		return nil, err
