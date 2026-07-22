@@ -1,6 +1,6 @@
 {
   "attachments": [],
   "broken": [],
-  "html": "<h1>Callouts</h1>\n<blockquote>\n<p>[!NOTE] This is a note callout.</p>\n</blockquote>\n<blockquote>\n<p>[!TIP] This is a tip callout.</p>\n</blockquote>\n<blockquote>\n<p>[!IMPORTANT] This is an important callout.</p>\n</blockquote>\n<blockquote>\n<p>[!WARNING] This is a warning callout.</p>\n</blockquote>\n<blockquote>\n<p>[!CAUTION] This is a caution callout.</p>\n</blockquote>\n",
+  "html": "<h1>Callouts</h1>\n<ac:structured-macro ac:name=\"info\" ac:schema-version=\"1\"><ac:rich-text-body><p>This is a note callout.</p>\n</ac:rich-text-body></ac:structured-macro><ac:structured-macro ac:name=\"tip\" ac:schema-version=\"1\"><ac:rich-text-body><p>This is a tip callout.</p>\n</ac:rich-text-body></ac:structured-macro><ac:structured-macro ac:name=\"note\" ac:schema-version=\"1\"><ac:rich-text-body><p>This is an important callout.</p>\n</ac:rich-text-body></ac:structured-macro><ac:structured-macro ac:name=\"warning\" ac:schema-version=\"1\"><ac:rich-text-body><p>This is a warning callout.</p>\n</ac:rich-text-body></ac:structured-macro><ac:structured-macro ac:name=\"warning\" ac:schema-version=\"1\"><ac:rich-text-body><p>This is a caution callout.</p>\n</ac:rich-text-body></ac:structured-macro>",
   "warnings": []
 }
