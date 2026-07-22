@@ -2,64 +2,66 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+markfluence is a Go CLI (cobra + `net/http` + [goldmark](https://github.com/yuin/goldmark) + lipgloss) for publishing markdown to Confluence. It was originally a Python tool; the Go rewrite is now the sole implementation.
+
 ## Commands
 
-Uses [uv](https://docs.astral.sh/uv/) for dependency management and [just](https://github.com/casey/just) as the task runner.
+Tasks run through a `Makefile` (run `make` with no target for the annotated rule list).
 
-- `uv sync` — install deps into `.venv/`
-- `just check` — the full gate: `ruff check` + `ruff format --check`, `pytest`, `ty check`. Run before considering work done.
-- `just lint` / `just test` / `just typecheck` — the individual pieces
-- `uv run pytest tests/test_smoke.py::test_group_help` — run a single test
-- `uv run ruff format` — apply formatting
-- `uv run markfluence update FILE...` — run the CLI (needs `.env`; see below)
+- `make build` — build `./bin/markfluence` (version stamped via ldflags)
+- `make test` — `go test ./...` (also runs the `go vet` subset)
+- `make lint` — golangci-lint (installs the pinned v2.6.0 into `./bin`; enables the default set plus `lll` at 120)
+- `make vet` / `make fmt`
+- `make regen-regressions` — regenerate the converter's golden outputs (`go test ./internal/convert -run TestRegression -update`)
+- Run a single package/test: `go test ./internal/frontmatter -run TestReadValues`
+
+Run `make test && make lint && make vet` before considering work done.
 
 ## Configuration
 
-The CLI reads `CONFLUENCE_URL`, `CONFLUENCE_USERNAME`, `CONFLUENCE_TOKEN` from `.env` (via python-dotenv) or the environment. `.env.example` is the template. `ConfluenceClient.from_env()` is the single place these are read and validated.
+The CLI needs a base URL, a username, and an API token. Each resolves with the precedence **flag > environment variable > `.env` file**:
+
+| Setting | Flag | Env / `.env` |
+|---|---|---|
+| base URL | `--url` | `CONFLUENCE_URL` |
+| username | `--username` | `CONFLUENCE_USERNAME` |
+| API token | *(none)* | `CONFLUENCE_TOKEN` |
+
+markfluence reads a `.env` from the working directory itself (a minimal built-in parser — no shell expansion); `.env.example` is the template. The API token is deliberately never a command-line flag. `internal/client.Resolve` is the single place this is read and validated.
 
 ## Commit conventions
 
-Commits must follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/): `type(optional-scope): description`, e.g. `feat(update): add --dry-run flag`, `fix(libclient): handle 404 on missing page`. Common types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `build`.
+Commits must follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/): `type(optional-scope): description`, e.g. `feat(convert): rewrite anchor links`, `fix(client): handle 404 on missing page`. Common types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `build`.
 
-Do not add AI attribution to commits or pull requests — no `Co-Authored-By: Claude` trailers, no "Generated with Claude Code" lines, no similar attribution in commit messages or PR descriptions.
+Do not add AI attribution to commits or pull requests — no `Co-Authored-By: Claude` trailers, no "Generated with Claude Code" lines, no similar attribution.
 
 ## Architecture
 
-**`markfluence`** (the `src/markfluence/` package) is a click-based CLI for publishing markdown to Confluence. Its `update` subcommand is a **verbatim port** of the publishing logic from an earlier standalone script (since removed; `requests`-based, PEP-723 deps).
+Module `github.com/mozilla/markfluence` (`go 1.25`). `main.go` is a shim to `cmd.Execute()`.
 
-### Package layers
+### Layout
 
-- `cli.py` — the click group (`main`); loads dotenv, registers subcommands. Command taxonomy mirrors [pchuri/confluence-cli](https://github.com/pchuri/confluence-cli). **Implemented: `update`, `create`, `fix`, `info`.** Other commands (read, delete, search, attachment subcommands, `property-*`, etc.) are intentionally not built yet.
-- `libclient.py` — `ConfluenceClient`, an **`httpx2`** wrapper (note: `httpx2` is Pydantic's maintained successor to the dead `httpx`; import name is `httpx2`). Holds auth + the API calls: pages (`get_page`/`get_page_or_none`/`page_exists`, `resolve_space_id`, `search_pages_by_title`, `update_page`, `create_page`), users (`get_user`), attachments (`list_attachments`/`create_attachment`/`update_attachment`/`sync_attachments`), and content properties (`get_content_property`/`list_content_properties`/`set_content_property`). Everything is Confluence **v2** except attachment writes and the `get_user` lookup, which are **v1** (`/wiki/rest/api/...`) since v2 doesn't cover them. URLs are built as absolute strings off `base_url` rather than relying on relative-URL joining.
-- `libmarkdown.py` — all markdown/frontmatter logic: the frontmatter helpers (`extract_frontmatter`, `parse_value` with inline-`#`-comment + single/double-quote support, and `update_frontmatter_field(key, value, comment=None)` which auto-quotes values that wouldn't round-trip bare); the `MarkdownFile` dataclass (`filename`/`content`/`frontmatter`/`body`, built once via `from_path`/`from_content` so parsing happens a single time, with `title`/`page_id`/`space`/`parent` accessors that map the no-value sentinels — missing/blank, and `"null"` for the coordinate fields — to `None`); and the conversion pipeline, exposed as `md_to_confluence(markdown_file, base_url, space_key)` which returns a `ConfluencePage` dataclass (`html`, `attachments`, `broken`, `warnings`; `.to_json()` serializes all four). All four commands build a `MarkdownFile` at their entry point; `update`/`create` pass it to `md_to_confluence`, then `sync_attachments` the returned local images (`fix` reads `.frontmatter` directly, since it must distinguish absent from present-but-blank). Carries the `E501` ruff ignore (verbatim long lines).
-- `pagewidth.py` — the `page_width` frontmatter field (`narrow`/`wide`/`max`, default `max`) mapped to Confluence's `content-appearance-published`/`-draft` content properties. `declared_width` validates/normalizes; `set_page_width` asserts both properties on publish (best-effort, non-fatal); `read_page_width`/`width_from_properties` reverse-map for `fix`/`info`. See `_plans/page-width.md`.
-- `update.py` — the `update` command + `process_file` flow (frontmatter resolution, mtime skip, calls `md_to_confluence`, asserts `page_width` on publish).
-- `create.py` — the `create` command: two-phase transactional create (validate all files → create parents-first in topological order), with hierarchy expressed via `parent:` (`null` | `.md` path | page_id). See `_plans/create-subcommand.md`.
-- `fix.py` — the `fix` command: reconciles a file's frontmatter (`page_id`, `space`, `parent`, `page_width`; fills a missing `title`) to match the live page. Read-only on the server; writes a file only when a field changed. See `_plans/fix-subcommand.md`.
-- `info.py` — the `info` command: prints a single page's metadata (id/title/status/space/parent/version/`page_width`/authors/dates/url); `--properties` also lists all content properties. Read-only. See `_plans/info-subcommand.md`.
+- `cmd/root.go` — the cobra root: `--url`/`--username`/`--debug`/`--no-color` persistent flags, version from `internal/buildinfo`, and registration of the four subcommands. `Execute()` prints cobra-generated errors (bad args/flags) but not `ui.ErrSilent`, which marks a failure a command already reported.
+- `cmd/{update,create,fix,info}/` — one package per command (each exports `Cmd`), orchestrating the `internal` packages and `internal/ui` output. `create` is two-phase and transactional (validate all, then create parents-first in topological order); `fix` is read-only on the server.
+- `internal/client` — `ConfluenceClient` over `net/http` with basic auth. Pages are Confluence **v2**; attachment writes and the user lookup are **v1** (`/wiki/rest/api/...`). Typed `HTTPError`, per-request context timeouts, `SetContentProperty` retry-once, `SyncAttachments` (SHA-256-in-comment skip/update), `_links.next` pagination. `config.go` holds `Resolve` and the `.env` reader.
+- `internal/convert` — the converter (the crux). `MdToConfluence(md *frontmatter.MarkdownFile, baseURL, spaceKey, version string) (*ConfluencePage, error)`. It parses with goldmark (GFM) and renders through a custom `storageRenderer` registered at priority 100 (below the default HTML=1000 and table=500 renderers) that emits Confluence storage format. `shield.go` renames raw `ac:`/`ri:` tags to colon-free sentinels around the goldmark step so pasted storage passes through; `callouts.go` is an AST transformer + blockquote renderer for GitHub alerts; `images.go`, `links.go` (sibling-file scans, GitHub/Confluence slugs, doc-link + anchor rewriting), and `renderer.go` (code macros, text soft-break→space, images, links) do the rest. The `<!-- confluence-toc -->` and `<!-- markfluence-version -->` token substitutions happen **inside** `MdToConfluence`.
+- `internal/frontmatter` — flat YAML frontmatter parse/quote/`UpdateField`, and the `MarkdownFile` type (`Parse`/`ParseFile`, exported `Filename`/`Content`/`Frontmatter`/`Body`, and `Title`/`PageID`/`Space`/`Parent` accessors that normalize missing/blank/`"null"`).
+- `internal/pagewidth` — the `page_width` `Width` enum (`narrow`/`wide`/`max`, default `max`), `Declared`, the vocab↔content-property maps, `WidthFromProperties`, and `Apply`/`Read` against the client.
+- `internal/buildinfo` — `Version` (set via ldflags), `CommitDate` (from the `vcs.time` build setting), and `Stamp`.
+- `internal/ui` — lipgloss output helpers (colored `Header`/`Success`/`Warn`/`Error`, errors to stderr, `NO_COLOR`/piped detection) and the `ErrSilent` sentinel.
 
-### The conversion pipeline (the crux)
+### The converter
 
-`libmarkdown.py`'s `md_to_confluence()` turns a markdown body into Confluence storage-format HTML through an **ordered sequence of regex transforms**, and the order encodes real dependencies. Preserve it when editing:
+The design target is **semantic** (not byte-for-byte) equivalence to valid Confluence storage. Order matters in the pipeline: shield before parse / unshield after render; anchor rewriting must precede doc-link rewriting (link/anchor rewriting reads sibling `.md` files for their `page_id`/`title` and heading anchors). Go's `regexp` is RE2, so slug/link code avoids lazy quantifiers and uses `\p{L}` etc. for Unicode.
 
-1. `gfm.convert()` (marko) → base HTML, wrapped in `_shield_storage`: raw Confluence storage tags (`<ac:…>`/`<ri:…>`) are renamed to a colon-free per-document sentinel *before* marko (which would otherwise escape/linkify them) and restored *immediately after*, so authors can paste storage format directly and the rest of the pipeline sees real tags
-2. `rewrite_anchor_links` — must run **before** `replace_internal_doc_links` so corrected fragments carry through the `.md`→URL rewrite
-3. `replace_internal_doc_links` — needs the sibling-doc `page_id`/`title` map and the space key
-4. TOC / callout comment-directive substitutions
-5. `replace_images` — rewrites `<img>` to `<ac:image>`; local files → `ri:attachment` (with a stable path-based filename, e.g. `assets/x.png`→`assets_x.png`) collected for upload; remote URLs → `ri:url`; missing/unsupported → `IMAGE BROKEN:` text. Image properties `title`/`width`/`height`/`align` ride in the markdown title as a JSON object (`![alt](x.png '{"width":"100"}')`), falling back to a plain `ac:title` when the title isn't JSON (`alt` is always native). Uploading happens in the command (needs a page id) via `sync_attachments`, which stores a SHA-256 in the attachment comment to skip/update-in-place on re-runs (mark's scheme).
-6. `collapse_paragraph_newlines` — must run **before** `replace_code_blocks`; it stashes `<pre>` blocks so code survives the newline flattening
-7. `replace_code_blocks` — relies on that `<pre>` stash still being intact
+### Regression suite
 
-The transforms map GitHub/Mark-style markdown constructs to Confluence macros (code, panels/callouts, TOC, images) and rewrite cross-doc links + heading anchors to their published Confluence URLs/ids. Arbitrary macros/layouts are authored as raw storage format directly (see the shield step above), not via bespoke directives.
+`internal/convert/testdata/regression/<case>/` is a golden-file suite over `MdToConfluence`, one directory per case: a primary `main.md` (frontmatter allowed), optional sibling `*.md` and `assets/` image stubs, an optional `test.input` (JSON: `filename`/`base_url`/`space_key` defaulting to `main.md`/`https://wiki.example.net`/`ENG`, plus an **enforced** `files` manifest), and a generated `test.output` golden. `regression_test.go` runs each case, redacts attachment paths to `<ROOT>`, and exact-matches the golden; regenerate with `make regen-regressions`.
+
+### Build / distribution
+
+`Makefile` (build/install/lint/vet/fmt/test/regen-regressions), `.golangci.yml` (default linters + `lll` at 120), and `.goreleaser.yaml` (darwin+linux × arm64+amd64, `CGO_ENABLED=0`, `-s -w`, version into `internal/buildinfo.Version`, tar.gz archives, a Homebrew cask). `_plans/` holds the port's design/step history.
 
 ### Frontmatter-driven publishing
 
-Each markdown file's YAML frontmatter carries `title`, `page_id`, `space` (a key), `parent` (`null` for top-level, a `.md` path, or a page_id), and `page_width` (`narrow`/`wide`/`max`, default `max`). `update` looks up a missing `page_id` by `title` and **writes it back into the file**; `create` writes `page_id`/`space`/`parent` back after creating; `fix` reconciles all of these (plus `page_width`) from the live page. Updates are skipped when the file's mtime predates the page's last version (unless `--force`). Commands process multiple files (except `info`, single-arg) and exit non-zero if any fail.
-
-## Project phasing
-
-Work is planned in `_plans/`; deferred work is tracked in `todo.md`. The conversion pipeline lives in `libmarkdown.py` (shared by `update`/`create`). Done since the initial scaffold: the `create`, `fix`, and `info` commands; `page_width` support; and frontmatter value quoting. Still on paper (see `_plans/` and `todo.md`): `update` gaining space/parent enforcement + moves (via the legacy `content/{id}/move` endpoint), and a consistent `--json` output flag across commands. Tests cover the pure logic (frontmatter/quoting, images, page width, info rendering), smoke tests, and a golden-file regression suite for the whole `md_to_confluence` pipeline (`tests/regression/`, one directory of real fixture files per case; see below); `libclient` still wants fuller coverage.
-
-### The regression suite (`tests/regression/`)
-
-Golden-file regression tests over `md_to_confluence`, one directory per case. Each case holds real fixture files exactly as the pipeline consumes them — a primary `main.md` (frontmatter stripped like the commands do), optional sibling `*.md` (their frontmatter carries the `page_id`/`title`/headings link+anchor rewriting keys off), optional `assets/` image stubs (only existence + extension matter) — plus an optional `test.input` (JSON: `filename`/`base_url`/`space_key` params defaulting to `main.md`/`https://wiki.example.net`/`ENG`, and an **enforced** `files` manifest) and a generated `test.output` golden. `tests/regression_harness.py` runs a case in place (conversion never writes), redacts the case-dir prefix from attachment paths to `<ROOT>`, and asserts the directory's fixtures match the manifest. `tests/test_regression.py` compares structurally; regenerate goldens after an intentional change with **`just regen-regressions`** (wraps `tests/generate_regression_goldens.py`), then review the diff.
+Each markdown file is one page. Frontmatter carries `title`, `page_id`, `space` (a key), `parent` (`null` / a `.md` path / a page id), and `page_width`. `update` looks up a missing `page_id` by `title` and **writes it back**; `create` writes `page_id`/`space`/`parent` after creating; `fix` reconciles all of these (plus `page_width`) from the live page. `update` skips a file whose mtime predates the page's last version unless `--force`. Commands process multiple files (except `info`, single-arg) and exit non-zero if any fail.
