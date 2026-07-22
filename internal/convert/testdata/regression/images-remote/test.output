@@ -1,0 +1,6 @@
+{
+  "attachments": [],
+  "broken": [],
+  "html": "<h1>Remote Image</h1>\n<p>A remote image becomes an <code>ri:url</code> reference with no upload:</p>\n<p><img src=\"https://cdn.example.net/diagram.png\" alt=\"a remote diagram\" /></p>\n",
+  "warnings": []
+}

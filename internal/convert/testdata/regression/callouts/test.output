@@ -1,0 +1,6 @@
+{
+  "attachments": [],
+  "broken": [],
+  "html": "<h1>Callouts</h1>\n<blockquote>\n<p>[!NOTE] This is a note callout.</p>\n</blockquote>\n<blockquote>\n<p>[!TIP] This is a tip callout.</p>\n</blockquote>\n<blockquote>\n<p>[!IMPORTANT] This is an important callout.</p>\n</blockquote>\n<blockquote>\n<p>[!WARNING] This is a warning callout.</p>\n</blockquote>\n<blockquote>\n<p>[!CAUTION] This is a caution callout.</p>\n</blockquote>\n",
+  "warnings": []
+}

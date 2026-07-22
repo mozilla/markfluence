@@ -1,0 +1,6 @@
+{
+  "attachments": [],
+  "broken": [],
+  "html": "<h1>Image Properties</h1>\n<p>A JSON title sets title/width/height/align attributes:</p>\n<p><img src=\"assets/shot.png\" alt=\"sized shot\" title=\"{&quot;title&quot;: &quot;A Tooltip&quot;, &quot;width&quot;: &quot;300&quot;, &quot;height&quot;: &quot;150&quot;, &quot;align&quot;: &quot;center&quot;}\" /></p>\n<p>A plain-string title becomes a tooltip (<code>ac:title</code>):</p>\n<p><img src=\"assets/shot.png\" alt=\"tooltip shot\" title=\"Just a tooltip\" /></p>\n<p>Invalid width/align values are dropped with warnings:</p>\n<p><img src=\"assets/shot.png\" alt=\"bad props\" title=\"{&quot;width&quot;: &quot;wide&quot;, &quot;align&quot;: &quot;middle&quot;}\" /></p>\n",
+  "warnings": []
+}

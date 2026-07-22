@@ -1,0 +1,6 @@
+{
+  "attachments": [],
+  "broken": [],
+  "html": "<h1>Document With a TOC</h1>\n<!-- confluence-toc -->\n<h2>First Section</h2>\n<p>Content of the first section.</p>\n<h2>Second Section</h2>\n<p>Content of the second section.</p>\n",
+  "warnings": []
+}

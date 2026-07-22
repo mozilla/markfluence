@@ -1,0 +1,6 @@
+{
+  "attachments": [],
+  "broken": [],
+  "html": "<h1>Raw Confluence Storage</h1>\n<p>A pasted status macro passes straight through:</p>\n<p>&lt;ac:structured-macro ac:name=&quot;status&quot; ac:schema-version=&quot;1&quot;&gt; &lt;ac:parameter ac:name=&quot;colour&quot;&gt;Green&lt;/ac:parameter&gt; &lt;ac:parameter ac:name=&quot;title&quot;&gt;Done&lt;/ac:parameter&gt; &lt;/ac:structured-macro&gt;</p>\n<p>A layout whose cells contain markdown that still gets converted:</p>\n<p><a href=\"ac:layout\">ac:layout</a> &lt;ac:layout-section ac:type=&quot;two_equal&quot;&gt; <a href=\"ac:layout-cell\">ac:layout-cell</a></p>\n<p>Left column with <strong>bold</strong> and a <a href=\"https://example.net\">link</a>.</p>\n<p>&lt;/ac:layout-cell&gt; <a href=\"ac:layout-cell\">ac:layout-cell</a></p>\n<p>Right column with a list:</p>\n<ul>\n<li>one</li>\n<li>two</li>\n</ul>\n<p>&lt;/ac:layout-cell&gt; &lt;/ac:layout-section&gt; &lt;/ac:layout&gt;</p>\n<p>Storage format inside a code fence stays literal:</p>\n<pre><code>&lt;ac:structured-macro ac:name=&quot;info&quot;/&gt;\n</code></pre>\n",
+  "warnings": []
+}

@@ -1,0 +1,6 @@
+{
+  "attachments": [],
+  "broken": [],
+  "html": "<h1>Internal Doc Links (no space key)</h1>\n<p>With no resolvable space key, a sibling link falls back to the universal <code>viewpage.action</code> form: <a href=\"sibling.md\">the sibling page</a>.</p>\n",
+  "warnings": []
+}
