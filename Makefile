@@ -5,7 +5,10 @@ $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
 VERSION ?= dev
-LDFLAGS = -ldflags "-X github.com/mozilla/markfluence/cmd.Version=$(VERSION)"
+LDFLAGS = -ldflags "-X github.com/mozilla/markfluence/internal/buildinfo.Version=$(VERSION)"
+
+GOLANGCI_LINT_VERSION ?= v2.6.0
+GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
 
 .PHONY: help all build install lint vet fmt test regen-regressions parity
 
@@ -21,8 +24,8 @@ build: $(LOCALBIN)  ## Build the markfluence binary into ./bin
 install:  ## Install the markfluence binary
 	go install $(LDFLAGS) .
 
-lint: $(LOCALBIN)/golangci-lint  ## Lint with golangci-lint
-	$(LOCALBIN)/golangci-lint run
+lint: $(GOLANGCI_LINT)  ## Lint with golangci-lint
+	$(GOLANGCI_LINT) run
 
 vet:  ## Run go vet
 	go vet ./...
@@ -39,14 +42,9 @@ regen-regressions:  ## Regenerate the converter regression goldens
 parity:  ## Compare the Python and Go regression outputs (phase-1 aid)
 	go run ./tools/paritycheck
 
-# golangci-lint
-
-GOLANGCI_LINT_VERSION ?= v2.6.0
-GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
-
-$(LOCALBIN)/golangci-lint: $(GOLANGCI_LINT)
-	ln -sf $(GOLANGCI_LINT) $(LOCALBIN)/golangci-lint
-
-$(GOLANGCI_LINT): $(LOCALBIN)
+# golangci-lint (version/path defined near the top so `lint` can depend on it).
+# Order-only dependency on $(LOCALBIN) so adding files to bin/ (e.g. `make
+# build`) doesn't retrigger the install. Installs the versioned binary once.
+$(GOLANGCI_LINT): | $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	mv $(LOCALBIN)/golangci-lint $(GOLANGCI_LINT)
