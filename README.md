@@ -1,34 +1,48 @@
 # markfluence
 
-A CLI for publishing and manipulating Confluence pages and attachments.
+Markdown-centric Confluence cli tool. Works with Claude, works with GitHub
+actions, works with you.
 
 ## Install
 
-### From PyPI
+### From source
 
-TBD
-
-### From GitHub
-
-TBD
-
-### From local git repository
-
-Uses [uv](https://docs.astral.sh/uv/).
+Requires Go 1.25+.
 
 ```sh
-uv sync
+git clone https://github.com/mozilla/markfluence
+cd markfluence
+make install          # installs `markfluence` into your Go bin
+# ...or, to build into ./bin without installing:
+make build            # produces ./bin/markfluence
 ```
+
+### Homebrew
+
+TBD — published to a tap on the first release.
 
 ## Configure
 
-Copy `.env.example` to `.env` and fill in:
+markfluence needs a base URL, a username, and an API token. Each is resolved
+with the precedence **flag > environment variable > `.env` file**:
+
+| Setting | Flag | Environment / `.env` |
+| --- | --- | --- |
+| Base URL | `--url` | `CONFLUENCE_URL` |
+| Username | `--username` | `CONFLUENCE_USERNAME` |
+| API token | *(none — never a flag)* | `CONFLUENCE_TOKEN` |
+
+markfluence reads a `.env` file from the current directory automatically (no need
+to `source` it). Copy `.env.example` to `.env` and fill in:
 
 ```
 CONFLUENCE_URL=https://your-org.atlassian.net
 CONFLUENCE_USERNAME=you@example.com
 CONFLUENCE_TOKEN=your-api-token
 ```
+
+The API token is deliberately not accepted as a command-line flag; it comes only
+from the environment or `.env`.
 
 (Optional): `alias mf=markfluence`
 
@@ -38,12 +52,14 @@ CONFLUENCE_TOKEN=your-api-token
 markfluence --help
 markfluence create --help
 markfluence update --help
+markfluence fix --help
+markfluence info --help
 ```
 
 ### `create`
 
 ```
-Usage: markfluence create [OPTIONS] FILENAMES...
+Usage: markfluence create FILE... [flags]
 ```
 
 Create new Confluence pages from Markdown files.
@@ -76,12 +92,14 @@ markfluence create docs/*.md --space ENG   # hierarchy via parent: paths
 ### `update`
 
 ```
-Usage: markfluence update [OPTIONS] FILENAMES...
+Usage: markfluence update FILE... [flags]
 ```
 
 Update one or more Markdown files in Confluence.
 
-Space, parent, page id, and title are all read from frontmatter.
+Page id and title are read from frontmatter; a missing `page_id` is looked up by
+`title` and written back. Updates are skipped when a file hasn't changed since the
+page's last version (compared by mtime) unless `--force` is given.
 
 Each file is processed independently; the command exits non-zero if any file fails.
 
@@ -89,6 +107,39 @@ Each file is processed independently; the command exits non-zero if any file fai
 markfluence update docs/managing_an_incident.md
 markfluence update docs/*.md --message "Bulk update"
 markfluence update docs/foo.md --force     # ignore the mtime check
+```
+
+### `fix`
+
+```
+Usage: markfluence fix FILE... [flags]
+```
+
+Reconcile each file's frontmatter (`page_id`, `space`, `parent`, `page_width`, and
+a missing `title`) to match its live Confluence page. The page is located by
+`page_id`, or by searching for the `title` when `page_id` is absent. `fix` never
+creates, updates, or moves pages — it's read-only on the server and writes a file
+only when a field actually changed. `--dry-run` reports the changes without writing.
+
+```sh
+markfluence fix docs/*.md
+markfluence fix docs/foo.md --dry-run
+```
+
+### `info`
+
+```
+Usage: markfluence info ARG [flags]
+```
+
+Print a page's metadata (id, title, status, space, parent, version, page width,
+authors, dates, url). `ARG` is a numeric page id or a Markdown file whose
+frontmatter has a `page_id`. `--properties` also lists all of the page's content
+properties.
+
+```sh
+markfluence info 1234567890
+markfluence info docs/foo.md --properties
 ```
 
 ## Markdown page structure
@@ -181,6 +232,8 @@ URL; **heading anchors** are rewritten to Confluence's anchor scheme.
 
 **Comment directives:**
 - `<!-- confluence-toc -->` — table-of-contents macro.
+- `<!-- markfluence-version -->` — replaced with the build stamp,
+  `markfluence vVERSION COMMITDATE`.
 
 **Raw Confluence storage format.** You can paste Confluence
 [storage format](https://confluence.atlassian.com/doc/confluence-storage-format-790796544.html)
@@ -217,16 +270,29 @@ Storage markup shown inside a fenced code block stays literal (it isn't activate
 
 ## Development
 
+Requires Go 1.25+. Common tasks (run `make` with no target for the list):
+
 ```sh
-uv run pytest
-uv run ruff check
-uv run ruff format
+make build              # build ./bin/markfluence
+make test               # go test ./...
+make lint               # golangci-lint (installs the pinned version into ./bin)
+make vet                # go vet ./...
+make fmt                # go fmt ./...
+make regen-regressions  # regenerate the converter's golden test outputs
 ```
 
-## Inspriations
+The converter's behavior is pinned by a golden-file regression suite under
+`internal/convert/testdata/regression/`. Run the built binary against Confluence
+by putting a `.env` in the working directory (see [Configure](#configure)).
+
+## Inspirations
 
 [pchuri/confluence-cli](https://github.com/pchuri/confluence-cli) -- command
-line interface
+line interface. markfluence tries to match subcommands and arguments from
+confluence-cli, but focuses on Markdown document publishing and less on
+providing a CLI access to the full Confluence v1/v2 API.
 
 [kovetskiy/mark](https://github.com/kovetskiy/mark) -- Markdown support for
-Confluence and how things are represented
+Confluence and how things are represented. markfluence tries to match key
+design decisions, but has defaults I like better and works in different
+scenarios better.
