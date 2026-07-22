@@ -226,12 +226,88 @@ func TestSyncAttachmentsUpdatesWhenChecksumDiffers(t *testing.T) {
 
 // --- misc --------------------------------------------------------------------
 
-func TestSplitAuth(t *testing.T) {
-	u, tok, ok := SplitAuth("alice@example.net:secret:with:colons")
-	if !ok || u != "alice@example.net" || tok != "secret:with:colons" {
-		t.Errorf("SplitAuth = %q, %q, %v", u, tok, ok)
+func TestLoadDotenv(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	content := "# a comment\n" +
+		"CONFLUENCE_URL=https://file.example.net\n" +
+		"export CONFLUENCE_USERNAME=\"me@example.net\"\n" +
+		"CONFLUENCE_TOKEN='tok#en'\n" +
+		"\n" +
+		"NOEQUALS\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if _, _, ok := SplitAuth("no-colon"); ok {
-		t.Error("SplitAuth(no-colon) ok = true, want false")
+	env := loadDotenv(path)
+	if env["CONFLUENCE_URL"] != "https://file.example.net" {
+		t.Errorf("URL = %q", env["CONFLUENCE_URL"])
+	}
+	if env["CONFLUENCE_USERNAME"] != "me@example.net" { // export prefix + quotes stripped
+		t.Errorf("USERNAME = %q", env["CONFLUENCE_USERNAME"])
+	}
+	if env["CONFLUENCE_TOKEN"] != "tok#en" { // single quotes stripped, # kept
+		t.Errorf("TOKEN = %q", env["CONFLUENCE_TOKEN"])
+	}
+	if _, ok := env["NOEQUALS"]; ok {
+		t.Error("line without '=' should be skipped")
+	}
+
+	if got := loadDotenv(filepath.Join(dir, "absent")); len(got) != 0 {
+		t.Errorf("missing file = %v, want empty", got)
+	}
+}
+
+func TestResolveValuePrecedence(t *testing.T) {
+	dotenv := map[string]string{"K": "from-dotenv"}
+	t.Setenv("K", "from-env")
+	if got := resolveValue("from-flag", "K", dotenv); got != "from-flag" {
+		t.Errorf("flag should win, got %q", got)
+	}
+	if got := resolveValue("", "K", dotenv); got != "from-env" {
+		t.Errorf("env should beat .env, got %q", got)
+	}
+	t.Setenv("K", "")
+	if got := resolveValue("", "K", dotenv); got != "from-dotenv" {
+		t.Errorf(".env should be the fallback, got %q", got)
+	}
+}
+
+func TestResolve(t *testing.T) {
+	// Work in a temp dir so Resolve reads our .env, not the repo's.
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.WriteFile(".env", []byte(
+		"CONFLUENCE_URL=https://file.example.net\n"+
+			"CONFLUENCE_USERNAME=file-user\n"+
+			"CONFLUENCE_TOKEN=file-pass\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Clear any inherited env for a deterministic baseline.
+	t.Setenv("CONFLUENCE_URL", "")
+	t.Setenv("CONFLUENCE_USERNAME", "")
+	t.Setenv("CONFLUENCE_TOKEN", "")
+
+	// All from .env.
+	c, err := Resolve("", "")
+	if err != nil || c.BaseURL() != "https://file.example.net" {
+		t.Fatalf("Resolve(.env) = %v, %v", c, err)
+	}
+
+	// Flag beats env beats .env for the URL.
+	t.Setenv("CONFLUENCE_URL", "https://env.example.net")
+	if c, _ := Resolve("https://flag.example.net", ""); c.BaseURL() != "https://flag.example.net" {
+		t.Errorf("flag should win, got %q", c.BaseURL())
+	}
+	if c, _ := Resolve("", ""); c.BaseURL() != "https://env.example.net" {
+		t.Errorf("env should beat .env, got %q", c.BaseURL())
+	}
+
+	// Missing token (no flag for it) is an error.
+	t.Setenv("CONFLUENCE_TOKEN", "")
+	if err := os.WriteFile(".env", []byte("CONFLUENCE_URL=u\nCONFLUENCE_USERNAME=x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Resolve("u", "x"); err == nil {
+		t.Error("Resolve with no token: want error")
 	}
 }

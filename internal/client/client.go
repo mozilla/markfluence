@@ -58,15 +58,6 @@ func New(baseURL, username, token string) *ConfluenceClient {
 	}
 }
 
-// SplitAuth splits a CONFLUENCE_AUTH value ("username:token") on the first colon.
-func SplitAuth(auth string) (username, token string, ok bool) {
-	i := strings.Index(auth, ":")
-	if i < 0 {
-		return "", "", false
-	}
-	return auth[:i], auth[i+1:], true
-}
-
 // BaseURL returns the client's base URL (trailing slash trimmed).
 func (c *ConfluenceClient) BaseURL() string { return c.baseURL }
 
