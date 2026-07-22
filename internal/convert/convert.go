@@ -7,6 +7,7 @@ package convert
 
 import (
 	"bytes"
+	"path/filepath"
 	"strings"
 
 	"github.com/mozilla/markfluence/internal/frontmatter"
@@ -26,7 +27,7 @@ const tocMacro = `<ac:structured-macro ac:name="toc" ac:schema-version="1" />`
 // raw-HTML passthrough (storage format is XHTML), and our storageRenderer
 // registered at a priority below the default HTML (1000) and GFM table (500)
 // renderers so its node handlers win.
-func newMarkdown() goldmark.Markdown {
+func newMarkdown(r *storageRenderer) goldmark.Markdown {
 	return goldmark.New(
 		goldmark.WithExtensions(extension.GFM),
 		goldmark.WithParserOptions(
@@ -35,7 +36,7 @@ func newMarkdown() goldmark.Markdown {
 		goldmark.WithRendererOptions(
 			html.WithXHTML(),
 			html.WithUnsafe(),
-			renderer.WithNodeRenderers(util.Prioritized(&storageRenderer{}, 100)),
+			renderer.WithNodeRenderers(util.Prioritized(r, 100)),
 		),
 	)
 }
@@ -48,16 +49,29 @@ func MdToConfluence(md *frontmatter.MarkdownFile, baseURL, spaceKey string) (*Co
 	// Shield raw ac:/ri: storage tags so goldmark passes them through instead of
 	// escaping them; restore them after rendering.
 	shielded, unshield := shieldStorage(md.Body)
+	r := &storageRenderer{baseDir: filepath.Dir(md.Filename)}
 	var buf bytes.Buffer
-	if err := newMarkdown().Convert([]byte(shielded), &buf); err != nil {
+	if err := newMarkdown(r).Convert([]byte(shielded), &buf); err != nil {
 		return nil, err
 	}
 	out := unshield(buf.String())
 	out = strings.ReplaceAll(out, "<!-- confluence-toc -->", tocMacro)
-	return &ConfluencePage{
+
+	page := &ConfluencePage{
 		HTML:        out,
-		Attachments: []Attachment{},
-		Broken:      []string{},
-		Warnings:    []string{},
-	}, nil
+		Attachments: r.attachments,
+		Broken:      r.broken,
+		Warnings:    r.warnings,
+	}
+	// Emit empty JSON arrays (not null) for the absent cases.
+	if page.Attachments == nil {
+		page.Attachments = []Attachment{}
+	}
+	if page.Broken == nil {
+		page.Broken = []string{}
+	}
+	if page.Warnings == nil {
+		page.Warnings = []string{}
+	}
+	return page, nil
 }

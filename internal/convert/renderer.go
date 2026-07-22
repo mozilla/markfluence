@@ -14,7 +14,17 @@ import (
 // storageRenderer overrides the default goldmark HTML renderer for the nodes
 // whose Confluence storage form differs from plain HTML. Node kinds it does not
 // register fall through to the default HTML renderer.
-type storageRenderer struct{}
+//
+// It also accumulates the side effects of image rendering: local attachments to
+// upload, broken-image messages, and image-property warnings. A fresh renderer is
+// used per conversion, so this state does not leak between documents.
+type storageRenderer struct {
+	baseDir     string
+	attachments []Attachment
+	broken      []string
+	warnings    []string
+	seen        map[string]bool
+}
 
 // RegisterFuncs registers the node handlers this renderer overrides.
 func (r *storageRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
@@ -22,6 +32,7 @@ func (r *storageRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer)
 	reg.Register(ast.KindFencedCodeBlock, r.renderFencedCodeBlock)
 	reg.Register(ast.KindCodeBlock, r.renderCodeBlock)
 	reg.Register(ast.KindBlockquote, r.renderBlockquote)
+	reg.Register(ast.KindImage, r.renderImage)
 }
 
 // renderText renders inline text, collapsing soft line breaks to a single space

@@ -1,6 +1,11 @@
 {
-  "attachments": [],
+  "attachments": [
+    {
+      "filename": "assets_diagram.png",
+      "path": "<ROOT>/assets/diagram.png"
+    }
+  ],
   "broken": [],
-  "html": "<h1>Local Image</h1>\n<p>A local image becomes an <code>ri:attachment</code> and is collected for upload:</p>\n<p><img src=\"assets/diagram.png\" alt=\"an architecture diagram\" /></p>\n",
+  "html": "<h1>Local Image</h1>\n<p>A local image becomes an <code>ri:attachment</code> and is collected for upload:</p>\n<p><ac:image ac:alt=\"an architecture diagram\"><ri:attachment ri:filename=\"assets_diagram.png\" /></ac:image></p>\n",
   "warnings": []
 }
