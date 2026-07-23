@@ -5,11 +5,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestMain(m *testing.M) {
-	retrySleep = 0 // don't actually sleep between retries in tests
+	sleep = func(time.Duration) {} // don't actually sleep between retries in tests
 	os.Exit(m.Run())
 }
 
@@ -121,6 +123,125 @@ func TestListContentPropertiesFollowsPagination(t *testing.T) {
 	}
 	if !eqStrings(s.calls, []string{"GET", "GET"}) {
 		t.Errorf("calls = %v, want [GET GET]", s.calls)
+	}
+}
+
+// --- retry / backoff ---------------------------------------------------------
+
+// countingServer returns the responses from handler in order (by request count,
+// 1-based) and records how many requests it received.
+func countingServer(t *testing.T, handler func(w http.ResponseWriter, n int32)) (*ConfluenceClient, *int32) {
+	t.Helper()
+	var n int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		handler(w, atomic.AddInt32(&n, 1))
+	}))
+	t.Cleanup(srv.Close)
+	return New(srv.URL, "u", "t"), &n
+}
+
+func TestSendRetriesOn429ThenSucceeds(t *testing.T) {
+	c, n := countingServer(t, func(w http.ResponseWriter, req int32) {
+		if req == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":"1"}`))
+	})
+	if _, err := c.GetPage("1"); err != nil {
+		t.Fatalf("GetPage after 429 retry: %v", err)
+	}
+	if got := atomic.LoadInt32(n); got != 2 {
+		t.Errorf("requests = %d, want 2 (one retry)", got)
+	}
+}
+
+func TestSendRetries503ForGet(t *testing.T) {
+	c, n := countingServer(t, func(w http.ResponseWriter, req int32) {
+		if req <= 2 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":"1"}`))
+	})
+	if _, err := c.GetPage("1"); err != nil {
+		t.Fatalf("GetPage after 503 retries: %v", err)
+	}
+	if got := atomic.LoadInt32(n); got != 3 {
+		t.Errorf("requests = %d, want 3", got)
+	}
+}
+
+func TestSendDoesNotRetryPostOn503(t *testing.T) {
+	c, n := countingServer(t, func(w http.ResponseWriter, _ int32) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	})
+	if _, err := c.CreatePage("S", "T", "<p/>", ""); err == nil {
+		t.Fatal("CreatePage: want error on 503")
+	}
+	if got := atomic.LoadInt32(n); got != 1 {
+		t.Errorf("requests = %d, want 1 (POST not retried on 503)", got)
+	}
+}
+
+func TestSendRetriesPostOn429(t *testing.T) {
+	c, n := countingServer(t, func(w http.ResponseWriter, req int32) {
+		if req == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":"9"}`))
+	})
+	if _, err := c.CreatePage("S", "T", "<p/>", ""); err != nil {
+		t.Fatalf("CreatePage after 429 retry: %v", err)
+	}
+	if got := atomic.LoadInt32(n); got != 2 {
+		t.Errorf("requests = %d, want 2 (POST retried on 429)", got)
+	}
+}
+
+func TestSendExhaustsRetries(t *testing.T) {
+	c, n := countingServer(t, func(w http.ResponseWriter, _ int32) {
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+	if _, err := c.GetPage("1"); err == nil {
+		t.Fatal("GetPage: want error after exhausting retries")
+	}
+	if got := atomic.LoadInt32(n); got != maxRetries+1 {
+		t.Errorf("requests = %d, want %d (initial + %d retries)", got, maxRetries+1, maxRetries)
+	}
+}
+
+func TestParseRetryAfter(t *testing.T) {
+	if d := parseRetryAfter("5"); d != 5*time.Second {
+		t.Errorf("parseRetryAfter(5) = %v, want 5s", d)
+	}
+	if d := parseRetryAfter(""); d != 0 {
+		t.Errorf("parseRetryAfter(empty) = %v, want 0", d)
+	}
+	if d := parseRetryAfter("garbage"); d != 0 {
+		t.Errorf("parseRetryAfter(garbage) = %v, want 0", d)
+	}
+}
+
+func TestBackoffCapsAndHonorsRetryAfter(t *testing.T) {
+	if d := backoff(0, 0); d != baseBackoff {
+		t.Errorf("backoff(0,0) = %v, want %v", d, baseBackoff)
+	}
+	if d := backoff(1, 0); d != 2*baseBackoff {
+		t.Errorf("backoff(1,0) = %v, want %v", d, 2*baseBackoff)
+	}
+	if d := backoff(100, 0); d != maxBackoff {
+		t.Errorf("backoff(100,0) = %v, want cap %v", d, maxBackoff)
+	}
+	if d := backoff(0, 3*time.Second); d != 3*time.Second {
+		t.Errorf("backoff with Retry-After = %v, want 3s", d)
+	}
+	if d := backoff(0, time.Hour); d != maxBackoff {
+		t.Errorf("backoff with huge Retry-After = %v, want cap %v", d, maxBackoff)
 	}
 }
 
