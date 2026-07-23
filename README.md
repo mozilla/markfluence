@@ -274,19 +274,18 @@ Errors and exit codes:
 
 ## GitHub Actions
 
-markfluence runs well in CI to keep Confluence pages in sync with markdown in your
-repo: on a push to your default branch, publish the changed docs. Each page needs
-a `page_id` in its frontmatter (from a prior `create`, or `markfluence fix`), since
-`update` publishes to existing pages.
+markfluence can run in CI to keep Confluence pages in sync with markdown in
+your repo: on a push to your default branch, publish the changed docs. You
+will need to know the Confluence `page_id` for each page you want to update.
 
 ### Credentials
 
-Store the API token as an [encrypted secret][secrets] (never commit it); the base
-URL and username can be repository **variables** or secrets. markfluence reads them
-straight from the environment — no `.env` needed in CI.
+Store environment variables as [encrypted secret][secrets] (never commit them).
+markfluence reads them straight from the environment — no `.env` in CI.
 
-- `CONFLUENCE_TOKEN` — secret (required).
-- `CONFLUENCE_URL`, `CONFLUENCE_USERNAME` — variables or secrets.
+- `CONFLUENCE_TOKEN`
+- `CONFLUENCE_URL`
+- `CONFLUENCE_USERNAME`
 
 [secrets]: https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions
 
@@ -322,26 +321,18 @@ jobs:
 
       - name: Publish
         env:
-          CONFLUENCE_URL: ${{ vars.CONFLUENCE_URL }}
-          CONFLUENCE_USERNAME: ${{ vars.CONFLUENCE_USERNAME }}
+          CONFLUENCE_URL: ${{ secrets.CONFLUENCE_URL }}
+          CONFLUENCE_USERNAME: ${{ secrets.CONFLUENCE_USERNAME }}
           CONFLUENCE_TOKEN: ${{ secrets.CONFLUENCE_TOKEN }}
-        run: markfluence update docs/**/*.md --force
+        run:
+          markfluence update --page-id=12345 --force docs/some_doc.md
 ```
 
 Notes:
 
-- **`--force`.** A fresh checkout gives every file a current mtime, so markfluence's
-  "skip unchanged" heuristic (file mtime vs. the page's last-version time) would
-  publish everything anyway. `--force` makes that explicit. To publish only the
-  files that actually changed in the push, compute the changed set (e.g. with
-  `git diff --name-only`) and pass those paths instead.
 - **Exit codes.** `update` exits non-zero if any file fails, so the job fails
   loudly. Add `--json` to get machine-readable per-file results on stdout (see
   [`--json` output](#--json-output)) if a later step needs to parse them.
-- **Enable Actions to write, if persisting.** `update` never writes back to files,
-  but `create` does (it records `page_id` etc.). If a workflow runs `create` and
-  commits the result, give the job `permissions: contents: write` and a commit
-  step; most publish workflows use `update` and need no write permission.
 
 A reusable composite/Docker action wrapping this is tracked in
 [#29](https://github.com/mozilla/markfluence/issues/29).
