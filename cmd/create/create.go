@@ -20,8 +20,12 @@ import (
 )
 
 var (
-	spaceOpt  string
-	parentOpt string
+	spaceOpt     string
+	parentOpt    string
+	titleOpt     string
+	pageWidthOpt string
+	persistOpt   bool
+	noPersistOpt bool
 )
 
 // Cmd is the create command.
@@ -30,8 +34,10 @@ var Cmd = &cobra.Command{
 	Short: "Create new Confluence pages from markdown files",
 	Long: "Create new Confluence pages from markdown FILEs.\n\n" +
 		"All files are validated first; if any would fail, nothing is created.\n" +
-		"Otherwise pages are created parents-first and their page_id/space/parent\n" +
-		"are written back into the frontmatter.",
+		"Otherwise pages are created parents-first. --title and --page-width override\n" +
+		"the frontmatter (--title requires a single FILE). Unless --no-persist is\n" +
+		"given, each created page's title/space/parent/page_id/page_width are written\n" +
+		"back into the frontmatter.",
 	Args: cobra.MinimumNArgs(1),
 	RunE: run,
 }
@@ -39,6 +45,14 @@ var Cmd = &cobra.Command{
 func init() {
 	Cmd.Flags().StringVar(&spaceOpt, "space", "", "Target space key.")
 	Cmd.Flags().StringVar(&parentOpt, "parent", "", "Parent page id for the new page(s).")
+	Cmd.Flags().StringVar(&titleOpt, "title", "",
+		"Override the page title (requires a single FILE).")
+	Cmd.Flags().StringVar(&pageWidthOpt, "page-width", "",
+		"Override the page width: narrow, wide, or max.")
+	Cmd.Flags().BoolVar(&persistOpt, "persist", true,
+		"Write title/space/parent/page_id/page_width back into the frontmatter.")
+	Cmd.Flags().BoolVar(&noPersistOpt, "no-persist", false,
+		"Do not write anything back into the frontmatter.")
 }
 
 // parentInfo describes a resolved parent. kind is top|inset|published|external.
@@ -62,6 +76,12 @@ type record struct {
 }
 
 func run(cmd *cobra.Command, args []string) error {
+	if overrideNeedsSingleFile(titleOpt, len(args)) {
+		ui.Error("--title applies to a single page; pass exactly one FILE")
+		return ui.ErrSilent
+	}
+	doPersist := wantPersist(persistOpt, noPersistOpt)
+
 	url, _ := cmd.Flags().GetString("url")
 	username, _ := cmd.Flags().GetString("username")
 	c, err := client.Resolve(url, username)
@@ -132,7 +152,7 @@ func run(cmd *cobra.Command, args []string) error {
 				continue
 			}
 		}
-		newID, url, err := createOne(r, parentID, c)
+		newID, url, err := createOne(r, parentID, c, doPersist)
 		if err != nil {
 			ui.Error(prefix + " " + err.Error())
 			failures++
@@ -156,11 +176,11 @@ func resolveFile(
 	if err != nil {
 		return record{}, err
 	}
-	title := mf.Title()
+	title := resolveTitle(titleOpt, mf)
 	if title == "" {
-		return record{}, errors.New("no 'title' field found in frontmatter")
+		return record{}, errors.New("no title given (pass --title or add a 'title:' frontmatter field)")
 	}
-	width, err := pagewidth.Declared(mf.Frontmatter)
+	width, err := resolveWidth(pageWidthOpt, mf.Frontmatter)
 	if err != nil {
 		return record{}, err
 	}
@@ -324,7 +344,7 @@ func parentField(p parentInfo, parentID string) (value, comment string) {
 	return parentID, p.display
 }
 
-func createOne(r record, parentID string, c *client.ConfluenceClient) (newID, url string, err error) {
+func createOne(r record, parentID string, c *client.ConfluenceClient, persist bool) (newID, url string, err error) {
 	prefix := "[" + r.filename + "]"
 	pageContent, err := convert.MdToConfluence(r.mdfile, c.BaseURL(), r.spaceKey, buildinfo.Stamp())
 	if err != nil {
@@ -359,15 +379,45 @@ func createOne(r record, parentID string, c *client.ConfluenceClient) (newID, ur
 		}
 	}
 
-	parentValue, parentComment := parentField(r.parent, parentID)
-	content := r.mdfile.Content
-	content = frontmatter.UpdateField(content, "page_id", newID, "")
-	content = frontmatter.UpdateField(content, "space", r.spaceKey, "")
-	content = frontmatter.UpdateField(content, "parent", parentValue, parentComment)
-	if err := os.WriteFile(r.filename, []byte(content), 0o644); err != nil {
-		return "", "", err
+	if persist {
+		parentValue, parentComment := parentField(r.parent, parentID)
+		content := r.mdfile.Content
+		content = frontmatter.UpdateField(content, "title", r.title, "")
+		content = frontmatter.UpdateField(content, "space", r.spaceKey, "")
+		content = frontmatter.UpdateField(content, "parent", parentValue, parentComment)
+		content = frontmatter.UpdateField(content, "page_id", newID, "")
+		content = frontmatter.UpdateField(content, "page_width", string(r.width), "")
+		if err := os.WriteFile(r.filename, []byte(content), 0o644); err != nil {
+			return "", "", err
+		}
 	}
 	return newID, pageURL(c, result, newID), nil
+}
+
+// wantPersist resolves the --persist/--no-persist pair; --no-persist wins.
+func wantPersist(persist, noPersist bool) bool { return persist && !noPersist }
+
+// overrideNeedsSingleFile reports whether --title was given with anything other
+// than exactly one FILE. --page-width and the persist toggle are batch-ok.
+func overrideNeedsSingleFile(cliTitle string, nFiles int) bool {
+	return cliTitle != "" && nFiles != 1
+}
+
+// resolveTitle returns the effective title: --title overrides the frontmatter.
+func resolveTitle(cliTitle string, mf *frontmatter.MarkdownFile) string {
+	if cliTitle != "" {
+		return cliTitle
+	}
+	return mf.Title()
+}
+
+// resolveWidth returns the effective page width: --page-width overrides the
+// frontmatter page_width, which defaults to max when unset.
+func resolveWidth(cliPageWidth string, fm map[string]string) (pagewidth.Width, error) {
+	if cliPageWidth != "" {
+		return pagewidth.Declared(map[string]string{"page_width": cliPageWidth})
+	}
+	return pagewidth.Declared(fm)
 }
 
 func pageURL(c *client.ConfluenceClient, page *client.Page, pageID string) string {
