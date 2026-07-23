@@ -151,17 +151,25 @@ Usage: markfluence read ARG [flags]
 
 Fetch a Confluence page and print its body to stdout. `ARG` is a numeric page id
 or a Confluence page URL (the modern `/wiki/.../pages/<id>/...` form or a legacy
-`?pageId=<id>` URL). The output is the page's raw storage-format XHTML — the same
-representation markfluence publishes — so it composes with shell redirection.
+`?pageId=<id>` URL). It composes with shell redirection.
 
-`--format` currently supports only `storage` (the default). Converted-markdown
-output (the inverse of what `create`/`update` publish) is a planned follow-up; the
-Confluence API has no markdown representation, so it requires a client-side
-converter.
+`--format` selects the output:
+
+- `markdown` (**default**) — the page converted to GitHub-Flavored Markdown, with
+  `title`/`page_id`/`space`/`page_width` frontmatter, i.e. a best-effort inverse of
+  what `create`/`update` publish. The Confluence API has no markdown
+  representation, so markfluence converts the storage body itself: constructs
+  markfluence emits round-trip faithfully, while editor-authored content (macros,
+  layouts, …) degrades gracefully — macro bodies are rendered and unknown leaf
+  macros pass through as raw storage. Some transforms are lossy (e.g. `CAUTION`
+  alerts, internal links, and original image paths cannot be recovered), so this is
+  a reading aid, not a guaranteed source round-trip.
+- `storage` — the page's raw storage-format XHTML, exactly as stored.
 
 ```sh
-markfluence read 1234567890
-markfluence read 1234567890 > page.storage.xml
+markfluence read 1234567890                       # markdown, with frontmatter
+markfluence read 1234567890 > page.md
+markfluence read 1234567890 --format storage > page.storage.xml
 markfluence read "https://org.atlassian.net/wiki/spaces/ENG/pages/1234567890/Title"
 ```
 

@@ -9,13 +9,19 @@ import (
 	"strings"
 
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/convert"
+	"github.com/mozilla/markfluence/internal/frontmatter"
+	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
 )
 
-// formatStorage is the only output format supported today. The flag exists for
-// forward-compat (markdown/view/text are planned); see _plans/read-subcommand.md.
-const formatStorage = "storage"
+// Output formats. markdown (the default) is the best-effort inverse of
+// MdToConfluence; storage is the raw stored XHTML.
+const (
+	formatMarkdown = "markdown"
+	formatStorage  = "storage"
+)
 
 var formatFlag string
 
@@ -25,19 +31,22 @@ var Cmd = &cobra.Command{
 	Short: "Fetch a Confluence page and print its body",
 	Long: "Fetch a Confluence page and print its body to stdout.\n\n" +
 		"ARG is a numeric page id or a Confluence page URL (the modern\n" +
-		"/wiki/.../pages/<id>/... form or a legacy ?pageId=<id> URL).",
+		"/wiki/.../pages/<id>/... form or a legacy ?pageId=<id> URL).\n\n" +
+		"The default markdown output carries title/page_id/space/page_width\n" +
+		"frontmatter and is a best-effort inverse of what create/update publish.",
 	Args: cobra.ExactArgs(1),
 	RunE: run,
 }
 
 func init() {
-	Cmd.Flags().StringVar(&formatFlag, "format", formatStorage,
-		"Output format (supported: storage)")
+	Cmd.Flags().StringVar(&formatFlag, "format", formatMarkdown,
+		"Output format: markdown (default) or storage")
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	if formatFlag != formatStorage {
-		ui.Error(fmt.Sprintf("unsupported --format %q (supported: %s)", formatFlag, formatStorage))
+	if formatFlag != formatMarkdown && formatFlag != formatStorage {
+		ui.Error(fmt.Sprintf("unsupported --format %q (supported: %s, %s)",
+			formatFlag, formatMarkdown, formatStorage))
 		return ui.ErrSilent
 	}
 
@@ -71,8 +80,44 @@ func run(cmd *cobra.Command, args []string) error {
 		return ui.ErrSilent
 	}
 
-	fmt.Println(page.Body.Storage.Value)
+	if formatFlag == formatStorage {
+		fmt.Println(page.Body.Storage.Value)
+		return nil
+	}
+
+	body, err := convert.StorageToMarkdown(page.Body.Storage.Value)
+	if err != nil {
+		ui.Error(err.Error())
+		return ui.ErrSilent
+	}
+	fmt.Print(frontmatterBlock(c, page) + "\n" + body)
 	return nil
+}
+
+// frontmatterBlock builds the YAML frontmatter prefix for markdown output:
+// title, page_id, space, and (best-effort) page_width. A failed page_width read
+// is tolerated -- the field is simply omitted rather than failing the read.
+func frontmatterBlock(c *client.ConfluenceClient, page *client.Page) string {
+	width := ""
+	if w, _, err := pagewidth.Read(c, page.ID); err == nil {
+		width = string(w)
+	}
+	return renderFrontmatter(page.Title, page.ID, client.SpaceKeyFromWebUI(page.Links.WebUI), width)
+}
+
+// renderFrontmatter assembles the frontmatter block from resolved field values,
+// omitting space/page_width when empty. Values are auto-quoted by UpdateField.
+func renderFrontmatter(title, pageID, space, width string) string {
+	fm := ""
+	fm = frontmatter.UpdateField(fm, "title", title, "")
+	fm = frontmatter.UpdateField(fm, "page_id", pageID, "")
+	if space != "" {
+		fm = frontmatter.UpdateField(fm, "space", space, "")
+	}
+	if width != "" {
+		fm = frontmatter.UpdateField(fm, "page_width", width, "")
+	}
+	return fm
 }
 
 // pagePathRE matches the numeric id in a modern Confluence page URL path,

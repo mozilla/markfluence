@@ -1,0 +1,7 @@
+<p>A block with a language:</p>
+<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">python</ac:parameter><ac:plain-text-body><![CDATA[def greet(name):
+    return f"hello, {name}"]]></ac:plain-text-body></ac:structured-macro>
+<p>A block with no language and a tricky comparison:</p>
+<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:plain-text-body><![CDATA[if a > b and b < c {
+    return true
+}]]></ac:plain-text-body></ac:structured-macro>

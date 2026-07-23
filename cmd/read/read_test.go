@@ -2,6 +2,31 @@ package read
 
 import "testing"
 
+func TestRenderFrontmatter(t *testing.T) {
+	got := renderFrontmatter("My Page", "123456", "ENG", "max")
+	want := "---\ntitle: My Page\npage_id: 123456\nspace: ENG\npage_width: max\n---\n"
+	if got != want {
+		t.Errorf("renderFrontmatter =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestRenderFrontmatterOmitsEmptyFields(t *testing.T) {
+	got := renderFrontmatter("T", "1", "", "")
+	want := "---\ntitle: T\npage_id: 1\n---\n"
+	if got != want {
+		t.Errorf("renderFrontmatter =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestRenderFrontmatterQuotesWhenNeeded(t *testing.T) {
+	// A title with a leading '#' would be read as a comment unless quoted.
+	got := renderFrontmatter("# Sharp", "1", "", "")
+	want := "---\ntitle: '# Sharp'\npage_id: 1\n---\n"
+	if got != want {
+		t.Errorf("renderFrontmatter =\n%q\nwant\n%q", got, want)
+	}
+}
+
 func TestParsePageID(t *testing.T) {
 	tests := []struct {
 		name string
