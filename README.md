@@ -428,7 +428,8 @@ URL; **heading anchors** are rewritten to Confluence's anchor scheme.
 **Comment directives:**
 - `<!-- confluence-toc -->` — table-of-contents macro.
 - `<!-- markfluence-version -->` — replaced with the build stamp,
-  `markfluence vVERSION COMMITDATE`.
+  `markfluence VERSION (SHA, DATE)` (the same string `markfluence --version`
+  prints).
 
 **Raw Confluence storage format.** You can paste Confluence
 [storage format](https://confluence.atlassian.com/doc/confluence-storage-format-790796544.html)
