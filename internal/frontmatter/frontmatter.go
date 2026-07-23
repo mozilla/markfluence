@@ -9,6 +9,7 @@ package frontmatter
 import (
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -129,11 +130,21 @@ func renderValue(value string) string {
 	return value
 }
 
+// fieldOrder is the canonical leading order of frontmatter keys; any key not
+// listed here is emitted after these, in alphabetical order. Every write goes
+// through UpdateField, so this is the single source of frontmatter field order
+// across all commands.
+var fieldOrder = []string{"title", "space", "parent", "page_id"}
+
 // UpdateField adds or updates key in content's frontmatter, returning the new
-// content. An existing key's value is replaced; a missing key is appended; with
-// no frontmatter block one is created at the top. The value is auto-quoted when
+// content. An existing key's value is replaced; a missing key is added; with no
+// frontmatter block one is created at the top. The value is auto-quoted when
 // needed to round-trip. A non-empty comment is written as a trailing `  # ...`
 // annotation, kept distinct from the value so the value round-trips cleanly.
+//
+// The whole block is rewritten in the canonical field order (fieldOrder, then
+// the rest alphabetically). Full-line `#` comments are preserved at the top of
+// the block; blank lines are dropped.
 func UpdateField(content, key, value, comment string) string {
 	rendered := renderValue(value)
 	if comment != "" {
@@ -145,24 +156,65 @@ func UpdateField(content, key, value, comment string) string {
 	if loc == nil {
 		return "---\n" + newLine + "\n---\n" + content
 	}
-	fmText := content[loc[2]:loc[3]]
 	body := content[loc[1]:]
 
-	keyRE := regexp.MustCompile(`^\s*` + regexp.QuoteMeta(key) + `\s*:`)
-	var newLines []string
-	replaced := false
+	comments, fields := splitFrontmatter(content[loc[2]:loc[3]])
+	fields[key] = newLine
+
+	lines := comments
+	for _, k := range orderedKeys(fields) {
+		lines = append(lines, fields[k])
+	}
+	return "---\n" + strings.Join(lines, "\n") + "\n---\n" + body
+}
+
+// splitFrontmatter parses a frontmatter block's inner text into its full-line
+// comments (in order) and a key->line map (each value the raw `key: ...` line,
+// so quoting and inline comments are preserved). Blank lines are dropped.
+func splitFrontmatter(fmText string) (comments []string, fields map[string]string) {
+	fields = map[string]string{}
 	for _, line := range strings.Split(fmText, "\n") {
-		if keyRE.MatchString(line) {
-			newLines = append(newLines, newLine)
-			replaced = true
-		} else {
-			newLines = append(newLines, line)
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case trimmed == "":
+			continue
+		case strings.HasPrefix(trimmed, "#"):
+			comments = append(comments, trimmed)
+		default:
+			if i := strings.Index(trimmed, ":"); i >= 0 {
+				fields[strings.TrimSpace(trimmed[:i])] = trimmed
+			}
 		}
 	}
-	if !replaced {
-		newLines = append(newLines, newLine)
+	return comments, fields
+}
+
+// orderedKeys returns the keys of fields in canonical order: those in fieldOrder
+// first (in that order), then any remaining keys alphabetically.
+func orderedKeys(fields map[string]string) []string {
+	rank := map[string]int{}
+	for i, k := range fieldOrder {
+		rank[k] = i
 	}
-	return "---\n" + strings.Join(newLines, "\n") + "\n---\n" + body
+	keys := make([]string, 0, len(fields))
+	for k := range fields {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		ri, iok := rank[keys[i]]
+		rj, jok := rank[keys[j]]
+		switch {
+		case iok && jok:
+			return ri < rj
+		case iok:
+			return true
+		case jok:
+			return false
+		default:
+			return keys[i] < keys[j]
+		}
+	})
+	return keys
 }
 
 // MarkdownFile is a markdown source file parsed once: its path, raw text,

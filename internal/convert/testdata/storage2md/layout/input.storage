@@ -1,0 +1,1 @@
+<ac:layout><ac:layout-section ac:type="two_equal"><ac:layout-cell><h3>Left column</h3><p>Some <strong>markdown</strong> in the left cell, with a <a href="https://developer.atlassian.com">link</a>.</p></ac:layout-cell><ac:layout-cell><h3>Right column</h3><ul><li>first</li><li>second</li></ul></ac:layout-cell></ac:layout-section></ac:layout>

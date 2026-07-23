@@ -1,0 +1,5 @@
+<p><ac:image ac:alt="an architecture diagram"><ri:attachment ri:filename="assets_diagram.png" /></ac:image></p>
+<ac:image ac:alt="a bare block-level image"><ri:attachment ri:filename="bare.png" /></ac:image>
+<p><ac:image ac:alt="a remote diagram"><ri:url ri:value="https://cdn.example.net/diagram.png" /></ac:image></p>
+<p><ac:image ac:alt="tooltipped" ac:title="A Tooltip"><ri:attachment ri:filename="shot.png" /></ac:image></p>
+<p><ac:image ac:alt="sized shot" ac:title="A Tooltip" ac:width="300" ac:height="150" ac:align="center"><ri:attachment ri:filename="assets_shot.png" /></ac:image></p>

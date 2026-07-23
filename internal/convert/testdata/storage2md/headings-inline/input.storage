@@ -1,0 +1,6 @@
+<h1>Top Heading</h1>
+<p>An intro paragraph with <strong>bold</strong>, <em>italic</em>, <code>inline code</code>, and <del>struck</del> text.</p>
+<h2>A Subheading</h2>
+<p>A line with a <a href="https://example.com/">plain link</a> and a <a href="https://example.com/" title="hover">titled link</a>.</p>
+<h3>Deeper</h3>
+<p>First line.<br />Second line after a hard break.</p>

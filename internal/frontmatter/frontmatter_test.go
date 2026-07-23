@@ -112,6 +112,29 @@ func TestParentValueRoundTripsWithoutTheComment(t *testing.T) {
 	}
 }
 
+// --- write: canonical field order --------------------------------------------
+
+func TestUpdateFieldCanonicalOrder(t *testing.T) {
+	// Fields present in a jumbled order plus an extra key; updating any field
+	// rewrites the whole block as title, space, parent, page_id, then the rest
+	// alphabetically.
+	in := "---\npage_width: max\npage_id: 9\ncustom: z\nparent: 4\nspace: ENG\ntitle: T\n---\nbody\n"
+	got := frontmatter.UpdateField(in, "page_id", "10", "")
+	want := "---\ntitle: T\nspace: ENG\nparent: 4\npage_id: 10\ncustom: z\npage_width: max\n---\nbody\n"
+	if got != want {
+		t.Errorf("UpdateField reorder =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestUpdateFieldPreservesCommentsDropsBlanks(t *testing.T) {
+	in := "---\n# a note\ntitle: T\n\npage_id: 9\n---\nbody\n"
+	got := frontmatter.UpdateField(in, "space", "ENG", "")
+	want := "---\n# a note\ntitle: T\nspace: ENG\npage_id: 9\n---\nbody\n"
+	if got != want {
+		t.Errorf("UpdateField comments/blanks =\n%q\nwant\n%q", got, want)
+	}
+}
+
 // --- MarkdownFile accessors --------------------------------------------------
 
 func TestMarkdownFileAccessors(t *testing.T) {

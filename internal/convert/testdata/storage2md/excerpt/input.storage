@@ -1,0 +1,3 @@
+<p>Intro before the section.</p>
+<ac:structured-macro ac:macro-id="c0ffee00-0000-0000-0000-000000000003" ac:name="excerpt" ac:schema-version="1"><ac:parameter ac:name="name">deployment</ac:parameter><ac:parameter ac:name="hidden">false</ac:parameter><ac:rich-text-body><p>The <strong>deployment</strong> steps:</p><ul><li>build</li><li>ship</li></ul></ac:rich-text-body></ac:structured-macro>
+<p>Text after the section.</p>
