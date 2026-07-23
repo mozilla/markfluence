@@ -65,7 +65,8 @@ Usage: markfluence create FILE... [flags]
 
 Create new Confluence pages from Markdown files.
 
-The page title comes from frontmatter.
+The page title comes from frontmatter, or from `--title` (which overrides the
+frontmatter and requires a single `FILE`).
 
 Confluence space can be specified on the command line (`--space SPACE`) or
 in the frontmatter.
@@ -74,11 +75,16 @@ Optional parent can be specified on the command line (`--parent PAGE_ID`) or
 in the frontmatter. In the frontmatter, you can specify the page id or
 the Markdown file.
 
+Page width defaults to `max`; set it with `--page-width narrow|wide|max` (which
+overrides the frontmatter `page_width` and may apply across a batch).
+
 All files are validated first — if any would fail (a page already exists at its
 `page_id`, a title clash in the space, an unresolvable parent), nothing is
 created.
 
-On success `page_id`, `space`, and `parent` are written back into each file.
+On success `title`, `space`, `parent`, `page_id`, and `page_width` are written
+back into each file — unless `--no-persist` is given, in which case nothing is
+written back (and the file won't record its new `page_id`).
 
 A whole tree can be created in one pass: give each child a `parent:` that points at
 its parent's `.md` file, and `create` orders creation parents-first and fills in the
@@ -87,7 +93,9 @@ real ids (see the `parent` field below).
 ```sh
 markfluence create docs/new_page.md --space ENG
 markfluence create docs/child.md --space ENG --parent 123456
-markfluence create docs/*.md --space ENG   # hierarchy via parent: paths
+markfluence create docs/*.md --space ENG               # hierarchy via parent: paths
+markfluence create note.md --space ENG --title "Ad-hoc note" --page-width wide
+markfluence create note.md --space ENG --no-persist    # create without touching the file
 ```
 
 ### `update`
