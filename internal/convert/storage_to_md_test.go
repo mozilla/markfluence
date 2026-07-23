@@ -140,7 +140,7 @@ func TestStorageToMarkdownStripsGeneratedIDs(t *testing.T) {
 // unchanged -- the whole point of emitting them in a form MdToConfluence
 // re-publishes verbatim.
 func TestRoundTripPassthrough(t *testing.T) {
-	for _, name := range []string{"layout", "unknown-macros"} {
+	for _, name := range []string{"layout", "unknown-macros", "excerpt"} {
 		t.Run(name, func(t *testing.T) {
 			src, err := os.ReadFile(filepath.Join(storage2mdDir, name, "output.md"))
 			if err != nil {
