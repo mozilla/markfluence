@@ -134,6 +134,40 @@ func TestGetPageOrNilReturnsNilOn404(t *testing.T) {
 	}
 }
 
+func TestGetPageBodyOrNilReturnsStorageBody(t *testing.T) {
+	c, s := newServer(t, resp{200,
+		`{"id":"1","title":"T","body":{"storage":{"value":"<p>hi</p>","representation":"storage"}}}`})
+	p, err := c.GetPageBodyOrNil("1")
+	if err != nil || p == nil {
+		t.Fatalf("GetPageBodyOrNil = %v, %v; want a page", p, err)
+	}
+	if p.Body.Storage.Value != "<p>hi</p>" {
+		t.Errorf("body = %q, want <p>hi</p>", p.Body.Storage.Value)
+	}
+	if !eqStrings(s.calls, []string{"GET"}) {
+		t.Errorf("calls = %v, want [GET]", s.calls)
+	}
+}
+
+func TestGetPageBodyOrNilEmptyBody(t *testing.T) {
+	c, _ := newServer(t, resp{200, `{"id":"1","title":"Folder"}`})
+	p, err := c.GetPageBodyOrNil("1")
+	if err != nil || p == nil {
+		t.Fatalf("GetPageBodyOrNil = %v, %v; want a page", p, err)
+	}
+	if p.Body.Storage.Value != "" {
+		t.Errorf("body = %q, want empty", p.Body.Storage.Value)
+	}
+}
+
+func TestGetPageBodyOrNilReturnsNilOn404(t *testing.T) {
+	c, _ := newServer(t, resp{404, `{"errors":[]}`})
+	p, err := c.GetPageBodyOrNil("nope")
+	if err != nil || p != nil {
+		t.Fatalf("GetPageBodyOrNil = %v, %v; want nil, nil", p, err)
+	}
+}
+
 func TestGetPagePropagatesError(t *testing.T) {
 	c, _ := newServer(t, resp{500, `boom`})
 	if _, err := c.GetPage("1"); err == nil {

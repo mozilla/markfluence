@@ -54,6 +54,7 @@ markfluence create --help
 markfluence update --help
 markfluence fix --help
 markfluence info --help
+markfluence read --help
 ```
 
 ### `create`
@@ -140,6 +141,28 @@ properties.
 ```sh
 markfluence info 1234567890
 markfluence info docs/foo.md --properties
+```
+
+### `read`
+
+```
+Usage: markfluence read ARG [flags]
+```
+
+Fetch a Confluence page and print its body to stdout. `ARG` is a numeric page id
+or a Confluence page URL (the modern `/wiki/.../pages/<id>/...` form or a legacy
+`?pageId=<id>` URL). The output is the page's raw storage-format XHTML — the same
+representation markfluence publishes — so it composes with shell redirection.
+
+`--format` currently supports only `storage` (the default). Converted-markdown
+output (the inverse of what `create`/`update` publish) is a planned follow-up; the
+Confluence API has no markdown representation, so it requires a client-side
+converter.
+
+```sh
+markfluence read 1234567890
+markfluence read 1234567890 > page.storage.xml
+markfluence read "https://org.atlassian.net/wiki/spaces/ENG/pages/1234567890/Title"
 ```
 
 ## Markdown page structure
