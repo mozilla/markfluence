@@ -146,7 +146,9 @@ func renderBlock(n *snode, listIndent string) string {
 		// An inline element sitting at block level (Confluence often emits a bare
 		// <ac:image> not wrapped in <p>) is rendered as its own paragraph.
 		return renderInline(n)
-	case "div", "ac:layout", "ac:layout-section", "ac:layout-cell":
+	case "ac:layout", "ac:layout-section", "ac:layout-cell":
+		return renderLayout(n)
+	case "div":
 		return strings.Join(blockStrings(n.kids, listIndent), "\n\n")
 	default:
 		// Unknown element: render its children as blocks (transparent wrapper).
@@ -465,22 +467,14 @@ func jstr(s string) string {
 	return string(b)
 }
 
-// serialize re-emits a node as storage XML, for passing an unknown leaf macro
-// through unchanged (MdToConfluence's shield re-publishes it verbatim).
+// serialize re-emits a node as storage XML, for passing an unknown macro through
+// unchanged (MdToConfluence's shield re-publishes it verbatim).
 func serialize(n *snode) string {
 	if n.name == "" {
 		return xmlTextEscape(n.text)
 	}
 	var b strings.Builder
-	b.WriteString("<" + n.name)
-	keys := make([]string, 0, len(n.attrs))
-	for k := range n.attrs {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		fmt.Fprintf(&b, ` %s="%s"`, k, xmlAttrEscape(n.attrs[k]))
-	}
+	b.WriteString("<" + n.name + attrString(n.attrs))
 	if len(n.kids) == 0 {
 		b.WriteString(" />")
 		return b.String()
@@ -491,6 +485,50 @@ func serialize(n *snode) string {
 	}
 	b.WriteString("</" + n.name + ">")
 	return b.String()
+}
+
+// attrString renders an element's attributes (sorted, XML-escaped) as a leading-
+// space attribute list.
+func attrString(attrs map[string]string) string {
+	keys := make([]string, 0, len(attrs))
+	for k := range attrs {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		fmt.Fprintf(&b, ` %s="%s"`, k, xmlAttrEscape(attrs[k]))
+	}
+	return b.String()
+}
+
+// layoutElements are the Confluence layout containers.
+var layoutElements = map[string]bool{
+	"ac:layout": true, "ac:layout-section": true, "ac:layout-cell": true,
+}
+
+// renderLayout emits a layout container as its raw storage tags wrapping either
+// nested layout elements or, at a cell, its content converted to markdown and
+// set off by blank lines. This mirrors how such layouts are authored (raw tags
+// around markdown) and how MdToConfluence republishes them, so it round-trips.
+func renderLayout(n *snode) string {
+	open := "<" + n.name + attrString(n.attrs) + ">"
+	closeTag := "</" + n.name + ">"
+
+	var nested []string
+	var content []*snode
+	for _, k := range n.kids {
+		switch {
+		case layoutElements[k.name]:
+			nested = append(nested, renderLayout(k))
+		case k.name != "" || strings.TrimSpace(k.text) != "":
+			content = append(content, k)
+		}
+	}
+	if len(nested) > 0 {
+		return open + "\n" + strings.Join(nested, "\n") + "\n" + closeTag
+	}
+	return open + "\n\n" + strings.Join(blockStrings(content, ""), "\n\n") + "\n\n" + closeTag
 }
 
 func xmlTextEscape(s string) string {

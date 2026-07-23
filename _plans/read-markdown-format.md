@@ -54,8 +54,13 @@ The markdown output is prefixed with YAML frontmatter: `title`, `page_id`, `spac
 Any `ac:structured-macro` markfluence doesn't map (i.e. not code/toc/callout) —
 whether bodied (panel, expand, …) or a leaf (status, …) — is emitted as its raw
 storage XML. Lossless and round-trips back through `MdToConfluence`'s existing
-`ac:`/`ri:` shield. (Layout containers — `ac:layout`/`-section`/`-cell`, `div` —
-are structural, not macros, so they still flatten to their rendered content.)
+`ac:`/`ri:` shield.
+
+Column layouts (`ac:layout`/`-section`/`-cell`) are emitted as their raw storage
+tags wrapping each cell's content converted to markdown (set off by blank lines),
+mirroring how such layouts are authored and republished — so they round-trip too,
+while cell content stays readable. (A generic `div` still flattens to its
+content.)
 
 Superseded an earlier "recurse the rich-text-body of bodied macros" design: that
 dropped macro parameters that carry content (e.g. an `expand` macro's title), so

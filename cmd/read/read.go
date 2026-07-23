@@ -95,25 +95,35 @@ func run(cmd *cobra.Command, args []string) error {
 }
 
 // frontmatterBlock builds the YAML frontmatter prefix for markdown output:
-// title, page_id, space, and (best-effort) page_width. A failed page_width read
-// is tolerated -- the field is simply omitted rather than failing the read.
+// title, space, parent, page_id, and (best-effort) page_width. parent is "null"
+// for a top-level page, else the parent's page id (both free from the fetched
+// page). A failed page_width read is tolerated -- the field is simply omitted
+// rather than failing the read.
 func frontmatterBlock(c *client.ConfluenceClient, page *client.Page) string {
+	parent := page.ParentID
+	if parent == "" {
+		parent = "null"
+	}
 	width := ""
 	if w, _, err := pagewidth.Read(c, page.ID); err == nil {
 		width = string(w)
 	}
-	return renderFrontmatter(page.Title, page.ID, client.SpaceKeyFromWebUI(page.Links.WebUI), width)
+	return renderFrontmatter(page.Title, client.SpaceKeyFromWebUI(page.Links.WebUI), parent, page.ID, width)
 }
 
 // renderFrontmatter assembles the frontmatter block from resolved field values,
-// omitting space/page_width when empty. Values are auto-quoted by UpdateField.
-func renderFrontmatter(title, pageID, space, width string) string {
+// omitting space/parent/page_width when empty. UpdateField emits them in the
+// canonical order and auto-quotes values as needed.
+func renderFrontmatter(title, space, parent, pageID, width string) string {
 	fm := ""
 	fm = frontmatter.UpdateField(fm, "title", title, "")
-	fm = frontmatter.UpdateField(fm, "page_id", pageID, "")
 	if space != "" {
 		fm = frontmatter.UpdateField(fm, "space", space, "")
 	}
+	if parent != "" {
+		fm = frontmatter.UpdateField(fm, "parent", parent, "")
+	}
+	fm = frontmatter.UpdateField(fm, "page_id", pageID, "")
 	if width != "" {
 		fm = frontmatter.UpdateField(fm, "page_width", width, "")
 	}
