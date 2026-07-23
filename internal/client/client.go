@@ -86,7 +86,20 @@ type Page struct {
 	OwnerID   string  `json:"ownerId"`
 	CreatedAt string  `json:"createdAt"`
 	Version   Version `json:"version"`
+	Body      Body    `json:"body"`
 	Links     Links   `json:"_links"`
+}
+
+// Body holds a page's body in the representations we request. Only the format
+// asked for via body-format is populated; the rest are zero.
+type Body struct {
+	Storage BodyRepresentation `json:"storage"`
+}
+
+// BodyRepresentation is one body representation (value plus its format name).
+type BodyRepresentation struct {
+	Value          string `json:"value"`
+	Representation string `json:"representation"`
 }
 
 // Version is a page or property version.
@@ -205,6 +218,23 @@ func (c *ConfluenceClient) GetPage(pageID string) (*Page, error) {
 func (c *ConfluenceClient) GetPageOrNil(pageID string) (*Page, error) {
 	var p Page
 	err := c.doJSON(http.MethodGet, c.baseURL+"/wiki/api/v2/pages/"+pageID, nil, nil, &p, timeoutRead)
+	if err != nil {
+		var he *HTTPError
+		if errors.As(err, &he) && he.StatusCode == http.StatusNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &p, nil
+}
+
+// GetPageBodyOrNil fetches a page including its storage-format body, returning
+// nil (no error) on HTTP 404. The plain GetPage/GetPageOrNil stay bodyless so
+// metadata-only callers don't pay to transfer the body.
+func (c *ConfluenceClient) GetPageBodyOrNil(pageID string) (*Page, error) {
+	var p Page
+	err := c.doJSON(http.MethodGet, c.baseURL+"/wiki/api/v2/pages/"+pageID,
+		url.Values{"body-format": {"storage"}}, nil, &p, timeoutRead)
 	if err != nil {
 		var he *HTTPError
 		if errors.As(err, &he) && he.StatusCode == http.StatusNotFound {

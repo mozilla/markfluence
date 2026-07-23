@@ -9,6 +9,7 @@ import (
 	"github.com/mozilla/markfluence/cmd/create"
 	"github.com/mozilla/markfluence/cmd/fix"
 	"github.com/mozilla/markfluence/cmd/info"
+	"github.com/mozilla/markfluence/cmd/read"
 	"github.com/mozilla/markfluence/cmd/update"
 	"github.com/mozilla/markfluence/internal/buildinfo"
 	"github.com/mozilla/markfluence/internal/ui"
@@ -77,4 +78,5 @@ func init() {
 	rootCmd.AddCommand(create.Cmd)
 	rootCmd.AddCommand(fix.Cmd)
 	rootCmd.AddCommand(info.Cmd)
+	rootCmd.AddCommand(read.Cmd)
 }
