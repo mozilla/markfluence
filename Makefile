@@ -10,7 +10,7 @@ LDFLAGS = -ldflags "-X github.com/mozilla/markfluence/internal/buildinfo.Version
 GOLANGCI_LINT_VERSION ?= v2.6.0
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
 
-.PHONY: help all build install lint vet fmt test regen-regressions
+.PHONY: help all build install lint vet fmt fmt-check test regen-regressions
 
 help:  ## Show this help
 	@echo "Available rules:"
@@ -32,6 +32,10 @@ vet:  ## Run go vet
 
 fmt:  ## Format Go files
 	go fmt ./...
+
+fmt-check:  ## Check formatting without modifying files (fails if any file needs gofmt)
+	@out="$$(gofmt -l .)"; if [ -n "$$out" ]; then \
+	  echo "These files are not gofmt'd:"; echo "$$out"; exit 1; fi
 
 test:  ## Run tests
 	go test ./...
