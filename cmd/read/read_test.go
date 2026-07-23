@@ -3,8 +3,10 @@ package read
 import "testing"
 
 func TestRenderFrontmatter(t *testing.T) {
+	// Fields come out in the canonical order (title, space, parent, page_id, then
+	// the rest) regardless of the order renderFrontmatter writes them.
 	got := renderFrontmatter("My Page", "123456", "ENG", "max")
-	want := "---\ntitle: My Page\npage_id: 123456\nspace: ENG\npage_width: max\n---\n"
+	want := "---\ntitle: My Page\nspace: ENG\npage_id: 123456\npage_width: max\n---\n"
 	if got != want {
 		t.Errorf("renderFrontmatter =\n%q\nwant\n%q", got, want)
 	}
