@@ -444,11 +444,18 @@ func findChild(n *snode, name string) *snode {
 	return nil
 }
 
-// prefixLines prefixes every line of s with prefix.
+// prefixLines prefixes every line of s with prefix. Empty lines get the prefix
+// with its trailing whitespace trimmed, so a blockquote's blank lines are ">"
+// rather than "> " (no trailing whitespace).
 func prefixLines(s, prefix string) string {
 	lines := strings.Split(s, "\n")
+	empty := strings.TrimRight(prefix, " ")
 	for i, line := range lines {
-		lines[i] = prefix + line
+		if line == "" {
+			lines[i] = empty
+		} else {
+			lines[i] = prefix + line
+		}
 	}
 	return strings.Join(lines, "\n")
 }

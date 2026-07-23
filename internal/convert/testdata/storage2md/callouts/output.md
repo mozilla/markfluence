@@ -9,3 +9,9 @@
 
 > [!WARNING]
 > This is a warning callout.
+
+> [!NOTE]
+> A multi-block callout: the blank quoted line between blocks has no trailing space.
+>
+> - alpha
+> - beta
