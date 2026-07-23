@@ -141,7 +141,7 @@ func renderBlock(n *snode, listIndent string) string {
 	case "table":
 		return renderTable(n)
 	case "ac:structured-macro":
-		return renderMacro(n, listIndent)
+		return renderMacro(n)
 	case "ac:image", "a", "strong", "b", "em", "i", "code", "del", "s", "strike", "br":
 		// An inline element sitting at block level (Confluence often emits a bare
 		// <ac:image> not wrapped in <p>) is rendered as its own paragraph.
@@ -267,8 +267,10 @@ func cellTexts(tr *snode) []string {
 }
 
 // renderMacro renders an <ac:structured-macro>: the code/toc/callout macros
-// MdToConfluence emits, or a graceful fallback for anything else.
-func renderMacro(n *snode, listIndent string) string {
+// MdToConfluence emits become their markdown equivalents; any other macro
+// (bodied or leaf) passes through as raw storage, which is lossless and
+// round-trips back through MdToConfluence's ac:/ri: shield.
+func renderMacro(n *snode) string {
 	switch name := n.attrs["ac:name"]; {
 	case name == "code":
 		return renderCodeMacro(n)
@@ -277,10 +279,7 @@ func renderMacro(n *snode, listIndent string) string {
 	case calloutMacroInverse[name] != "":
 		return renderCallout(n, name)
 	default:
-		if body := findChild(n, "ac:rich-text-body"); body != nil {
-			return strings.Join(blockStrings(body.kids, listIndent), "\n\n")
-		}
-		return serialize(n) // unknown leaf macro: pass through raw storage
+		return serialize(n)
 	}
 }
 
@@ -342,9 +341,9 @@ func renderInline(n *snode) string {
 		return renderImage(n)
 	case "ac:structured-macro":
 		// An inline macro (e.g. status/emoticon) goes through the same handler;
-		// an unknown leaf macro passes through as raw storage rather than having
-		// its parameter text flattened.
-		return renderMacro(n, "")
+		// an unknown macro passes through as raw storage rather than having its
+		// parameter text flattened.
+		return renderMacro(n)
 	default:
 		return renderInlineChildren(n)
 	}

@@ -49,12 +49,17 @@ The markdown output is prefixed with YAML frontmatter: `title`, `page_id`, `spac
   field is omitted (the read still succeeds), matching `info`'s tolerance.
 - Frontmatter is assembled in `cmd/read` using `internal/frontmatter` quoting.
 
-### Unknown macros — recurse body, passthrough leaves
+### Unknown macros — raw passthrough
 
-- Macro with an `ac:rich-text-body` → render its children as markdown (content
-  survives).
-- Unknown bodyless/leaf macro → emit its raw storage XML inline. Lossless and
-  round-trips back through `MdToConfluence`'s existing `ac:`/`ri:` shield.
+Any `ac:structured-macro` markfluence doesn't map (i.e. not code/toc/callout) —
+whether bodied (panel, expand, …) or a leaf (status, …) — is emitted as its raw
+storage XML. Lossless and round-trips back through `MdToConfluence`'s existing
+`ac:`/`ri:` shield. (Layout containers — `ac:layout`/`-section`/`-cell`, `div` —
+are structural, not macros, so they still flatten to their rendered content.)
+
+Superseded an earlier "recurse the rich-text-body of bodied macros" design: that
+dropped macro parameters that carry content (e.g. an `expand` macro's title), so
+passthrough is used uniformly instead.
 
 ## Construct mapping (inverse of `MdToConfluence`)
 
