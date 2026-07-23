@@ -27,7 +27,7 @@ The CLI needs a base URL, a username, and an API token. Each resolves with the p
 | username | `--username` | `CONFLUENCE_USERNAME` |
 | API token | *(none)* | `CONFLUENCE_TOKEN` |
 
-markfluence reads a `.env` from the working directory itself (a minimal built-in parser — no shell expansion); `.env.example` is the template. The API token is deliberately never a command-line flag. `internal/client.Resolve` is the single place this is read and validated.
+markfluence reads a `.env` from the working directory itself (a minimal built-in parser — no shell expansion), or an explicit path via the persistent `--env-file` flag (a missing explicit path is an error; a missing default `./.env` is not); `.env.example` is the template. The API token is deliberately never a command-line flag. `internal/client.Resolve` is the single place this is read and validated.
 
 ## Commit conventions
 

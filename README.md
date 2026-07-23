@@ -33,7 +33,9 @@ with the precedence **flag > environment variable > `.env` file**:
 | API token | *(none — never a flag)* | `CONFLUENCE_TOKEN` |
 
 markfluence reads a `.env` file from the current directory automatically (no need
-to `source` it). Copy `.env.example` to `.env` and fill in:
+to `source` it), or from an explicit path via `--env-file PATH` (a persistent flag
+on every subcommand; a missing explicit path is an error). Copy `.env.example` to
+`.env` and fill in:
 
 ```
 CONFLUENCE_URL=https://your-org.atlassian.net
