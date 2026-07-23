@@ -3,7 +3,7 @@
 Add a `fix` subcommand that reconciles a markdown file's frontmatter *coordinates*
 (`page_id`, `space`, `parent`, and a missing `title`) to match its live Confluence
 page. This is the frontmatter-inference path deliberately kept out of `update` (see
-`_plans/create-subcommand.md` → "On paper only" and `todo.md`).
+`_plans/002_create-subcommand.md` → "On paper only" and `todo.md`).
 
 `fix` is **read-only on the server** -- it never creates, updates, or moves pages.
 It only rewrites local frontmatter to reflect what the live page already says.

@@ -1,6 +1,6 @@
 # Go port — step-by-step execution plan
 
-Companion to `go-port.md` (the design). This is the **ordered, resumable** build
+Companion to `008_go-port.md` (the design). This is the **ordered, resumable** build
 sequence for **phase 1** (Go port alongside Python). Phase 2 (delete Python) is the
 final step.
 
