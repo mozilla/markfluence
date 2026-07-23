@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # Go module dependencies.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+      include: scope # e.g. "build(deps): bump ..."
+    groups:
+      # One PR per week for all non-major bumps; majors stay separate for review.
+      go-dependencies:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # GitHub Actions used by the workflows (SHA-pinned; Dependabot updates the pin
+  # and the trailing version comment together).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+      include: scope # e.g. "ci(deps): bump ..."
+    groups:
+      github-actions:
+        patterns: ["*"]
+        update-types: [minor, patch]
