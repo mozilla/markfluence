@@ -489,11 +489,19 @@ func serialize(n *snode) string {
 	return b.String()
 }
 
+// droppedAttrs are server-generated per-instance ids that are noise in the output
+// and that Confluence regenerates on publish, so passthrough serialization omits
+// them.
+var droppedAttrs = map[string]bool{"ac:macro-id": true, "ac:local-id": true}
+
 // attrString renders an element's attributes (sorted, XML-escaped) as a leading-
-// space attribute list.
+// space attribute list, dropping the server-generated ids in droppedAttrs.
 func attrString(attrs map[string]string) string {
 	keys := make([]string, 0, len(attrs))
 	for k := range attrs {
+		if droppedAttrs[k] {
+			continue
+		}
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)

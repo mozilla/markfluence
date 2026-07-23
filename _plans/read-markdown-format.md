@@ -68,6 +68,10 @@ shield:
 
 (A generic `div` still flattens to its content.)
 
+Passthrough serialization drops the server-generated `ac:macro-id` and
+`ac:local-id` attributes: they're per-instance noise that Confluence regenerates
+on publish, and keeping them would make read output non-deterministic.
+
 This supersedes two earlier designs: "recurse the body and drop the wrapper"
 (lost content-bearing parameters like an `expand` title) and "serialize the whole
 subtree raw on one line" (didn't round-trip — goldmark wrapped the packed tags in

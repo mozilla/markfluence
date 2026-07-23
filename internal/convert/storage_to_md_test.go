@@ -118,6 +118,23 @@ func TestRoundTripStableCallouts(t *testing.T) {
 	}
 }
 
+// TestStorageToMarkdownStripsGeneratedIDs checks that the server-generated
+// ac:macro-id and ac:local-id attributes are dropped from passthrough output.
+func TestStorageToMarkdownStripsGeneratedIDs(t *testing.T) {
+	in := `<ac:structured-macro ac:macro-id="abc" ac:local-id="def" ac:name="status">` +
+		`<ac:parameter ac:name="title">DONE</ac:parameter></ac:structured-macro>`
+	got, err := convert.StorageToMarkdown(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "macro-id") || strings.Contains(got, "local-id") {
+		t.Errorf("expected macro-id/local-id stripped, got:\n%s", got)
+	}
+	if !strings.Contains(got, `ac:name="status"`) {
+		t.Errorf("expected the macro to pass through, got:\n%s", got)
+	}
+}
+
 // TestRoundTripPassthrough verifies that the raw-storage passthrough cases
 // (column layouts and unknown macros) survive markdown -> storage -> markdown
 // unchanged -- the whole point of emitting them in a form MdToConfluence
