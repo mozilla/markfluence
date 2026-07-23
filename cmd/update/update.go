@@ -5,6 +5,7 @@ package update
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/mozilla/markfluence/internal/buildinfo"
@@ -17,8 +18,11 @@ import (
 )
 
 var (
-	message string
-	force   bool
+	message       string
+	force         bool
+	titleFlag     string
+	pageIDFlag    string
+	pageWidthFlag string
 )
 
 // Cmd is the update command.
@@ -26,8 +30,11 @@ var Cmd = &cobra.Command{
 	Use:   "update FILE...",
 	Short: "Publish one or more markdown files to Confluence pages",
 	Long: "Publish one or more markdown FILEs to Confluence pages.\n\n" +
-		"Title and page id are read from each file's YAML frontmatter. Each file is\n" +
-		"processed independently; the command exits non-zero if any file failed.",
+		"Title and page id are read from each file's YAML frontmatter; --title and\n" +
+		"--page-id override the frontmatter (and require a single FILE). A page id is\n" +
+		"required (from --page-id or frontmatter). Page width is asserted only when\n" +
+		"set via --page-width or a page_width frontmatter line. Each file is processed\n" +
+		"independently; the command exits non-zero if any file failed.",
 	Args: cobra.MinimumNArgs(1),
 	RunE: run,
 }
@@ -35,9 +42,20 @@ var Cmd = &cobra.Command{
 func init() {
 	Cmd.Flags().StringVar(&message, "message", "Updated via markfluence", "Version message.")
 	Cmd.Flags().BoolVar(&force, "force", false, "Skip the file-mtime check and always update the page.")
+	Cmd.Flags().StringVar(&titleFlag, "title", "",
+		"Override the page title (requires a single FILE).")
+	Cmd.Flags().StringVar(&pageIDFlag, "page-id", "",
+		"Override the target page id (requires a single FILE).")
+	Cmd.Flags().StringVar(&pageWidthFlag, "page-width", "",
+		"Override the page width: narrow, wide, or max.")
 }
 
 func run(cmd *cobra.Command, args []string) error {
+	if overrideNeedsSingleFile(titleFlag, pageIDFlag, len(args)) {
+		ui.Error("--title/--page-id apply to a single page; pass exactly one FILE")
+		return ui.ErrSilent
+	}
+
 	url, _ := cmd.Flags().GetString("url")
 	username, _ := cmd.Flags().GetString("username")
 	c, err := client.Resolve(url, username)
@@ -67,29 +85,15 @@ func processFile(filename string, c *client.ConfluenceClient) bool {
 		return false
 	}
 
-	title := mf.Title()
-	if title == "" {
-		ui.Error(prefix + " no 'title' field found in frontmatter; add a 'title:' line")
+	title, pageID := resolveTitlePageID(titleFlag, pageIDFlag, mf)
+	if pageID == "" {
+		ui.Error(prefix + " no page id: set page_id in frontmatter or pass --page-id")
 		return false
 	}
-	width, err := pagewidth.Declared(mf.Frontmatter)
+	width, applyWidth, err := resolveWidth(pageWidthFlag, mf)
 	if err != nil {
 		ui.Error(prefix + " " + err.Error())
 		return false
-	}
-
-	pageID := mf.PageID()
-	if pageID == "" {
-		pageID = findByTitle(c, prefix, title)
-		if pageID == "" {
-			return false
-		}
-		ui.Info(fmt.Sprintf("%s Found page id %s; writing to frontmatter", prefix, pageID))
-		if err := os.WriteFile(filename,
-			[]byte(frontmatter.UpdateField(mf.Content, "page_id", pageID, "")), 0o644); err != nil {
-			ui.Error(prefix + " " + err.Error())
-			return false
-		}
 	}
 
 	page, err := c.GetPage(pageID)
@@ -98,6 +102,9 @@ func processFile(filename string, c *client.ConfluenceClient) bool {
 		return false
 	}
 	spaceKey := client.SpaceKeyFromWebUI(page.Links.WebUI)
+	if title == "" {
+		title = page.Title // fall back to the live page's title
+	}
 
 	if !force && page.Version.CreatedAt != "" {
 		if pageUpdated, err := time.Parse(time.RFC3339, page.Version.CreatedAt); err == nil {
@@ -134,14 +141,17 @@ func processFile(filename string, c *client.ConfluenceClient) bool {
 		return false
 	}
 
-	// Assert the page width (a separate content-property call); non-fatal.
-	if acts, err := pagewidth.Apply(c, pageID, width); err != nil {
-		ui.Warn(prefix + " could not set page width: " + err.Error())
-	} else {
-		for _, a := range acts {
-			if a.Action == "set" {
-				ui.Info(prefix + " page width: " + string(width))
-				break
+	// Assert the page width (a separate content-property call) only when set;
+	// non-fatal.
+	if applyWidth {
+		if acts, err := pagewidth.Apply(c, pageID, width); err != nil {
+			ui.Warn(prefix + " could not set page width: " + err.Error())
+		} else {
+			for _, a := range acts {
+				if a.Action == "set" {
+					ui.Info(prefix + " page width: " + string(width))
+					break
+				}
 			}
 		}
 	}
@@ -150,29 +160,41 @@ func processFile(filename string, c *client.ConfluenceClient) bool {
 	return true
 }
 
-// findByTitle resolves a page id by exact title, printing an error and returning
-// "" on zero or multiple matches.
-func findByTitle(c *client.ConfluenceClient, prefix, title string) string {
-	ui.Info(fmt.Sprintf("%s Searching for page titled '%s'...", prefix, title))
-	matches, err := c.SearchPagesByTitle(title, "")
-	if err != nil {
-		ui.Error(prefix + " " + err.Error())
-		return ""
+// overrideNeedsSingleFile reports whether a per-page override (--title/--page-id)
+// was given with anything other than exactly one FILE. --page-width is exempt (a
+// uniform width change across a batch is sensible).
+func overrideNeedsSingleFile(cliTitle, cliPageID string, nFiles int) bool {
+	return (cliTitle != "" || cliPageID != "") && nFiles != 1
+}
+
+// resolveTitlePageID resolves the effective title and page id, letting the CLI
+// flags override the file's frontmatter. Either may be "" (an empty title falls
+// back to the live page title later; an empty page id is an error).
+func resolveTitlePageID(cliTitle, cliPageID string, mf *frontmatter.MarkdownFile) (title, pageID string) {
+	title = cliTitle
+	if title == "" {
+		title = mf.Title()
 	}
-	switch len(matches) {
-	case 0:
-		ui.Error(fmt.Sprintf("%s no Confluence page found with title '%s'", prefix, title))
-		return ""
-	case 1:
-		return matches[0].ID
-	default:
-		ui.Error(fmt.Sprintf("%s found %d pages with title '%s':", prefix, len(matches), title))
-		for _, m := range matches {
-			ui.Error(fmt.Sprintf("%s   - %s: %s (%s/wiki/pages/viewpage.action?pageId=%s)",
-				prefix, m.ID, m.Title, c.BaseURL(), m.ID))
-		}
-		return ""
+	pageID = cliPageID
+	if pageID == "" {
+		pageID = mf.PageID()
 	}
+	return title, pageID
+}
+
+// resolveWidth resolves the page width to assert. It returns apply=false when
+// neither --page-width nor a frontmatter page_width is set, meaning the live
+// page's width should be left untouched.
+func resolveWidth(cliPageWidth string, mf *frontmatter.MarkdownFile) (pagewidth.Width, bool, error) {
+	if cliPageWidth != "" {
+		w, err := pagewidth.Declared(map[string]string{"page_width": cliPageWidth})
+		return w, err == nil, err
+	}
+	if raw, ok := mf.Frontmatter["page_width"]; ok && strings.TrimSpace(raw) != "" {
+		w, err := pagewidth.Declared(mf.Frontmatter)
+		return w, err == nil, err
+	}
+	return "", false, nil
 }
 
 func pageURL(c *client.ConfluenceClient, page *client.Page, pageID string) string {
