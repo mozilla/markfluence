@@ -98,16 +98,25 @@ Usage: markfluence update FILE... [flags]
 
 Update one or more Markdown files in Confluence.
 
-Page id and title are read from frontmatter; a missing `page_id` is looked up by
-`title` and written back. Updates are skipped when a file hasn't changed since the
-page's last version (compared by mtime) unless `--force` is given.
+Page id and title are read from frontmatter. A `page_id` is **required** (from
+frontmatter or `--page-id`); `update` errors if none is set. `--title` and
+`--page-id` override the frontmatter and require a single `FILE`; `--title`
+renames the page, and a title otherwise falls back to the live page's title.
+Page width is asserted only when `--page-width` is passed or a `page_width`
+frontmatter line is present — otherwise the live page's width is left untouched.
+`update` never writes back to the file.
 
-Each file is processed independently; the command exits non-zero if any file fails.
+Updates are skipped when a file hasn't changed since the page's last version
+(compared by mtime) unless `--force` is given. Each file is processed
+independently; the command exits non-zero if any file fails.
 
 ```sh
 markfluence update docs/managing_an_incident.md
 markfluence update docs/*.md --message "Bulk update"
-markfluence update docs/foo.md --force     # ignore the mtime check
+markfluence update docs/foo.md --force              # ignore the mtime check
+markfluence update page.md --page-id 123456         # override the target page
+markfluence update page.md --title "New Title"      # override / rename
+markfluence update docs/*.md --page-width wide      # set width across a batch
 ```
 
 ### `fix`
