@@ -1,0 +1,328 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mozilla/markfluence/schema/json-output/v1.json",
+  "title": "markfluence --json output (schema_version 1)",
+  "description": "The single JSON document markfluence writes to stdout under --json. results holds one object per target (a single element for info/read); its item shape and the summary shape depend on command. The typed error object written to stderr on a fatal/pre-flight failure conforms to #/$defs/errorObject.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "markfluence_version", "command", "results", "summary"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "markfluence_version": { "type": "string" },
+    "command": { "enum": ["info", "read", "update", "create", "fix"] },
+    "results": { "type": "array" },
+    "summary": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "command": { "const": "info" } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "results": { "items": { "oneOf": [{ "$ref": "#/$defs/infoResult" }, { "$ref": "#/$defs/singleOpFailure" }] } },
+          "summary": { "$ref": "#/$defs/basicSummary" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "command": { "const": "read" } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "results": { "items": { "oneOf": [{ "$ref": "#/$defs/readResult" }, { "$ref": "#/$defs/singleOpFailure" }] } },
+          "summary": { "$ref": "#/$defs/basicSummary" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "command": { "const": "update" } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "results": { "items": { "$ref": "#/$defs/updateResult" } },
+          "summary": { "$ref": "#/$defs/updateSummary" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "command": { "const": "create" } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "results": { "items": { "$ref": "#/$defs/createResult" } },
+          "summary": { "$ref": "#/$defs/createSummary" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "command": { "const": "fix" } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "results": { "items": { "$ref": "#/$defs/fixResult" } },
+          "summary": { "$ref": "#/$defs/fixSummary" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "code": {
+      "enum": ["CONFIG", "AUTH", "NOT_FOUND", "VALIDATION", "CONVERT", "IO", "NETWORK", "API"]
+    },
+    "codeOrNull": {
+      "oneOf": [{ "$ref": "#/$defs/code" }, { "type": "null" }]
+    },
+    "stringOrNull": {
+      "type": ["string", "null"]
+    },
+    "pageWidth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "default"],
+      "properties": {
+        "value": { "type": "string" },
+        "default": { "type": "boolean" }
+      }
+    },
+    "pageWidthOrNull": {
+      "oneOf": [{ "$ref": "#/$defs/pageWidth" }, { "type": "null" }]
+    },
+    "author": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account_id", "name"],
+      "properties": {
+        "account_id": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "stamp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "by"],
+      "properties": {
+        "at": { "type": "string" },
+        "by": { "oneOf": [{ "$ref": "#/$defs/author" }, { "type": "null" }] }
+      }
+    },
+    "stampOrNull": {
+      "oneOf": [{ "$ref": "#/$defs/stamp" }, { "type": "null" }]
+    },
+    "attachment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "filename"],
+      "properties": {
+        "action": { "type": "string" },
+        "filename": { "type": "string" }
+      }
+    },
+    "singleOpFailure": {
+      "description": "An operational failure for a single-target command (info/read): page not found, fetch error, etc.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "page_id", "error", "code"],
+      "properties": {
+        "ok": { "const": false },
+        "page_id": { "type": "string" },
+        "error": { "type": "string" },
+        "code": { "$ref": "#/$defs/code" }
+      }
+    },
+    "infoResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ok", "page_id", "title", "page_status", "space", "parent",
+        "version", "page_width", "created", "updated", "message", "url", "properties"
+      ],
+      "properties": {
+        "ok": { "const": true },
+        "page_id": { "type": "string" },
+        "title": { "type": "string" },
+        "page_status": { "type": "string" },
+        "space": { "type": "string" },
+        "parent": { "$ref": "#/$defs/stringOrNull" },
+        "version": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["number"],
+          "properties": { "number": { "type": "integer" } }
+        },
+        "page_width": { "$ref": "#/$defs/pageWidthOrNull" },
+        "created": { "$ref": "#/$defs/stampOrNull" },
+        "updated": { "$ref": "#/$defs/stampOrNull" },
+        "message": { "type": "string" },
+        "url": { "type": "string" },
+        "properties": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["key", "value"],
+                "properties": { "key": { "type": "string" }, "value": {} }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "readResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "page_id", "title", "space", "parent", "page_width", "format", "body"],
+      "properties": {
+        "ok": { "const": true },
+        "page_id": { "type": "string" },
+        "title": { "type": "string" },
+        "space": { "type": "string" },
+        "parent": { "$ref": "#/$defs/stringOrNull" },
+        "page_width": { "$ref": "#/$defs/pageWidthOrNull" },
+        "format": { "enum": ["markdown", "storage"] },
+        "body": { "type": "string" }
+      }
+    },
+    "updateResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ok", "status", "file", "page_id", "title", "space", "url",
+        "version", "page_width", "attachments", "warnings", "broken", "error", "code"
+      ],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "status": { "enum": ["published", "skipped", "failed"] },
+        "file": { "type": "string" },
+        "page_id": { "$ref": "#/$defs/stringOrNull" },
+        "title": { "$ref": "#/$defs/stringOrNull" },
+        "space": { "$ref": "#/$defs/stringOrNull" },
+        "url": { "$ref": "#/$defs/stringOrNull" },
+        "version": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["previous", "new"],
+              "properties": { "previous": { "type": "integer" }, "new": { "type": "integer" } }
+            }
+          ]
+        },
+        "page_width": { "$ref": "#/$defs/pageWidthOrNull" },
+        "attachments": { "type": "array", "items": { "$ref": "#/$defs/attachment" } },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "broken": { "type": "array", "items": { "type": "string" } },
+        "error": { "$ref": "#/$defs/stringOrNull" },
+        "code": { "$ref": "#/$defs/codeOrNull" }
+      }
+    },
+    "createResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ok", "status", "file", "page_id", "title", "space", "parent", "url",
+        "page_width", "persisted", "attachments", "warnings", "broken", "error", "code"
+      ],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "status": { "enum": ["created", "not_created", "failed"] },
+        "file": { "type": "string" },
+        "page_id": { "$ref": "#/$defs/stringOrNull" },
+        "title": { "$ref": "#/$defs/stringOrNull" },
+        "space": { "$ref": "#/$defs/stringOrNull" },
+        "parent": { "$ref": "#/$defs/stringOrNull" },
+        "url": { "$ref": "#/$defs/stringOrNull" },
+        "page_width": { "$ref": "#/$defs/pageWidthOrNull" },
+        "persisted": { "type": "boolean" },
+        "attachments": { "type": "array", "items": { "$ref": "#/$defs/attachment" } },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "broken": { "type": "array", "items": { "type": "string" } },
+        "error": { "$ref": "#/$defs/stringOrNull" },
+        "code": { "$ref": "#/$defs/codeOrNull" }
+      }
+    },
+    "fixResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "status", "file", "page_id", "dry_run", "changes", "warnings", "error", "code"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "status": { "enum": ["changed", "consistent", "failed"] },
+        "file": { "type": "string" },
+        "page_id": { "$ref": "#/$defs/stringOrNull" },
+        "dry_run": { "type": "boolean" },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field", "old", "new"],
+            "properties": {
+              "field": { "type": "string" },
+              "old": { "$ref": "#/$defs/stringOrNull" },
+              "new": { "type": "string" }
+            }
+          }
+        },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "error": { "$ref": "#/$defs/stringOrNull" },
+        "code": { "$ref": "#/$defs/codeOrNull" }
+      }
+    },
+    "basicSummary": {
+      "description": "info/read batch summary (always total:1).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "succeeded", "failed"],
+      "properties": {
+        "total": { "type": "integer" },
+        "succeeded": { "type": "integer" },
+        "failed": { "type": "integer" }
+      }
+    },
+    "updateSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "succeeded", "failed", "skipped"],
+      "properties": {
+        "total": { "type": "integer" },
+        "succeeded": { "type": "integer" },
+        "failed": { "type": "integer" },
+        "skipped": { "type": "integer" }
+      }
+    },
+    "createSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "succeeded", "failed", "aborted"],
+      "properties": {
+        "total": { "type": "integer" },
+        "succeeded": { "type": "integer" },
+        "failed": { "type": "integer" },
+        "aborted": { "type": "boolean" }
+      }
+    },
+    "fixSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "succeeded", "failed", "changed", "consistent"],
+      "properties": {
+        "total": { "type": "integer" },
+        "succeeded": { "type": "integer" },
+        "failed": { "type": "integer" },
+        "changed": { "type": "integer" },
+        "consistent": { "type": "integer" }
+      }
+    },
+    "errorObject": {
+      "description": "The typed error object written to stderr on a fatal/pre-flight failure. command may be empty for a pre-parse (bad-flag) error.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "command", "error", "code"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "command": { "type": "string" },
+        "error": { "type": "string" },
+        "code": { "$ref": "#/$defs/code" }
+      }
+    }
+  }
+}

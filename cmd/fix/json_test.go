@@ -1,12 +1,39 @@
 package fix
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/schematest"
 )
+
+func TestSchemaConformance(t *testing.T) {
+	results := []*fixResult{
+		{
+			file: "docs/foo.md", ok: true, status: statusChanged, pageID: "123",
+			changes: []change{
+				{field: "space", oldDisplay: "OLD", newValue: "ENG"},
+				{field: "page_id", oldDisplay: noneDisplay, newValue: "123"},
+			},
+			warnings: []string{"could not read page width: boom"},
+		},
+		{file: "clean.md", ok: true, status: statusConsistent, pageID: "9"},
+		(&fixResult{file: "bad.md"}).fail(errString("no page_id or title"), jsonout.CodeValidation),
+	}
+	items := make([]any, len(results))
+	for i, r := range results {
+		items[i] = r.jsonResult()
+	}
+	env := jsonout.NewEnvelope("fix", items, summarize(results))
+	var buf bytes.Buffer
+	if err := jsonout.Emit(&buf, env); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	schematest.ValidateEnvelope(t, buf.Bytes())
+}
 
 func TestJSONResultChanged(t *testing.T) {
 	r := &fixResult{

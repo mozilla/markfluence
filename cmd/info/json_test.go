@@ -7,6 +7,7 @@ import (
 
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/schematest"
 )
 
 func fullReport() report {
@@ -120,16 +121,22 @@ func TestJSONResultNoAuthorWhenIDMissing(t *testing.T) {
 	}
 }
 
-// Guard: an operational-failure envelope stays valid JSON on stdout.
-func TestOperationalFailEnvelopeShape(t *testing.T) {
-	res := map[string]any{"ok": false, "page_id": "999", "error": "page 999 not found", "code": jsonout.CodeNotFound}
-	env := jsonout.NewEnvelope("info", []any{res}, map[string]int{"total": 1, "succeeded": 0, "failed": 1})
+// TestSchemaConformance validates real info envelopes (success and the
+// operational-failure single-target shape) against the published JSON Schema.
+func TestSchemaConformance(t *testing.T) {
+	success := jsonout.NewEnvelope("info", []any{fullReport().jsonResult()},
+		map[string]int{"total": 1, "succeeded": 1, "failed": 0})
 	var buf bytes.Buffer
-	if err := jsonout.Emit(&buf, env); err != nil {
+	if err := jsonout.Emit(&buf, success); err != nil {
 		t.Fatalf("Emit: %v", err)
 	}
-	var round map[string]any
-	if err := json.Unmarshal(buf.Bytes(), &round); err != nil {
-		t.Fatalf("output not valid JSON: %v\n%s", err, buf.String())
+	schematest.ValidateEnvelope(t, buf.Bytes())
+
+	failRes := map[string]any{"ok": false, "page_id": "999", "error": "page 999 not found", "code": jsonout.CodeNotFound}
+	failEnv := jsonout.NewEnvelope("info", []any{failRes}, map[string]int{"total": 1, "succeeded": 0, "failed": 1})
+	buf.Reset()
+	if err := jsonout.Emit(&buf, failEnv); err != nil {
+		t.Fatalf("Emit: %v", err)
 	}
+	schematest.ValidateEnvelope(t, buf.Bytes())
 }

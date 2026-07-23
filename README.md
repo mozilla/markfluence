@@ -235,6 +235,12 @@ target (a single element for `info`/`read`); `summary` carries batch counts:
 }
 ```
 
+The full contract is published as a JSON Schema (draft 2020-12) at
+[`schema/json-output/v1.json`](schema/json-output/v1.json) — the `results` item
+and `summary` shapes are selected by `command`, and the stderr error object is
+`#/$defs/errorObject`. A test validates markfluence's actual output against it, so
+the schema cannot drift from the implementation.
+
 Notes on the schema:
 
 - **Per-command stable.** Each command always emits the same keys in the same
