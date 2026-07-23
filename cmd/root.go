@@ -77,6 +77,11 @@ func init() {
 		"Disable colored output")
 	rootCmd.PersistentFlags().SortFlags = false
 
+	// Append a docs footer to every command's --help output. Subcommands inherit
+	// the root's help template, so setting it once covers them all.
+	rootCmd.SetHelpTemplate(rootCmd.HelpTemplate() +
+		"\nMore documentation at: https://github.com/mozilla/markfluence\n")
+
 	rootCmd.AddCommand(update.Cmd)
 	rootCmd.AddCommand(create.Cmd)
 	rootCmd.AddCommand(fix.Cmd)
