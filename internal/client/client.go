@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -36,9 +37,17 @@ const (
 	timeoutUpload = 120 * time.Second
 )
 
-// retrySleep is the pause before retrying a content-property write. It is a
-// package variable so tests can shorten it.
-var retrySleep = time.Second
+const (
+	// maxRetries is the number of retries (so up to maxRetries+1 attempts) for
+	// transient failures.
+	maxRetries = 4
+	// baseBackoff is the first retry delay; it doubles each attempt up to maxBackoff.
+	baseBackoff = time.Second
+	maxBackoff  = 30 * time.Second
+)
+
+// sleep is the backoff pause primitive; a package variable so tests can stub it.
+var sleep = time.Sleep
 
 // ConfluenceClient talks to the Confluence REST API as a single authenticated user.
 type ConfluenceClient struct {
@@ -155,9 +164,6 @@ type SyncAction struct {
 func (c *ConfluenceClient) doJSON(
 	method, rawURL string, params url.Values, reqBody, out any, timeout time.Duration,
 ) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
 	var body io.Reader
 	if reqBody != nil {
 		b, err := json.Marshal(reqBody)
@@ -169,14 +175,16 @@ func (c *ConfluenceClient) doJSON(
 	if len(params) > 0 {
 		rawURL += "?" + params.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, method, rawURL, body)
+	// http.NewRequest sets GetBody for a bytes.Reader body, so send can rebuild
+	// the body on a retry.
+	req, err := http.NewRequest(method, rawURL, body)
 	if err != nil {
 		return err
 	}
 	if reqBody != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	status, respBody, err := c.send(req)
+	status, respBody, err := c.send(req, timeout)
 	if err != nil {
 		return err
 	}
@@ -189,17 +197,115 @@ func (c *ConfluenceClient) doJSON(
 	return nil
 }
 
-// send sets common headers, executes the request, and returns the status and body.
-func (c *ConfluenceClient) send(req *http.Request) (int, []byte, error) {
+// send sets common headers and executes req, retrying transient failures with
+// exponential backoff (honoring Retry-After). Each attempt runs under a fresh
+// context with the given per-attempt timeout. 429 is retried for any method (the
+// request was rejected before processing); 502/503/504 and network errors are
+// retried only for idempotent methods, so a non-idempotent POST is retried solely
+// on 429.
+func (c *ConfluenceClient) send(req *http.Request, timeout time.Duration) (int, []byte, error) {
 	req.SetBasicAuth(c.username, c.token)
 	req.Header.Set("Accept", "application/json")
-	resp, err := c.http.Do(req)
+
+	for attempt := 0; ; attempt++ {
+		status, body, retryAfter, err := c.attempt(req, timeout)
+		switch {
+		case err != nil:
+			if attempt < maxRetries && isIdempotent(req.Method) {
+				sleep(backoff(attempt, 0))
+				continue
+			}
+			return 0, nil, err
+		case attempt < maxRetries && retryableStatus(status, req.Method):
+			sleep(backoff(attempt, retryAfter))
+			continue
+		default:
+			return status, body, nil
+		}
+	}
+}
+
+// attempt performs a single HTTP round trip under a fresh timeout context,
+// returning the status, body, and any Retry-After delay the response advertised.
+func (c *ConfluenceClient) attempt(req *http.Request, timeout time.Duration) (int, []byte, time.Duration, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	r := req.Clone(ctx)
+	if req.GetBody != nil { // rebuild the body so retries don't send an empty one
+		body, err := req.GetBody()
+		if err != nil {
+			return 0, nil, 0, err
+		}
+		r.Body = body
+	}
+
+	resp, err := c.http.Do(r)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, 0, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(resp.Body)
-	return resp.StatusCode, data, err
+	if err != nil {
+		return 0, nil, 0, err
+	}
+	return resp.StatusCode, data, parseRetryAfter(resp.Header.Get("Retry-After")), nil
+}
+
+// isIdempotent reports whether retrying a method can't cause a duplicate write.
+func isIdempotent(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete, http.MethodOptions:
+		return true
+	default:
+		return false
+	}
+}
+
+// retryableStatus reports whether a response status warrants a retry.
+func retryableStatus(status int, method string) bool {
+	switch status {
+	case http.StatusTooManyRequests:
+		return true
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return isIdempotent(method)
+	default:
+		return false
+	}
+}
+
+// backoff returns the delay before a retry: the server's Retry-After when given,
+// otherwise exponential (baseBackoff * 2^attempt), both capped at maxBackoff.
+func backoff(attempt int, retryAfter time.Duration) time.Duration {
+	if retryAfter > 0 {
+		if retryAfter > maxBackoff {
+			return maxBackoff
+		}
+		return retryAfter
+	}
+	d := baseBackoff << attempt
+	if d <= 0 || d > maxBackoff { // d <= 0 guards a shift overflow
+		return maxBackoff
+	}
+	return d
+}
+
+// parseRetryAfter parses a Retry-After header (delta-seconds or an HTTP date),
+// returning 0 when absent or unparseable.
+func parseRetryAfter(v string) time.Duration {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(v); err == nil && secs >= 0 {
+		return time.Duration(secs) * time.Second
+	}
+	if t, err := http.ParseTime(v); err == nil {
+		if d := time.Until(t); d > 0 {
+			return d
+		}
+	}
+	return 0
 }
 
 // --- pages -------------------------------------------------------------------
@@ -438,15 +544,13 @@ func (c *ConfluenceClient) uploadAttachment(rawURL, filename, comment, filePath,
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeoutUpload)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, &buf)
+	req, err := http.NewRequest(http.MethodPost, rawURL, &buf)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	req.Header.Set("X-Atlassian-Token", "nocheck")
-	status, respBody, err := c.send(req)
+	status, respBody, err := c.send(req, timeoutUpload)
 	if err != nil {
 		return err
 	}
@@ -519,7 +623,9 @@ func (c *ConfluenceClient) ListContentProperties(pageID string) ([]Property, err
 // "unchanged". It creates the property if absent, updates it (version-bumped) if
 // it differs, and does nothing if it already equals value. On an error it pauses
 // and retries once (the retry re-reads first, so an already-applied write
-// resolves to "unchanged").
+// resolves to "unchanged"). This sits above send's transport retry: it recovers
+// the case where the non-idempotent create POST succeeded but its response was
+// lost, which the transport layer won't retry.
 func (c *ConfluenceClient) SetContentProperty(pageID, key, value string) (string, error) {
 	var lastErr error
 	for attempt := 1; attempt <= 2; attempt++ {
@@ -529,7 +635,7 @@ func (c *ConfluenceClient) SetContentProperty(pageID, key, value string) (string
 		}
 		lastErr = err
 		if attempt == 1 {
-			time.Sleep(retrySleep)
+			sleep(baseBackoff)
 		}
 	}
 	return "", lastErr
