@@ -142,6 +142,10 @@ func renderBlock(n *snode, listIndent string) string {
 		return renderTable(n)
 	case "ac:structured-macro":
 		return renderMacro(n, listIndent)
+	case "ac:image", "a", "strong", "b", "em", "i", "code", "del", "s", "strike", "br":
+		// An inline element sitting at block level (Confluence often emits a bare
+		// <ac:image> not wrapped in <p>) is rendered as its own paragraph.
+		return renderInline(n)
 	case "div", "ac:layout", "ac:layout-section", "ac:layout-cell":
 		return strings.Join(blockStrings(n.kids, listIndent), "\n\n")
 	default:
