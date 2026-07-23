@@ -160,10 +160,10 @@ or a Confluence page URL (the modern `/wiki/.../pages/<id>/...` form or a legacy
   what `create`/`update` publish. The Confluence API has no markdown
   representation, so markfluence converts the storage body itself: constructs
   markfluence emits round-trip faithfully, while editor-authored content degrades
-  gracefully — any macro markfluence doesn't map (panels, expand, status, …)
-  passes through as raw storage, and column layouts keep their tags around
-  markdown-converted cell content, so both round-trip back through
-  `create`/`update`. Some transforms are lossy (e.g. `CAUTION`
+  gracefully — any macro markfluence doesn't map (panels, expand, status, …) and
+  column layouts pass through as raw storage tags, with a macro/cell body kept as
+  readable markdown, so they round-trip back through `create`/`update`. Some
+  transforms are lossy (e.g. `CAUTION`
   alerts, internal links, and original image paths cannot be recovered), so this is
   a reading aid, not a guaranteed source round-trip.
 - `storage` — the page's raw storage-format XHTML, exactly as stored.

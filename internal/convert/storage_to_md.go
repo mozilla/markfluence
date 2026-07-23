@@ -141,13 +141,13 @@ func renderBlock(n *snode, listIndent string) string {
 	case "table":
 		return renderTable(n)
 	case "ac:structured-macro":
-		return renderMacro(n)
+		return renderMacro(n, true)
 	case "ac:image", "a", "strong", "b", "em", "i", "code", "del", "s", "strike", "br":
 		// An inline element sitting at block level (Confluence often emits a bare
 		// <ac:image> not wrapped in <p>) is rendered as its own paragraph.
 		return renderInline(n)
 	case "ac:layout", "ac:layout-section", "ac:layout-cell":
-		return renderLayout(n)
+		return renderRawBlock(n)
 	case "div":
 		return strings.Join(blockStrings(n.kids, listIndent), "\n\n")
 	default:
@@ -269,10 +269,11 @@ func cellTexts(tr *snode) []string {
 }
 
 // renderMacro renders an <ac:structured-macro>: the code/toc/callout macros
-// MdToConfluence emits become their markdown equivalents; any other macro
-// (bodied or leaf) passes through as raw storage, which is lossless and
-// round-trips back through MdToConfluence's ac:/ri: shield.
-func renderMacro(n *snode) string {
+// MdToConfluence emits become their markdown equivalents; any other macro passes
+// through as raw storage. A block-context unknown macro uses the round-trip-safe
+// multi-line form (renderRawBlock, markdown body); an inline one stays raw on a
+// single line so it does not break out of its paragraph.
+func renderMacro(n *snode, block bool) string {
 	switch name := n.attrs["ac:name"]; {
 	case name == "code":
 		return renderCodeMacro(n)
@@ -280,6 +281,8 @@ func renderMacro(n *snode) string {
 		return tocToken
 	case calloutMacroInverse[name] != "":
 		return renderCallout(n, name)
+	case block:
+		return renderRawBlock(n)
 	default:
 		return serialize(n)
 	}
@@ -342,10 +345,9 @@ func renderInline(n *snode) string {
 	case "ac:image":
 		return renderImage(n)
 	case "ac:structured-macro":
-		// An inline macro (e.g. status/emoticon) goes through the same handler;
-		// an unknown macro passes through as raw storage rather than having its
-		// parameter text flattened.
-		return renderMacro(n)
+		// An inline macro (e.g. status/emoticon) stays raw on one line so it does
+		// not break out of its paragraph.
+		return renderMacro(n, false)
 	default:
 		return renderInlineChildren(n)
 	}
@@ -502,33 +504,52 @@ func attrString(attrs map[string]string) string {
 	return b.String()
 }
 
-// layoutElements are the Confluence layout containers.
-var layoutElements = map[string]bool{
-	"ac:layout": true, "ac:layout-section": true, "ac:layout-cell": true,
-}
-
-// renderLayout emits a layout container as its raw storage tags wrapping either
-// nested layout elements or, at a cell, its content converted to markdown and
-// set off by blank lines. This mirrors how such layouts are authored (raw tags
-// around markdown) and how MdToConfluence republishes them, so it round-trips.
-func renderLayout(n *snode) string {
+// renderRawBlock emits a block-level storage element for passthrough in a form
+// that round-trips through MdToConfluence: each wrapper tag on its own line (a
+// CommonMark type-7 HTML block), a content container's body converted to markdown
+// and set off by blank lines, and leaf elements (e.g. ac:parameter) serialized
+// raw on a single line. This covers both column layouts and bodied macros
+// (expand, panel, …), keeping their bodies readable while the structure and
+// parameters survive verbatim.
+func renderRawBlock(n *snode) string {
 	open := "<" + n.name + attrString(n.attrs) + ">"
 	closeTag := "</" + n.name + ">"
 
-	var nested []string
-	var content []*snode
+	// Content container: raw tags around a markdown body.
+	if n.name == "ac:rich-text-body" || n.name == "ac:layout-cell" {
+		if md := strings.Join(blockStrings(n.kids, ""), "\n\n"); md != "" {
+			return open + "\n\n" + md + "\n\n" + closeTag
+		}
+		return open + closeTag
+	}
+	if len(n.kids) == 0 {
+		return "<" + n.name + attrString(n.attrs) + " />"
+	}
+
+	// Wrapper: one line per element child; a child with element children (or a
+	// content container) recurses, a leaf child is serialized raw inline.
+	var parts []string
 	for _, k := range n.kids {
-		switch {
-		case layoutElements[k.name]:
-			nested = append(nested, renderLayout(k))
-		case k.name != "" || strings.TrimSpace(k.text) != "":
-			content = append(content, k)
+		if k.name == "" {
+			continue // drop inter-tag whitespace
+		}
+		if k.name == "ac:rich-text-body" || k.name == "ac:layout-cell" || hasElementChild(k) {
+			parts = append(parts, renderRawBlock(k))
+		} else {
+			parts = append(parts, serialize(k))
 		}
 	}
-	if len(nested) > 0 {
-		return open + "\n" + strings.Join(nested, "\n") + "\n" + closeTag
+	return open + "\n" + strings.Join(parts, "\n") + "\n" + closeTag
+}
+
+// hasElementChild reports whether n has any element (non-text) child.
+func hasElementChild(n *snode) bool {
+	for _, k := range n.kids {
+		if k.name != "" {
+			return true
+		}
 	}
-	return open + "\n\n" + strings.Join(blockStrings(content, ""), "\n\n") + "\n\n" + closeTag
+	return false
 }
 
 func xmlTextEscape(s string) string {

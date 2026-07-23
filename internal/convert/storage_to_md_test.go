@@ -117,3 +117,30 @@ func TestRoundTripStableCallouts(t *testing.T) {
 		t.Errorf("round-trip mismatch\n--- got ---\n%s\n--- want ---\n%s", got, src)
 	}
 }
+
+// TestRoundTripPassthrough verifies that the raw-storage passthrough cases
+// (column layouts and unknown macros) survive markdown -> storage -> markdown
+// unchanged -- the whole point of emitting them in a form MdToConfluence
+// re-publishes verbatim.
+func TestRoundTripPassthrough(t *testing.T) {
+	for _, name := range []string{"layout", "unknown-macros"} {
+		t.Run(name, func(t *testing.T) {
+			src, err := os.ReadFile(filepath.Join(storage2mdDir, name, "output.md"))
+			if err != nil {
+				t.Fatalf("reading golden: %v", err)
+			}
+			md := frontmatter.Parse("main.md", string(src))
+			page, err := convert.MdToConfluence(md, "https://wiki.example.net", "ENG", "vtest")
+			if err != nil {
+				t.Fatalf("MdToConfluence: %v", err)
+			}
+			back, err := convert.StorageToMarkdown(page.HTML)
+			if err != nil {
+				t.Fatalf("StorageToMarkdown: %v", err)
+			}
+			if back != string(src) {
+				t.Errorf("round-trip mismatch\n--- got ---\n%s\n--- want ---\n%s", back, src)
+			}
+		})
+	}
+}

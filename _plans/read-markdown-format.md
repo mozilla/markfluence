@@ -49,22 +49,29 @@ The markdown output is prefixed with YAML frontmatter: `title`, `page_id`, `spac
   field is omitted (the read still succeeds), matching `info`'s tolerance.
 - Frontmatter is assembled in `cmd/read` using `internal/frontmatter` quoting.
 
-### Unknown macros — raw passthrough
+### Unknown macros & layouts — raw passthrough (`renderRawBlock`)
 
-Any `ac:structured-macro` markfluence doesn't map (i.e. not code/toc/callout) —
-whether bodied (panel, expand, …) or a leaf (status, …) — is emitted as its raw
-storage XML. Lossless and round-trips back through `MdToConfluence`'s existing
-`ac:`/`ri:` shield.
+Any `ac:structured-macro` markfluence doesn't map (not code/toc/callout) and the
+column-layout containers (`ac:layout`/`-section`/`-cell`) pass through as raw
+storage, in a form that round-trips back through `MdToConfluence`'s `ac:`/`ri:`
+shield:
 
-Column layouts (`ac:layout`/`-section`/`-cell`) are emitted as their raw storage
-tags wrapping each cell's content converted to markdown (set off by blank lines),
-mirroring how such layouts are authored and republished — so they round-trip too,
-while cell content stays readable. (A generic `div` still flattens to its
-content.)
+- **Block context:** `renderRawBlock` emits each wrapper tag on its own line (a
+  CommonMark type-7 HTML block, which is what makes the shield round-trip work),
+  serializes leaf children (e.g. `ac:parameter`) raw on a single line, and renders
+  a content container's body (`ac:rich-text-body`, `ac:layout-cell`) as markdown
+  set off by blank lines. So a bodied macro (`expand`, `panel`) keeps its wrapper
+  and parameters verbatim while its body stays readable markdown, and a two-column
+  layout keeps its structure with markdown cell content.
+- **Inline context:** an inline macro (`status`, emoticon) stays fully raw on a
+  single line so it doesn't break out of its paragraph.
 
-Superseded an earlier "recurse the rich-text-body of bodied macros" design: that
-dropped macro parameters that carry content (e.g. an `expand` macro's title), so
-passthrough is used uniformly instead.
+(A generic `div` still flattens to its content.)
+
+This supersedes two earlier designs: "recurse the body and drop the wrapper"
+(lost content-bearing parameters like an `expand` title) and "serialize the whole
+subtree raw on one line" (didn't round-trip — goldmark wrapped the packed tags in
+a `<p>` — and left macro/cell bodies as unreadable HTML).
 
 ## Construct mapping (inverse of `MdToConfluence`)
 
