@@ -5,12 +5,14 @@ package read
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/frontmatter"
+	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
@@ -45,15 +47,13 @@ func init() {
 
 func run(cmd *cobra.Command, args []string) error {
 	if formatFlag != formatMarkdown && formatFlag != formatStorage {
-		ui.Error(fmt.Sprintf("unsupported --format %q (supported: %s, %s)",
-			formatFlag, formatMarkdown, formatStorage))
-		return ui.ErrSilent
+		return fatalFail(fmt.Sprintf("unsupported --format %q (supported: %s, %s)",
+			formatFlag, formatMarkdown, formatStorage), jsonout.CodeValidation)
 	}
 
 	pageID, err := parsePageID(args[0])
 	if err != nil {
-		ui.Error(err.Error())
-		return ui.ErrSilent
+		return fatalFail(err.Error(), jsonout.CodeValidation)
 	}
 
 	url, _ := cmd.Flags().GetString("url")
@@ -61,38 +61,68 @@ func run(cmd *cobra.Command, args []string) error {
 	envFile, _ := cmd.Flags().GetString("env-file")
 	c, err := client.Resolve(url, username, envFile)
 	if err != nil {
-		ui.Error(err.Error())
-		return ui.ErrSilent
+		return fatalFail(err.Error(), jsonout.CodeConfig)
 	}
 
 	page, err := c.GetPageBodyOrNil(pageID)
 	if err != nil {
-		ui.Error(err.Error())
-		return ui.ErrSilent
+		return operationalFail(pageID, err, jsonout.CodeFor(err))
 	}
 	if page == nil {
-		ui.Error(fmt.Sprintf("page %s not found", pageID))
-		return ui.ErrSilent
+		return operationalFail(pageID, fmt.Errorf("page %s not found", pageID), jsonout.CodeNotFound)
 	}
 	if page.Body.Storage.Value == "" {
-		ui.Error(fmt.Sprintf(
+		return operationalFail(pageID, fmt.Errorf(
 			"page %s has no readable body (it may be a folder or an unsupported content type)",
-			pageID))
-		return ui.ErrSilent
+			pageID), jsonout.CodeValidation)
+	}
+
+	body := page.Body.Storage.Value
+	if formatFlag == formatMarkdown {
+		body, err = convert.StorageToMarkdown(page.Body.Storage.Value)
+		if err != nil {
+			return operationalFail(pageID, err, jsonout.CodeConvert)
+		}
+	}
+
+	if ui.IsJSON() {
+		env := jsonout.NewEnvelope("read", []any{buildResult(c, page, formatFlag, body)},
+			map[string]int{"total": 1, "succeeded": 1, "failed": 0})
+		return jsonout.Emit(os.Stdout, env)
 	}
 
 	if formatFlag == formatStorage {
-		fmt.Println(page.Body.Storage.Value)
+		fmt.Println(body)
 		return nil
-	}
-
-	body, err := convert.StorageToMarkdown(page.Body.Storage.Value)
-	if err != nil {
-		ui.Error(err.Error())
-		return ui.ErrSilent
 	}
 	fmt.Print(frontmatterBlock(c, page) + "\n" + body)
 	return nil
+}
+
+// fatalFail reports a config/usage/pre-flight failure: a JSON error object on
+// stderr under --json, else a human error line, exiting 2.
+func fatalFail(msg string, code jsonout.Code) error {
+	if ui.IsJSON() {
+		_ = jsonout.EmitError(os.Stderr, "read", msg, code)
+	} else {
+		ui.Error(msg)
+	}
+	return ui.SilentExit(2)
+}
+
+// operationalFail reports an operational failure for the single target: under
+// --json a results[0] entry {ok:false,error,code}, else a human error line,
+// exiting 1.
+func operationalFail(pageID string, err error, code jsonout.Code) error {
+	if ui.IsJSON() {
+		res := map[string]any{"ok": false, "page_id": pageID, "error": err.Error(), "code": code}
+		env := jsonout.NewEnvelope("read", []any{res},
+			map[string]int{"total": 1, "succeeded": 0, "failed": 1})
+		_ = jsonout.Emit(os.Stdout, env)
+	} else {
+		ui.Error(err.Error())
+	}
+	return ui.SilentExit(1)
 }
 
 // frontmatterBlock builds the YAML frontmatter prefix for markdown output:

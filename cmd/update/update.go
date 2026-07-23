@@ -3,6 +3,7 @@
 package update
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/frontmatter"
+	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
@@ -61,16 +63,42 @@ func run(cmd *cobra.Command, args []string) error {
 	envFile, _ := cmd.Flags().GetString("env-file")
 	c, err := client.Resolve(url, username, envFile)
 	if err != nil {
-		ui.Error(err.Error())
-		return ui.ErrSilent
+		if ui.IsJSON() {
+			_ = jsonout.EmitError(os.Stderr, "update", err.Error(), jsonout.CodeConfig)
+		} else {
+			ui.Error(err.Error())
+		}
+		return ui.SilentExit(2)
 	}
 
 	failures := 0
+	results := make([]*updateResult, 0, len(args))
 	for _, filename := range args {
-		if !processFile(filename, c) {
+		r := processFile(filename, c)
+		results = append(results, r)
+		if !ui.IsJSON() {
+			r.renderHuman()
+		}
+		if !r.ok {
 			failures++
 		}
 	}
+
+	if ui.IsJSON() {
+		items := make([]any, len(results))
+		for i, r := range results {
+			items[i] = r.jsonResult()
+		}
+		env := jsonout.NewEnvelope("update", items, summarize(results))
+		if err := jsonout.Emit(os.Stdout, env); err != nil {
+			return err
+		}
+		if failures > 0 {
+			return ui.SilentExit(1)
+		}
+		return nil
+	}
+
 	if failures > 0 {
 		ui.Error(fmt.Sprintf("%d of %d file(s) failed.", failures, len(args)))
 		return ui.ErrSilent
@@ -78,87 +106,92 @@ func run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func processFile(filename string, c *client.ConfluenceClient) bool {
-	prefix := "[" + filename + "]"
+// processFile publishes one file and returns a result describing the outcome. It
+// performs no output itself; the caller renders the result (human lines or JSON).
+func processFile(filename string, c *client.ConfluenceClient) *updateResult {
+	r := &updateResult{file: filename}
 	mf, err := frontmatter.ParseFile(filename)
 	if err != nil {
-		ui.Error(prefix + " " + err.Error())
-		return false
+		return r.fail(err, jsonout.CodeValidation)
 	}
 
 	title, pageID := resolveTitlePageID(titleFlag, pageIDFlag, mf)
 	if pageID == "" {
-		ui.Error(prefix + " no page id: set page_id in frontmatter or pass --page-id")
-		return false
+		return r.fail(errors.New("no page id: set page_id in frontmatter or pass --page-id"),
+			jsonout.CodeValidation)
 	}
+	r.pageID = pageID
 	width, applyWidth, err := resolveWidth(pageWidthFlag, mf)
 	if err != nil {
-		ui.Error(prefix + " " + err.Error())
-		return false
+		return r.fail(err, jsonout.CodeValidation)
 	}
 
 	page, err := c.GetPage(pageID)
 	if err != nil {
-		ui.Error(prefix + " " + err.Error())
-		return false
+		return r.fail(err, jsonout.CodeFor(err))
 	}
-	spaceKey := client.SpaceKeyFromWebUI(page.Links.WebUI)
+	r.space = client.SpaceKeyFromWebUI(page.Links.WebUI)
 	if title == "" {
 		title = page.Title // fall back to the live page's title
 	}
+	r.title = title
+	r.versionPrev = page.Version.Number
+	r.url = pageURL(c, page, pageID)
 
 	if !force && page.Version.CreatedAt != "" {
 		if pageUpdated, err := time.Parse(time.RFC3339, page.Version.CreatedAt); err == nil {
 			if info, err := os.Stat(filename); err == nil && !info.ModTime().After(pageUpdated) {
-				ui.Info(prefix + " Skipping -- no changes")
-				return true
+				r.ok = true
+				r.status = statusSkipped
+				r.versionNew = page.Version.Number
+				return r
 			}
 		}
 	}
 
-	pageContent, err := convert.MdToConfluence(mf, c.BaseURL(), spaceKey, buildinfo.Stamp())
+	pageContent, err := convert.MdToConfluence(mf, c.BaseURL(), r.space, buildinfo.Stamp())
 	if err != nil {
-		ui.Error(prefix + " " + err.Error())
-		return false
+		return r.fail(err, jsonout.CodeConvert)
 	}
-	for _, msg := range append(append([]string{}, pageContent.Broken...), pageContent.Warnings...) {
-		ui.Warn(prefix + " " + msg)
-	}
+	r.broken = append(r.broken, pageContent.Broken...)
+	r.warnings = append(r.warnings, pageContent.Warnings...)
 
 	actions, err := c.SyncAttachments(pageID, toLocalAttachments(pageContent.Attachments))
 	if err != nil {
-		ui.Error(prefix + " " + err.Error())
-		return false
+		return r.fail(err, jsonout.CodeFor(err))
 	}
 	for _, a := range actions {
-		ui.Info(fmt.Sprintf("%s attachment %s: %s", prefix, a.Action, a.Filename))
+		r.attachments = append(r.attachments, jsonout.Attachment{Action: a.Action, Filename: a.Filename})
 	}
 
 	next := page.Version.Number + 1
-	ui.Info(fmt.Sprintf("%s Updating '%s' (v%d -> v%d)...", prefix, title, page.Version.Number, next))
 	result, err := c.UpdatePage(pageID, title, pageContent.HTML, next, message)
 	if err != nil {
-		ui.Error(prefix + " " + err.Error())
-		return false
+		return r.fail(err, jsonout.CodeFor(err))
 	}
+	r.versionNew = next
+	r.url = pageURL(c, result, pageID)
 
 	// Assert the page width (a separate content-property call) only when set;
-	// non-fatal.
+	// non-fatal (a failure is a warning, not an error).
 	if applyWidth {
+		r.width = &jsonout.PageWidth{Value: string(width), Default: false}
 		if acts, err := pagewidth.Apply(c, pageID, width); err != nil {
-			ui.Warn(prefix + " could not set page width: " + err.Error())
+			r.width = nil
+			r.warnings = append(r.warnings, "could not set page width: "+err.Error())
 		} else {
 			for _, a := range acts {
 				if a.Action == "set" {
-					ui.Info(prefix + " page width: " + string(width))
+					r.widthSet = true
 					break
 				}
 			}
 		}
 	}
 
-	ui.Success(fmt.Sprintf("%s Published v%d: %s", prefix, next, pageURL(c, result, pageID)))
-	return true
+	r.ok = true
+	r.status = statusPublished
+	return r
 }
 
 // overrideNeedsSingleFile reports whether a per-page override (--title/--page-id)

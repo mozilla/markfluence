@@ -14,6 +14,7 @@ import (
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/frontmatter"
+	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
@@ -75,10 +76,12 @@ type record struct {
 	width    pagewidth.Width
 }
 
+// failure is a phase-1 validation error against a file (or "(hierarchy)").
+type failure struct{ filename, message string }
+
 func run(cmd *cobra.Command, args []string) error {
 	if overrideNeedsSingleFile(titleOpt, len(args)) {
-		ui.Error("--title applies to a single page; pass exactly one FILE")
-		return ui.ErrSilent
+		return fatalFail("--title applies to a single page; pass exactly one FILE", jsonout.CodeConfig)
 	}
 	doPersist := wantPersist(persistOpt, noPersistOpt)
 
@@ -87,8 +90,7 @@ func run(cmd *cobra.Command, args []string) error {
 	envFile, _ := cmd.Flags().GetString("env-file")
 	c, err := client.Resolve(url, username, envFile)
 	if err != nil {
-		ui.Error(err.Error())
-		return ui.ErrSilent
+		return fatalFail(err.Error(), jsonout.CodeConfig)
 	}
 
 	inSetAbs := map[string]bool{}
@@ -100,7 +102,6 @@ func run(cmd *cobra.Command, args []string) error {
 	spaceCache := map[string]string{}
 
 	// Phase 1: validate every file, create nothing.
-	type failure struct{ filename, message string }
 	var records []record
 	var errs []failure
 	for _, filename := range args {
@@ -132,35 +133,39 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(errs) > 0 {
-		for _, e := range errs {
-			ui.Error(fmt.Sprintf("[%s] %s", e.filename, e.message))
-		}
-		ui.Error(fmt.Sprintf("Aborting: %d file(s) failed validation; nothing was created.", len(errs)))
-		return ui.ErrSilent
+		return abort(args, errs)
 	}
 
 	// Phase 2: create in topological order.
 	created := map[string]string{}
 	failures := 0
+	results := make([]*createResult, 0, len(ordered))
 	for _, r := range ordered {
-		prefix := "[" + r.filename + "]"
-		parentID := r.parent.id
-		if r.parent.kind == "inset" {
-			parentID = created[r.parent.abs]
-			if parentID == "" {
-				ui.Error(prefix + " parent page was not created; skipping")
-				failures++
-				continue
-			}
-		}
-		newID, url, err := createOne(r, parentID, c, doPersist)
-		if err != nil {
-			ui.Error(prefix + " " + err.Error())
+		res := createInOrder(r, created, c, doPersist)
+		if res.ok {
+			created[r.absPath] = res.pageID
+		} else {
 			failures++
-			continue
 		}
-		created[r.absPath] = newID
-		ui.Success(fmt.Sprintf("%s Created page %s: %s", prefix, newID, url))
+		results = append(results, res)
+		if !ui.IsJSON() {
+			res.renderHuman()
+		}
+	}
+
+	if ui.IsJSON() {
+		items := make([]any, len(results))
+		for i, r := range results {
+			items[i] = r.jsonResult()
+		}
+		env := jsonout.NewEnvelope("create", items, summarize(results))
+		if err := jsonout.Emit(os.Stdout, env); err != nil {
+			return err
+		}
+		if failures > 0 {
+			return ui.SilentExit(1)
+		}
+		return nil
 	}
 
 	if failures > 0 {
@@ -168,6 +173,23 @@ func run(cmd *cobra.Command, args []string) error {
 		return ui.ErrSilent
 	}
 	return nil
+}
+
+// createInOrder resolves the effective parent id for a record and creates it,
+// returning a result. A missing in-set parent (its creation failed earlier) is a
+// failed result rather than a create attempt.
+func createInOrder(
+	r record, created map[string]string, c *client.ConfluenceClient, doPersist bool,
+) *createResult {
+	parentID := r.parent.id
+	if r.parent.kind == "inset" {
+		parentID = created[r.parent.abs]
+		if parentID == "" {
+			res := newResult(r)
+			return res.fail(errors.New("parent page was not created; skipping"), jsonout.CodeValidation)
+		}
+	}
+	return createOne(r, parentID, c, doPersist)
 }
 
 func resolveFile(
@@ -345,36 +367,43 @@ func parentField(p parentInfo, parentID string) (value, comment string) {
 	return parentID, p.display
 }
 
-func createOne(r record, parentID string, c *client.ConfluenceClient, persist bool) (newID, url string, err error) {
-	prefix := "[" + r.filename + "]"
+// createOne creates one page and returns a result. It performs no output; the
+// caller renders the result.
+func createOne(r record, parentID string, c *client.ConfluenceClient, persist bool) *createResult {
+	res := newResult(r)
+	res.parent = nullableStr(parentID)
+
 	pageContent, err := convert.MdToConfluence(r.mdfile, c.BaseURL(), r.spaceKey, buildinfo.Stamp())
 	if err != nil {
-		return "", "", err
+		return res.fail(err, jsonout.CodeConvert)
 	}
-	for _, msg := range append(append([]string{}, pageContent.Broken...), pageContent.Warnings...) {
-		ui.Warn(prefix + " " + msg)
-	}
+	res.broken = append(res.broken, pageContent.Broken...)
+	res.warnings = append(res.warnings, pageContent.Warnings...)
 
 	result, err := c.CreatePage(r.spaceID, r.title, pageContent.HTML, parentID)
 	if err != nil {
-		return "", "", err
+		return res.fail(err, jsonout.CodeFor(err))
 	}
-	newID = result.ID
+	newID := result.ID
+	res.pageID = newID
+	res.url = pageURL(c, result, newID)
 
 	actions, err := c.SyncAttachments(newID, toLocalAttachments(pageContent.Attachments))
 	if err != nil {
-		return "", "", err
+		return res.fail(err, jsonout.CodeFor(err))
 	}
 	for _, a := range actions {
-		ui.Info(fmt.Sprintf("%s attachment %s: %s", prefix, a.Action, a.Filename))
+		res.attachments = append(res.attachments, jsonout.Attachment{Action: a.Action, Filename: a.Filename})
 	}
 
+	res.width = &jsonout.PageWidth{Value: string(r.width), Default: false}
 	if acts, err := pagewidth.Apply(c, newID, r.width); err != nil {
-		ui.Warn(prefix + " could not set page width: " + err.Error())
+		res.width = nil
+		res.warnings = append(res.warnings, "could not set page width: "+err.Error())
 	} else {
 		for _, a := range acts {
 			if a.Action == "set" {
-				ui.Info(prefix + " page width: " + string(r.width))
+				res.widthSet = true
 				break
 			}
 		}
@@ -389,10 +418,14 @@ func createOne(r record, parentID string, c *client.ConfluenceClient, persist bo
 		content = frontmatter.UpdateField(content, "page_id", newID, "")
 		content = frontmatter.UpdateField(content, "page_width", string(r.width), "")
 		if err := os.WriteFile(r.filename, []byte(content), 0o644); err != nil {
-			return "", "", err
+			return res.fail(err, jsonout.CodeIO)
 		}
+		res.persisted = true
 	}
-	return newID, pageURL(c, result, newID), nil
+
+	res.ok = true
+	res.status = statusCreated
+	return res
 }
 
 // wantPersist resolves the --persist/--no-persist pair; --no-persist wins.
