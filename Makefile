@@ -20,6 +20,7 @@ all: build
 
 build: $(LOCALBIN)  ## Build the markfluence binary into ./bin
 	go build $(LDFLAGS) -o $(LOCALBIN)/markfluence .
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o $(LOCALBIN)/markfluence-linux-amd64 .
 
 install:  ## Install the markfluence binary
 	go install $(LDFLAGS) .
