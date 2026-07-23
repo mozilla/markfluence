@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Required so the checks report back for merge-queue entries: the queue runs
+  # workflows on a temporary branch via the merge_group event, not pull_request.
+  merge_group:
 
 # Cancel superseded runs on the same branch/PR.
 concurrency:
