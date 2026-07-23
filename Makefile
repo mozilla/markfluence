@@ -10,7 +10,7 @@ LDFLAGS = -ldflags "-X github.com/mozilla/markfluence/internal/buildinfo.Version
 GOLANGCI_LINT_VERSION ?= v2.6.0
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
 
-.PHONY: help all build install lint vet fmt fmt-check test regen-regressions
+.PHONY: help all build build-linux install lint vet fmt fmt-check test regen-regressions
 
 help:  ## Show this help
 	@echo "Available rules:"
@@ -20,6 +20,8 @@ all: build
 
 build: $(LOCALBIN)  ## Build the markfluence binary into ./bin
 	go build $(LDFLAGS) -o $(LOCALBIN)/markfluence .
+
+build-linux: $(LOCALBIN)  ## Cross-compile a linux/amd64 binary into ./bin
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build $(LDFLAGS) -o $(LOCALBIN)/markfluence-linux-amd64 .
 
 install:  ## Install the markfluence binary
