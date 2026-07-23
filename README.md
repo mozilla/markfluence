@@ -194,6 +194,78 @@ markfluence read 1234567890 --format storage > page.storage.xml
 markfluence read "https://org.atlassian.net/wiki/spaces/ENG/pages/1234567890/Title"
 ```
 
+### `--json` output
+
+The persistent `--json` flag makes any command emit a single machine-readable
+JSON document to stdout instead of the human output, for scripting and CI. It
+pipes cleanly to `jq`:
+
+```sh
+markfluence info 1234567890 --json | jq '.results[0].page_width'
+markfluence update docs/*.md --json | jq '.summary'
+```
+
+Output is a stable, versioned **envelope**. `results` always holds one object per
+target (a single element for `info`/`read`); `summary` carries batch counts:
+
+```json
+{
+  "schema_version": 1,
+  "markfluence_version": "1.4.0",
+  "command": "update",
+  "results": [
+    {
+      "ok": true,
+      "status": "published",
+      "file": "docs/foo.md",
+      "page_id": "123",
+      "title": "Foo",
+      "space": "ENG",
+      "url": "https://wiki.example.net/wiki/spaces/ENG/pages/123/Foo",
+      "version": { "previous": 3, "new": 4 },
+      "page_width": { "value": "max", "default": false },
+      "attachments": [ { "action": "updated", "filename": "diagram.png" } ],
+      "warnings": [],
+      "broken": [],
+      "error": null,
+      "code": null
+    }
+  ],
+  "summary": { "total": 1, "succeeded": 1, "failed": 0, "skipped": 0 }
+}
+```
+
+Notes on the schema:
+
+- **Per-command stable.** Each command always emits the same keys in the same
+  shapes (empty values are `null` or `[]`); the key *set* differs per command.
+  `schema_version` is bumped on any breaking change.
+- **Status verbs** are per-command: `published`/`skipped` (`update`),
+  `created`/`not_created` (`create`), `changed`/`consistent` (`fix`), plus
+  `failed`. `info`/`read` results carry data only (no status verb).
+- **Compound values are objects**, never display strings — `version`,
+  `page_width`, and the `created`/`updated` author stamps on `info`.
+- **`create`'s two-phase abort** (a validation failure means nothing is created)
+  lists every input file — failed ones with an `error`, the rest as
+  `not_created` — and sets `summary.aborted: true`.
+- **Warnings and broken image/link notices** are data (`warnings`/`broken`
+  arrays on each result), not stderr log lines.
+
+Errors and exit codes:
+
+- **Per-file operational failures** appear in `results` as
+  `{ "ok": false, "error": "…", "code": "…" }`; the command exits `1` if any
+  file failed.
+- **Fatal/pre-flight failures** (bad flags, credential resolution) print a typed
+  error object to **stderr** and exit `2`:
+
+  ```json
+  { "schema_version": 1, "command": "update", "error": "…", "code": "CONFIG" }
+  ```
+
+- Error `code` values: `CONFIG`, `AUTH`, `NOT_FOUND`, `VALIDATION`, `CONVERT`,
+  `IO`, `NETWORK`, `API`.
+
 ## Markdown page structure
 
 Each Markdown file is one Confluence page: an optional YAML **frontmatter** block

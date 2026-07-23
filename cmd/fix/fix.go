@@ -11,6 +11,7 @@ import (
 
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/frontmatter"
+	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
@@ -41,16 +42,42 @@ func run(cmd *cobra.Command, args []string) error {
 	envFile, _ := cmd.Flags().GetString("env-file")
 	c, err := client.Resolve(url, username, envFile)
 	if err != nil {
-		ui.Error(err.Error())
-		return ui.ErrSilent
+		if ui.IsJSON() {
+			_ = jsonout.EmitError(os.Stderr, "fix", err.Error(), jsonout.CodeConfig)
+		} else {
+			ui.Error(err.Error())
+		}
+		return ui.SilentExit(2)
 	}
 
 	failures := 0
+	results := make([]*fixResult, 0, len(args))
 	for _, filename := range args {
-		if !processFile(filename, c) {
+		r := processFile(filename, c)
+		results = append(results, r)
+		if !ui.IsJSON() {
+			r.renderHuman()
+		}
+		if !r.ok {
 			failures++
 		}
 	}
+
+	if ui.IsJSON() {
+		items := make([]any, len(results))
+		for i, r := range results {
+			items[i] = r.jsonResult()
+		}
+		env := jsonout.NewEnvelope("fix", items, summarize(results))
+		if err := jsonout.Emit(os.Stdout, env); err != nil {
+			return err
+		}
+		if failures > 0 {
+			return ui.SilentExit(1)
+		}
+		return nil
+	}
+
 	if failures > 0 {
 		ui.Error(fmt.Sprintf("%d of %d file(s) failed.", failures, len(args)))
 		return ui.ErrSilent
@@ -63,52 +90,50 @@ type change struct {
 	field, oldDisplay, newValue string
 }
 
-func processFile(filename string, c *client.ConfluenceClient) bool {
-	prefix := "[" + filename + "]"
+// processFile reconciles one file and returns a result. It performs no output;
+// the caller renders the result.
+func processFile(filename string, c *client.ConfluenceClient) *fixResult {
+	r := &fixResult{file: filename, dryRun: dryRun}
 	mf, err := frontmatter.ParseFile(filename)
 	if err != nil {
-		ui.Error(prefix + " " + err.Error())
-		return false
+		return r.fail(err, jsonout.CodeValidation)
 	}
 	page, err := locatePage(mf.Frontmatter, c)
 	if err != nil {
-		ui.Error(prefix + " " + err.Error())
-		return false
+		return r.fail(err, locateCode(err))
 	}
+	r.pageID = page.ID
 
 	// Read the live width to reconcile page_width; a read failure is non-fatal.
 	liveWidth := ""
 	if w, _, err := pagewidth.Read(c, page.ID); err != nil {
-		ui.Warn(prefix + " could not read page width: " + err.Error())
+		r.warnings = append(r.warnings, "could not read page width: "+err.Error())
 	} else {
 		liveWidth = string(w)
 	}
 
-	changes := plannedChanges(mf.Frontmatter, page, liveWidth)
-	if len(changes) == 0 {
-		ui.Info(prefix + " already consistent")
-		return true
-	}
-	for _, ch := range changes {
-		verb := "set"
-		if dryRun {
-			verb = "would set"
-		}
-		ui.Info(fmt.Sprintf("%s %s %s: %s -> %s", prefix, verb, ch.field, ch.oldDisplay, ch.newValue))
+	r.changes = plannedChanges(mf.Frontmatter, page, liveWidth)
+	if len(r.changes) == 0 {
+		r.ok = true
+		r.status = statusConsistent
+		return r
 	}
 	if dryRun {
-		return true
+		r.ok = true
+		r.status = statusChanged
+		return r
 	}
 
 	content := mf.Content
-	for _, ch := range changes {
+	for _, ch := range r.changes {
 		content = frontmatter.UpdateField(content, ch.field, ch.newValue, "")
 	}
 	if err := os.WriteFile(filename, []byte(content), 0o644); err != nil {
-		ui.Error(prefix + " " + err.Error())
-		return false
+		return r.fail(err, jsonout.CodeIO)
 	}
-	return true
+	r.ok = true
+	r.status = statusChanged
+	return r
 }
 
 // locatePage finds the live page for a file: by page_id if present, else by

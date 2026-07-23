@@ -11,6 +11,7 @@ import (
 
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/frontmatter"
+	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
@@ -42,26 +43,58 @@ func run(cmd *cobra.Command, args []string) error {
 	envFile, _ := cmd.Flags().GetString("env-file")
 	c, err := client.Resolve(url, username, envFile)
 	if err != nil {
-		ui.Error(err.Error())
-		return ui.ErrSilent
+		return fatalFail(err.Error(), jsonout.CodeConfig)
 	}
 
 	pageID, err := resolvePageID(args[0])
 	if err != nil {
-		ui.Error(err.Error())
-		return ui.ErrSilent
+		return fatalFail(err.Error(), jsonout.CodeValidation)
 	}
 	page, err := c.GetPageOrNil(pageID)
 	if err != nil {
-		ui.Error(err.Error())
-		return ui.ErrSilent
+		return operationalFail(pageID, err, jsonout.CodeFor(err))
 	}
 	if page == nil {
-		ui.Error(fmt.Sprintf("page %s not found", pageID))
-		return ui.ErrSilent
+		return operationalFail(pageID, fmt.Errorf("page %s not found", pageID), jsonout.CodeNotFound)
 	}
-	fmt.Println(formatPage(page, c, showProperties))
+
+	rep := buildReport(page, c, showProperties)
+	if ui.IsJSON() {
+		env := jsonout.NewEnvelope("info", []any{rep.jsonResult()},
+			map[string]int{"total": 1, "succeeded": 1, "failed": 0})
+		if err := jsonout.Emit(os.Stdout, env); err != nil {
+			return err
+		}
+		return nil
+	}
+	fmt.Println(rep.human())
 	return nil
+}
+
+// fatalFail reports a config/usage/pre-flight failure: a JSON error object on
+// stderr under --json, else a human error line, exiting 2.
+func fatalFail(msg string, code jsonout.Code) error {
+	if ui.IsJSON() {
+		_ = jsonout.EmitError(os.Stderr, "info", msg, code)
+	} else {
+		ui.Error(msg)
+	}
+	return ui.SilentExit(2)
+}
+
+// operationalFail reports an operational failure for the single target: under
+// --json a results[0] entry {ok:false,error,code}, else a human error line,
+// exiting 1.
+func operationalFail(pageID string, err error, code jsonout.Code) error {
+	if ui.IsJSON() {
+		res := map[string]any{"ok": false, "page_id": pageID, "error": err.Error(), "code": code}
+		env := jsonout.NewEnvelope("info", []any{res},
+			map[string]int{"total": 1, "succeeded": 0, "failed": 1})
+		_ = jsonout.Emit(os.Stdout, env)
+	} else {
+		ui.Error(err.Error())
+	}
+	return ui.SilentExit(1)
 }
 
 // resolvePageID resolves the CLI argument to a page id: a markdown file's
@@ -83,14 +116,29 @@ func resolvePageID(arg string) (string, error) {
 	return "", fmt.Errorf("%s is not a file or a numeric page id", arg)
 }
 
-// formatPage builds the aligned "label: value" report for a page.
-func formatPage(page *client.Page, c *client.ConfluenceClient, withProps bool) string {
-	spaceKey := client.SpaceKeyFromWebUI(page.Links.WebUI)
-	parent := page.ParentID
-	if parent == "" {
-		parent = "none (top-level)"
-	}
+// report is the resolved metadata for a page, feeding both the human "label:
+// value" renderer and the JSON result. Fields are captured raw (empty when
+// absent); each renderer decides how to present or omit them.
+type report struct {
+	id, title, status, space string
+	parentID                 string // "" for a top-level page
+	versionNum               int
+	widthKnown               bool
+	width                    jsonout.PageWidth
+	createdAt, creator       string
+	creatorID                string
+	updatedAt, editor        string
+	editorID                 string
+	message, url             string
+	withProps                bool
+	properties               []client.Property
+	propsErr                 error
+}
 
+// buildReport resolves a page (and, when withProps is set, its content
+// properties) into a report. Author names and page width are fetched here; a
+// width-fetch failure is tolerated (widthKnown stays false).
+func buildReport(page *client.Page, c *client.ConfluenceClient, withProps bool) report {
 	url := page.Links.Base + page.Links.WebUI
 	if page.Links.WebUI == "" {
 		url = fmt.Sprintf("%s/wiki/pages/viewpage.action?pageId=%s", c.BaseURL(), page.ID)
@@ -99,73 +147,95 @@ func formatPage(page *client.Page, c *client.ConfluenceClient, withProps bool) s
 	}
 
 	cache := map[string]string{}
-	creator := authorName(c, page.AuthorID, cache)
-	editor := authorName(c, page.Version.AuthorID, cache)
-
-	pageWidth, properties, propsErr := resolveWidth(c, page.ID, withProps)
-
-	rows := [][2]string{
-		{"id", page.ID},
-		{"title", page.Title},
-		{"status", page.Status},
-		{"space", spaceKey},
-		{"parent", parent},
-		{"version", versionNumber(page.Version.Number)},
-		{"page_width", pageWidth},
-		{"created", withAuthor(page.CreatedAt, creator)},
-		{"updated", withAuthor(page.Version.CreatedAt, editor)},
-		{"message", page.Version.Message},
-		{"url", url},
+	r := report{
+		id:         page.ID,
+		title:      page.Title,
+		status:     page.Status,
+		space:      client.SpaceKeyFromWebUI(page.Links.WebUI),
+		parentID:   page.ParentID,
+		versionNum: page.Version.Number,
+		createdAt:  page.CreatedAt,
+		creator:    authorName(c, page.AuthorID, cache),
+		creatorID:  page.AuthorID,
+		updatedAt:  page.Version.CreatedAt,
+		editor:     authorName(c, page.Version.AuthorID, cache),
+		editorID:   page.Version.AuthorID,
+		message:    page.Version.Message,
+		url:        url,
+		withProps:  withProps,
 	}
-	labelWidth := 0
-	for _, r := range rows {
-		if len(r[0]) > labelWidth {
-			labelWidth = len(r[0])
-		}
-	}
-	labelWidth++ // room for the ':'
 
-	var b strings.Builder
-	for _, r := range rows {
-		if r[1] == "" {
-			continue
-		}
-		if b.Len() > 0 {
-			b.WriteByte('\n')
-		}
-		fmt.Fprintf(&b, "%-*s %s", labelWidth, r[0]+":", r[1])
-	}
-	if withProps {
-		b.WriteByte('\n')
-		b.WriteString(propertiesSection(properties, propsErr))
-	}
-	return b.String()
-}
-
-// resolveWidth derives the page_width display string and, when withProps is set,
-// the full property list. A fetch failure is tolerated (width "unknown").
-func resolveWidth(c *client.ConfluenceClient, pageID string, withProps bool) (string, []client.Property, error) {
 	var (
-		props    []client.Property
 		width    pagewidth.Width
 		explicit bool
 		err      error
 	)
 	if withProps {
-		props, err = c.ListContentProperties(pageID)
+		r.properties, err = c.ListContentProperties(page.ID)
+		r.propsErr = err
 		if err == nil {
-			width, explicit = pagewidth.WidthFromProperties(props)
+			width, explicit = pagewidth.WidthFromProperties(r.properties)
 		}
 	} else {
-		width, explicit, err = pagewidth.Read(c, pageID)
+		width, explicit, err = pagewidth.Read(c, page.ID)
 	}
-	if err != nil {
-		return "unknown", nil, err
+	if err == nil {
+		r.widthKnown = true
+		r.width = jsonout.PageWidth{Value: string(width), Default: !explicit}
 	}
-	if explicit {
-		return string(width), props, nil
+	return r
+}
+
+// human builds the aligned "label: value" report (empty fields omitted).
+func (r report) human() string {
+	widthDisplay := "unknown"
+	if r.widthKnown {
+		widthDisplay = r.width.Value
+		if r.width.Default {
+			widthDisplay += " (Confluence default)"
+		}
 	}
-	return string(width) + " (Confluence default)", props, nil
+	parent := r.parentID
+	if parent == "" {
+		parent = "none (top-level)"
+	}
+
+	rows := [][2]string{
+		{"id", r.id},
+		{"title", r.title},
+		{"status", r.status},
+		{"space", r.space},
+		{"parent", parent},
+		{"version", versionNumber(r.versionNum)},
+		{"page_width", widthDisplay},
+		{"created", withAuthor(r.createdAt, r.creator)},
+		{"updated", withAuthor(r.updatedAt, r.editor)},
+		{"message", r.message},
+		{"url", r.url},
+	}
+	labelWidth := 0
+	for _, row := range rows {
+		if len(row[0]) > labelWidth {
+			labelWidth = len(row[0])
+		}
+	}
+	labelWidth++ // room for the ':'
+
+	var b strings.Builder
+	for _, row := range rows {
+		if row[1] == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		fmt.Fprintf(&b, "%-*s %s", labelWidth, row[0]+":", row[1])
+	}
+	if r.withProps {
+		b.WriteByte('\n')
+		b.WriteString(propertiesSection(r.properties, r.propsErr))
+	}
+	return b.String()
 }
 
 func propertiesSection(properties []client.Property, err error) string {

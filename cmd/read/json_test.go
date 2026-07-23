@@ -1,0 +1,60 @@
+package read
+
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/mozilla/markfluence/internal/jsonout"
+)
+
+func TestJSONReadResultMarshal(t *testing.T) {
+	parent := "456"
+	res := jsonReadResult{
+		OK:        true,
+		PageID:    "123",
+		Title:     "X",
+		Space:     "ENG",
+		Parent:    &parent,
+		PageWidth: &jsonout.PageWidth{Value: "max", Default: true},
+		Format:    "markdown",
+		Body:      "# X\n\nhello",
+	}
+	b, err := json.MarshalIndent(res, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	want := `{
+  "ok": true,
+  "page_id": "123",
+  "title": "X",
+  "space": "ENG",
+  "parent": "456",
+  "page_width": {
+    "value": "max",
+    "default": true
+  },
+  "format": "markdown",
+  "body": "# X\n\nhello"
+}`
+	if string(b) != want {
+		t.Errorf("read result mismatch:\n got:\n%s\n want:\n%s", b, want)
+	}
+}
+
+func TestJSONReadResultTopLevelNullWidth(t *testing.T) {
+	res := jsonReadResult{OK: true, PageID: "1", Format: "storage", Body: "<p/>"}
+	b, err := json.Marshal(res)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var round map[string]any
+	if err := json.Unmarshal(b, &round); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if round["parent"] != nil {
+		t.Errorf("parent = %v, want null", round["parent"])
+	}
+	if round["page_width"] != nil {
+		t.Errorf("page_width = %v, want null", round["page_width"])
+	}
+}

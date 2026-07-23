@@ -2,9 +2,9 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/mozilla/markfluence/cmd/create"
 	"github.com/mozilla/markfluence/cmd/fix"
@@ -12,6 +12,7 @@ import (
 	"github.com/mozilla/markfluence/cmd/read"
 	"github.com/mozilla/markfluence/cmd/update"
 	"github.com/mozilla/markfluence/internal/buildinfo"
+	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -22,6 +23,7 @@ var (
 	envFileFlag  string
 	debugFlag    bool
 	noColorFlag  bool
+	jsonFlag     bool
 )
 
 var rootCmd = &cobra.Command{
@@ -40,6 +42,7 @@ var rootCmd = &cobra.Command{
 			}
 		}
 		ui.SetDebug(debugFlag)
+		ui.SetJSON(jsonFlag)
 		return nil
 	},
 	// Bare `markfluence` prints help; subcommands carry the work.
@@ -52,16 +55,43 @@ var rootCmd = &cobra.Command{
 	SilenceErrors: true,
 }
 
-// Execute runs the root command, exiting non-zero on error. Errors a command
-// already reported (ui.ErrSilent) are not printed again; any other error
-// reaching here is cobra-generated (e.g. bad args/flags) and is printed.
+// Execute runs the root command, exiting non-zero on error. A failure a command
+// already reported (a silent error) is not printed again and exits with its
+// carried code (1 operational, 2 config/usage). Any other error is
+// cobra-generated (bad args/flags): a usage error, printed as a human line or a
+// JSON error object under --json, exiting 2.
 func Execute() {
+	// Detect --json before parsing so that even a flag-parse failure (which
+	// short-circuits PersistentPreRunE, where SetJSON normally runs) is reported
+	// as a JSON error object rather than a stray human line on stderr.
+	if jsonRequested(os.Args[1:]) {
+		ui.SetJSON(true)
+	}
 	if err := rootCmd.Execute(); err != nil {
-		if !errors.Is(err, ui.ErrSilent) {
+		if ui.IsSilent(err) {
+			os.Exit(ui.ExitCode(err))
+		}
+		if ui.IsJSON() {
+			_ = jsonout.EmitError(os.Stderr, "", err.Error(), jsonout.CodeConfig)
+		} else {
 			ui.Error(err.Error())
 		}
-		os.Exit(1)
+		os.Exit(2)
 	}
+}
+
+// jsonRequested reports whether the raw args request --json (bare, or
+// --json=true), independent of cobra parsing. --json=false is honored as off.
+func jsonRequested(args []string) bool {
+	for _, a := range args {
+		switch {
+		case a == "--json":
+			return true
+		case strings.HasPrefix(a, "--json="):
+			return strings.TrimPrefix(a, "--json=") != "false"
+		}
+	}
+	return false
 }
 
 func init() {
@@ -75,6 +105,8 @@ func init() {
 		"Enable verbose debug output")
 	rootCmd.PersistentFlags().BoolVar(&noColorFlag, "no-color", false,
 		"Disable colored output")
+	rootCmd.PersistentFlags().BoolVar(&jsonFlag, "json", false,
+		"Emit machine-readable JSON to stdout instead of human output")
 	rootCmd.PersistentFlags().SortFlags = false
 
 	// Append a docs footer to every command's --help output. Subcommands inherit
