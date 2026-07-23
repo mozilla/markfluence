@@ -2,6 +2,7 @@ package client
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -20,10 +21,15 @@ var spaceKeyRE = regexp.MustCompile(`^/spaces/([^/]+)/`)
 // resolved with the precedence flag > environment variable > .env file: the URL
 // and username come from the urlFlag/usernameFlag values when set, then
 // $CONFLUENCE_URL/$CONFLUENCE_USERNAME, then the .env file; the API token comes
-// only from $CONFLUENCE_TOKEN, then .env -- never a flag. It returns a friendly
-// error listing whatever is missing.
-func Resolve(urlFlag, usernameFlag string) (*ConfluenceClient, error) {
-	env := loadDotenv(dotenvPath)
+// only from $CONFLUENCE_TOKEN, then .env -- never a flag. envFile selects which
+// .env is read: when empty the default ./.env is read best-effort (a missing
+// file is fine); when set it's an explicit path that must be readable. It
+// returns a friendly error listing whatever is missing.
+func Resolve(urlFlag, usernameFlag, envFile string) (*ConfluenceClient, error) {
+	env, err := loadEnvFile(envFile)
+	if err != nil {
+		return nil, err
+	}
 
 	baseURL := resolveValue(urlFlag, urlEnv, env)
 	username := resolveValue(usernameFlag, usernameEnv, env)
@@ -56,15 +62,34 @@ func resolveValue(flagVal, envKey string, dotenv map[string]string) string {
 	return dotenv[envKey]
 }
 
+// loadEnvFile resolves which .env to read and parses it. An explicit envFile
+// (from --env-file) must be readable, so a read failure is an error. With no
+// explicit path the default ./.env is best-effort: a missing file yields an
+// empty map, matching the prior behavior.
+func loadEnvFile(envFile string) (map[string]string, error) {
+	if envFile != "" {
+		env, err := loadDotenv(envFile)
+		if err != nil {
+			return nil, fmt.Errorf("reading env file %q: %w", envFile, err)
+		}
+		return env, nil
+	}
+	env, err := loadDotenv(dotenvPath)
+	if err != nil {
+		return map[string]string{}, nil // a missing ./.env is fine
+	}
+	return env, nil
+}
+
 // loadDotenv reads a simple .env file into a map: KEY=value lines, with blank
 // lines and # comments skipped, an optional leading "export ", and optional
 // surrounding single or double quotes stripped. Values are taken verbatim (no
-// shell expansion). A missing file yields an empty map.
-func loadDotenv(path string) map[string]string {
+// shell expansion). It errors if the file can't be read.
+func loadDotenv(path string) (map[string]string, error) {
 	out := map[string]string{}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return out
+		return nil, err
 	}
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
@@ -78,7 +103,7 @@ func loadDotenv(path string) map[string]string {
 		}
 		out[strings.TrimSpace(key)] = unquote(strings.TrimSpace(value))
 	}
-	return out
+	return out, nil
 }
 
 func unquote(s string) string {

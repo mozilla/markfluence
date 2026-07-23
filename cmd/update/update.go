@@ -58,7 +58,8 @@ func run(cmd *cobra.Command, args []string) error {
 
 	url, _ := cmd.Flags().GetString("url")
 	username, _ := cmd.Flags().GetString("username")
-	c, err := client.Resolve(url, username)
+	envFile, _ := cmd.Flags().GetString("env-file")
+	c, err := client.Resolve(url, username, envFile)
 	if err != nil {
 		ui.Error(err.Error())
 		return ui.ErrSilent

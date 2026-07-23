@@ -19,6 +19,7 @@ import (
 var (
 	urlFlag      string
 	usernameFlag string
+	envFileFlag  string
 	debugFlag    bool
 	noColorFlag  bool
 )
@@ -68,6 +69,8 @@ func init() {
 		"Confluence base URL (falls back to $CONFLUENCE_URL, then .env)")
 	rootCmd.PersistentFlags().StringVar(&usernameFlag, "username", "",
 		"Confluence username/email (falls back to $CONFLUENCE_USERNAME, then .env)")
+	rootCmd.PersistentFlags().StringVar(&envFileFlag, "env-file", "",
+		"Path to an env file to read (default: ./.env in the working directory)")
 	rootCmd.PersistentFlags().BoolVarP(&debugFlag, "debug", "d", false,
 		"Enable verbose debug output")
 	rootCmd.PersistentFlags().BoolVar(&noColorFlag, "no-color", false,

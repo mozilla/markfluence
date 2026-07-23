@@ -393,7 +393,10 @@ func TestLoadDotenv(t *testing.T) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	env := loadDotenv(path)
+	env, err := loadDotenv(path)
+	if err != nil {
+		t.Fatalf("loadDotenv: %v", err)
+	}
 	if env["CONFLUENCE_URL"] != "https://file.example.net" {
 		t.Errorf("URL = %q", env["CONFLUENCE_URL"])
 	}
@@ -407,8 +410,8 @@ func TestLoadDotenv(t *testing.T) {
 		t.Error("line without '=' should be skipped")
 	}
 
-	if got := loadDotenv(filepath.Join(dir, "absent")); len(got) != 0 {
-		t.Errorf("missing file = %v, want empty", got)
+	if got, err := loadDotenv(filepath.Join(dir, "absent")); err == nil || len(got) != 0 {
+		t.Errorf("missing file = %v, %v; want empty + error", got, err)
 	}
 }
 
@@ -443,17 +446,17 @@ func TestResolve(t *testing.T) {
 	t.Setenv("CONFLUENCE_TOKEN", "")
 
 	// All from .env.
-	c, err := Resolve("", "")
+	c, err := Resolve("", "", "")
 	if err != nil || c.BaseURL() != "https://file.example.net" {
 		t.Fatalf("Resolve(.env) = %v, %v", c, err)
 	}
 
 	// Flag beats env beats .env for the URL.
 	t.Setenv("CONFLUENCE_URL", "https://env.example.net")
-	if c, _ := Resolve("https://flag.example.net", ""); c.BaseURL() != "https://flag.example.net" {
+	if c, _ := Resolve("https://flag.example.net", "", ""); c.BaseURL() != "https://flag.example.net" {
 		t.Errorf("flag should win, got %q", c.BaseURL())
 	}
-	if c, _ := Resolve("", ""); c.BaseURL() != "https://env.example.net" {
+	if c, _ := Resolve("", "", ""); c.BaseURL() != "https://env.example.net" {
 		t.Errorf("env should beat .env, got %q", c.BaseURL())
 	}
 
@@ -462,7 +465,7 @@ func TestResolve(t *testing.T) {
 	if err := os.WriteFile(".env", []byte("CONFLUENCE_URL=u\nCONFLUENCE_USERNAME=x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Resolve("u", "x"); err == nil {
+	if _, err := Resolve("u", "x", ""); err == nil {
 		t.Error("Resolve with no token: want error")
 	}
 }
