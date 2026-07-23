@@ -34,7 +34,10 @@ var rootCmd = &cobra.Command{
 		".env file. The base URL (--url / CONFLUENCE_URL) and username (--username /\n" +
 		"CONFLUENCE_USERNAME) may be set any of those ways; the API token\n" +
 		"(CONFLUENCE_TOKEN) comes only from the environment or .env, never a flag.",
-	Version: buildinfo.Version,
+	// --version prints the build stamp ("markfluence VERSION (SHA, DATE)"), the
+	// same string the converter substitutes for the <!-- markfluence-version -->
+	// token.
+	Version: buildinfo.Stamp(),
 	PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 		if noColorFlag {
 			if err := os.Setenv("NO_COLOR", "1"); err != nil {
@@ -108,6 +111,10 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonFlag, "json", false,
 		"Emit machine-readable JSON to stdout instead of human output")
 	rootCmd.PersistentFlags().SortFlags = false
+
+	// The stamp already carries its own "markfluence v" prefix; print it verbatim
+	// rather than cobra's default "markfluence version <...>" wrapper.
+	rootCmd.SetVersionTemplate("{{.Version}}\n")
 
 	// Append a docs footer to every command's --help output. Subcommands inherit
 	// the root's help template, so setting it once covers them all.
