@@ -1,11 +1,54 @@
 package create
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/schematest"
 )
+
+func TestSchemaConformance(t *testing.T) {
+	// A normal (non-aborted) create batch.
+	parent := "123"
+	results := []*createResult{
+		{
+			file: "child.md", ok: true, status: statusCreated,
+			pageID: "456", title: "Child", space: "ENG", parent: &parent, url: "https://x/456",
+			width:     &jsonout.PageWidth{Value: "max", Default: false},
+			persisted: true,
+		},
+		(&createResult{file: "bad.md"}).fail(errString("boom"), jsonout.CodeConvert),
+	}
+	items := make([]any, len(results))
+	for i, r := range results {
+		items[i] = r.jsonResult()
+	}
+	env := jsonout.NewEnvelope("create", items, summarize(results))
+	var buf bytes.Buffer
+	if err := jsonout.Emit(&buf, env); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	schematest.ValidateEnvelope(t, buf.Bytes())
+
+	// The phase-1 abort envelope.
+	abortItems := []any{
+		abortedResult("bad.md", statusFailed, "no title given", jsonout.CodeValidation),
+		abortedResult("ok.md", statusNotCreated, "", ""),
+	}
+	abortEnv := jsonout.NewEnvelope("create", abortItems,
+		createSummary{Total: 2, Succeeded: 0, Failed: 1, Aborted: true})
+	buf.Reset()
+	if err := jsonout.Emit(&buf, abortEnv); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	schematest.ValidateEnvelope(t, buf.Bytes())
+}
+
+type errString string
+
+func (e errString) Error() string { return string(e) }
 
 func TestJSONResultCreated(t *testing.T) {
 	parent := "123"

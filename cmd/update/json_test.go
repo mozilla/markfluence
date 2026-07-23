@@ -1,11 +1,36 @@
 package update
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/schematest"
 )
+
+func TestSchemaConformance(t *testing.T) {
+	results := []*updateResult{
+		{
+			file: "docs/foo.md", ok: true, status: statusPublished,
+			pageID: "123", title: "Foo", space: "ENG", url: "https://x/123",
+			versionPrev: 3, versionNew: 4,
+			width:       &jsonout.PageWidth{Value: "max", Default: false},
+			attachments: []jsonout.Attachment{{Action: "updated", Filename: "d.png"}},
+		},
+		(&updateResult{file: "bad.md"}).fail(errTest("boom"), jsonout.CodeValidation),
+	}
+	items := make([]any, len(results))
+	for i, r := range results {
+		items[i] = r.jsonResult()
+	}
+	env := jsonout.NewEnvelope("update", items, summarize(results))
+	var buf bytes.Buffer
+	if err := jsonout.Emit(&buf, env); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	schematest.ValidateEnvelope(t, buf.Bytes())
+}
 
 func TestJSONResultPublished(t *testing.T) {
 	r := &updateResult{

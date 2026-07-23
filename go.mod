@@ -4,6 +4,7 @@ go 1.25
 
 require (
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/spf13/cobra v1.10.2
 	github.com/yuin/goldmark v1.8.4
 )
@@ -23,4 +24,5 @@ require (
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
 )

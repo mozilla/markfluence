@@ -212,7 +212,15 @@ Summary core is `{total, succeeded, failed}`; commands add extras (below).
   error object, exit-code table) and note the schema is versioned via
   `schema_version`.
 
-## Open follow-ups (not in this PR)
+## Published schema (drift-guarded)
 
-- A published JSON Schema file for `schema_version: 1` (nice-to-have for external
-  consumers); the golden tests pin the shape in the meantime.
+The full contract is a JSON Schema (draft 2020-12) at `schema/json-output/v1.json`:
+the envelope root, per-command `results`/`summary` selected via `if/then` on
+`command`, and the stderr error object at `#/$defs/errorObject`. Every object uses
+`additionalProperties: false`, so a new struct field fails validation until the
+schema is updated.
+
+`internal/schematest` (a test-only helper using `santhosh-tekuri/jsonschema/v6`)
+loads and compiles the schema once; each command's `TestSchemaConformance`
+validates the command's *actual* marshaled output against it, so the schema cannot
+drift from the Go structs.

@@ -1,11 +1,36 @@
 package read
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/schematest"
 )
+
+func TestSchemaConformance(t *testing.T) {
+	parent := "456"
+	res := jsonReadResult{
+		OK: true, PageID: "123", Title: "X", Space: "ENG", Parent: &parent,
+		PageWidth: &jsonout.PageWidth{Value: "max", Default: true},
+		Format:    "markdown", Body: "# X\n\nhello",
+	}
+	env := jsonout.NewEnvelope("read", []any{res}, map[string]int{"total": 1, "succeeded": 1, "failed": 0})
+	var buf bytes.Buffer
+	if err := jsonout.Emit(&buf, env); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	schematest.ValidateEnvelope(t, buf.Bytes())
+
+	failRes := map[string]any{"ok": false, "page_id": "9", "error": "page 9 not found", "code": jsonout.CodeNotFound}
+	failEnv := jsonout.NewEnvelope("read", []any{failRes}, map[string]int{"total": 1, "succeeded": 0, "failed": 1})
+	buf.Reset()
+	if err := jsonout.Emit(&buf, failEnv); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	schematest.ValidateEnvelope(t, buf.Bytes())
+}
 
 func TestJSONReadResultMarshal(t *testing.T) {
 	parent := "456"

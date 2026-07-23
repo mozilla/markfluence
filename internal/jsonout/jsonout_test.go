@@ -7,7 +7,23 @@ import (
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/schematest"
 )
+
+func TestErrorObjectSchemaConformance(t *testing.T) {
+	var buf bytes.Buffer
+	if err := EmitError(&buf, "update", "could not resolve credentials", CodeConfig); err != nil {
+		t.Fatalf("EmitError: %v", err)
+	}
+	schematest.ValidateError(t, buf.Bytes())
+
+	// A pre-parse (bad-flag) error carries an empty command.
+	buf.Reset()
+	if err := EmitError(&buf, "", "unknown flag: --bogus", CodeConfig); err != nil {
+		t.Fatalf("EmitError: %v", err)
+	}
+	schematest.ValidateError(t, buf.Bytes())
+}
 
 func TestEmitEnvelope(t *testing.T) {
 	var buf bytes.Buffer
