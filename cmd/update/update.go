@@ -22,6 +22,7 @@ import (
 var (
 	message       string
 	force         bool
+	dryRun        bool
 	titleFlag     string
 	pageIDFlag    string
 	pageWidthFlag string
@@ -44,6 +45,8 @@ var Cmd = &cobra.Command{
 func init() {
 	Cmd.Flags().StringVar(&message, "message", "Updated via markfluence", "Version message.")
 	Cmd.Flags().BoolVar(&force, "force", false, "Skip the file-mtime check and always update the page.")
+	Cmd.Flags().BoolVar(&dryRun, "dry-run", false,
+		"Preview what would be published without writing to Confluence.")
 	Cmd.Flags().StringVar(&titleFlag, "title", "",
 		"Override the page title (requires a single FILE).")
 	Cmd.Flags().StringVar(&pageIDFlag, "page-id", "",
@@ -69,6 +72,10 @@ func run(cmd *cobra.Command, args []string) error {
 			ui.Error(err.Error())
 		}
 		return ui.SilentExit(2)
+	}
+
+	if dryRun {
+		ui.Warn("DRY RUN — no changes will be written.")
 	}
 
 	failures := 0
@@ -109,7 +116,7 @@ func run(cmd *cobra.Command, args []string) error {
 // processFile publishes one file and returns a result describing the outcome. It
 // performs no output itself; the caller renders the result (human lines or JSON).
 func processFile(filename string, c *client.ConfluenceClient) *updateResult {
-	r := &updateResult{file: filename}
+	r := &updateResult{file: filename, dryRun: dryRun}
 	mf, err := frontmatter.ParseFile(filename)
 	if err != nil {
 		return r.fail(err, jsonout.CodeValidation)
@@ -156,6 +163,26 @@ func processFile(filename string, c *client.ConfluenceClient) *updateResult {
 	r.broken = append(r.broken, pageContent.Broken...)
 	r.warnings = append(r.warnings, pageContent.Warnings...)
 
+	next := page.Version.Number + 1
+
+	// --dry-run: preview attachments (read-only) and the width change, but make
+	// no writes. The version bump and page URL are the same values a real run
+	// would produce, so the human output lines are identical.
+	if dryRun {
+		actions, err := c.PlanAttachments(pageID, toLocalAttachments(pageContent.Attachments))
+		if err != nil {
+			return r.fail(err, jsonout.CodeFor(err))
+		}
+		for _, a := range actions {
+			r.attachments = append(r.attachments, jsonout.Attachment{Action: a.Action, Filename: a.Filename})
+		}
+		r.versionNew = next
+		r.previewWidth(c, pageID, width, applyWidth)
+		r.ok = true
+		r.status = statusPublished
+		return r
+	}
+
 	actions, err := c.SyncAttachments(pageID, toLocalAttachments(pageContent.Attachments))
 	if err != nil {
 		return r.fail(err, jsonout.CodeFor(err))
@@ -164,7 +191,6 @@ func processFile(filename string, c *client.ConfluenceClient) *updateResult {
 		r.attachments = append(r.attachments, jsonout.Attachment{Action: a.Action, Filename: a.Filename})
 	}
 
-	next := page.Version.Number + 1
 	result, err := c.UpdatePage(pageID, title, pageContent.HTML, next, message)
 	if err != nil {
 		return r.fail(err, jsonout.CodeFor(err))
@@ -192,6 +218,28 @@ func processFile(filename string, c *client.ConfluenceClient) *updateResult {
 	r.ok = true
 	r.status = statusPublished
 	return r
+}
+
+// previewWidth reports the width change a dry-run update would make. It reads the
+// live width (read-only) and marks a change only when it differs from the intended
+// width — mirroring fix's dry-run, and matching the real run's "page width:" line
+// only when there is something to change. A read failure is a warning, not fatal.
+func (r *updateResult) previewWidth(
+	c *client.ConfluenceClient, pageID string, width pagewidth.Width, applyWidth bool,
+) {
+	if !applyWidth {
+		return
+	}
+	live, _, err := pagewidth.Read(c, pageID)
+	if err != nil {
+		r.warnings = append(r.warnings, "could not read page width: "+err.Error())
+		return
+	}
+	if live == width {
+		return
+	}
+	r.width = &jsonout.PageWidth{Value: string(width), Default: false}
+	r.widthSet = true
 }
 
 // overrideNeedsSingleFile reports whether a per-page override (--title/--page-id)

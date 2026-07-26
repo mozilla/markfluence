@@ -50,6 +50,10 @@ func run(cmd *cobra.Command, args []string) error {
 		return ui.SilentExit(2)
 	}
 
+	if dryRun {
+		ui.Warn("DRY RUN — no changes will be written.")
+	}
+
 	failures := 0
 	results := make([]*fixResult, 0, len(args))
 	for _, filename := range args {

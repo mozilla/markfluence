@@ -18,6 +18,11 @@ func TestSchemaConformance(t *testing.T) {
 			width:       &jsonout.PageWidth{Value: "max", Default: false},
 			attachments: []jsonout.Attachment{{Action: "updated", Filename: "d.png"}},
 		},
+		{
+			file: "docs/bar.md", ok: true, status: statusPublished, dryRun: true,
+			pageID: "456", title: "Bar", space: "ENG", url: "https://x/456",
+			versionPrev: 1, versionNew: 2,
+		},
 		(&updateResult{file: "bad.md"}).fail(errTest("boom"), jsonout.CodeValidation),
 	}
 	items := make([]any, len(results))
@@ -48,6 +53,7 @@ func TestJSONResultPublished(t *testing.T) {
 	want := `{
   "ok": true,
   "status": "published",
+  "dry_run": false,
   "file": "docs/foo.md",
   "page_id": "123",
   "title": "Foo",
@@ -74,6 +80,25 @@ func TestJSONResultPublished(t *testing.T) {
 }`
 	if string(got) != want {
 		t.Errorf("published result mismatch:\n got:\n%s\n want:\n%s", got, want)
+	}
+}
+
+func TestJSONResultDryRun(t *testing.T) {
+	r := &updateResult{
+		file: "docs/foo.md", ok: true, status: statusPublished, dryRun: true,
+		pageID: "123", title: "Foo", space: "ENG", url: "https://x/123",
+		versionPrev: 3, versionNew: 4,
+	}
+	j := r.jsonResult()
+	if !j.DryRun {
+		t.Errorf("dry_run = false, want true")
+	}
+	// A dry-run still forecasts the version bump the real run would make.
+	if j.Version == nil || j.Version.Previous != 3 || j.Version.New != 4 {
+		t.Errorf("version = %+v, want previous=3 new=4", j.Version)
+	}
+	if j.Status != statusPublished {
+		t.Errorf("status = %q, want %q (dry-run reuses the verb)", j.Status, statusPublished)
 	}
 }
 

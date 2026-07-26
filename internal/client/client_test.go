@@ -379,6 +379,37 @@ func TestSyncAttachmentsUpdatesWhenChecksumDiffers(t *testing.T) {
 	}
 }
 
+func TestPlanAttachmentsClassifiesWithoutUploading(t *testing.T) {
+	path, sum := writeTempImage(t)
+	// same.png matches (skip), stale.png differs (update), new.png is absent (create).
+	list := `{"results":[` +
+		`{"id":"a1","title":"same.png","metadata":{"comment":"` + attachmentChecksumPrefix + sum + `"}},` +
+		`{"id":"a2","title":"stale.png","metadata":{"comment":"` + attachmentChecksumPrefix + `stale"}}` +
+		`]}`
+	c, s := newServer(t, resp{200, list})
+	actions, err := c.PlanAttachments("1", []LocalAttachment{
+		{Path: path, Filename: "same.png"},
+		{Path: path, Filename: "stale.png"},
+		{Path: path, Filename: "new.png"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []SyncAction{{"same.png", "skipped"}, {"stale.png", "updated"}, {"new.png", "created"}}
+	if len(actions) != len(want) {
+		t.Fatalf("actions = %v, want %v", actions, want)
+	}
+	for i := range want {
+		if actions[i] != want[i] {
+			t.Errorf("actions[%d] = %v, want %v", i, actions[i], want[i])
+		}
+	}
+	// A plan reads only; it must never upload.
+	if !eqStrings(s.calls, []string{"GET"}) {
+		t.Errorf("calls = %v, want [GET] (no uploads)", s.calls)
+	}
+}
+
 // --- misc --------------------------------------------------------------------
 
 func TestLoadDotenv(t *testing.T) {

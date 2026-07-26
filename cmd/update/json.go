@@ -21,6 +21,7 @@ type updateResult struct {
 	file        string
 	ok          bool
 	status      string
+	dryRun      bool
 	pageID      string
 	title       string
 	space       string
@@ -79,6 +80,7 @@ func (r *updateResult) renderHuman() {
 type jsonUpdateResult struct {
 	OK          bool                 `json:"ok"`
 	Status      string               `json:"status"`
+	DryRun      bool                 `json:"dry_run"`
 	File        string               `json:"file"`
 	PageID      *string              `json:"page_id"`
 	Title       *string              `json:"title"`
@@ -102,6 +104,7 @@ func (r *updateResult) jsonResult() jsonUpdateResult {
 	res := jsonUpdateResult{
 		OK:          r.ok,
 		Status:      r.status,
+		DryRun:      r.dryRun,
 		File:        r.file,
 		PageID:      strOrNil(r.pageID),
 		Title:       strOrNil(r.title),

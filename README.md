@@ -92,12 +92,20 @@ A whole tree can be created in one pass: give each child a `parent:` that points
 its parent's `.md` file, and `create` orders creation parents-first and fills in the
 real ids (see the `parent` field below).
 
+`--dry-run` validates every file (the same checks a real run makes, so it exits
+non-zero on the same failures) and previews what would be created — pages,
+attachment uploads, page widths, and frontmatter write-backs — without writing to
+Confluence or to any file. Because nothing is created, a previewed page has no id
+or URL yet; an in-set child's `parent` is unresolved, but its source file is
+reported in the `parent_file` output field (present in every run, in `--json`).
+
 ```sh
 markfluence create docs/new_page.md --space ENG
 markfluence create docs/child.md --space ENG --parent 123456
 markfluence create docs/*.md --space ENG               # hierarchy via parent: paths
 markfluence create note.md --space ENG --title "Ad-hoc note" --page-width wide
 markfluence create note.md --space ENG --no-persist    # create without touching the file
+markfluence create docs/*.md --space ENG --dry-run     # preview; write nothing
 ```
 
 ### `update`
@@ -120,6 +128,11 @@ Updates are skipped when a file hasn't changed since the page's last version
 (compared by mtime) unless `--force` is given. Each file is processed
 independently; the command exits non-zero if any file fails.
 
+`--dry-run` previews what would be published — the version bump, attachment
+uploads, and any page-width change — without writing to Confluence. It honors the
+mtime skip and `--force` just like a real run, so its forecast matches what a real
+run would do.
+
 ```sh
 markfluence update docs/managing_an_incident.md
 markfluence update docs/*.md --message "Bulk update"
@@ -127,6 +140,7 @@ markfluence update docs/foo.md --force              # ignore the mtime check
 markfluence update page.md --page-id 123456         # override the target page
 markfluence update page.md --title "New Title"      # override / rename
 markfluence update docs/*.md --page-width wide      # set width across a batch
+markfluence update docs/*.md --dry-run              # preview; write nothing
 ```
 
 ### `fix`

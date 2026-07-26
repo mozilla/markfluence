@@ -55,12 +55,10 @@ func (r *fixResult) renderHuman() {
 		ui.Info(prefix + " already consistent")
 		return
 	}
-	verb := "set"
-	if r.dryRun {
-		verb = "would set"
-	}
+	// The per-field lines are identical in a dry-run; the leading DRY RUN banner
+	// (and dry_run in --json) is the only signal nothing was written.
 	for _, ch := range r.changes {
-		ui.Info(fmt.Sprintf("%s %s %s: %s -> %s", prefix, verb, ch.field, ch.oldDisplay, ch.newValue))
+		ui.Info(fmt.Sprintf("%s set %s: %s -> %s", prefix, ch.field, ch.oldDisplay, ch.newValue))
 	}
 }
 
