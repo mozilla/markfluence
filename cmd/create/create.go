@@ -27,6 +27,7 @@ var (
 	pageWidthOpt string
 	persistOpt   bool
 	noPersistOpt bool
+	dryRunOpt    bool
 )
 
 // Cmd is the create command.
@@ -54,6 +55,8 @@ func init() {
 		"Write title/space/parent/page_id/page_width back into the frontmatter.")
 	Cmd.Flags().BoolVar(&noPersistOpt, "no-persist", false,
 		"Do not write anything back into the frontmatter.")
+	Cmd.Flags().BoolVar(&dryRunOpt, "dry-run", false,
+		"Preview what would be created without writing to Confluence or files.")
 }
 
 // parentInfo describes a resolved parent. kind is top|inset|published|external.
@@ -91,6 +94,10 @@ func run(cmd *cobra.Command, args []string) error {
 	c, err := client.Resolve(url, username, envFile)
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeConfig)
+	}
+
+	if dryRunOpt {
+		ui.Warn("DRY RUN — no changes will be written.")
 	}
 
 	inSetAbs := map[string]bool{}
@@ -184,7 +191,10 @@ func createInOrder(
 	parentID := r.parent.id
 	if r.parent.kind == "inset" {
 		parentID = created[r.parent.abs]
-		if parentID == "" {
+		// In a dry-run nothing is created, so an in-set parent has no id yet;
+		// that is not a failure (the parent would have been created first). The
+		// relationship is still reported via parent_file.
+		if parentID == "" && !dryRunOpt {
 			res := newResult(r)
 			return res.fail(errors.New("parent page was not created; skipping"), jsonout.CodeValidation)
 		}
@@ -379,6 +389,22 @@ func createOne(r record, parentID string, c *client.ConfluenceClient, persist bo
 	}
 	res.broken = append(res.broken, pageContent.Broken...)
 	res.warnings = append(res.warnings, pageContent.Warnings...)
+
+	// --dry-run: preview without creating. The page has no id/URL yet (they stay
+	// null); every attachment would be a fresh upload, and a new page always has
+	// its width set. persisted reflects intent — dry_run signals nothing was
+	// actually written.
+	if dryRunOpt {
+		for _, a := range pageContent.Attachments {
+			res.attachments = append(res.attachments, jsonout.Attachment{Action: "created", Filename: a.Filename})
+		}
+		res.width = &jsonout.PageWidth{Value: string(r.width), Default: false}
+		res.widthSet = true
+		res.persisted = persist
+		res.ok = true
+		res.status = statusCreated
+		return res
+	}
 
 	result, err := c.CreatePage(r.spaceID, r.title, pageContent.HTML, parentID)
 	if err != nil {

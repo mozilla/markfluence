@@ -463,10 +463,21 @@ func (c *ConfluenceClient) ListAttachments(pageID string) ([]Attachment, error) 
 	return out.Results, nil
 }
 
-// SyncAttachments creates, updates, or skips attachments so the page matches the
-// local files, using a SHA-256 stored in each attachment's comment to detect
-// changes. Returns one action per file.
-func (c *ConfluenceClient) SyncAttachments(pageID string, attachments []LocalAttachment) ([]SyncAction, error) {
+// attachmentPlan is the decision for one local attachment: the action to take
+// plus the parameters an upload would need. It is what planAttachments computes
+// and both SyncAttachments (executes) and PlanAttachments (reports) consume.
+type attachmentPlan struct {
+	att         LocalAttachment
+	action      string // "created", "updated", or "skipped"
+	comment     string
+	contentType string
+	existingID  string // the current attachment id, for an "updated" upload
+}
+
+// planAttachments decides, per file, whether it would be created, updated, or
+// skipped — reading the page's existing attachments and each local file's
+// checksum, but performing no uploads. Preserves input order.
+func (c *ConfluenceClient) planAttachments(pageID string, attachments []LocalAttachment) ([]attachmentPlan, error) {
 	if len(attachments) == 0 {
 		return nil, nil
 	}
@@ -479,7 +490,7 @@ func (c *ConfluenceClient) SyncAttachments(pageID string, attachments []LocalAtt
 		remote[a.Title] = a
 	}
 
-	var actions []SyncAction
+	plans := make([]attachmentPlan, 0, len(attachments))
 	for _, att := range attachments {
 		sum, err := fileChecksum(att.Path)
 		if err != nil {
@@ -490,26 +501,61 @@ func (c *ConfluenceClient) SyncAttachments(pageID string, attachments []LocalAtt
 		if contentType == "" {
 			contentType = "application/octet-stream"
 		}
-
+		p := attachmentPlan{att: att, comment: comment, contentType: contentType}
 		cur, ok := remote[att.Filename]
 		switch {
 		case !ok:
+			p.action = "created"
+		case cur.Metadata.Comment == comment:
+			p.action = "skipped"
+		default:
+			p.action = "updated"
+			p.existingID = cur.ID
+		}
+		plans = append(plans, p)
+	}
+	return plans, nil
+}
+
+// PlanAttachments reports what SyncAttachments would do — created/updated/skipped
+// per file — without uploading anything. Used by --dry-run.
+func (c *ConfluenceClient) PlanAttachments(pageID string, attachments []LocalAttachment) ([]SyncAction, error) {
+	plans, err := c.planAttachments(pageID, attachments)
+	if err != nil {
+		return nil, err
+	}
+	actions := make([]SyncAction, 0, len(plans))
+	for _, p := range plans {
+		actions = append(actions, SyncAction{p.att.Filename, p.action})
+	}
+	return actions, nil
+}
+
+// SyncAttachments creates, updates, or skips attachments so the page matches the
+// local files, using a SHA-256 stored in each attachment's comment to detect
+// changes. Returns one action per file.
+func (c *ConfluenceClient) SyncAttachments(pageID string, attachments []LocalAttachment) ([]SyncAction, error) {
+	plans, err := c.planAttachments(pageID, attachments)
+	if err != nil {
+		return nil, err
+	}
+	var actions []SyncAction
+	for _, p := range plans {
+		switch p.action {
+		case "created":
 			if err := c.uploadAttachment(
 				c.baseURL+"/wiki/rest/api/content/"+pageID+"/child/attachment",
-				att.Filename, comment, att.Path, contentType); err != nil {
+				p.att.Filename, p.comment, p.att.Path, p.contentType); err != nil {
 				return nil, err
 			}
-			actions = append(actions, SyncAction{att.Filename, "created"})
-		case cur.Metadata.Comment == comment:
-			actions = append(actions, SyncAction{att.Filename, "skipped"})
-		default:
+		case "updated":
 			if err := c.uploadAttachment(
-				c.baseURL+"/wiki/rest/api/content/"+pageID+"/child/attachment/"+cur.ID+"/data",
-				att.Filename, comment, att.Path, contentType); err != nil {
+				c.baseURL+"/wiki/rest/api/content/"+pageID+"/child/attachment/"+p.existingID+"/data",
+				p.att.Filename, p.comment, p.att.Path, p.contentType); err != nil {
 				return nil, err
 			}
-			actions = append(actions, SyncAction{att.Filename, "updated"})
 		}
+		actions = append(actions, SyncAction{p.att.Filename, p.action})
 	}
 	return actions, nil
 }

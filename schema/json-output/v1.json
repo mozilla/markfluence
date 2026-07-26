@@ -184,12 +184,13 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "ok", "status", "file", "page_id", "title", "space", "url",
+        "ok", "status", "dry_run", "file", "page_id", "title", "space", "url",
         "version", "page_width", "attachments", "warnings", "broken", "error", "code"
       ],
       "properties": {
         "ok": { "type": "boolean" },
         "status": { "enum": ["published", "skipped", "failed"] },
+        "dry_run": { "type": "boolean" },
         "file": { "type": "string" },
         "page_id": { "$ref": "#/$defs/stringOrNull" },
         "title": { "$ref": "#/$defs/stringOrNull" },
@@ -218,17 +219,19 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "ok", "status", "file", "page_id", "title", "space", "parent", "url",
+        "ok", "status", "dry_run", "file", "page_id", "title", "space", "parent", "parent_file", "url",
         "page_width", "persisted", "attachments", "warnings", "broken", "error", "code"
       ],
       "properties": {
         "ok": { "type": "boolean" },
         "status": { "enum": ["created", "not_created", "failed"] },
+        "dry_run": { "type": "boolean" },
         "file": { "type": "string" },
         "page_id": { "$ref": "#/$defs/stringOrNull" },
         "title": { "$ref": "#/$defs/stringOrNull" },
         "space": { "$ref": "#/$defs/stringOrNull" },
         "parent": { "$ref": "#/$defs/stringOrNull" },
+        "parent_file": { "$ref": "#/$defs/stringOrNull" },
         "url": { "$ref": "#/$defs/stringOrNull" },
         "page_width": { "$ref": "#/$defs/pageWidthOrNull" },
         "persisted": { "type": "boolean" },

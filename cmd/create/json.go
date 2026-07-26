@@ -21,10 +21,12 @@ type createResult struct {
 	file        string
 	ok          bool
 	status      string
+	dryRun      bool
 	pageID      string
 	title       string
 	space       string
 	parent      *string
+	parentFile  *string
 	url         string
 	width       *jsonout.PageWidth
 	widthSet    bool
@@ -38,7 +40,10 @@ type createResult struct {
 
 // newResult seeds a result with the fields known before creation is attempted.
 func newResult(r record) *createResult {
-	return &createResult{file: r.filename, title: r.title, space: r.spaceKey}
+	return &createResult{
+		file: r.filename, title: r.title, space: r.spaceKey,
+		dryRun: dryRunOpt, parentFile: nullableStr(r.parent.display),
+	}
 }
 
 func (r *createResult) fail(err error, code jsonout.Code) *createResult {
@@ -68,6 +73,12 @@ func (r *createResult) renderHuman() {
 	if r.widthSet && r.width != nil {
 		ui.Info(prefix + " page width: " + r.width.Value)
 	}
+	// A dry-run has created no page, so there is no id or URL to print; name the
+	// title and space instead. Every other line above is identical to a real run.
+	if r.dryRun {
+		ui.Success(fmt.Sprintf("%s Would create page '%s' in %s", prefix, r.title, r.space))
+		return
+	}
 	ui.Success(fmt.Sprintf("%s Created page %s: %s", prefix, r.pageID, r.url))
 }
 
@@ -75,11 +86,13 @@ func (r *createResult) renderHuman() {
 type jsonCreateResult struct {
 	OK          bool                 `json:"ok"`
 	Status      string               `json:"status"`
+	DryRun      bool                 `json:"dry_run"`
 	File        string               `json:"file"`
 	PageID      *string              `json:"page_id"`
 	Title       *string              `json:"title"`
 	Space       *string              `json:"space"`
 	Parent      *string              `json:"parent"`
+	ParentFile  *string              `json:"parent_file"`
 	URL         *string              `json:"url"`
 	PageWidth   *jsonout.PageWidth   `json:"page_width"`
 	Persisted   bool                 `json:"persisted"`
@@ -94,11 +107,13 @@ func (r *createResult) jsonResult() jsonCreateResult {
 	res := jsonCreateResult{
 		OK:          r.ok,
 		Status:      r.status,
+		DryRun:      r.dryRun,
 		File:        r.file,
 		PageID:      nullableStr(r.pageID),
 		Title:       nullableStr(r.title),
 		Space:       nullableStr(r.space),
 		Parent:      r.parent,
+		ParentFile:  r.parentFile,
 		URL:         nullableStr(r.url),
 		PageWidth:   r.width,
 		Persisted:   r.persisted,
@@ -191,6 +206,7 @@ func abortedResult(file, status, errMsg string, code jsonout.Code) jsonCreateRes
 	res := jsonCreateResult{
 		OK:          false,
 		Status:      status,
+		DryRun:      dryRunOpt,
 		File:        file,
 		Attachments: []jsonout.Attachment{},
 		Warnings:    []string{},
