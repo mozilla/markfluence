@@ -43,6 +43,7 @@ func (r *storageRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer)
 	reg.Register(ast.KindBlockquote, r.renderBlockquote)
 	reg.Register(ast.KindImage, r.renderImage)
 	reg.Register(ast.KindLink, r.renderLink)
+	reg.Register(tableKind, r.renderTable)
 }
 
 // renderText renders inline text, collapsing soft line breaks to a single space
