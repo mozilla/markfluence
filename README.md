@@ -23,14 +23,15 @@ TBD — published to a tap on the first release.
 
 ## Configure
 
-markfluence needs a base URL, a username, and an API token. Each is resolved
+markfluence needs a site URL, a username, and an API token. Each is resolved
 with the precedence **flag > environment variable > `.env` file**:
 
 | Setting | Flag | Environment / `.env` |
 | --- | --- | --- |
-| Base URL | `--url` | `CONFLUENCE_URL` |
+| Site URL | `--url` | `CONFLUENCE_URL` |
 | Username | `--username` | `CONFLUENCE_USERNAME` |
 | API token | *(none — never a flag)* | `CONFLUENCE_TOKEN` |
+| Cloud ID *(optional)* | `--cloud-id` | `CONFLUENCE_CLOUD_ID` |
 
 markfluence reads a `.env` file from the current directory automatically (no need
 to `source` it), or from an explicit path via `--env-file PATH` (a persistent flag
@@ -47,6 +48,40 @@ The API token is deliberately not accepted as a command-line flag; it comes only
 from the environment or `.env`.
 
 (Optional): `alias mf=markfluence`
+
+### Scoped tokens and service accounts
+
+For a normal personal API token, you can leave `CONFLUENCE_CLOUD_ID` unset.
+
+For a **scoped** API token for an Atlassian [service account][svcacct], you
+need to set `CONFLUENCE_CLOUD_ID`. You would use this to publish from CI as a
+service account rather than as a person. Scoped tokens are rejected with a
+**401** against your site domain; they must go through Atlassian's
+`api.atlassian.com` gateway, and the cloud ID is what addresses your site
+there. `CONFLUENCE_URL` still holds the site URL: markfluence needs it to write
+correct links into the pages it publishes.
+
+Find your cloud ID — it is **not** a secret:
+
+```console
+$ curl -s https://your-org.atlassian.net/_edge/tenant_info
+{"cloudId":"d8febd08-5555-5555-5555-db37c2369ce5"}
+```
+
+The scopes markfluence needs:
+
+| Used for | Classic scope |
+| --- | --- |
+| Reading, creating, and updating pages | `read:confluence-content.all`, `write:confluence-content` |
+| Resolving space keys | `read:confluence-space.summary` |
+| Page width (content properties) | `read:confluence-props`, `write:confluence-props` |
+| Image attachments | `write:confluence-file` |
+| Author names in `info` | `read:confluence-user` |
+
+Currently, markfluence doesn't support deleting anything, so it doesn't need
+delete scopes. This might change in the future.
+
+[svcacct]: https://support.atlassian.com/user-management/docs/understand-service-accounts/
 
 ## Usage
 
@@ -301,6 +336,13 @@ markfluence reads them straight from the environment — no `.env` in CI.
 - `CONFLUENCE_URL`
 - `CONFLUENCE_USERNAME`
 
+Prefer a [service account][svcacct] over a personal token here, so published pages
+aren't authored by an individual and publishing doesn't break when that person
+rotates their token or moves on. That means a **scoped** token, which also needs
+`CONFLUENCE_CLOUD_ID` (see [Scoped tokens and service
+accounts](#scoped-tokens-and-service-accounts)). The cloud ID is not sensitive, so
+make it a repository **variable** rather than a secret.
+
 [secrets]: https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions
 
 ### Workflow
@@ -338,6 +380,9 @@ jobs:
           CONFLUENCE_URL: ${{ secrets.CONFLUENCE_URL }}
           CONFLUENCE_USERNAME: ${{ secrets.CONFLUENCE_USERNAME }}
           CONFLUENCE_TOKEN: ${{ secrets.CONFLUENCE_TOKEN }}
+          # A variable, not a secret: the cloud ID is public. Omit it if you're
+          # using an unscoped personal token.
+          CONFLUENCE_CLOUD_ID: ${{ vars.CONFLUENCE_CLOUD_ID }}
         run:
           markfluence update --page-id=12345 --force docs/some_doc.md
 ```
