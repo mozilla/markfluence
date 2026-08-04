@@ -12,31 +12,51 @@ const (
 	urlEnv      = "CONFLUENCE_URL"
 	usernameEnv = "CONFLUENCE_USERNAME"
 	tokenEnv    = "CONFLUENCE_TOKEN" // the API token; never a command-line flag
+	cloudIDEnv  = "CONFLUENCE_CLOUD_ID"
 	dotenvPath  = ".env"
 )
 
 var spaceKeyRE = regexp.MustCompile(`^/spaces/([^/]+)/`)
 
-// Resolve builds a client from the base URL, username, and token. Each value is
-// resolved with the precedence flag > environment variable > .env file: the URL
-// and username come from the urlFlag/usernameFlag values when set, then
-// $CONFLUENCE_URL/$CONFLUENCE_USERNAME, then the .env file; the API token comes
-// only from $CONFLUENCE_TOKEN, then .env -- never a flag. envFile selects which
-// .env is read: when empty the default ./.env is read best-effort (a missing
-// file is fine); when set it's an explicit path that must be readable. It
-// returns a friendly error listing whatever is missing.
-func Resolve(urlFlag, usernameFlag, envFile string) (*ConfluenceClient, error) {
-	env, err := loadEnvFile(envFile)
+// Options carries the flag values Resolve needs, named so the two URL-ish fields
+// can't be transposed at a call site.
+type Options struct {
+	// URL is the --url value (the Confluence site).
+	URL string
+	// Username is the --username value.
+	Username string
+	// CloudID is the --cloud-id value; set it to route requests through the
+	// platform API gateway, which a scoped service-account token requires.
+	CloudID string
+	// EnvFile is the --env-file value; empty means the default ./.env.
+	EnvFile string
+}
+
+// Resolve builds a client from the site URL, username, cloud ID, and token. Each
+// value is resolved with the precedence flag > environment variable > .env file:
+// the URL, username, and cloud ID come from opts when set, then
+// $CONFLUENCE_URL/$CONFLUENCE_USERNAME/$CONFLUENCE_CLOUD_ID, then the .env file;
+// the API token comes only from $CONFLUENCE_TOKEN, then .env -- never a flag.
+// opts.EnvFile selects which .env is read: when empty the default ./.env is read
+// best-effort (a missing file is fine); when set it's an explicit path that must
+// be readable. It returns a friendly error listing whatever is missing.
+//
+// The cloud ID is optional: without one, requests go to the site domain exactly
+// as before, which is what an unscoped personal token and any Data Center site
+// need.
+func Resolve(opts Options) (*ConfluenceClient, error) {
+	env, err := loadEnvFile(opts.EnvFile)
 	if err != nil {
 		return nil, err
 	}
 
-	baseURL := resolveValue(urlFlag, urlEnv, env)
-	username := resolveValue(usernameFlag, usernameEnv, env)
+	siteURL := resolveValue(opts.URL, urlEnv, env)
+	username := resolveValue(opts.Username, usernameEnv, env)
+	cloudID := resolveValue(opts.CloudID, cloudIDEnv, env)
 	token := resolveValue("", tokenEnv, env)
 
 	var missing []string
-	if baseURL == "" {
+	if siteURL == "" {
 		missing = append(missing, "URL (--url or "+urlEnv+")")
 	}
 	if username == "" {
@@ -48,7 +68,29 @@ func Resolve(urlFlag, usernameFlag, envFile string) (*ConfluenceClient, error) {
 	if len(missing) > 0 {
 		return nil, errors.New("missing Confluence " + strings.Join(missing, ", "))
 	}
-	return New(baseURL, username, token), nil
+	if err := validateCloudID(cloudID); err != nil {
+		return nil, err
+	}
+	return New(Config{
+		SiteURL:  siteURL,
+		CloudID:  cloudID,
+		Username: username,
+		Token:    token,
+	}), nil
+}
+
+// validateCloudID rejects a cloud ID that looks like a URL or a path fragment.
+// The value is joined straight onto the gateway prefix, so pasting a whole
+// gateway URL would otherwise produce an opaque 404 rather than a usable error.
+func validateCloudID(cloudID string) error {
+	if cloudID == "" {
+		return nil
+	}
+	if strings.ContainsAny(cloudID, "/:") {
+		return fmt.Errorf("invalid Confluence cloud ID %q (--cloud-id or %s): expected just the "+
+			"identifier, not a URL or path", cloudID, cloudIDEnv)
+	}
+	return nil
 }
 
 // resolveValue applies the flag > environment > .env precedence for one setting.

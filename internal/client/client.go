@@ -4,6 +4,16 @@
 // Requests are built as absolute URLs off the base URL. Pages and content
 // properties use the Confluence v2 API; attachment writes and the user lookup
 // use v1 (/wiki/rest/api/...) since v2 doesn't cover them.
+//
+// A client carries two bases. baseURL is where requests go; siteURL is the
+// human-facing site the pages live on. They differ only when a cloud ID selects
+// the platform API gateway (see Config): a scoped API token -- the kind a service
+// account gets -- is rejected against the site domain and must go through
+// https://api.atlassian.com/ex/confluence/{cloudId} instead. The path suffixes are
+// identical under the gateway, so every call below is written against baseURL
+// unchanged. siteURL exists because the gateway host must never reach a reader:
+// it's wrong in printed URLs and, worse, would be written into published page
+// content by the converter's link rewriting.
 package client
 
 import (
@@ -49,26 +59,59 @@ const (
 // sleep is the backoff pause primitive; a package variable so tests can stub it.
 var sleep = time.Sleep
 
+// gatewayPrefix is the platform API gateway a scoped token must use, joined with
+// the cloud ID to form the request base.
+const gatewayPrefix = "https://api.atlassian.com/ex/confluence/"
+
 // ConfluenceClient talks to the Confluence REST API as a single authenticated user.
 type ConfluenceClient struct {
-	baseURL  string
+	baseURL  string // where requests go: the gateway when a cloud ID is set, else the site
+	siteURL  string // always the Confluence site, for URLs a reader will see
 	username string
 	token    string
 	http     *http.Client
 }
 
-// New builds a client for baseURL authenticating as username:token.
-func New(baseURL, username, token string) *ConfluenceClient {
+// Config holds what a client needs to reach Confluence. The fields are named
+// rather than positional because SiteURL and CloudID both address the same site
+// and Token is a secret; transposing them would be easy and the failure obscure.
+type Config struct {
+	// SiteURL is the Confluence site, e.g. https://your-org.atlassian.net.
+	SiteURL string
+	// CloudID, when set, routes requests through the platform API gateway. Leave
+	// it empty for site-domain requests, which is what an unscoped personal token
+	// and any Data Center site need.
+	CloudID string
+	// Username is the account the token belongs to (basic auth).
+	Username string
+	// Token is the API token.
+	Token string
+}
+
+// New builds a client from cfg.
+func New(cfg Config) *ConfluenceClient {
+	site := strings.TrimRight(cfg.SiteURL, "/")
+	base := site
+	if cfg.CloudID != "" {
+		base = gatewayPrefix + cfg.CloudID
+	}
 	return &ConfluenceClient{
-		baseURL:  strings.TrimRight(baseURL, "/"),
-		username: username,
-		token:    token,
+		baseURL:  base,
+		siteURL:  site,
+		username: cfg.Username,
+		token:    cfg.Token,
 		http:     &http.Client{},
 	}
 }
 
-// BaseURL returns the client's base URL (trailing slash trimmed).
+// BaseURL returns the base requests are built off (trailing slash trimmed). This
+// is the gateway when a cloud ID is configured, so it must not be shown to a
+// reader or written into page content -- use SiteURL for that.
 func (c *ConfluenceClient) BaseURL() string { return c.baseURL }
+
+// SiteURL returns the Confluence site (trailing slash trimmed), regardless of
+// whether requests are routed through the gateway.
+func (c *ConfluenceClient) SiteURL() string { return c.siteURL }
 
 // HTTPError is returned when the API responds with a >= 400 status.
 type HTTPError struct {
@@ -637,6 +680,29 @@ func (c *ConfluenceClient) GetContentProperty(pageID, key string) (*Property, er
 	return &out.Results[0], nil
 }
 
+// resolveNext turns a paginated response's _links.next into an absolute URL
+// against base, returning "" when there is no next page.
+//
+// next is normally a site-relative absolute path ("/wiki/api/v2/..."), so it is
+// appended to base -- which is what preserves the gateway's /ex/confluence/{cloudId}
+// segment. url.ResolveReference would be wrong here: an absolute-path reference
+// replaces the whole path and would silently drop that prefix. The middle branch
+// guards the converse, should the gateway ever echo next with the prefix already
+// applied, which plain appending would double.
+func resolveNext(base, next string) string {
+	switch {
+	case next == "":
+		return ""
+	case strings.HasPrefix(next, "http://"), strings.HasPrefix(next, "https://"):
+		return next
+	}
+	if u, err := url.Parse(base); err == nil && u.Path != "" && strings.HasPrefix(next, u.Path) {
+		u.Path, u.RawQuery, u.Fragment = "", "", ""
+		return strings.TrimRight(u.String(), "/") + next
+	}
+	return base + next
+}
+
 // ListContentProperties returns all of a page's content properties, following
 // pagination.
 func (c *ConfluenceClient) ListContentProperties(pageID string) ([]Property, error) {
@@ -655,11 +721,7 @@ func (c *ConfluenceClient) ListContentProperties(pageID string) ([]Property, err
 		}
 		results = append(results, out.Results...)
 		// The next link already carries the cursor and limit as query params.
-		if out.Links.Next != "" {
-			rawURL = c.baseURL + out.Links.Next
-		} else {
-			rawURL = ""
-		}
+		rawURL = resolveNext(c.baseURL, out.Links.Next)
 		params = nil
 	}
 	return results, nil

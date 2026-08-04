@@ -63,8 +63,11 @@ func run(cmd *cobra.Command, args []string) error {
 
 	url, _ := cmd.Flags().GetString("url")
 	username, _ := cmd.Flags().GetString("username")
+	cloudID, _ := cmd.Flags().GetString("cloud-id")
 	envFile, _ := cmd.Flags().GetString("env-file")
-	c, err := client.Resolve(url, username, envFile)
+	c, err := client.Resolve(client.Options{
+		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile,
+	})
 	if err != nil {
 		if ui.IsJSON() {
 			_ = jsonout.EmitError(os.Stderr, "update", err.Error(), jsonout.CodeConfig)
@@ -156,7 +159,9 @@ func processFile(filename string, c *client.ConfluenceClient) *updateResult {
 		}
 	}
 
-	pageContent, err := convert.MdToConfluence(mf, c.BaseURL(), r.space, buildinfo.Stamp())
+	// SiteURL, not BaseURL: rewritten links are published into the page, so they
+	// must point at the site even when requests go through the gateway.
+	pageContent, err := convert.MdToConfluence(mf, c.SiteURL(), r.space, buildinfo.Stamp())
 	if err != nil {
 		return r.fail(err, jsonout.CodeConvert)
 	}
@@ -281,11 +286,11 @@ func resolveWidth(cliPageWidth string, mf *frontmatter.MarkdownFile) (pagewidth.
 
 func pageURL(c *client.ConfluenceClient, page *client.Page, pageID string) string {
 	if page.Links.WebUI == "" {
-		return fmt.Sprintf("%s/wiki/pages/viewpage.action?pageId=%s", c.BaseURL(), pageID)
+		return fmt.Sprintf("%s/wiki/pages/viewpage.action?pageId=%s", c.SiteURL(), pageID)
 	}
 	base := page.Links.Base
 	if base == "" {
-		base = c.BaseURL() + "/wiki"
+		base = c.SiteURL() + "/wiki"
 	}
 	return base + page.Links.WebUI
 }

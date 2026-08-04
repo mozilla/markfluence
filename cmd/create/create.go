@@ -90,8 +90,11 @@ func run(cmd *cobra.Command, args []string) error {
 
 	url, _ := cmd.Flags().GetString("url")
 	username, _ := cmd.Flags().GetString("username")
+	cloudID, _ := cmd.Flags().GetString("cloud-id")
 	envFile, _ := cmd.Flags().GetString("env-file")
-	c, err := client.Resolve(url, username, envFile)
+	c, err := client.Resolve(client.Options{
+		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile,
+	})
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeConfig)
 	}
@@ -383,7 +386,9 @@ func createOne(r record, parentID string, c *client.ConfluenceClient, persist bo
 	res := newResult(r)
 	res.parent = nullableStr(parentID)
 
-	pageContent, err := convert.MdToConfluence(r.mdfile, c.BaseURL(), r.spaceKey, buildinfo.Stamp())
+	// SiteURL, not BaseURL: rewritten links are published into the page, so they
+	// must point at the site even when requests go through the gateway.
+	pageContent, err := convert.MdToConfluence(r.mdfile, c.SiteURL(), r.spaceKey, buildinfo.Stamp())
 	if err != nil {
 		return res.fail(err, jsonout.CodeConvert)
 	}
@@ -482,11 +487,11 @@ func resolveWidth(cliPageWidth string, fm map[string]string) (pagewidth.Width, e
 
 func pageURL(c *client.ConfluenceClient, page *client.Page, pageID string) string {
 	if page.Links.WebUI == "" {
-		return fmt.Sprintf("%s/wiki/pages/viewpage.action?pageId=%s", c.BaseURL(), pageID)
+		return fmt.Sprintf("%s/wiki/pages/viewpage.action?pageId=%s", c.SiteURL(), pageID)
 	}
 	base := page.Links.Base
 	if base == "" {
-		base = c.BaseURL() + "/wiki"
+		base = c.SiteURL() + "/wiki"
 	}
 	return base + page.Links.WebUI
 }
