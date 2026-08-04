@@ -44,7 +44,7 @@ func newServer(t *testing.T, responses ...resp) (*ConfluenceClient, *scripted) {
 		_, _ = w.Write([]byte(out.body))
 	}))
 	t.Cleanup(srv.Close)
-	return New(srv.URL, "u", "t"), s
+	return New(Config{SiteURL: srv.URL, Username: "u", Token: "t"}), s
 }
 
 func eqStrings(a, b []string) bool {
@@ -137,7 +137,7 @@ func countingServer(t *testing.T, handler func(w http.ResponseWriter, n int32)) 
 		handler(w, atomic.AddInt32(&n, 1))
 	}))
 	t.Cleanup(srv.Close)
-	return New(srv.URL, "u", "t"), &n
+	return New(Config{SiteURL: srv.URL, Username: "u", Token: "t"}), &n
 }
 
 func TestSendRetriesOn429ThenSucceeds(t *testing.T) {
@@ -471,23 +471,25 @@ func TestResolve(t *testing.T) {
 			"CONFLUENCE_TOKEN=file-pass\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// Clear any inherited env for a deterministic baseline.
+	// Clear any inherited env for a deterministic baseline. CONFLUENCE_CLOUD_ID
+	// matters here too: a stray one would reroute BaseURL to the gateway.
 	t.Setenv("CONFLUENCE_URL", "")
 	t.Setenv("CONFLUENCE_USERNAME", "")
 	t.Setenv("CONFLUENCE_TOKEN", "")
+	t.Setenv("CONFLUENCE_CLOUD_ID", "")
 
 	// All from .env.
-	c, err := Resolve("", "", "")
+	c, err := Resolve(Options{})
 	if err != nil || c.BaseURL() != "https://file.example.net" {
 		t.Fatalf("Resolve(.env) = %v, %v", c, err)
 	}
 
 	// Flag beats env beats .env for the URL.
 	t.Setenv("CONFLUENCE_URL", "https://env.example.net")
-	if c, _ := Resolve("https://flag.example.net", "", ""); c.BaseURL() != "https://flag.example.net" {
+	if c, _ := Resolve(Options{URL: "https://flag.example.net"}); c.BaseURL() != "https://flag.example.net" {
 		t.Errorf("flag should win, got %q", c.BaseURL())
 	}
-	if c, _ := Resolve("", "", ""); c.BaseURL() != "https://env.example.net" {
+	if c, _ := Resolve(Options{}); c.BaseURL() != "https://env.example.net" {
 		t.Errorf("env should beat .env, got %q", c.BaseURL())
 	}
 
@@ -496,7 +498,78 @@ func TestResolve(t *testing.T) {
 	if err := os.WriteFile(".env", []byte("CONFLUENCE_URL=u\nCONFLUENCE_USERNAME=x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Resolve("u", "x", ""); err == nil {
+	if _, err := Resolve(Options{URL: "u", Username: "x"}); err == nil {
 		t.Error("Resolve with no token: want error")
+	}
+}
+
+func TestNewGatewayBase(t *testing.T) {
+	tests := []struct {
+		name               string
+		site, cloudID      string
+		wantBase, wantSite string
+	}{
+		{
+			"no cloud ID keeps the site as the request base",
+			"https://wiki.example.net", "",
+			"https://wiki.example.net", "https://wiki.example.net",
+		},
+		{
+			"cloud ID routes requests to the gateway, site unchanged",
+			"https://wiki.example.net", "abc-123",
+			gatewayPrefix + "abc-123", "https://wiki.example.net",
+		},
+		{
+			"trailing slash trimmed from both",
+			"https://wiki.example.net/", "abc-123",
+			gatewayPrefix + "abc-123", "https://wiki.example.net",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := New(Config{SiteURL: tc.site, CloudID: tc.cloudID})
+			if c.BaseURL() != tc.wantBase {
+				t.Errorf("BaseURL = %q, want %q", c.BaseURL(), tc.wantBase)
+			}
+			if c.SiteURL() != tc.wantSite {
+				t.Errorf("SiteURL = %q, want %q", c.SiteURL(), tc.wantSite)
+			}
+		})
+	}
+}
+
+func TestResolveNext(t *testing.T) {
+	const gw = gatewayPrefix + "abc-123"
+	tests := []struct {
+		name, base, next, want string
+	}{
+		{"no next page", gw, "", ""},
+		{
+			"site-relative path appends, preserving the gateway prefix",
+			gw, "/wiki/api/v2/pages/1/properties?cursor=X",
+			gw + "/wiki/api/v2/pages/1/properties?cursor=X",
+		},
+		{
+			"prefix already applied is not doubled",
+			gw, "/ex/confluence/abc-123/wiki/api/v2/pages/1/properties?cursor=X",
+			gw + "/wiki/api/v2/pages/1/properties?cursor=X",
+		},
+		{
+			"absolute next is used as-is",
+			gw, "https://elsewhere.example.net/wiki/api/v2/pages?cursor=X",
+			"https://elsewhere.example.net/wiki/api/v2/pages?cursor=X",
+		},
+		{
+			"site base (no cloud ID) appends as before",
+			"https://wiki.example.net", "/wiki/api/v2/pages/1/properties?cursor=X",
+			"https://wiki.example.net/wiki/api/v2/pages/1/properties?cursor=X",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolveNext(tc.base, tc.next); got != tc.want {
+				t.Errorf("resolveNext(%q, %q) = %q, want %q", tc.base, tc.next, got, tc.want)
+			}
+		})
 	}
 }

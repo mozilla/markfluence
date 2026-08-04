@@ -3,6 +3,7 @@ package create
 import (
 	"testing"
 
+	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 )
@@ -74,5 +75,41 @@ func TestOverrideNeedsSingleFile(t *testing.T) {
 	}
 	if overrideNeedsSingleFile("", 3) {
 		t.Error("no --title should not trigger the guard")
+	}
+}
+
+// In gateway mode the request base is api.atlassian.com, which must never reach a
+// reader. Every pageURL branch has to resolve against the site instead.
+func TestPageURLUsesSiteNotGateway(t *testing.T) {
+	c := client.New(client.Config{SiteURL: "https://wiki.example.net", CloudID: "abc-123"})
+
+	tests := []struct {
+		name       string
+		base, webu string
+		want       string
+	}{
+		{
+			"no webui link falls back to the site",
+			"", "",
+			"https://wiki.example.net/wiki/pages/viewpage.action?pageId=42",
+		},
+		{
+			"webui with no base joins onto the site",
+			"", "/spaces/ENG/pages/42/Title",
+			"https://wiki.example.net/wiki/spaces/ENG/pages/42/Title",
+		},
+		{
+			"the API's own base is preferred when present",
+			"https://wiki.example.net/wiki", "/spaces/ENG/pages/42/Title",
+			"https://wiki.example.net/wiki/spaces/ENG/pages/42/Title",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			page := &client.Page{ID: "42", Links: client.Links{Base: tc.base, WebUI: tc.webu}}
+			if got := pageURL(c, page, "42"); got != tc.want {
+				t.Errorf("pageURL = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

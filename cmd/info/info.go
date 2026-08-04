@@ -40,8 +40,11 @@ func init() {
 func run(cmd *cobra.Command, args []string) error {
 	url, _ := cmd.Flags().GetString("url")
 	username, _ := cmd.Flags().GetString("username")
+	cloudID, _ := cmd.Flags().GetString("cloud-id")
 	envFile, _ := cmd.Flags().GetString("env-file")
-	c, err := client.Resolve(url, username, envFile)
+	c, err := client.Resolve(client.Options{
+		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile,
+	})
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeConfig)
 	}
@@ -141,9 +144,9 @@ type report struct {
 func buildReport(page *client.Page, c *client.ConfluenceClient, withProps bool) report {
 	url := page.Links.Base + page.Links.WebUI
 	if page.Links.WebUI == "" {
-		url = fmt.Sprintf("%s/wiki/pages/viewpage.action?pageId=%s", c.BaseURL(), page.ID)
+		url = fmt.Sprintf("%s/wiki/pages/viewpage.action?pageId=%s", c.SiteURL(), page.ID)
 	} else if page.Links.Base == "" {
-		url = c.BaseURL() + "/wiki" + page.Links.WebUI
+		url = c.SiteURL() + "/wiki" + page.Links.WebUI
 	}
 
 	cache := map[string]string{}

@@ -39,8 +39,11 @@ func init() {
 func run(cmd *cobra.Command, args []string) error {
 	url, _ := cmd.Flags().GetString("url")
 	username, _ := cmd.Flags().GetString("username")
+	cloudID, _ := cmd.Flags().GetString("cloud-id")
 	envFile, _ := cmd.Flags().GetString("env-file")
-	c, err := client.Resolve(url, username, envFile)
+	c, err := client.Resolve(client.Options{
+		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile,
+	})
 	if err != nil {
 		if ui.IsJSON() {
 			_ = jsonout.EmitError(os.Stderr, "fix", err.Error(), jsonout.CodeConfig)
@@ -174,7 +177,7 @@ func locatePage(fm map[string]string, c *client.ConfluenceClient) (*client.Page,
 		fmt.Fprintf(&b, "found %d pages with title %q:", len(matches), title)
 		for _, m := range matches {
 			fmt.Fprintf(&b, "\n  - %s: %s (%s/wiki/pages/viewpage.action?pageId=%s)",
-				m.ID, m.Title, c.BaseURL(), m.ID)
+				m.ID, m.Title, c.SiteURL(), m.ID)
 		}
 		b.WriteString("\nadd a page_id to the frontmatter to disambiguate")
 		return nil, errors.New(b.String())

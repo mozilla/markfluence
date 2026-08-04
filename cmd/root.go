@@ -20,6 +20,7 @@ import (
 var (
 	urlFlag      string
 	usernameFlag string
+	cloudIDFlag  string
 	envFileFlag  string
 	debugFlag    bool
 	noColorFlag  bool
@@ -31,9 +32,15 @@ var rootCmd = &cobra.Command{
 	Short: "Publish markdown to Confluence",
 	Long: "markfluence publishes and manipulates Confluence pages from markdown files.\n\n" +
 		"Configuration resolves with the precedence flag > environment variable >\n" +
-		".env file. The base URL (--url / CONFLUENCE_URL) and username (--username /\n" +
-		"CONFLUENCE_USERNAME) may be set any of those ways; the API token\n" +
-		"(CONFLUENCE_TOKEN) comes only from the environment or .env, never a flag.",
+		".env file. The site URL (--url / CONFLUENCE_URL), username (--username /\n" +
+		"CONFLUENCE_USERNAME), and cloud ID (--cloud-id / CONFLUENCE_CLOUD_ID) may be\n" +
+		"set any of those ways; the API token (CONFLUENCE_TOKEN) comes only from the\n" +
+		"environment or .env, never a flag.\n\n" +
+		"Set the cloud ID to authenticate with a scoped API token, such as one issued\n" +
+		"to a service account: those tokens are rejected against the site domain and\n" +
+		"must go through Atlassian's api.atlassian.com gateway. Leave it unset for an\n" +
+		"unscoped personal token. Find yours at\n" +
+		"https://YOUR-SITE.atlassian.net/_edge/tenant_info -- it isn't a secret.",
 	// --version prints the build stamp ("markfluence VERSION (SHA, DATE)"), the
 	// same string the converter substitutes for the <!-- markfluence-version -->
 	// token.
@@ -102,6 +109,9 @@ func init() {
 		"Confluence base URL (falls back to $CONFLUENCE_URL, then .env)")
 	rootCmd.PersistentFlags().StringVar(&usernameFlag, "username", "",
 		"Confluence username/email (falls back to $CONFLUENCE_USERNAME, then .env)")
+	rootCmd.PersistentFlags().StringVar(&cloudIDFlag, "cloud-id", "",
+		"Atlassian cloud ID; set to use a scoped API token via the api.atlassian.com "+
+			"gateway (falls back to $CONFLUENCE_CLOUD_ID, then .env)")
 	rootCmd.PersistentFlags().StringVar(&envFileFlag, "env-file", "",
 		"Path to an env file to read (default: ./.env in the working directory)")
 	rootCmd.PersistentFlags().BoolVarP(&debugFlag, "debug", "d", false,
