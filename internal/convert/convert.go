@@ -28,15 +28,18 @@ const (
 )
 
 // newMarkdown builds the goldmark instance: GFM for tables/strikethrough/
-// task-lists/autolinks, the callout AST transformer, XHTML self-closing tags and
-// raw-HTML passthrough (storage format is XHTML), and our storageRenderer
-// registered at a priority below the default HTML (1000) and GFM table (500)
-// renderers so its node handlers win.
+// task-lists/autolinks, the callout and table-cell-background AST transformers,
+// XHTML self-closing tags and raw-HTML passthrough (storage format is XHTML), and
+// our storageRenderer registered at a priority below the default HTML (1000) and
+// GFM table (500) renderers so its node handlers win.
 func newMarkdown(r *storageRenderer) goldmark.Markdown {
 	return goldmark.New(
 		goldmark.WithExtensions(extension.GFM),
 		goldmark.WithParserOptions(
-			parser.WithASTTransformers(util.Prioritized(calloutTransformer{}, 100)),
+			parser.WithASTTransformers(
+				util.Prioritized(calloutTransformer{}, 100),
+				util.Prioritized(tableCellBGTransformer{r: r}, 101),
+			),
 		),
 		goldmark.WithRendererOptions(
 			html.WithXHTML(),

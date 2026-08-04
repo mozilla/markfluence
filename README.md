@@ -232,7 +232,8 @@ or a Confluence page URL (the modern `/wiki/.../pages/<id>/...` form or a legacy
   column layouts pass through as raw storage tags, with a macro/cell body kept as
   readable markdown, so they round-trip back through `create`/`update`. Some
   transforms are lossy (e.g. `CAUTION`
-  alerts, internal links, and original image paths cannot be recovered), so this is
+  alerts, internal links, original image paths, and table cell background colors
+  cannot be recovered), so this is
   a reading aid, not a guaranteed source round-trip.
 - `storage` — the page's raw storage-format XHTML, exactly as stored.
 
@@ -441,11 +442,54 @@ To create a page, you only need to specify the `title` in the frontmatter.
 The body is [GitHub-Flavored Markdown](https://github.github.com/gfm/), converted
 to Confluence storage format. Supported constructs:
 
-**Tables** and **fenced code blocks** (rendered as Confluence code macros, with
-language).
+**Fenced code blocks** are rendered as Confluence code macros and support the
+syntax highlighting, but only the languages Confluence supports.
+[GFM fenced code](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-and-highlighting-code-blocks)
+
+**Tables** use GFM syntax and are rendered as Confluence tables.
+[GFM tables](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/organizing-information-with-tables)
+
+**Table cell background colors** can be specified using an HTML comment at the
+start of the cell. They will be invisible in Markdown preview, but will have
+the specified background color in Confluence.
+
+```markdown
+| Service | Status                     |
+| ------- | -------------------------- |
+| auth    | <!-- bg:light-green --> ok |
+| billing | <!-- bg:light-red --> down |
+```
+
+The color is a swatch name from the Confluence editor's cell background palette,
+or a literal `#rrggbb` hex for anything else. The 21 swatches, one row here per
+column of the editor's picker:
+
+| Light | Medium | Bold |
+| --- | --- | --- |
+| `white` `#ffffff` | `light-grey` `light-gray` `#f4f5f7` | `grey` `gray` `#b3bac5` |
+| `light-blue` `#deebff` | `blue` `#b3d4ff` | `bold-blue` `#4c9aff` |
+| `light-teal` `#e6fcff` | `teal` `#b3f5ff` | `bold-teal` `#79e2f2` |
+| `light-green` `#e3fcef` | `green` `#abf5d1` | `bold-green` `#57d9a3` |
+| `light-yellow` `#fffae6` | `yellow` `#fff0b3` | `bold-yellow` `#ffc400` |
+| `light-red` `#ffebe6` | `red` `#ffbdad` | `bold-red` `#ff8f73` |
+| `light-purple` `#eae6ff` | `purple` `#c0b6f2` | `bold-purple` `#998dd9` |
+
+Details:
+
+- Confluence colors **cells**, not rows or columns; a colored column is
+  implemented with a marker per cell in the column and a colored row is
+  implemented with a marker per cell in the row.
+- The marker works in header cells too.
+- A cell holding nothing but a marker is an empty colored cell.
+- The color marker has to be the first thing in the cell. Anywhere else it's
+  ignored with a warning, since a stray comment would otherwise do nothing
+  visible.
+- An unknown color name is dropped with a warning and the cell publishes
+  uncolored.
 
 **GitHub alerts** — `> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`,
 `[!CAUTION]` — become info/tip/note/warning panels.
+[GFM alerts](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts)
 
 Example:
 
@@ -485,7 +529,7 @@ Examples:
 URL; **heading anchors** are rewritten to Confluence's anchor scheme.
 
 **Comment directives:**
-- `<!-- confluence-toc -->` — table-of-contents macro.
+- `<!-- confluence-toc -->` — replaced with Confluence table-of-contents macro.
 - `<!-- markfluence-version -->` — replaced with the build stamp,
   `markfluence VERSION (SHA, DATE)` (the same string `markfluence --version`
   prints).
