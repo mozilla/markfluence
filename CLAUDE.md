@@ -19,13 +19,18 @@ Run `make test && make lint && make vet` before considering work done.
 
 ## Configuration
 
-The CLI needs a base URL, a username, and an API token. Each resolves with the precedence **flag > environment variable > `.env` file**:
+The CLI needs a site URL, a username, and an API token, plus an optional cloud ID. Each resolves with the precedence **flag > environment variable > `.env` file**:
 
 | Setting | Flag | Env / `.env` |
 |---|---|---|
-| base URL | `--url` | `CONFLUENCE_URL` |
+| site URL | `--url` | `CONFLUENCE_URL` |
 | username | `--username` | `CONFLUENCE_USERNAME` |
 | API token | *(none)* | `CONFLUENCE_TOKEN` |
+| cloud ID (optional) | `--cloud-id` | `CONFLUENCE_CLOUD_ID` |
+
+A cloud ID routes requests through `https://api.atlassian.com/ex/confluence/{cloudId}` instead of the site domain, which is mandatory for a **scoped** API token (what an Atlassian service account gets — a scoped token 401s against the site domain). Basic auth is unchanged; only the base URL moves. Without a cloud ID, behavior is identical to before it existed, which is what an unscoped personal token and any Data Center site need. The cloud ID is not a secret (`https://SITE/_edge/tenant_info` returns it unauthenticated), which is why it may be a flag while the token may not.
+
+Scopes markfluence needs (it never deletes): `read:confluence-content.all`, `write:confluence-content`, `read:confluence-space.summary`, `read:confluence-props`, `write:confluence-props`, `write:confluence-file`, `read:confluence-user`.
 
 markfluence reads a `.env` from the working directory itself (a minimal built-in parser — no shell expansion), or an explicit path via the persistent `--env-file` flag (a missing explicit path is an error; a missing default `./.env` is not); `.env.example` is the template. The API token is deliberately never a command-line flag. `internal/client.Resolve` is the single place this is read and validated.
 
@@ -43,7 +48,7 @@ Module `github.com/mozilla/markfluence` (`go 1.25`). `main.go` is a shim to `cmd
 
 - `cmd/root.go` — the cobra root: `--url`/`--username`/`--debug`/`--no-color` persistent flags, version from `internal/buildinfo`, and registration of the four subcommands. `Execute()` prints cobra-generated errors (bad args/flags) but not `ui.ErrSilent`, which marks a failure a command already reported.
 - `cmd/{update,create,fix,info}/` — one package per command (each exports `Cmd`), orchestrating the `internal` packages and `internal/ui` output. `create` is two-phase and transactional (validate all, then create parents-first in topological order); `fix` is read-only on the server.
-- `internal/client` — `ConfluenceClient` over `net/http` with basic auth. Pages are Confluence **v2**; attachment writes and the user lookup are **v1** (`/wiki/rest/api/...`). Typed `HTTPError`, per-attempt context timeouts, centralized retry/backoff in `send` (429 for any method honoring `Retry-After`, plus 502/503/504 and network errors for idempotent methods only; exponential backoff capped), `SetContentProperty` retry-once on top (recovers a lost create-POST response), `SyncAttachments` (SHA-256-in-comment skip/update), `_links.next` pagination. `config.go` holds `Resolve` and the `.env` reader.
+- `internal/client` — `ConfluenceClient` over `net/http` with basic auth. Built from a `Config` (site URL, cloud ID, username, token) via `New`; it carries **two bases**: `BaseURL()` is where requests go (the gateway when a cloud ID is set) and `SiteURL()` is always the site. Anything a reader sees uses `SiteURL()` — printed page URLs and, critically, the `baseURL` handed to `convert.MdToConfluence`, since rewritten links are published *into* the page. Pages are Confluence **v2**; attachment writes and the user lookup are **v1** (`/wiki/rest/api/...`). Typed `HTTPError`, per-attempt context timeouts, centralized retry/backoff in `send` (429 for any method honoring `Retry-After`, plus 502/503/504 and network errors for idempotent methods only; exponential backoff capped), `SetContentProperty` retry-once on top (recovers a lost create-POST response), `SyncAttachments` (SHA-256-in-comment skip/update), `_links.next` pagination. `config.go` holds `Resolve` and the `.env` reader.
 - `internal/convert` — the converter (the crux). `MdToConfluence(md *frontmatter.MarkdownFile, baseURL, spaceKey, version string) (*ConfluencePage, error)`. It parses with goldmark (GFM) and renders through a custom `storageRenderer` registered at priority 100 (below the default HTML=1000 and table=500 renderers) that emits Confluence storage format. `shield.go` renames raw `ac:`/`ri:` tags to colon-free sentinels around the goldmark step so pasted storage passes through; `callouts.go` is an AST transformer + blockquote renderer for GitHub alerts; `images.go`, `links.go` (sibling-file scans, GitHub/Confluence slugs, doc-link + anchor rewriting), `tables.go` (the `<table>` tag only, stamped with Confluence's `data-layout="align-start"` so tables auto-size to their content and left-align; rows and cells still fall through to the GFM renderer), and `renderer.go` (code macros, text soft-break→space, images, links) do the rest. The `<!-- confluence-toc -->` and `<!-- markfluence-version -->` token substitutions happen **inside** `MdToConfluence`.
 - `internal/frontmatter` — flat YAML frontmatter parse/quote/`UpdateField`, and the `MarkdownFile` type (`Parse`/`ParseFile`, exported `Filename`/`Content`/`Frontmatter`/`Body`, and `Title`/`PageID`/`Space`/`Parent` accessors that normalize missing/blank/`"null"`).
 - `internal/pagewidth` — the `page_width` `Width` enum (`narrow`/`wide`/`max`, default `max`), `Declared`, the vocab↔content-property maps, `WidthFromProperties`, and `Apply`/`Read` against the client.
