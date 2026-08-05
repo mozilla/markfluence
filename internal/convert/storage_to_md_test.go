@@ -32,7 +32,7 @@ func TestStorageToMarkdown(t *testing.T) {
 			if err != nil {
 				t.Fatalf("reading input: %v", err)
 			}
-			md, err := convert.StorageToMarkdown(string(in))
+			md, err := convert.StorageToMarkdown(string(in), nil)
 			if err != nil {
 				t.Fatalf("StorageToMarkdown: %v", err)
 			}
@@ -78,7 +78,7 @@ func TestStorageToMarkdownAcceptsForwardCorpus(t *testing.T) {
 			if err := json.Unmarshal(data, &page); err != nil {
 				t.Fatalf("parsing golden: %v", err)
 			}
-			if _, err := convert.StorageToMarkdown(page.HTML); err != nil {
+			if _, err := convert.StorageToMarkdown(page.HTML, nil); err != nil {
 				t.Errorf("StorageToMarkdown(%q storage): %v", name, err)
 			}
 		})
@@ -109,7 +109,7 @@ func TestRoundTripStableCallouts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MdToConfluence: %v", err)
 	}
-	got, err := convert.StorageToMarkdown(page.HTML)
+	got, err := convert.StorageToMarkdown(page.HTML, nil)
 	if err != nil {
 		t.Fatalf("StorageToMarkdown: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestRoundTripStableCallouts(t *testing.T) {
 func TestStorageToMarkdownStripsGeneratedIDs(t *testing.T) {
 	in := `<ac:structured-macro ac:macro-id="abc" ac:local-id="def" ac:name="status">` +
 		`<ac:parameter ac:name="title">DONE</ac:parameter></ac:structured-macro>`
-	got, err := convert.StorageToMarkdown(in)
+	got, err := convert.StorageToMarkdown(in, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestRoundTripPassthrough(t *testing.T) {
 			if err != nil {
 				t.Fatalf("MdToConfluence: %v", err)
 			}
-			back, err := convert.StorageToMarkdown(page.HTML)
+			back, err := convert.StorageToMarkdown(page.HTML, nil)
 			if err != nil {
 				t.Fatalf("StorageToMarkdown: %v", err)
 			}
@@ -159,5 +159,48 @@ func TestRoundTripPassthrough(t *testing.T) {
 				t.Errorf("round-trip mismatch\n--- got ---\n%s\n--- want ---\n%s", back, src)
 			}
 		})
+	}
+}
+
+// TestStorageToMarkdownPrefersRecordedSource checks the two ways an image path is
+// recovered. The path recorded on the attachment wins because it is exact; with
+// no record, the attachment name is decoded, which is equally exact for a name
+// markfluence produced.
+func TestStorageToMarkdownPrefersRecordedSource(t *testing.T) {
+	const in = `<p><ac:image ac:alt="d"><ri:attachment ri:filename="assets%2Fx.png" /></ac:image></p>`
+
+	got, err := convert.StorageToMarkdown(in, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "![d](assets/x.png)\n"; got != want {
+		t.Errorf("decoded from name: got %q, want %q", got, want)
+	}
+
+	// A recorded source overrides the name -- this is what makes an attachment
+	// whose name cannot be decoded faithfully (one a human uploaded, or one from
+	// an older markfluence) still resolve to the right path.
+	sources := map[string]string{"assets%2Fx.png": "images/original name.png"}
+	got, err = convert.StorageToMarkdown(in, sources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "![d](images/original name.png)\n"; got != want {
+		t.Errorf("from recorded source: got %q, want %q", got, want)
+	}
+}
+
+// TestStorageToMarkdownRefusesAbsoluteSource covers a tampered or foreign
+// attachment: neither a decoded name nor a recorded path may point a reader --
+// or a later export writing files -- at an absolute location.
+func TestStorageToMarkdownRefusesAbsoluteSource(t *testing.T) {
+	const in = `<p><ac:image ac:alt="d"><ri:attachment ri:filename="%2Fetc%2Fpasswd.png" /></ac:image></p>`
+	got, err := convert.StorageToMarkdown(in, map[string]string{"%2Fetc%2Fpasswd.png": "/etc/passwd.png"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Falls back to the raw attachment name rather than an absolute path.
+	if want := "![d](%2Fetc%2Fpasswd.png)\n"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }

@@ -82,7 +82,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	body := page.Body.Storage.Value
 	if formatFlag == formatMarkdown {
-		body, err = convert.StorageToMarkdown(page.Body.Storage.Value)
+		body, err = convert.StorageToMarkdown(page.Body.Storage.Value, attachmentSources(c, page))
 		if err != nil {
 			return operationalFail(pageID, err, jsonout.CodeConvert)
 		}
@@ -100,6 +100,32 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Print(frontmatterBlock(c, page) + "\n" + body)
 	return nil
+}
+
+// attachmentSources maps each attachment name on the page to the markdown image
+// path it was published from, letting the converter restore an image's original
+// location exactly rather than inferring it from the attachment name.
+//
+// It is an optimization, not a requirement: a page with no attachment references
+// skips the lookup entirely, and a failed lookup returns nil so the converter
+// falls back to decoding names -- a read is worth completing without it, the
+// same way a failed page-width read is tolerated below.
+func attachmentSources(c *client.ConfluenceClient, page *client.Page) map[string]string {
+	if !strings.Contains(page.Body.Storage.Value, "<ri:attachment") {
+		return nil
+	}
+	atts, err := c.ListAttachments(page.ID)
+	if err != nil {
+		ui.Debug(fmt.Sprintf("listing attachments for %s: %v", page.ID, err))
+		return nil
+	}
+	sources := map[string]string{}
+	for _, a := range atts {
+		if src := a.Meta().Source; src != "" {
+			sources[a.Title] = src
+		}
+	}
+	return sources
 }
 
 // fatalFail reports a config/usage/pre-flight failure: a JSON error object on

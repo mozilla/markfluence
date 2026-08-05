@@ -14,6 +14,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"path"
 	"sort"
 	"strings"
 )
@@ -30,18 +31,47 @@ var calloutMacroInverse = map[string]string{
 }
 
 // StorageToMarkdown converts a Confluence storage-format body to Markdown.
-func StorageToMarkdown(storage string) (string, error) {
+//
+// sources maps an attachment name to the markdown image path it was published
+// from, as recorded on the attachment when markfluence uploaded it. It is
+// optional: a nil map (or a name missing from it) falls back to decoding the
+// attachment name, which is exact for names markfluence created and a
+// best-effort guess for hand-uploaded ones.
+func StorageToMarkdown(storage string, sources map[string]string) (string, error) {
 	root, err := parseStorage(storage)
 	if err != nil {
 		return "", err
 	}
-	blocks := blockStrings(root.kids, "")
+	r := &mdRenderer{sources: sources}
+	blocks := r.blockStrings(root.kids, "")
 	out := strings.Join(blocks, "\n\n")
 	out = strings.Trim(out, "\n")
 	if out == "" {
 		return "", nil
 	}
 	return out + "\n", nil
+}
+
+// mdRenderer carries the per-conversion context the storage->markdown walk needs.
+// A fresh one is used per conversion, so nothing leaks between documents.
+type mdRenderer struct {
+	// sources maps attachment name -> the image path it was published from. May
+	// be nil, in which case paths are recovered by decoding attachment names.
+	sources map[string]string
+}
+
+// sourceFor resolves an attachment name back to the markdown image path to write.
+// The path recorded on the attachment wins because it is exact; otherwise the
+// name is decoded. An absolute path is never something markfluence published, so
+// it is refused in both cases and the raw attachment name is used instead.
+func (r *mdRenderer) sourceFor(filename string) string {
+	if src, ok := r.sources[filename]; ok && src != "" && !path.IsAbs(src) {
+		return src
+	}
+	if src, ok := attachmentSource(filename); ok {
+		return src
+	}
+	return filename
 }
 
 // snode is a minimal parsed storage node: an element (name + attrs + children) or
@@ -104,7 +134,7 @@ func qname(n xml.Name) string {
 // blockStrings renders block-level children to a slice of block strings (joined
 // by callers with blank lines). listIndent is the continuation indent applied to
 // nested lists.
-func blockStrings(kids []*snode, listIndent string) []string {
+func (r *mdRenderer) blockStrings(kids []*snode, listIndent string) []string {
 	var out []string
 	for _, k := range kids {
 		if k.name == "" {
@@ -113,7 +143,7 @@ func blockStrings(kids []*snode, listIndent string) []string {
 			}
 			continue
 		}
-		if s := renderBlock(k, listIndent); s != "" {
+		if s := r.renderBlock(k, listIndent); s != "" {
 			out = append(out, s)
 		}
 	}
@@ -121,44 +151,44 @@ func blockStrings(kids []*snode, listIndent string) []string {
 }
 
 // renderBlock renders a single block-level element.
-func renderBlock(n *snode, listIndent string) string {
+func (r *mdRenderer) renderBlock(n *snode, listIndent string) string {
 	switch n.name {
 	case "h1", "h2", "h3", "h4", "h5", "h6":
 		level := int(n.name[1] - '0')
-		return strings.Repeat("#", level) + " " + renderInlineChildren(n)
+		return strings.Repeat("#", level) + " " + r.renderInlineChildren(n)
 	case "p":
-		return renderInlineChildren(n)
+		return r.renderInlineChildren(n)
 	case "ul":
-		return renderList(n, false, listIndent)
+		return r.renderList(n, false, listIndent)
 	case "ol":
-		return renderList(n, true, listIndent)
+		return r.renderList(n, true, listIndent)
 	case "blockquote":
-		return prefixLines(strings.Join(blockStrings(n.kids, ""), "\n\n"), "> ")
+		return prefixLines(strings.Join(r.blockStrings(n.kids, ""), "\n\n"), "> ")
 	case "hr":
 		return "---"
 	case "pre":
 		return "```\n" + textContent(n) + "\n```"
 	case "table":
-		return renderTable(n)
+		return r.renderTable(n)
 	case "ac:structured-macro":
-		return renderMacro(n, true)
+		return r.renderMacro(n, true)
 	case "ac:image", "a", "strong", "b", "em", "i", "code", "del", "s", "strike", "br":
 		// An inline element sitting at block level (Confluence often emits a bare
 		// <ac:image> not wrapped in <p>) is rendered as its own paragraph.
-		return renderInline(n)
+		return r.renderInline(n)
 	case "ac:layout", "ac:layout-section", "ac:layout-cell":
-		return renderRawBlock(n)
+		return r.renderRawBlock(n)
 	case "div":
-		return strings.Join(blockStrings(n.kids, listIndent), "\n\n")
+		return strings.Join(r.blockStrings(n.kids, listIndent), "\n\n")
 	default:
 		// Unknown element: render its children as blocks (transparent wrapper).
-		return strings.Join(blockStrings(n.kids, listIndent), "\n\n")
+		return strings.Join(r.blockStrings(n.kids, listIndent), "\n\n")
 	}
 }
 
 // renderList renders a ul/ol, incrementing ordered markers and indenting nested
 // lists to align under their item text.
-func renderList(n *snode, ordered bool, indent string) string {
+func (r *mdRenderer) renderList(n *snode, ordered bool, indent string) string {
 	var lines []string
 	i := 0
 	for _, k := range n.kids {
@@ -171,31 +201,31 @@ func renderList(n *snode, ordered bool, indent string) string {
 			marker = fmt.Sprintf("%d. ", i)
 		}
 		cont := indent + strings.Repeat(" ", len(marker))
-		lines = append(lines, indent+marker+renderListItem(k, cont))
+		lines = append(lines, indent+marker+r.renderListItem(k, cont))
 	}
 	return strings.Join(lines, "\n")
 }
 
 // renderListItem renders an <li>: its inline/paragraph content on the first line,
 // with any nested lists indented beneath it.
-func renderListItem(li *snode, cont string) string {
+func (r *mdRenderer) renderListItem(li *snode, cont string) string {
 	var head strings.Builder
 	var tail []string
 	for _, k := range li.kids {
 		switch k.name {
 		case "ul":
-			tail = append(tail, renderList(k, false, cont))
+			tail = append(tail, r.renderList(k, false, cont))
 		case "ol":
-			tail = append(tail, renderList(k, true, cont))
+			tail = append(tail, r.renderList(k, true, cont))
 		case "p":
-			if s := renderInlineChildren(k); s != "" {
+			if s := r.renderInlineChildren(k); s != "" {
 				if head.Len() > 0 {
 					head.WriteString(" ")
 				}
 				head.WriteString(s)
 			}
 		default:
-			head.WriteString(renderInline(k))
+			head.WriteString(r.renderInline(k))
 		}
 	}
 	item := strings.TrimSpace(head.String())
@@ -206,7 +236,7 @@ func renderListItem(li *snode, cont string) string {
 }
 
 // renderTable renders a table as a GFM pipe table. Alignment is not preserved.
-func renderTable(n *snode) string {
+func (r *mdRenderer) renderTable(n *snode) string {
 	var rows []*snode
 	var header *snode
 	var walk func(*snode)
@@ -232,7 +262,7 @@ func renderTable(n *snode) string {
 		header, rows = rows[0], rows[1:]
 	}
 
-	head := cellTexts(header)
+	head := r.cellTexts(header)
 	var b strings.Builder
 	b.WriteString("| " + strings.Join(head, " | ") + " |\n")
 	seps := make([]string, len(head))
@@ -240,8 +270,8 @@ func renderTable(n *snode) string {
 		seps[i] = "---"
 	}
 	b.WriteString("| " + strings.Join(seps, " | ") + " |")
-	for _, r := range rows {
-		b.WriteString("\n| " + strings.Join(cellTexts(r), " | ") + " |")
+	for _, row := range rows {
+		b.WriteString("\n| " + strings.Join(r.cellTexts(row), " | ") + " |")
 	}
 	return b.String()
 }
@@ -257,11 +287,11 @@ func rowHasHeaderCell(tr *snode) bool {
 }
 
 // cellTexts renders a row's cells to inline strings with pipes escaped.
-func cellTexts(tr *snode) []string {
+func (r *mdRenderer) cellTexts(tr *snode) []string {
 	var cells []string
 	for _, c := range tr.kids {
 		if c.name == "th" || c.name == "td" {
-			text := strings.ReplaceAll(renderInlineChildren(c), "|", `\|`)
+			text := strings.ReplaceAll(r.renderInlineChildren(c), "|", `\|`)
 			cells = append(cells, text)
 		}
 	}
@@ -273,16 +303,16 @@ func cellTexts(tr *snode) []string {
 // through as raw storage. A block-context unknown macro uses the round-trip-safe
 // multi-line form (renderRawBlock, markdown body); an inline one stays raw on a
 // single line so it does not break out of its paragraph.
-func renderMacro(n *snode, block bool) string {
+func (r *mdRenderer) renderMacro(n *snode, block bool) string {
 	switch name := n.attrs["ac:name"]; {
 	case name == "code":
 		return renderCodeMacro(n)
 	case name == "toc":
 		return tocToken
 	case calloutMacroInverse[name] != "":
-		return renderCallout(n, name)
+		return r.renderCallout(n, name)
 	case block:
-		return renderRawBlock(n)
+		return r.renderRawBlock(n)
 	default:
 		return serialize(n)
 	}
@@ -303,10 +333,10 @@ func renderCodeMacro(n *snode) string {
 }
 
 // renderCallout renders a callout macro as a GitHub alert blockquote.
-func renderCallout(n *snode, macro string) string {
+func (r *mdRenderer) renderCallout(n *snode, macro string) string {
 	content := "[!" + calloutMacroInverse[macro] + "]"
 	if body := findChild(n, "ac:rich-text-body"); body != nil {
-		if inner := strings.Join(blockStrings(body.kids, ""), "\n\n"); inner != "" {
+		if inner := strings.Join(r.blockStrings(body.kids, ""), "\n\n"); inner != "" {
 			content += "\n" + inner
 		}
 	}
@@ -316,47 +346,47 @@ func renderCallout(n *snode, macro string) string {
 // --- inline rendering --------------------------------------------------------
 
 // renderInlineChildren renders a node's children as a single inline string.
-func renderInlineChildren(n *snode) string {
+func (r *mdRenderer) renderInlineChildren(n *snode) string {
 	var b strings.Builder
 	for _, k := range n.kids {
-		b.WriteString(renderInline(k))
+		b.WriteString(r.renderInline(k))
 	}
 	return strings.TrimSpace(b.String())
 }
 
 // renderInline renders one inline node.
-func renderInline(n *snode) string {
+func (r *mdRenderer) renderInline(n *snode) string {
 	if n.name == "" {
 		return collapse(n.text)
 	}
 	switch n.name {
 	case "strong", "b":
-		return "**" + renderInlineChildren(n) + "**"
+		return "**" + r.renderInlineChildren(n) + "**"
 	case "em", "i":
-		return "*" + renderInlineChildren(n) + "*"
+		return "*" + r.renderInlineChildren(n) + "*"
 	case "code":
 		return "`" + textContent(n) + "`"
 	case "del", "s", "strike":
-		return "~~" + renderInlineChildren(n) + "~~"
+		return "~~" + r.renderInlineChildren(n) + "~~"
 	case "br":
 		return "  \n"
 	case "a":
-		return renderLink(n)
+		return r.renderLink(n)
 	case "ac:image":
-		return renderImage(n)
+		return r.renderImage(n)
 	case "ac:structured-macro":
 		// An inline macro (e.g. status/emoticon) stays raw on one line so it does
 		// not break out of its paragraph.
-		return renderMacro(n, false)
+		return r.renderMacro(n, false)
 	default:
-		return renderInlineChildren(n)
+		return r.renderInlineChildren(n)
 	}
 }
 
 // renderLink renders an <a> as a markdown link, falling back to the href as text.
-func renderLink(n *snode) string {
+func (r *mdRenderer) renderLink(n *snode) string {
 	href := n.attrs["href"]
-	text := renderInlineChildren(n)
+	text := r.renderInlineChildren(n)
 	if text == "" {
 		text = href
 	}
@@ -368,13 +398,13 @@ func renderLink(n *snode) string {
 
 // renderImage renders an <ac:image> as a markdown image, reconstructing the
 // title/width/height/align attributes into a plain title or a JSON title.
-func renderImage(n *snode) string {
+func (r *mdRenderer) renderImage(n *snode) string {
 	alt := n.attrs["ac:alt"]
 	src := ""
 	for _, k := range n.kids {
 		switch k.name {
 		case "ri:attachment":
-			src = k.attrs["ri:filename"]
+			src = r.sourceFor(k.attrs["ri:filename"])
 		case "ri:url":
 			src = k.attrs["ri:value"]
 		}
@@ -519,13 +549,13 @@ func attrString(attrs map[string]string) string {
 // raw on a single line. This covers both column layouts and bodied macros
 // (expand, panel, …), keeping their bodies readable while the structure and
 // parameters survive verbatim.
-func renderRawBlock(n *snode) string {
+func (r *mdRenderer) renderRawBlock(n *snode) string {
 	open := "<" + n.name + attrString(n.attrs) + ">"
 	closeTag := "</" + n.name + ">"
 
 	// Content container: raw tags around a markdown body.
 	if n.name == "ac:rich-text-body" || n.name == "ac:layout-cell" {
-		if md := strings.Join(blockStrings(n.kids, ""), "\n\n"); md != "" {
+		if md := strings.Join(r.blockStrings(n.kids, ""), "\n\n"); md != "" {
 			return open + "\n\n" + md + "\n\n" + closeTag
 		}
 		return open + closeTag
@@ -542,7 +572,7 @@ func renderRawBlock(n *snode) string {
 			continue // drop inter-tag whitespace
 		}
 		if k.name == "ac:rich-text-body" || k.name == "ac:layout-cell" || hasElementChild(k) {
-			parts = append(parts, renderRawBlock(k))
+			parts = append(parts, r.renderRawBlock(k))
 		} else {
 			parts = append(parts, serialize(k))
 		}
