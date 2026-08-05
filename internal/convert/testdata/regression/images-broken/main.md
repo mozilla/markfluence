@@ -7,3 +7,7 @@ A reference to a file that isn't there:
 A reference to a file with an unsupported extension:
 
 ![a pdf](notes.pdf)
+
+A reference to a file above the documentation root:
+
+![escaped](../../../../../../../../etc/passwd.png)

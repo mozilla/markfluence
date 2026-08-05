@@ -1,4 +1,4 @@
-![an architecture diagram](assets_diagram.png)
+![an architecture diagram](assets/diagram.png)
 
 ![a bare block-level image](bare.png)
 
@@ -6,4 +6,4 @@
 
 ![tooltipped](shot.png "A Tooltip")
 
-![sized shot](assets_shot.png '{"title":"A Tooltip","width":300,"height":150,"align":"center"}')
+![sized shot](assets/shot.png '{"title":"A Tooltip","width":300,"height":150,"align":"center"}')
