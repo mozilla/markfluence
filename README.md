@@ -502,6 +502,34 @@ Example:
 references a remote URL); a missing/unsupported image becomes `IMAGE BROKEN: …`
 text.
 
+Image paths resolve relative to the Markdown file, the same way they do when you
+view the file on GitHub, so a page in a subdirectory can share an asset
+directory above it:
+
+```
+docs/                      ← run markfluence from here
+  assets/logo.png
+  guide/page.md            → ![logo](../assets/logo.png)
+```
+
+**Run markfluence from the root of your documentation tree.** That root bounds
+which images may be published: an image resolving outside it (`../../secrets/x.png`)
+is reported as `IMAGE BROKEN: … (outside the documentation root)` rather than
+uploaded.
+
+Confluence attachment names cannot contain `/`, so the path is percent-encoded
+into the attachment name — `assets/logo.png` is attached as `assets%2Flogo.png`,
+and `../assets/logo.png` as `..%2Fassets%2Flogo.png`. The encoding is reversible,
+so `markfluence read` restores an image's original path instead of a flattened
+one. markfluence also records the source path in the attachment's comment, which
+it prefers over decoding the name.
+
+> [!NOTE]
+> Pages published before this encoding existed used `/` → `_`. Republishing such
+> a page uploads the image under its new name and updates the page to match, but
+> the old attachment stays behind, unreferenced — markfluence never deletes.
+> Remove those manually if the clutter bothers you.
+
 Extra properties ride in the title as JSON:
 
 ```markdown
