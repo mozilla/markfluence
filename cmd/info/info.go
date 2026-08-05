@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/mozilla/markfluence/internal/client"
-	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
@@ -27,7 +27,8 @@ var Cmd = &cobra.Command{
 	Use:   "info ARG",
 	Short: "Print metadata about a Confluence page",
 	Long: "Print metadata about a Confluence page.\n\n" +
-		"ARG is a numeric page id or a markdown file whose frontmatter has a page_id.",
+		"ARG is a numeric page id, a Confluence page URL, or a markdown file\n" +
+		"whose frontmatter has a page_id.",
 	Args: cobra.ExactArgs(1),
 	RunE: run,
 }
@@ -49,7 +50,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return fatalFail(err.Error(), jsonout.CodeConfig)
 	}
 
-	pageID, err := resolvePageID(args[0])
+	pageID, err := pageref.Resolve(args[0])
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeValidation)
 	}
@@ -98,25 +99,6 @@ func operationalFail(pageID string, err error, code jsonout.Code) error {
 		ui.Error(err.Error())
 	}
 	return ui.SilentExit(1)
-}
-
-// resolvePageID resolves the CLI argument to a page id: a markdown file's
-// frontmatter page_id, or a bare numeric id.
-func resolvePageID(arg string) (string, error) {
-	if info, err := os.Stat(arg); err == nil && !info.IsDir() {
-		mf, err := frontmatter.ParseFile(arg)
-		if err != nil {
-			return "", err
-		}
-		if mf.PageID() == "" {
-			return "", fmt.Errorf("no page_id in frontmatter of %s", arg)
-		}
-		return mf.PageID(), nil
-	}
-	if isDigits(arg) {
-		return arg, nil
-	}
-	return "", fmt.Errorf("%s is not a file or a numeric page id", arg)
 }
 
 // report is the resolved metadata for a page, feeding both the human "label:
@@ -302,16 +284,4 @@ func versionNumber(n int) string {
 		return ""
 	}
 	return strconv.Itoa(n)
-}
-
-func isDigits(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return true
 }
