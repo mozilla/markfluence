@@ -499,7 +499,7 @@ func pageURL(c *client.ConfluenceClient, page *client.Page, pageID string) strin
 func toLocalAttachments(atts []convert.Attachment) []client.LocalAttachment {
 	out := make([]client.LocalAttachment, len(atts))
 	for i, a := range atts {
-		out[i] = client.LocalAttachment{Path: a.Path, Filename: a.Filename}
+		out[i] = client.LocalAttachment{Path: a.Path, Filename: a.Filename, Source: a.Source}
 	}
 	return out
 }
