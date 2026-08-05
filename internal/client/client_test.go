@@ -1,6 +1,9 @@
 package client
 
 import (
+	"bytes"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -423,6 +426,164 @@ func TestPlanAttachmentsClassifiesWithoutUploading(t *testing.T) {
 	// A plan reads only; it must never upload.
 	if !eqStrings(s.calls, []string{"GET"}) {
 		t.Errorf("calls = %v, want [GET] (no uploads)", s.calls)
+	}
+}
+
+// TestListAttachmentsDecodesMetadata pins the fields against a payload shaped
+// like a real one (verified against Cloud): fileSize and mediaType live under
+// extensions, and the download link is an API path, not /download/attachments.
+func TestListAttachmentsDecodesMetadata(t *testing.T) {
+	list := `{"results":[{` +
+		`"id":"att99","title":"assets%2Fx.png",` +
+		`"metadata":{"comment":"` + attachmentCommentPrefix + `sha256=abc path=assets/x.png"},` +
+		`"version":{"number":3,"when":"2026-08-05T22:17:28.040Z"},` +
+		`"extensions":{"mediaType":"image/png","fileSize":171},` +
+		`"_links":{"download":"/rest/api/content/1/child/attachment/att99/download"}` +
+		`}]}`
+	c, _ := newServer(t, resp{200, list})
+	got, err := c.ListAttachments("1")
+	if err != nil || len(got) != 1 {
+		t.Fatalf("ListAttachments = %v, %v", got, err)
+	}
+	a := got[0]
+	if a.Extensions.FileSize != 171 || a.Extensions.MediaType != "image/png" {
+		t.Errorf("extensions = %+v, want 171/image/png", a.Extensions)
+	}
+	if a.Version.Number != 3 {
+		t.Errorf("version.number = %d, want 3", a.Version.Number)
+	}
+	if a.Links.Download != "/rest/api/content/1/child/attachment/att99/download" {
+		t.Errorf("download = %q", a.Links.Download)
+	}
+	if m := a.Meta(); !m.Managed || m.Source != "assets/x.png" || m.SHA256 != "abc" {
+		t.Errorf("meta = %+v", m)
+	}
+}
+
+// TestListAttachmentsPaginates covers the offset loop: a full first page means
+// there may be more, and a short page ends it. Without this, a page with more
+// than attachmentPageSize attachments is silently truncated.
+func TestListAttachmentsPaginates(t *testing.T) {
+	var full strings.Builder
+	full.WriteString(`{"results":[`)
+	for i := range attachmentPageSize {
+		if i > 0 {
+			full.WriteByte(',')
+		}
+		fmt.Fprintf(&full, `{"id":"a%d","title":"f%d.png"}`, i, i)
+	}
+	full.WriteString(`]}`)
+
+	c, s := newServer(t,
+		resp{200, full.String()},
+		resp{200, `{"results":[{"id":"last","title":"last.png"}]}`},
+	)
+	got, err := c.ListAttachments("1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != attachmentPageSize+1 {
+		t.Fatalf("len = %d, want %d", len(got), attachmentPageSize+1)
+	}
+	if got[len(got)-1].Title != "last.png" {
+		t.Errorf("last title = %q, want last.png", got[len(got)-1].Title)
+	}
+	if len(s.calls) != 2 {
+		t.Errorf("calls = %v, want 2 requests", s.calls)
+	}
+}
+
+// TestListAttachmentsStopsOnShortFirstPage guards the common case: one request,
+// not a speculative second.
+func TestListAttachmentsStopsOnShortFirstPage(t *testing.T) {
+	c, s := newServer(t, resp{200, `{"results":[{"id":"a1","title":"x.png"}]}`})
+	if _, err := c.ListAttachments("1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.calls) != 1 {
+		t.Errorf("calls = %v, want a single request", s.calls)
+	}
+}
+
+func TestDownloadAttachmentWritesBytes(t *testing.T) {
+	c, _ := newServer(t, resp{200, "PNGBYTES"})
+	var att Attachment
+	att.Links.Download = "/rest/api/content/1/child/attachment/att1/download"
+	var buf bytes.Buffer
+	if err := c.DownloadAttachment(att, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if buf.String() != "PNGBYTES" {
+		t.Errorf("body = %q, want PNGBYTES", buf.String())
+	}
+}
+
+func TestDownloadAttachmentRequiresLink(t *testing.T) {
+	c, _ := newServer(t)
+	if err := c.DownloadAttachment(Attachment{Title: "x.png"}, io.Discard); err == nil {
+		t.Fatal("want an error when the attachment has no download link")
+	}
+}
+
+func TestDownloadAttachmentPropagatesHTTPError(t *testing.T) {
+	c, _ := newServer(t, resp{404, "gone"})
+	var att Attachment
+	att.Links.Download = "/rest/api/content/1/child/attachment/att1/download"
+	err := c.DownloadAttachment(att, io.Discard)
+	var he *HTTPError
+	if !errors.As(err, &he) || he.StatusCode != 404 {
+		t.Fatalf("err = %v, want *HTTPError 404", err)
+	}
+}
+
+// TestDownloadAttachmentDoesNotLeakCredentialsOnRedirect is the security
+// assertion behind reusing send: the real endpoint 302s to Atlassian's media
+// host, which carries its own token in the query string and must never receive
+// the site credentials. Go's default policy drops Authorization on a cross-host
+// hop -- this fails if anyone adds a CheckRedirect that forwards headers.
+//
+// The media server is addressed as "localhost" while the origin is
+// "127.0.0.1". Both resolve to the same listener, but Go compares hostnames
+// with the port stripped, so two httptest servers would otherwise look like the
+// same host and the header would be forwarded -- making the test pass
+// vacuously.
+func TestDownloadAttachmentDoesNotLeakCredentialsOnRedirect(t *testing.T) {
+	var mediaAuth string
+	var reached bool
+	media := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		mediaAuth = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte("MEDIABYTES"))
+	}))
+	t.Cleanup(media.Close)
+	mediaURL := strings.Replace(media.URL, "127.0.0.1", "localhost", 1)
+	if mediaURL == media.URL {
+		t.Fatalf("expected a 127.0.0.1 test URL to rewrite, got %q", media.URL)
+	}
+
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" {
+			t.Error("origin request lost its Authorization header")
+		}
+		http.Redirect(w, r, mediaURL+"/file/abc/binary?token=xyz", http.StatusFound)
+	}))
+	t.Cleanup(origin.Close)
+
+	c := New(Config{SiteURL: origin.URL, Username: "u", Token: "secret"})
+	var att Attachment
+	att.Links.Download = "/rest/api/content/1/child/attachment/att1/download"
+	var buf bytes.Buffer
+	if err := c.DownloadAttachment(att, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !reached {
+		t.Fatal("redirect was not followed")
+	}
+	if buf.String() != "MEDIABYTES" {
+		t.Errorf("body = %q, want the redirected bytes", buf.String())
+	}
+	if mediaAuth != "" {
+		t.Errorf("Authorization leaked to the media host: %q", mediaAuth)
 	}
 }
 

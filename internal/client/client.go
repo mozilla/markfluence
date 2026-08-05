@@ -55,6 +55,8 @@ const (
 	timeoutRead   = 30 * time.Second
 	timeoutWrite  = 60 * time.Second
 	timeoutUpload = 120 * time.Second
+	// timeoutDownload matches timeoutUpload: 30s is thin for a large attachment.
+	timeoutDownload = 120 * time.Second
 )
 
 const (
@@ -179,13 +181,30 @@ type Links struct {
 	Next  string `json:"next"`
 }
 
-// Attachment is a page attachment (v1), with the checksum comment expanded.
+// Attachment is a page attachment (v1), with the comment, version, and
+// extensions expanded. Title is the name Confluence stores, which for an
+// attachment markfluence published is the encoded source path (see
+// convert.AttachmentFilename).
 type Attachment struct {
 	ID       string `json:"id"`
 	Title    string `json:"title"`
 	Metadata struct {
 		Comment string `json:"comment"`
 	} `json:"metadata"`
+	Version struct {
+		Number int    `json:"number"`
+		When   string `json:"when"`
+	} `json:"version"`
+	Extensions struct {
+		MediaType string `json:"mediaType"`
+		FileSize  int64  `json:"fileSize"`
+	} `json:"extensions"`
+	Links struct {
+		// Download is context-relative ("/rest/api/content/{page}/child/
+		// attachment/{id}/download"), not the /download/attachments/... UI path.
+		// Being an API path, it also works through the gateway.
+		Download string `json:"download"`
+	} `json:"_links"`
 }
 
 // Property is a page content property (v2). Value is decoded as-is (page
@@ -550,18 +569,66 @@ func (c *ConfluenceClient) GetUser(accountID string) string {
 
 // --- attachments (v1) --------------------------------------------------------
 
-// ListAttachments lists a page's attachments with the checksum comment expanded.
+// attachmentPageSize is the per-request page size for ListAttachments.
+const attachmentPageSize = 250
+
+// ListAttachments lists all of a page's attachments, with the comment, version,
+// and extensions expanded.
+//
+// Pagination is by start/limit offset rather than _links.next: a v1 collection
+// omits next when the results fit one page, and its next is relative to the
+// /wiki context rather than the v2 paths resolveNext is written for.
 func (c *ConfluenceClient) ListAttachments(pageID string) ([]Attachment, error) {
-	var out struct {
-		Results []Attachment `json:"results"`
+	var all []Attachment
+	for start := 0; ; start += attachmentPageSize {
+		var out struct {
+			Results []Attachment `json:"results"`
+		}
+		err := c.doJSON(http.MethodGet,
+			c.baseURL+"/wiki/rest/api/content/"+pageID+"/child/attachment",
+			url.Values{
+				"expand": {"metadata.comment,version,extensions"},
+				"limit":  {strconv.Itoa(attachmentPageSize)},
+				"start":  {strconv.Itoa(start)},
+			}, nil, &out, timeoutRead)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, out.Results...)
+		if len(out.Results) < attachmentPageSize {
+			return all, nil
+		}
 	}
-	err := c.doJSON(http.MethodGet,
-		c.baseURL+"/wiki/rest/api/content/"+pageID+"/child/attachment",
-		url.Values{"expand": {"metadata.comment"}, "limit": {"250"}}, nil, &out, timeoutRead)
+}
+
+// DownloadAttachment fetches an attachment's bytes and writes them to w.
+//
+// The download endpoint 302s to Atlassian's media host with its own short-lived
+// token in the query string. Go's default redirect policy drops the
+// Authorization header on a cross-host hop, so the site credentials are never
+// sent to that host -- which does not want them. Do not install a CheckRedirect
+// that forwards headers: it would leak the API token to a third-party host.
+//
+// The body is buffered in memory, like every other response send handles, in
+// exchange for its retry/backoff and typed errors.
+func (c *ConfluenceClient) DownloadAttachment(att Attachment, w io.Writer) error {
+	if att.Links.Download == "" {
+		return fmt.Errorf("attachment %s (%s) has no download link", att.Title, att.ID)
+	}
+	rawURL := c.baseURL + "/wiki" + att.Links.Download
+	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return out.Results, nil
+	status, body, err := c.send(req, timeoutDownload)
+	if err != nil {
+		return err
+	}
+	if status >= 400 {
+		return &HTTPError{StatusCode: status, Method: http.MethodGet, URL: rawURL, Body: string(body)}
+	}
+	_, err = w.Write(body)
+	return err
 }
 
 // attachmentPlan is the decision for one local attachment: the action to take
