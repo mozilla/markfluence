@@ -37,9 +37,19 @@ import (
 	"time"
 )
 
-// attachmentChecksumPrefix is stored in an attachment's comment so a later run
-// can tell whether the local file changed.
-const attachmentChecksumPrefix = "mzcld:checksum: "
+// An uploaded attachment carries markfluence bookkeeping in its comment: the
+// checksum a later run compares to tell whether the local file changed, and the
+// markdown image path it was published from, so reading the page back recovers
+// the image's original location exactly instead of inferring it from the
+// attachment name.
+const (
+	// attachmentCommentPrefix marks an attachment as markfluence-managed.
+	attachmentCommentPrefix = "markfluence: "
+	// legacyChecksumPrefix is the older checksum-only comment form. It is still
+	// parsed -- comparing the parsed checksum rather than the whole comment is
+	// what lets the format change without re-uploading every attachment.
+	legacyChecksumPrefix = "mzcld:checksum: "
+)
 
 const (
 	timeoutRead   = 30 * time.Second
@@ -187,10 +197,58 @@ type Property struct {
 	Version Version `json:"version"`
 }
 
-// LocalAttachment is a local image to sync to a page.
+// LocalAttachment is a local image to sync to a page. Source is the markdown
+// image path it was written as, recorded in the attachment's comment; it may be
+// empty, in which case only a checksum is recorded.
 type LocalAttachment struct {
 	Path     string
 	Filename string
+	Source   string
+}
+
+// AttachmentMeta is the markfluence bookkeeping parsed out of an attachment's
+// comment. A hand-uploaded attachment has none, leaving Managed false.
+type AttachmentMeta struct {
+	SHA256  string
+	Source  string
+	Managed bool
+}
+
+// Meta parses this attachment's comment into markfluence's bookkeeping.
+func (a Attachment) Meta() AttachmentMeta { return parseAttachmentComment(a.Metadata.Comment) }
+
+// attachmentComment builds the comment stored on an uploaded attachment. source
+// is written last and unquoted so it may contain spaces.
+func attachmentComment(sum, source string) string {
+	c := attachmentCommentPrefix + "sha256=" + sum
+	if source != "" {
+		c += " path=" + source
+	}
+	return c
+}
+
+// parseAttachmentComment reads both the current form ("markfluence: sha256=<hex>
+// path=<path>") and the legacy checksum-only form, so an attachment written by
+// an older markfluence is still recognized as unchanged.
+func parseAttachmentComment(comment string) AttachmentMeta {
+	if sum, ok := strings.CutPrefix(comment, legacyChecksumPrefix); ok {
+		return AttachmentMeta{SHA256: strings.TrimSpace(sum), Managed: true}
+	}
+	rest, ok := strings.CutPrefix(comment, attachmentCommentPrefix)
+	if !ok {
+		return AttachmentMeta{}
+	}
+	m := AttachmentMeta{Managed: true}
+	if sum, after, found := strings.Cut(strings.TrimPrefix(rest, "sha256="), " "); found {
+		m.SHA256, rest = sum, after
+	} else {
+		m.SHA256, rest = sum, ""
+	}
+	// path= is last, so its value is the remainder verbatim.
+	if src, ok := strings.CutPrefix(rest, "path="); ok {
+		m.Source = src
+	}
+	return m
 }
 
 // SyncAction reports what sync_attachments did for one file.
@@ -539,7 +597,7 @@ func (c *ConfluenceClient) planAttachments(pageID string, attachments []LocalAtt
 		if err != nil {
 			return nil, err
 		}
-		comment := attachmentChecksumPrefix + sum
+		comment := attachmentComment(sum, att.Source)
 		contentType := mime.TypeByExtension(filepath.Ext(att.Filename))
 		if contentType == "" {
 			contentType = "application/octet-stream"
@@ -549,7 +607,10 @@ func (c *ConfluenceClient) planAttachments(pageID string, attachments []LocalAtt
 		switch {
 		case !ok:
 			p.action = "created"
-		case cur.Metadata.Comment == comment:
+		case cur.Meta().SHA256 == sum:
+			// Compare the checksum, not the whole comment: an attachment stamped
+			// by an older markfluence is unchanged and must not be re-uploaded
+			// merely because the comment format has moved on.
 			p.action = "skipped"
 		default:
 			p.action = "updated"

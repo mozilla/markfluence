@@ -1,10 +1,12 @@
 package client
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,7 +22,17 @@ func TestMain(m *testing.M) {
 type scripted struct {
 	responses []resp
 	calls     []string
+	bodies    []string
 	idx       int
+}
+
+// lastBody returns the body of the most recent request, for assertions about
+// what was actually sent.
+func (s *scripted) lastBody() string {
+	if len(s.bodies) == 0 {
+		return ""
+	}
+	return s.bodies[len(s.bodies)-1]
 }
 
 type resp struct {
@@ -33,6 +45,8 @@ func newServer(t *testing.T, responses ...resp) (*ConfluenceClient, *scripted) {
 	s := &scripted{responses: responses}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.calls = append(s.calls, r.Method)
+		body, _ := io.ReadAll(r.Body)
+		s.bodies = append(s.bodies, string(body))
 		if s.idx >= len(s.responses) {
 			t.Errorf("unexpected extra request: %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(500)
@@ -345,10 +359,12 @@ func TestSyncAttachmentsCreatesWhenAbsent(t *testing.T) {
 	}
 }
 
-func TestSyncAttachmentsSkipsWhenChecksumMatches(t *testing.T) {
+// A legacy comment still identifies an unchanged file, so a format change does
+// not force a re-upload of every attachment.
+func TestSyncAttachmentsSkipsWhenLegacyChecksumMatches(t *testing.T) {
 	path, sum := writeTempImage(t)
 	list := `{"results":[{"id":"a1","title":"x.png","metadata":{"comment":"` +
-		attachmentChecksumPrefix + sum + `"}}]}`
+		legacyChecksumPrefix + sum + `"}}]}`
 	c, s := newServer(t, resp{200, list})
 	actions, err := c.SyncAttachments("1", []LocalAttachment{{Path: path, Filename: "x.png"}})
 	if err != nil {
@@ -365,7 +381,7 @@ func TestSyncAttachmentsSkipsWhenChecksumMatches(t *testing.T) {
 func TestSyncAttachmentsUpdatesWhenChecksumDiffers(t *testing.T) {
 	path, _ := writeTempImage(t)
 	list := `{"results":[{"id":"a1","title":"x.png","metadata":{"comment":"` +
-		attachmentChecksumPrefix + `stale"}}]}`
+		legacyChecksumPrefix + `stale"}}]}`
 	c, s := newServer(t, resp{200, list}, resp{200, `{}`})
 	actions, err := c.SyncAttachments("1", []LocalAttachment{{Path: path, Filename: "x.png"}})
 	if err != nil {
@@ -383,8 +399,8 @@ func TestPlanAttachmentsClassifiesWithoutUploading(t *testing.T) {
 	path, sum := writeTempImage(t)
 	// same.png matches (skip), stale.png differs (update), new.png is absent (create).
 	list := `{"results":[` +
-		`{"id":"a1","title":"same.png","metadata":{"comment":"` + attachmentChecksumPrefix + sum + `"}},` +
-		`{"id":"a2","title":"stale.png","metadata":{"comment":"` + attachmentChecksumPrefix + `stale"}}` +
+		`{"id":"a1","title":"same.png","metadata":{"comment":"` + legacyChecksumPrefix + sum + `"}},` +
+		`{"id":"a2","title":"stale.png","metadata":{"comment":"` + legacyChecksumPrefix + `stale"}}` +
 		`]}`
 	c, s := newServer(t, resp{200, list})
 	actions, err := c.PlanAttachments("1", []LocalAttachment{
@@ -571,5 +587,82 @@ func TestResolveNext(t *testing.T) {
 				t.Errorf("resolveNext(%q, %q) = %q, want %q", tc.base, tc.next, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestAttachmentCommentRecordsSource checks the comment an upload stamps: the
+// checksum used to skip unchanged files, plus the path the image was published
+// from so a later read recovers it exactly.
+func TestAttachmentCommentRecordsSource(t *testing.T) {
+	got := attachmentComment("abc123", "../assets/logo.png")
+	if want := "markfluence: sha256=abc123 path=../assets/logo.png"; got != want {
+		t.Errorf("attachmentComment = %q, want %q", got, want)
+	}
+	if got := attachmentComment("abc123", ""); got != "markfluence: sha256=abc123" {
+		t.Errorf("attachmentComment without a source = %q", got)
+	}
+}
+
+func TestParseAttachmentComment(t *testing.T) {
+	cases := []struct {
+		name    string
+		comment string
+		want    AttachmentMeta
+	}{
+		{"current form", "markfluence: sha256=abc123 path=assets/x.png",
+			AttachmentMeta{SHA256: "abc123", Source: "assets/x.png", Managed: true}},
+		{"no source recorded", "markfluence: sha256=abc123",
+			AttachmentMeta{SHA256: "abc123", Managed: true}},
+		// The path is written last and unquoted, so it may contain spaces.
+		{"source with spaces", "markfluence: sha256=abc123 path=my docs/a b.png",
+			AttachmentMeta{SHA256: "abc123", Source: "my docs/a b.png", Managed: true}},
+		{"legacy form", legacyChecksumPrefix + "abc123",
+			AttachmentMeta{SHA256: "abc123", Managed: true}},
+		{"hand-uploaded", "a note from a human", AttachmentMeta{}},
+		{"empty", "", AttachmentMeta{}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := parseAttachmentComment(c.comment); got != c.want {
+				t.Errorf("parseAttachmentComment(%q) = %+v, want %+v", c.comment, got, c.want)
+			}
+		})
+	}
+}
+
+// TestSyncAttachmentsStampsSource checks that an upload records the source path,
+// so reading the page back can recover the image's original location.
+func TestSyncAttachmentsStampsSource(t *testing.T) {
+	path, _ := writeTempImage(t)
+	c, s := newServer(t, resp{200, `{"results":[]}`}, resp{200, `{}`})
+	_, err := c.SyncAttachments("1", []LocalAttachment{
+		{Path: path, Filename: "assets%2Fx.png", Source: "assets/x.png"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(s.lastBody(), "path=assets/x.png") {
+		t.Errorf("upload body did not record the source path:\n%s", s.lastBody())
+	}
+}
+
+// TestSyncAttachmentsSkipsWhenCurrentChecksumMatches is the new-format twin of the
+// legacy skip test.
+func TestSyncAttachmentsSkipsWhenCurrentChecksumMatches(t *testing.T) {
+	path, sum := writeTempImage(t)
+	list := `{"results":[{"id":"a1","title":"x.png","metadata":{"comment":"` +
+		attachmentComment(sum, "x.png") + `"}}]}`
+	c, s := newServer(t, resp{200, list})
+	actions, err := c.SyncAttachments("1", []LocalAttachment{
+		{Path: path, Filename: "x.png", Source: "x.png"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(actions) != 1 || actions[0].Action != "skipped" {
+		t.Fatalf("actions = %v, want [skipped]", actions)
+	}
+	if !eqStrings(s.calls, []string{"GET"}) {
+		t.Errorf("calls = %v, want [GET] (no upload)", s.calls)
 	}
 }
