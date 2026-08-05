@@ -92,7 +92,13 @@ markfluence update --help
 markfluence fix --help
 markfluence info --help
 markfluence read --help
+markfluence attachment-list --help
+markfluence attachment-upload --help
+markfluence attachment-download --help
 ```
+
+Every command that takes a page accepts it three ways: a numeric page id, a
+Confluence page URL, or a Markdown file whose frontmatter has a `page_id`.
 
 ### `create`
 
@@ -244,6 +250,90 @@ markfluence read 1234567890 --format storage > page.storage.xml
 markfluence read "https://org.atlassian.net/wiki/spaces/ENG/pages/1234567890/Title"
 ```
 
+### `attachment-list`
+
+```
+Usage: markfluence attachment-list ARG [flags]
+```
+
+List a page's attachments.
+
+```console
+$ markfluence attachment-list 1234567890
+NAME                            SIZE  VER  TYPE       SOURCE
+assets%2Fdiagram.png           24.1 KB   3  image/png  assets/diagram.png
+notes.pdf                       1.2 MB   1  application/pdf  -
+```
+
+`NAME` is the name Confluence stores. For an image markfluence published that is
+the percent-encoded source path (see [Body](#body)), and `SOURCE` is the Markdown
+image path it came from — so the table shows at a glance which attachments a
+publish manages and which it will leave alone.
+
+`SOURCE` is a dash when no source path is recorded: either the attachment was
+uploaded by hand, or it was published before markfluence recorded source paths.
+Those two look the same here; `--json` has a `managed` field that tells them
+apart. Attachments left behind by the encoding change show up this way, which is
+how you find them.
+
+### `attachment-upload`
+
+```
+Usage: markfluence attachment-upload ARG FILE... [flags]
+```
+
+Upload or replace attachments on a page, complementing the automatic sync that
+`create` and `update` perform for a page's images.
+
+Each file is attached under its base name. A file whose contents already match
+what's on the page is skipped, using the same checksum bookkeeping
+`create`/`update` use, so uploading by hand and publishing agree on what's
+current. `--force` uploads anyway (bumping the attachment's version), which is
+how you repair an attachment whose stored bytes drifted while its checksum still
+matches. `--dry-run` previews without writing.
+
+`--name` sets the attachment name for a single file and takes a **path**, which
+markfluence encodes for you — so `--name assets/x.png` produces the attachment
+that an image written as `![](assets/x.png)` resolves to. The recorded source
+path always matches the stored name, so a later publish won't create a duplicate
+under a different one.
+
+```sh
+markfluence attachment-upload 1234567890 diagram.png
+markfluence attachment-upload 1234567890 report.pdf notes.txt
+markfluence attachment-upload 1234567890 img.png --name assets/diagram.png
+markfluence attachment-upload 1234567890 diagram.png --force
+```
+
+### `attachment-download`
+
+```
+Usage: markfluence attachment-download ARG [NAME...] [flags]
+```
+
+Download a page's attachments. Each `NAME` is an attachment name as
+`attachment-list` reports it; with no `NAME`, every attachment is downloaded.
+
+An attachment markfluence published is written back to the Markdown image path
+recorded in its comment, so the downloaded tree matches what the page's Markdown
+references and previews locally:
+
+```console
+$ markfluence attachment-download 1234567890 --dest ./out
+downloaded /out/assets/diagram.png
+downloaded /out/notes.pdf
+```
+
+An attachment with no recorded path — hand-uploaded, or published before
+markfluence recorded them — is written under its stored name. `--flat` writes
+everything under stored names. `--dest` defaults to the current directory and is
+created if missing. An existing file is skipped unless `--force`, and
+`--dry-run` previews without writing.
+
+A recorded path that would resolve outside `--dest` is refused for that
+attachment: the path comes from an attachment comment, which anyone who can edit
+the page controls.
+
 ### `--json` output
 
 The persistent `--json` flag makes any command emit a single machine-readable
@@ -297,8 +387,14 @@ Notes on the schema:
   shapes (empty values are `null` or `[]`); the key *set* differs per command.
   `schema_version` is bumped on any breaking change.
 - **Status verbs** are per-command: `published`/`skipped` (`update`),
-  `created`/`not_created` (`create`), `changed`/`consistent` (`fix`), plus
-  `failed`. `info`/`read` results carry data only (no status verb).
+  `created`/`not_created` (`create`), `changed`/`consistent` (`fix`),
+  `created`/`updated`/`skipped` (`attachment-upload`),
+  `downloaded`/`skipped` (`attachment-download`), plus `failed`. `info`, `read`,
+  and `attachment-list` results carry data only (no status verb).
+- **One result per target**, and the target is per-command: the page for
+  `info`/`read` (always one), the file for `update`/`create`/`fix`, and the
+  attachment for the three `attachment-*` commands — so
+  `.results[] | .filename` works and `summary.total` is the attachment count.
 - **Compound values are objects**, never display strings — `version`,
   `page_width`, and the `created`/`updated` author stamps on `info`.
 - **`create`'s two-phase abort** (a validation failure means nothing is created)
