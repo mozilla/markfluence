@@ -4,15 +4,14 @@ package read
 
 import (
 	"fmt"
-	"net/url"
 	"os"
-	"regexp"
 	"strings"
 
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
@@ -32,8 +31,9 @@ var Cmd = &cobra.Command{
 	Use:   "read ARG",
 	Short: "Fetch a Confluence page and print its body",
 	Long: "Fetch a Confluence page and print its body to stdout.\n\n" +
-		"ARG is a numeric page id or a Confluence page URL (the modern\n" +
-		"/wiki/.../pages/<id>/... form or a legacy ?pageId=<id> URL).\n\n" +
+		"ARG is a numeric page id, a Confluence page URL (the modern\n" +
+		"/wiki/.../pages/<id>/... form or a legacy ?pageId=<id> URL), or a\n" +
+		"markdown file whose frontmatter has a page_id.\n\n" +
 		"The default markdown output carries title/page_id/space/page_width\n" +
 		"frontmatter and is a best-effort inverse of what create/update publish.",
 	Args: cobra.ExactArgs(1),
@@ -51,7 +51,7 @@ func run(cmd *cobra.Command, args []string) error {
 			formatFlag, formatMarkdown, formatStorage), jsonout.CodeValidation)
 	}
 
-	pageID, err := parsePageID(args[0])
+	pageID, err := pageref.Resolve(args[0])
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeValidation)
 	}
@@ -188,32 +188,4 @@ func renderFrontmatter(title, space, parent, pageID, width string) string {
 		fm = frontmatter.UpdateField(fm, "page_width", width, "")
 	}
 	return fm
-}
-
-// pagePathRE matches the numeric id in a modern Confluence page URL path,
-// e.g. /wiki/spaces/ENG/pages/123456/Some+Title (the trailing slug is optional).
-var pagePathRE = regexp.MustCompile(`/pages/(\d+)(?:/|$)`)
-
-// parsePageID resolves the CLI argument to a numeric page id: a bare numeric id,
-// or a Confluence URL carrying the id in its path or a pageId query parameter.
-func parsePageID(arg string) (string, error) {
-	if isDigits(arg) {
-		return arg, nil
-	}
-	if u, err := url.Parse(arg); err == nil && u.Host != "" {
-		if id := u.Query().Get("pageId"); isDigits(id) {
-			return id, nil
-		}
-		if m := pagePathRE.FindStringSubmatch(u.Path); m != nil {
-			return m[1], nil
-		}
-	}
-	return "", fmt.Errorf("%q is not a numeric page id or a Confluence page URL", arg)
-}
-
-func isDigits(s string) bool {
-	if s == "" {
-		return false
-	}
-	return strings.IndexFunc(s, func(r rune) bool { return r < '0' || r > '9' }) == -1
 }
