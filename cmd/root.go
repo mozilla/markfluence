@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/mozilla/markfluence/cmd/attachmentdownload"
 	"github.com/mozilla/markfluence/cmd/attachmentlist"
 	"github.com/mozilla/markfluence/cmd/attachmentupload"
 	"github.com/mozilla/markfluence/cmd/create"
@@ -140,4 +141,5 @@ func init() {
 	rootCmd.AddCommand(read.Cmd)
 	rootCmd.AddCommand(attachmentlist.Cmd)
 	rootCmd.AddCommand(attachmentupload.Cmd)
+	rootCmd.AddCommand(attachmentdownload.Cmd)
 }

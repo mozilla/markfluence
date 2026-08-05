@@ -9,7 +9,7 @@
   "properties": {
     "schema_version": { "const": 1 },
     "markfluence_version": { "type": "string" },
-    "command": { "enum": ["info", "read", "update", "create", "fix", "attachment-list", "attachment-upload"] },
+    "command": { "enum": ["info", "read", "update", "create", "fix", "attachment-list", "attachment-upload", "attachment-download"] },
     "results": { "type": "array" },
     "summary": { "type": "object" }
   },
@@ -66,6 +66,19 @@
           "results": {
             "items": {
               "oneOf": [{ "$ref": "#/$defs/attachmentUploadResult" }, { "$ref": "#/$defs/singleOpFailure" }]
+            }
+          },
+          "summary": { "$ref": "#/$defs/attachmentSummary" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "command": { "const": "attachment-download" } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "results": {
+            "items": {
+              "oneOf": [{ "$ref": "#/$defs/attachmentDownloadResult" }, { "$ref": "#/$defs/singleOpFailure" }]
             }
           },
           "summary": { "$ref": "#/$defs/attachmentSummary" }
@@ -306,6 +319,21 @@
         "status": { "enum": ["created", "updated", "skipped", "failed"] },
         "dry_run": { "type": "boolean" },
         "filename": { "type": "string" },
+        "error": { "$ref": "#/$defs/stringOrNull" },
+        "code": { "$ref": "#/$defs/codeOrNull" }
+      }
+    },
+    "attachmentDownloadResult": {
+      "description": "One attachment written to disk. filename is the stored attachment name; dest_path is the local path written, which depends on the recorded source path, --flat, and --dest. dest_path is null only when resolving it is what failed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "status", "dry_run", "filename", "dest_path", "error", "code"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "status": { "enum": ["downloaded", "skipped", "failed"] },
+        "dry_run": { "type": "boolean" },
+        "filename": { "type": "string" },
+        "dest_path": { "$ref": "#/$defs/stringOrNull" },
         "error": { "$ref": "#/$defs/stringOrNull" },
         "code": { "$ref": "#/$defs/codeOrNull" }
       }
