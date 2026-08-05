@@ -60,7 +60,7 @@ func (r *storageRenderer) renderImage(
 		_, _ = w.WriteString(html.EscapeString(msg))
 
 	default:
-		filename := attachmentFilename(src)
+		filename := AttachmentFilename(src)
 		if !r.seen[filename] {
 			if r.seen == nil {
 				r.seen = map[string]bool{}
