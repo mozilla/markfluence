@@ -671,6 +671,11 @@ func (c *ConfluenceClient) planAttachments(pageID string, attachments []LocalAtt
 		}
 		p := attachmentPlan{att: att, comment: comment, contentType: contentType}
 		cur, ok := remote[att.Filename]
+		if ok {
+			// Recorded even for a skip, so a forced upload can replace in place
+			// rather than having to re-derive the id.
+			p.existingID = cur.ID
+		}
 		switch {
 		case !ok:
 			p.action = "created"
@@ -681,7 +686,6 @@ func (c *ConfluenceClient) planAttachments(pageID string, attachments []LocalAtt
 			p.action = "skipped"
 		default:
 			p.action = "updated"
-			p.existingID = cur.ID
 		}
 		plans = append(plans, p)
 	}
@@ -706,12 +710,33 @@ func (c *ConfluenceClient) PlanAttachments(pageID string, attachments []LocalAtt
 // local files, using a SHA-256 stored in each attachment's comment to detect
 // changes. Returns one action per file.
 func (c *ConfluenceClient) SyncAttachments(pageID string, attachments []LocalAttachment) ([]SyncAction, error) {
+	return c.syncAttachments(pageID, attachments, false)
+}
+
+// ForceUploadAttachments uploads every file regardless of its checksum,
+// bumping each attachment's version. It exists for `attachment-upload --force`,
+// which is how a user repairs an attachment whose stored bytes drifted while
+// its recorded checksum still matches.
+func (c *ConfluenceClient) ForceUploadAttachments(pageID string, attachments []LocalAttachment) (
+	[]SyncAction, error,
+) {
+	return c.syncAttachments(pageID, attachments, true)
+}
+
+// syncAttachments executes a plan. When force is set, a file the checksum says
+// is unchanged is uploaded anyway and reported as updated.
+func (c *ConfluenceClient) syncAttachments(pageID string, attachments []LocalAttachment, force bool) (
+	[]SyncAction, error,
+) {
 	plans, err := c.planAttachments(pageID, attachments)
 	if err != nil {
 		return nil, err
 	}
 	var actions []SyncAction
 	for _, p := range plans {
+		if force && p.action == "skipped" {
+			p.action = "updated"
+		}
 		switch p.action {
 		case "created":
 			if err := c.uploadAttachment(

@@ -9,7 +9,7 @@
   "properties": {
     "schema_version": { "const": 1 },
     "markfluence_version": { "type": "string" },
-    "command": { "enum": ["info", "read", "update", "create", "fix", "attachment-list"] },
+    "command": { "enum": ["info", "read", "update", "create", "fix", "attachment-list", "attachment-upload"] },
     "results": { "type": "array" },
     "summary": { "type": "object" }
   },
@@ -56,6 +56,19 @@
         "properties": {
           "results": { "items": { "$ref": "#/$defs/fixResult" } },
           "summary": { "$ref": "#/$defs/fixSummary" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "command": { "const": "attachment-upload" } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "results": {
+            "items": {
+              "oneOf": [{ "$ref": "#/$defs/attachmentUploadResult" }, { "$ref": "#/$defs/singleOpFailure" }]
+            }
+          },
+          "summary": { "$ref": "#/$defs/attachmentSummary" }
         }
       }
     },
@@ -283,6 +296,20 @@
         "code": { "$ref": "#/$defs/codeOrNull" }
       }
     },
+    "attachmentUploadResult": {
+      "description": "One uploaded file. status uses the same verbs as the attachments array on update/create.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "status", "dry_run", "filename", "error", "code"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "status": { "enum": ["created", "updated", "skipped", "failed"] },
+        "dry_run": { "type": "boolean" },
+        "filename": { "type": "string" },
+        "error": { "$ref": "#/$defs/stringOrNull" },
+        "code": { "$ref": "#/$defs/codeOrNull" }
+      }
+    },
     "attachmentListResult": {
       "description": "One attachment on the page. filename is the name Confluence stores; for an attachment markfluence published that is the encoded source path, and source is the markdown image path it came from. managed is false for a hand-uploaded attachment (sha256 and source both null). source may also be null on a managed attachment published before markfluence recorded source paths, in which case sha256 is still set.",
       "type": "object",
@@ -299,6 +326,18 @@
         "managed": { "type": "boolean" },
         "sha256": { "$ref": "#/$defs/stringOrNull" },
         "source": { "$ref": "#/$defs/stringOrNull" }
+      }
+    },
+    "attachmentSummary": {
+      "description": "attachment-upload/attachment-download batch summary.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "succeeded", "failed", "skipped"],
+      "properties": {
+        "total": { "type": "integer" },
+        "succeeded": { "type": "integer" },
+        "failed": { "type": "integer" },
+        "skipped": { "type": "integer" }
       }
     },
     "basicSummary": {
