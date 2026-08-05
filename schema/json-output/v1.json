@@ -2,14 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/mozilla/markfluence/schema/json-output/v1.json",
   "title": "markfluence --json output (schema_version 1)",
-  "description": "The single JSON document markfluence writes to stdout under --json. results holds one object per target (a single element for info/read); its item shape and the summary shape depend on command. The typed error object written to stderr on a fatal/pre-flight failure conforms to #/$defs/errorObject.",
+  "description": "The single JSON document markfluence writes to stdout under --json. results holds one object per target (a single element for info/read; one per attachment for attachment-list); its item shape and the summary shape depend on command. The typed error object written to stderr on a fatal/pre-flight failure conforms to #/$defs/errorObject.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "markfluence_version", "command", "results", "summary"],
   "properties": {
     "schema_version": { "const": 1 },
     "markfluence_version": { "type": "string" },
-    "command": { "enum": ["info", "read", "update", "create", "fix"] },
+    "command": { "enum": ["info", "read", "update", "create", "fix", "attachment-list"] },
     "results": { "type": "array" },
     "summary": { "type": "object" }
   },
@@ -56,6 +56,19 @@
         "properties": {
           "results": { "items": { "$ref": "#/$defs/fixResult" } },
           "summary": { "$ref": "#/$defs/fixSummary" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "command": { "const": "attachment-list" } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "results": {
+            "items": {
+              "oneOf": [{ "$ref": "#/$defs/attachmentListResult" }, { "$ref": "#/$defs/singleOpFailure" }]
+            }
+          },
+          "summary": { "$ref": "#/$defs/basicSummary" }
         }
       }
     }
@@ -270,8 +283,26 @@
         "code": { "$ref": "#/$defs/codeOrNull" }
       }
     },
+    "attachmentListResult": {
+      "description": "One attachment on the page. filename is the name Confluence stores; for an attachment markfluence published that is the encoded source path, and source is the markdown image path it came from. managed is false for a hand-uploaded attachment (sha256 and source both null). source may also be null on a managed attachment published before markfluence recorded source paths, in which case sha256 is still set.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "id", "filename", "size", "media_type", "version", "comment", "managed", "sha256", "source"],
+      "properties": {
+        "ok": { "const": true },
+        "id": { "type": "string" },
+        "filename": { "type": "string" },
+        "size": { "type": "integer" },
+        "media_type": { "type": "string" },
+        "version": { "type": "integer" },
+        "comment": { "type": "string" },
+        "managed": { "type": "boolean" },
+        "sha256": { "$ref": "#/$defs/stringOrNull" },
+        "source": { "$ref": "#/$defs/stringOrNull" }
+      }
+    },
     "basicSummary": {
-      "description": "info/read batch summary (always total:1).",
+      "description": "info/read batch summary (total:1), and attachment-list (total: the attachment count).",
       "type": "object",
       "additionalProperties": false,
       "required": ["total", "succeeded", "failed"],
