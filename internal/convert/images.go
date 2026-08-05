@@ -49,6 +49,11 @@ func (r *storageRenderer) renderImage(
 		r.broken = append(r.broken, msg)
 		_, _ = w.WriteString(html.EscapeString(msg))
 
+	case !r.withinRoot(filepath.Join(r.baseDir, src)):
+		msg := fmt.Sprintf("IMAGE BROKEN: %s (outside the documentation root)", src)
+		r.broken = append(r.broken, msg)
+		_, _ = w.WriteString(html.EscapeString(msg))
+
 	case !isFile(filepath.Join(r.baseDir, src)):
 		msg := fmt.Sprintf("IMAGE BROKEN: %s (not found)", src)
 		r.broken = append(r.broken, msg)
@@ -65,7 +70,9 @@ func (r *storageRenderer) renderImage(
 			if err != nil {
 				abs = filepath.Join(r.baseDir, src)
 			}
-			r.attachments = append(r.attachments, Attachment{Filename: filename, Path: abs})
+			r.attachments = append(r.attachments, Attachment{
+				Filename: filename, Path: abs, Source: normalizeSrc(src),
+			})
 		}
 		_, _ = w.WriteString(acImage(alt, attrs, filename, ""))
 	}
@@ -141,14 +148,6 @@ func acImage(alt string, attrs map[string]string, riFilename, riURL string) stri
 	return fmt.Sprintf("<ac:image%s>%s</ac:image>", leading, resource)
 }
 
-// attachmentFilename derives a stable, collision-free attachment name from an
-// image path: a leading "./" is dropped and "/" becomes "_" so images from
-// different directories don't collide.
-func attachmentFilename(src string) string {
-	name := strings.TrimPrefix(src, "./")
-	return strings.ReplaceAll(name, "/", "_")
-}
-
 // nodeText returns the concatenated plain text of a node's descendants.
 func nodeText(n ast.Node, source []byte) string {
 	var b strings.Builder
@@ -176,6 +175,31 @@ func isRemoteURL(src string) bool {
 func isFile(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+// withinRoot reports whether an image path resolves inside the documentation
+// root. markfluence is meant to be run from the root of a documentation tree, so
+// an image above it -- "../../../secrets/x.png" -- is a mistake rather than a
+// shared asset, and is reported broken instead of published.
+//
+// A path at or below the root is fine, including one reached via ".." from a
+// page in a subdirectory: "../assets/logo.png" from docs/guide/foo.md is the
+// ordinary shared-assets layout. The check fails open when the root is unknown
+// or a path cannot be resolved -- it is an authoring guard, not a security
+// boundary.
+func (r *storageRenderer) withinRoot(p string) bool {
+	if r.root == "" {
+		return true
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return true
+	}
+	rel, err := filepath.Rel(r.root, abs)
+	if err != nil {
+		return true
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func isDigits(s string) bool {

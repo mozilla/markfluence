@@ -7,6 +7,7 @@ package convert
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -59,8 +60,16 @@ func MdToConfluence(md *frontmatter.MarkdownFile, baseURL, spaceKey, version str
 	// escaping them; restore them after rendering.
 	shielded, unshield := shieldStorage(md.Body)
 	dir := filepath.Dir(md.Filename)
+	// The documentation root is the working directory: markfluence is run from
+	// the root of a documentation tree. An unresolvable cwd disables the check
+	// rather than failing the conversion.
+	root, err := os.Getwd()
+	if err != nil {
+		root = ""
+	}
 	r := &storageRenderer{
 		baseDir:         dir,
+		root:            root,
 		currentBasename: filepath.Base(md.Filename),
 		baseURL:         baseURL,
 		spaceKey:        spaceKey,

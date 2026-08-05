@@ -21,6 +21,10 @@ import (
 type storageRenderer struct {
 	baseDir string
 
+	// root bounds which images may be published: the documentation root, which
+	// markfluence is expected to be run from. Empty disables the check.
+	root string
+
 	// Link/anchor rewriting context, populated per conversion.
 	currentBasename string
 	baseURL         string
