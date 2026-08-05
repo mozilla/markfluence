@@ -15,8 +15,12 @@ type ConfluencePage struct {
 }
 
 // Attachment is a local image the body references, to be uploaded to the page.
-// Path is absolute; Filename is the stable, collision-free attachment name.
+// Path is absolute. Filename is the attachment name, a bijective encoding of
+// Source, so distinct images can never collide on one name. Source is the
+// normalized page-relative path the image was written as, recorded on the
+// attachment so a later read recovers it exactly rather than inferring it.
 type Attachment struct {
 	Filename string `json:"filename"`
 	Path     string `json:"path"`
+	Source   string `json:"source"`
 }
