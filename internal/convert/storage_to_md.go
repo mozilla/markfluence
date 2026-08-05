@@ -68,7 +68,7 @@ func (r *mdRenderer) sourceFor(filename string) string {
 	if src, ok := r.sources[filename]; ok && src != "" && !path.IsAbs(src) {
 		return src
 	}
-	if src, ok := attachmentSource(filename); ok {
+	if src, ok := AttachmentSource(filename); ok {
 		return src
 	}
 	return filename

@@ -36,16 +36,16 @@ func TestAttachmentNameRoundTrip(t *testing.T) {
 		{"my docs/a b.png", "my docs%2Fa b.png"},
 	}
 	for _, c := range cases {
-		if got := attachmentFilename(c.src); got != c.name {
-			t.Errorf("attachmentFilename(%q) = %q, want %q", c.src, got, c.name)
+		if got := AttachmentFilename(c.src); got != c.name {
+			t.Errorf("AttachmentFilename(%q) = %q, want %q", c.src, got, c.name)
 		}
-		got, ok := attachmentSource(c.name)
+		got, ok := AttachmentSource(c.name)
 		if !ok {
-			t.Errorf("attachmentSource(%q) refused a name we produced", c.name)
+			t.Errorf("AttachmentSource(%q) refused a name we produced", c.name)
 			continue
 		}
 		if got != c.src {
-			t.Errorf("attachmentSource(%q) = %q, want %q (round trip)", c.name, got, c.src)
+			t.Errorf("AttachmentSource(%q) = %q, want %q (round trip)", c.name, got, c.src)
 		}
 	}
 }
@@ -59,7 +59,7 @@ func TestAttachmentFilenameIsInjective(t *testing.T) {
 	}
 	seen := map[string]string{}
 	for _, src := range srcs {
-		name := attachmentFilename(src)
+		name := AttachmentFilename(src)
 		if prev, dup := seen[name]; dup {
 			t.Errorf("%q and %q both encode to %q", prev, src, name)
 		}
@@ -80,8 +80,8 @@ func TestAttachmentFilenameNormalizes(t *testing.T) {
 		{"/assets/x.png", "assets%2Fx.png"},
 	}
 	for _, c := range cases {
-		if got := attachmentFilename(c.src); got != c.want {
-			t.Errorf("attachmentFilename(%q) = %q, want %q", c.src, got, c.want)
+		if got := AttachmentFilename(c.src); got != c.want {
+			t.Errorf("AttachmentFilename(%q) = %q, want %q", c.src, got, c.want)
 		}
 	}
 }
@@ -91,8 +91,8 @@ func TestAttachmentFilenameNormalizes(t *testing.T) {
 // path (which is what #37's export would then write to).
 func TestAttachmentSourceRefusesAbsolute(t *testing.T) {
 	for _, name := range []string{"%2Fetc%2Fpasswd.png", "%2F.png", ""} {
-		if got, ok := attachmentSource(name); ok {
-			t.Errorf("attachmentSource(%q) = %q, true; want refusal", name, got)
+		if got, ok := AttachmentSource(name); ok {
+			t.Errorf("AttachmentSource(%q) = %q, true; want refusal", name, got)
 		}
 	}
 }
@@ -106,9 +106,9 @@ func TestAttachmentSourceDecodesForeignNames(t *testing.T) {
 		{"screenshot 2026.png", "screenshot 2026.png"},
 		{"..%2Fup.png", "../up.png"},
 	} {
-		got, ok := attachmentSource(c.name)
+		got, ok := AttachmentSource(c.name)
 		if !ok || got != c.want {
-			t.Errorf("attachmentSource(%q) = %q, %v; want %q, true", c.name, got, ok, c.want)
+			t.Errorf("AttachmentSource(%q) = %q, %v; want %q, true", c.name, got, ok, c.want)
 		}
 	}
 }
