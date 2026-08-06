@@ -85,13 +85,25 @@ delete scopes. This might change in the future.
 
 ## Usage
 
+General:
+
 ```sh
 markfluence --help
+```
+
+Manipulating Confluence pages:
+
+```sh
 markfluence create --help
 markfluence update --help
 markfluence fix --help
 markfluence info --help
 markfluence read --help
+```
+
+Manipulating Confluence page attachments:
+
+```sh
 markfluence attachment-list --help
 markfluence attachment-upload --help
 markfluence attachment-download --help
@@ -204,13 +216,13 @@ markfluence fix docs/foo.md --dry-run
 ### `info`
 
 ```
-Usage: markfluence info ARG [flags]
+Usage: markfluence info PAGE [flags]
 ```
 
 Print a page's metadata (id, title, status, space, parent, version, page width,
-authors, dates, url). `ARG` is a numeric page id or a Markdown file whose
-frontmatter has a `page_id`. `--properties` also lists all of the page's content
-properties.
+authors, dates, url). `PAGE` is a numeric page id, a Confluence page URL, or a
+Markdown file whose frontmatter has a `page_id`. `--properties` also lists all of
+the page's content properties.
 
 ```sh
 markfluence info 1234567890
@@ -220,12 +232,13 @@ markfluence info docs/foo.md --properties
 ### `read`
 
 ```
-Usage: markfluence read ARG [flags]
+Usage: markfluence read PAGE [flags]
 ```
 
-Fetch a Confluence page and print its body to stdout. `ARG` is a numeric page id
-or a Confluence page URL (the modern `/wiki/.../pages/<id>/...` form or a legacy
-`?pageId=<id>` URL). It composes with shell redirection.
+Fetch a Confluence page and print its body to stdout. `PAGE` is a numeric page id,
+a Confluence page URL (the modern `/wiki/.../pages/<id>/...` form or a legacy
+`?pageId=<id>` URL), or a Markdown file whose frontmatter has a `page_id`. It
+composes with shell redirection.
 
 `--format` selects the output:
 
@@ -253,7 +266,7 @@ markfluence read "https://org.atlassian.net/wiki/spaces/ENG/pages/1234567890/Tit
 ### `attachment-list`
 
 ```
-Usage: markfluence attachment-list ARG [flags]
+Usage: markfluence attachment-list PAGE [flags]
 ```
 
 List a page's attachments.
@@ -279,7 +292,7 @@ how you find them.
 ### `attachment-upload`
 
 ```
-Usage: markfluence attachment-upload ARG FILE... [flags]
+Usage: markfluence attachment-upload PAGE FILE... [flags]
 ```
 
 Upload or replace attachments on a page, complementing the automatic sync that
@@ -308,7 +321,7 @@ markfluence attachment-upload 1234567890 diagram.png --force
 ### `attachment-download`
 
 ```
-Usage: markfluence attachment-download ARG [NAME...] [flags]
+Usage: markfluence attachment-download PAGE [NAME...] [flags]
 ```
 
 Download a page's attachments. Each `NAME` is an attachment name as

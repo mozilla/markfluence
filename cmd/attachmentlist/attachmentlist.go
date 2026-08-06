@@ -20,14 +20,15 @@ const command = "attachment-list"
 
 // Cmd is the attachment-list command.
 var Cmd = &cobra.Command{
-	Use:   command + " ARG",
+	Use:   command + " PAGE",
 	Short: "List a Confluence page's attachments",
 	Long: "List a Confluence page's attachments.\n\n" +
-		"ARG is a numeric page id, a Confluence page URL, or a markdown file\n" +
+		"PAGE is a numeric page id, a Confluence page URL, or a markdown file\n" +
 		"whose frontmatter has a page_id.\n\n" +
-		"NAME is the name Confluence stores. For an image markfluence published\n" +
-		"that is the encoded source path, and SOURCE shows the markdown image\n" +
-		"path it came from.\n\n" +
+		"The NAME column is the name Confluence stores, which is what\n" +
+		"attachment-download takes. For an image markfluence published that is\n" +
+		"the encoded source path, and the SOURCE column shows the markdown\n" +
+		"image path it came from.\n\n" +
 		"SOURCE is a dash when no source path is recorded: the attachment was\n" +
 		"uploaded by hand, or it was published before markfluence recorded one.\n" +
 		"Use --json, whose managed field tells those two apart.",

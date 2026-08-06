@@ -24,10 +24,10 @@ var showProperties bool
 
 // Cmd is the info command.
 var Cmd = &cobra.Command{
-	Use:   "info ARG",
+	Use:   "info PAGE",
 	Short: "Print metadata about a Confluence page",
 	Long: "Print metadata about a Confluence page.\n\n" +
-		"ARG is a numeric page id, a Confluence page URL, or a markdown file\n" +
+		"PAGE is a numeric page id, a Confluence page URL, or a markdown file\n" +
 		"whose frontmatter has a page_id.",
 	Args: cobra.ExactArgs(1),
 	RunE: run,
