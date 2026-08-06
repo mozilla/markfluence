@@ -213,3 +213,213 @@ func TestWriteFlatUsesStoredName(t *testing.T) {
 		t.Errorf("dest = %q, want %q", got.DestPath, want)
 	}
 }
+
+// --- containment against symlinks --------------------------------------------
+//
+// Resolve's check is lexical and cannot see symlinks: a destination containing
+// a symlinked directory would pass the string comparison while the write landed
+// elsewhere on disk. Confinement is enforced by os.Root in Write, so these
+// exercise Write rather than Resolve, and each asserts that nothing was created
+// outside the destination -- not merely that an error came back.
+
+// symlinkFixture builds a destination containing links that point out of it,
+// and returns the destination and the outside directory to check for leaks.
+func symlinkFixture(t *testing.T) (root, outside string) {
+	t.Helper()
+	base := t.TempDir()
+	root = filepath.Join(base, "dest")
+	outside = filepath.Join(base, "outside")
+	for _, d := range []string{root, outside} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A symlinked directory, as in a repo where docs/assets -> ../shared/assets.
+	if err := os.Symlink(outside, filepath.Join(root, "assets")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	// A symlinked file, targeting a path outside the destination.
+	if err := os.Symlink(filepath.Join(outside, "leak.png"), filepath.Join(root, "link.png")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	return root, outside
+}
+
+func assertNothingOutside(t *testing.T, outside string) {
+	t.Helper()
+	entries, err := os.ReadDir(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("wrote outside the destination: %v", names)
+	}
+}
+
+// TestWriteRefusesSymlinkedDirectory is the case a lexical clamp misses: every
+// path component looks contained, but "assets" leads out of the destination.
+func TestWriteRefusesSymlinkedDirectory(t *testing.T) {
+	root, outside := symlinkFixture(t)
+	c := testClient(t, "PWNED")
+
+	got := Write(c, withDownload(managed("assets%2Fx.png", "assets/x.png")), Options{Root: root})
+	if got.Status != StatusFailed {
+		t.Errorf("status = %q, want failed", got.Status)
+	}
+	assertNothingOutside(t, outside)
+}
+
+// TestWriteRefusesSymlinkedFile covers the final component being a link out,
+// which would otherwise be followed and truncated by a create.
+func TestWriteRefusesSymlinkedFile(t *testing.T) {
+	root, outside := symlinkFixture(t)
+	c := testClient(t, "PWNED")
+
+	got := Write(c, withDownload(client.Attachment{Title: "link.png"}), Options{Root: root})
+	if got.Status != StatusFailed {
+		t.Errorf("status = %q, want failed", got.Status)
+	}
+	if got.Err == nil || !strings.Contains(got.Err.Error(), "outside the destination") {
+		t.Errorf("error = %v, want it to explain the refusal", got.Err)
+	}
+	assertNothingOutside(t, outside)
+}
+
+// TestWriteRefusesSymlinkedFileUnderForce pins that --force does not weaken
+// containment: it governs overwriting, not where a file may be written.
+func TestWriteRefusesSymlinkedFileUnderForce(t *testing.T) {
+	root, outside := symlinkFixture(t)
+	c := testClient(t, "PWNED")
+
+	got := Write(c, withDownload(client.Attachment{Title: "link.png"}),
+		Options{Root: root, Force: true})
+	if got.Status != StatusFailed {
+		t.Errorf("status = %q, want failed even with --force", got.Status)
+	}
+	assertNothingOutside(t, outside)
+}
+
+// TestWriteErrorNamesTheAttachment keeps a refusal actionable: os.Root's bare
+// message says neither which attachment nor where it was going.
+func TestWriteErrorNamesTheAttachment(t *testing.T) {
+	root, _ := symlinkFixture(t)
+	c := testClient(t, "PWNED")
+
+	got := Write(c, withDownload(client.Attachment{Title: "link.png"}), Options{Root: root})
+	if got.Err == nil || !strings.Contains(got.Err.Error(), "link.png") {
+		t.Errorf("error %v does not name the attachment", got.Err)
+	}
+}
+
+// TestWriteCreatesRootWhenMissing covers the destination not existing yet, which
+// is the ordinary first-export case.
+func TestWriteCreatesRootWhenMissing(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "new", "dest")
+	c := testClient(t, "BYTES")
+
+	got := Write(c, withDownload(managed("assets%2Fx.png", "assets/x.png")), Options{Root: root})
+	if got.Status != StatusDownloaded {
+		t.Fatalf("status = %q (%v), want downloaded", got.Status, got.Err)
+	}
+	if b, err := os.ReadFile(filepath.Join(root, "assets", "x.png")); err != nil || string(b) != "BYTES" {
+		t.Errorf("contents = %q, %v", b, err)
+	}
+}
+
+// TestResolveDoesNotExpandTildeOrVars pins that a home-directory or variable
+// reference in a recorded path is an ordinary filename to Go, not an expansion.
+// Tilde expansion is a shell feature; if that ever stopped being true, a hostile
+// comment could aim a write at the user's home directory.
+func TestResolveDoesNotExpandTildeOrVars(t *testing.T) {
+	root := filepath.Clean("/tmp/dest")
+	cases := map[string]string{
+		"~/.ssh/authorized_keys": filepath.Join(root, "~", ".ssh", "authorized_keys"),
+		"$HOME/x.png":            filepath.Join(root, "$HOME", "x.png"),
+		// "~" alone is a legal filename, so it is a file inside root -- not the
+		// home directory, and not an error.
+		"~": filepath.Join(root, "~"),
+	}
+	for src, want := range cases {
+		got, err := Resolve(root, managed("n.png", src), false)
+		if err != nil || got != want {
+			t.Errorf("Resolve(path=%q) = %q, %v; want %q", src, got, err, want)
+		}
+		if strings.Contains(got, os.Getenv("HOME")) && os.Getenv("HOME") != "" {
+			t.Errorf("Resolve(path=%q) = %q, which reached the home directory", src, got)
+		}
+	}
+}
+
+// TestResolveCleansInteriorTraversal covers "." and ".." inside a path being
+// folded away before the containment comparison, so an interior ".." cannot be
+// used to smuggle a path past a naive prefix check.
+func TestResolveCleansInteriorTraversal(t *testing.T) {
+	root := filepath.Clean("/tmp/dest")
+	cases := map[string]string{
+		"a/./b.png":       filepath.Join(root, "a", "b.png"),
+		"a/../b.png":      filepath.Join(root, "b.png"),
+		"a/b/../../c.png": filepath.Join(root, "c.png"),
+		"a//b.png":        filepath.Join(root, "a", "b.png"),
+		"./x.png":         filepath.Join(root, "x.png"),
+	}
+	for src, want := range cases {
+		got, err := Resolve(root, managed("n.png", src), false)
+		if err != nil || got != want {
+			t.Errorf("Resolve(path=%q) = %q, %v; want %q", src, got, err, want)
+		}
+	}
+}
+
+// TestResolveNormalizesRoot covers roots that are not already clean. Join cleans
+// its result, so comparing against an uncleaned root mixes forms and rejects
+// everything -- fail-closed, but baffling. A trailing separator is the natural
+// way to type a directory, so this is a real input, not a contrived one.
+func TestResolveNormalizesRoot(t *testing.T) {
+	want := filepath.Join(filepath.Clean("/tmp/dest"), "assets", "x.png")
+	roots := []string{
+		"/tmp/dest",
+		"/tmp/dest/",
+		"/tmp/./dest",
+		"/tmp//dest",
+		"/tmp/other/../dest",
+	}
+	for _, root := range roots {
+		got, err := Resolve(root, managed("assets%2Fx.png", "assets/x.png"), false)
+		if err != nil {
+			t.Errorf("Resolve(root=%q) errored: %v", root, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("Resolve(root=%q) = %q, want %q", root, got, want)
+		}
+	}
+}
+
+// TestResolveNormalizedRootStillRefusesEscapes guards the obvious way to get
+// normalization wrong: cleaning the root must not soften containment.
+func TestResolveNormalizedRootStillRefusesEscapes(t *testing.T) {
+	for _, root := range []string{"/tmp/dest/", "/tmp/./dest", "/tmp//dest"} {
+		if got, err := Resolve(root, managed("n.png", "../escape.png"), false); err == nil {
+			t.Errorf("Resolve(root=%q, path=../escape.png) = %q, nil; want a refusal", root, got)
+		}
+	}
+}
+
+// TestWriteNormalizesRoot is the end-to-end form: a trailing separator on the
+// destination must still write the file, in the right place.
+func TestWriteNormalizesRoot(t *testing.T) {
+	dir := t.TempDir()
+	c := testClient(t, "BYTES")
+	got := Write(c, withDownload(managed("assets%2Fx.png", "assets/x.png")),
+		Options{Root: dir + string(os.PathSeparator)})
+	if got.Status != StatusDownloaded {
+		t.Fatalf("status = %q (%v), want downloaded", got.Status, got.Err)
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "assets", "x.png")); err != nil || string(b) != "BYTES" {
+		t.Errorf("contents = %q, %v", b, err)
+	}
+}
