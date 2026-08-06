@@ -667,6 +667,17 @@ docs/                      ← run markfluence from here
   guide/page.md            → ![logo](../assets/logo.png)
 ```
 
+An image path is a URL, not a filename, so a space or other special character
+has to be percent-encoded — `![shot](assets/my%20image.png)` for a file named
+`my image.png`. This is the same rule GitHub and your editor's preview follow,
+and it is what they produce when they write a link for you. The angle-bracket
+form `![shot](<assets/my image.png>)` is an equivalent spelling of the same
+image. A bare space (`![shot](assets/my image.png)`) is not a valid path, so it
+is not an image at all and stays on the page as literal text — again matching
+what GitHub and your preview show. `markfluence read` and `markfluence export`
+write the encoded form, so a page round-trips back to Markdown that still
+renders.
+
 **Run markfluence from the root of your documentation tree.** That root bounds
 which images may be published: an image resolving outside it (`../../secrets/x.png`)
 is reported as `IMAGE BROKEN: … (outside the documentation root)` rather than

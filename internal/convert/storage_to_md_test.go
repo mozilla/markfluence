@@ -2,7 +2,9 @@ package convert_test
 
 import (
 	"encoding/json"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -162,6 +164,75 @@ func TestRoundTripPassthrough(t *testing.T) {
 	}
 }
 
+// TestRoundTripEncodedImageSources closes the loop between the two halves of the
+// image-source codec, on real emitted storage rather than a hand-written
+// fragment: every destination `read`/`export` writes must decode back to exactly
+// the path `update` published from. If it did not, exporting a page would rename
+// its own image files, and re-publishing the export would upload them again under
+// new attachment names.
+func TestRoundTripEncodedImageSources(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join(regressionDir, "images-encoded-src", "test.output"))
+	if err != nil {
+		t.Fatalf("reading golden: %v", err)
+	}
+	var page struct {
+		HTML        string `json:"html"`
+		Attachments []struct {
+			Filename string `json:"filename"`
+			Source   string `json:"source"`
+		} `json:"attachments"`
+	}
+	if err := json.Unmarshal(data, &page); err != nil {
+		t.Fatalf("parsing golden: %v", err)
+	}
+	if len(page.Attachments) == 0 {
+		t.Fatal("golden has no attachments; the case no longer covers this")
+	}
+
+	sources := map[string]string{}
+	for _, a := range page.Attachments {
+		sources[a.Filename] = a.Source
+	}
+	md, err := convert.StorageToMarkdown(page.HTML, sources)
+	if err != nil {
+		t.Fatalf("StorageToMarkdown: %v", err)
+	}
+
+	// Stated as the property rather than a positional match: the case has more
+	// image-looking lines than attachments on purpose (two spellings dedupe to
+	// one attachment, and the bare-space line is literal text, not an image).
+	dests := imageDests(md)
+	for _, a := range page.Attachments {
+		found := false
+		for _, dest := range dests {
+			if strings.ContainsAny(dest, " \t") {
+				continue // not a destination at all -- would not parse as an image
+			}
+			if decoded, err := url.PathUnescape(dest); err == nil && decoded == a.Source {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("no whitespace-free destination decodes to %q\n%s", a.Source, md)
+		}
+	}
+}
+
+// imageDests pulls the destinations out of the markdown image lines, in order.
+func imageDests(md string) []string {
+	var out []string
+	for _, line := range strings.Split(md, "\n") {
+		if !strings.HasPrefix(line, "![") {
+			continue
+		}
+		if i := strings.LastIndex(line, "("); i >= 0 && strings.HasSuffix(line, ")") {
+			out = append(out, line[i+1:len(line)-1])
+		}
+	}
+	return out
+}
+
 // TestStorageToMarkdownPrefersRecordedSource checks the two ways an image path is
 // recovered. The path recorded on the attachment wins because it is exact; with
 // no record, the attachment name is decoded, which is equally exact for a name
@@ -179,13 +250,15 @@ func TestStorageToMarkdownPrefersRecordedSource(t *testing.T) {
 
 	// A recorded source overrides the name -- this is what makes an attachment
 	// whose name cannot be decoded faithfully (one a human uploaded, or one from
-	// an older markfluence) still resolve to the right path.
+	// an older markfluence) still resolve to the right path. The space in the
+	// path is encoded on the way out: a destination is a URL, and a bare space
+	// would end it, leaving markdown that is not an image at all.
 	sources := map[string]string{"assets%2Fx.png": "images/original name.png"}
 	got, err = convert.StorageToMarkdown(in, sources)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "![d](images/original name.png)\n"; got != want {
+	if want := "![d](images/original%20name.png)\n"; got != want {
 		t.Errorf("from recorded source: got %q, want %q", got, want)
 	}
 }
@@ -199,8 +272,20 @@ func TestStorageToMarkdownRefusesAbsoluteSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Falls back to the raw attachment name rather than an absolute path.
-	if want := "![d](%2Fetc%2Fpasswd.png)\n"; got != want {
+	// Falls back to the raw attachment name rather than an absolute path, with
+	// its "%" escaped. The escaping is the point: an unescaped "%2Fetc%2F..."
+	// destination would decode straight back to the absolute path this refuses,
+	// so encoding on the way out is what keeps the refusal from being undone by
+	// the next read. It round-trips to a file literally named "%2Fetc%2Fpasswd.png".
+	if want := "![d](%252Fetc%252Fpasswd.png)\n"; got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+	dest := strings.TrimSuffix(strings.TrimPrefix(got, "![d]("), ")\n")
+	decoded, err := url.PathUnescape(dest)
+	if err != nil {
+		t.Fatalf("destination is not decodable: %v", err)
+	}
+	if path.IsAbs(decoded) {
+		t.Errorf("destination decodes to an absolute path: %q", decoded)
 	}
 }
