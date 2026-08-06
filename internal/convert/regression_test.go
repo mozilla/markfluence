@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"image/png"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -192,4 +193,86 @@ func marshalGolden(t *testing.T, page *convert.ConfluencePage) []byte {
 		t.Fatalf("marshaling golden: %v", err)
 	}
 	return buf.Bytes()
+}
+
+// TestRegressionBinaryFixturesAreWellFormed asserts every binary fixture really
+// is the format its extension claims.
+//
+// Nothing else in this suite would notice if one were corrupt: the converter
+// stats an image (isFile) or rejects it on extension alone, and never opens
+// either. But these are checked-in repository files, and a ".png" or ".pdf" that
+// will not open renders as a broken image or a damaged document in diffs, editor
+// previews, and file browsers -- which reads as a mistake rather than as the
+// deliberate placeholder it is. This guard is what keeps the next one from
+// quietly going back to being a text file with the wrong extension.
+func TestRegressionBinaryFixturesAreWellFormed(t *testing.T) {
+	err := filepath.WalkDir(regressionDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		switch strings.ToLower(filepath.Ext(path)) {
+		case ".png":
+			t.Run(path, func(t *testing.T) { checkPNG(t, path) })
+		case ".pdf":
+			t.Run(path, func(t *testing.T) { checkPDF(t, path) })
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking %s: %v", regressionDir, err)
+	}
+}
+
+// checkPNG requires a fixture to decode and to be visibly an image. Decoding
+// alone is not enough: a 1x1 fully transparent PNG is valid and renders as
+// nothing, which in a preview pane or an image diff is indistinguishable from a
+// broken file -- the exact impression these fixtures should not give.
+func checkPNG(t *testing.T, path string) {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("opening fixture: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	img, err := png.Decode(f)
+	if err != nil {
+		t.Fatalf("not a decodable PNG: %v", err)
+	}
+	b := img.Bounds()
+	if b.Dx() < 8 || b.Dy() < 8 {
+		t.Errorf("too small to read as an image in a preview: %dx%d", b.Dx(), b.Dy())
+	}
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			if _, _, _, a := img.At(x, y).RGBA(); a > 0 {
+				return
+			}
+		}
+	}
+	t.Error("fully transparent, so it renders as nothing")
+}
+
+// checkPDF is a structural smoke test, not a parse: the standard library has no
+// PDF reader and a fixture is not worth a dependency. It catches the realistic
+// regression -- a text file renamed to ".pdf" -- rather than proving validity.
+// The fixture itself was verified with a real parser (PDFKit) when it was
+// written; if you replace it, do the same rather than trusting this test.
+func checkPDF(t *testing.T, path string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading fixture: %v", err)
+	}
+	if !bytes.HasPrefix(data, []byte("%PDF-")) {
+		t.Fatalf("missing %%PDF- header; got %.16q", data)
+	}
+	if !bytes.Contains(data, []byte("\nstartxref\n")) {
+		t.Error("no startxref, so there is no cross-reference table to find")
+	}
+	if !bytes.Contains(data, []byte("\ntrailer\n")) {
+		t.Error("no trailer, so there is no document root to resolve")
+	}
+	if !bytes.HasSuffix(bytes.TrimRight(data, "\r\n \t"), []byte("%%EOF")) {
+		t.Error("missing the trailing EOF marker, so the file is truncated")
+	}
 }
