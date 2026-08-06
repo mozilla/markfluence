@@ -1,1 +1,22 @@
-stub pdf content (present on disk, unsupported extension)
+%PDF-1.4
+% stub pdf content (present on disk, unsupported extension)
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Resources << >> >>
+endobj
+xref
+0 4
+0000000000 65535 f 
+0000000069 00000 n 
+0000000118 00000 n 
+0000000175 00000 n 
+trailer
+<< /Size 4 /Root 1 0 R >>
+startxref
+261
+%%EOF
