@@ -99,6 +99,7 @@ markfluence update --help
 markfluence fix --help
 markfluence info --help
 markfluence read --help
+markfluence export --help
 ```
 
 Manipulating Confluence page attachments:
@@ -263,6 +264,49 @@ markfluence read 1234567890 --format storage > page.storage.xml
 markfluence read "https://org.atlassian.net/wiki/spaces/ENG/pages/1234567890/Title"
 ```
 
+### `export`
+
+```
+Usage: markfluence export PAGE [flags]
+```
+
+Write a page and the attachments it uses to a directory — the one-command form
+of `read` plus `attachment-download`.
+
+```console
+$ markfluence export 1234567890 --dest ./out
+wrote      out/markfluence-test-page.md
+downloaded out/assets/diagram.png
+           (skipped 2 unreferenced attachment(s); --all-attachments to include)
+```
+
+The page is written as Markdown with `title`/`space`/`parent`/`page_id`/
+`page_width` frontmatter — byte-identical to what `read` prints — so an exported
+file can be edited and published straight back with `update`.
+
+Attachments are written to the paths their images were published from, so the
+exported tree matches the layout of the repo the page came from and previews
+locally in GitHub or VSCode. There is deliberately no `--attachments-dir`:
+collecting attachments into one directory would mean rewriting the image `src`s,
+and a later `update` would then publish them under different attachment names,
+orphaning the originals.
+
+Only attachments the page actually references are exported. That includes images,
+attachment links, and references inside macros markfluence passes through
+untouched. `--all-attachments` takes everything on the page instead;
+`--skip-attachments` writes the page file only.
+
+`--file` names the page file, defaulting to a slug of the title
+(`markfluence-test-page.md`), or the page id when the title slugs to nothing.
+`--dest` defaults to the current directory and is created if missing. Existing
+files are skipped unless `--force`, and `--dry-run` previews without writing.
+
+If the page references an attachment that isn't attached — already broken in
+Confluence — the export still succeeds and reports it as a warning.
+
+Markdown is the only output format. Use `read --format storage` to inspect the
+raw storage Confluence holds.
+
 ### `attachment-list`
 
 ```
@@ -405,9 +449,11 @@ Notes on the schema:
   `downloaded`/`skipped` (`attachment-download`), plus `failed`. `info`, `read`,
   and `attachment-list` results carry data only (no status verb).
 - **One result per target**, and the target is per-command: the page for
-  `info`/`read` (always one), the file for `update`/`create`/`fix`, and the
-  attachment for the three `attachment-*` commands — so
+  `info`/`read`/`export` (always one), the file for `update`/`create`/`fix`, and
+  the attachment for the three `attachment-*` commands — so
   `.results[] | .filename` works and `summary.total` is the attachment count.
+  `export` nests the files it wrote in an `attachments` array on its page
+  result, the way `update`/`create` do.
 - **Compound values are objects**, never display strings — `version`,
   `page_width`, and the `created`/`updated` author stamps on `info`.
 - **`create`'s two-phase abort** (a validation failure means nothing is created)
