@@ -23,8 +23,8 @@ TBD — published to a tap on the first release.
 
 ## Configure
 
-markfluence needs a site URL, a username, and an API token. Each is resolved
-with the precedence **flag > environment variable > `.env` file**:
+markfluence needs a Confluence site URL, a username, and an API token. Each is
+resolved with the precedence **flag > environment variable > `.env` file**:
 
 | Setting | Flag | Environment / `.env` |
 | --- | --- | --- |
@@ -34,18 +34,21 @@ with the precedence **flag > environment variable > `.env` file**:
 | Cloud ID *(optional)* | `--cloud-id` | `CONFLUENCE_CLOUD_ID` |
 
 markfluence reads a `.env` file from the current directory automatically (no need
-to `source` it), or from an explicit path via `--env-file PATH` (a persistent flag
-on every subcommand; a missing explicit path is an error). Copy `.env.example` to
-`.env` and fill in:
+to `source` it), or from an explicit path via `--env-file PATH`.
+
+Copy `.env.example` to `.env` and fill in:
 
 ```
 CONFLUENCE_URL=https://your-org.atlassian.net
 CONFLUENCE_USERNAME=you@example.com
 CONFLUENCE_TOKEN=your-api-token
+# Optional. Set this only when using *scoped* API tokens.
+# CONFLUENCE_CLOUD_ID=
 ```
 
-The API token is deliberately not accepted as a command-line flag; it comes only
-from the environment or `.env`.
+> [!NOTE]
+> The API token is deliberately not accepted as a command-line flag; it comes
+> only from the environment or `.env`.
 
 (Optional): `alias mf=markfluence`
 
@@ -54,19 +57,21 @@ from the environment or `.env`.
 For a normal personal API token, you can leave `CONFLUENCE_CLOUD_ID` unset.
 
 For a **scoped** API token for an Atlassian [service account][svcacct], you
-need to set `CONFLUENCE_CLOUD_ID`. You would use this to publish from CI as a
-service account rather than as a person. Scoped tokens are rejected with a
-**401** against your site domain; they must go through Atlassian's
-`api.atlassian.com` gateway, and the cloud ID is what addresses your site
-there. `CONFLUENCE_URL` still holds the site URL: markfluence needs it to write
-correct links into the pages it publishes.
+need to set `CONFLUENCE_CLOUD_ID`. You would use a scoped API token for a
+service account to publish from CI or other automated system. Scoped tokens are
+rejected with a **401** against your site domain--markfluence must use
+Atlassian's `api.atlassian.com` gateway, and the cloud ID is required there.
+`CONFLUENCE_URL` still holds the site URL: markfluence uses it to write correct
+links into the pages it publishes.
 
-Find your cloud ID — it is **not** a secret:
+To find your cloud ID, you can do this:
 
 ```console
 $ curl -s https://your-org.atlassian.net/_edge/tenant_info
 {"cloudId":"d8febd08-5555-5555-5555-db37c2369ce5"}
 ```
+
+The cloud ID is not a secret.
 
 The scopes markfluence needs:
 
@@ -78,8 +83,9 @@ The scopes markfluence needs:
 | Image attachments | `write:confluence-file` |
 | Author names in `info` | `read:confluence-user` |
 
-Currently, markfluence doesn't support deleting anything, so it doesn't need
-delete scopes. This might change in the future.
+> [!NOTE]
+> Currently, markfluence doesn't support deleting anything, so it doesn't need
+> delete scopes. This might change in the future.
 
 [svcacct]: https://support.atlassian.com/user-management/docs/understand-service-accounts/
 
@@ -110,7 +116,7 @@ markfluence attachment-upload --help
 markfluence attachment-download --help
 ```
 
-Every command that takes a page accepts it three ways: a numeric page id, a
+Every command that takes a page accepts three forms: a numeric page id, a
 Confluence page URL, or a Markdown file whose frontmatter has a `page_id`.
 
 ### `create`
@@ -667,16 +673,19 @@ docs/                      ← run markfluence from here
   guide/page.md            → ![logo](../assets/logo.png)
 ```
 
-An image path is a URL, not a filename, so a space or other special character
-has to be percent-encoded — `![shot](assets/my%20image.png)` for a file named
-`my image.png`. This is the same rule GitHub and your editor's preview follow,
-and it is what they produce when they write a link for you. The angle-bracket
-form `![shot](<assets/my image.png>)` is an equivalent spelling of the same
-image. A bare space (`![shot](assets/my image.png)`) is not a valid path, so it
-is not an image at all and stays on the page as literal text — again matching
-what GitHub and your preview show. `markfluence read` and `markfluence export`
-write the encoded form, so a page round-trips back to Markdown that still
-renders.
+> [!NOTE]
+> An image path is a URL, not a filename, so a space or other special character
+> has to be percent-encoded — `![shot](assets/my%20image.png)` for a file named
+> `my image.png`. This is the same rule GitHub and your editor's preview follow,
+> and it is what they produce when they write a link for you.
+> 
+> The angle-bracket form `![shot](<assets/my image.png>)` is an equivalent
+> spelling of the same image. A bare space (`![shot](assets/my image.png)`) is
+> not a valid path, so it is not an image at all and stays on the page as
+> literal text — again matching what GitHub and your preview show.
+> 
+> `markfluence read` and `markfluence export` write the encoded form, so a page
+> round-trips back to Markdown that still renders.
 
 **Run markfluence from the root of your documentation tree.** That root bounds
 which images may be published: an image resolving outside it (`../../secrets/x.png`)
