@@ -35,10 +35,10 @@ var (
 
 // Cmd is the attachment-download command.
 var Cmd = &cobra.Command{
-	Use:   command + " ARG [NAME...]",
+	Use:   command + " PAGE [NAME...]",
 	Short: "Download a Confluence page's attachments",
 	Long: "Download a Confluence page's attachments.\n\n" +
-		"ARG is a numeric page id, a Confluence page URL, or a markdown file\n" +
+		"PAGE is a numeric page id, a Confluence page URL, or a markdown file\n" +
 		"whose frontmatter has a page_id. Each NAME is an attachment name as\n" +
 		"attachment-list reports it; with no NAME, every attachment is\n" +
 		"downloaded.\n\n" +

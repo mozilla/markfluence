@@ -26,10 +26,10 @@ var (
 
 // Cmd is the attachment-upload command.
 var Cmd = &cobra.Command{
-	Use:   command + " ARG FILE...",
+	Use:   command + " PAGE FILE...",
 	Short: "Upload or replace attachments on a Confluence page",
 	Long: "Upload or replace attachments on a Confluence page.\n\n" +
-		"ARG is a numeric page id, a Confluence page URL, or a markdown file\n" +
+		"PAGE is a numeric page id, a Confluence page URL, or a markdown file\n" +
 		"whose frontmatter has a page_id.\n\n" +
 		"Each file is attached under its base name. A file whose contents\n" +
 		"already match the attachment on the page is skipped, using the same\n" +

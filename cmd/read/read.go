@@ -28,10 +28,10 @@ var formatFlag string
 
 // Cmd is the read command.
 var Cmd = &cobra.Command{
-	Use:   "read ARG",
+	Use:   "read PAGE",
 	Short: "Fetch a Confluence page and print its body",
 	Long: "Fetch a Confluence page and print its body to stdout.\n\n" +
-		"ARG is a numeric page id, a Confluence page URL (the modern\n" +
+		"PAGE is a numeric page id, a Confluence page URL (the modern\n" +
 		"/wiki/.../pages/<id>/... form or a legacy ?pageId=<id> URL), or a\n" +
 		"markdown file whose frontmatter has a page_id.\n\n" +
 		"The default markdown output carries title/page_id/space/page_width\n" +
