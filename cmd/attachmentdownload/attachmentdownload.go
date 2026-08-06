@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
+	"github.com/mozilla/markfluence/internal/attachfile"
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pageref"
@@ -17,13 +17,6 @@ import (
 
 // command is the name used in help and as the --json command discriminator.
 const command = "attachment-download"
-
-// Per-file outcomes, mirroring attachment-upload's verbs.
-const (
-	statusDownloaded = "downloaded"
-	statusSkipped    = "skipped"
-	statusFailed     = "failed"
-)
 
 var (
 	dest  string
@@ -92,30 +85,22 @@ func run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeIO)
 	}
+	opts := attachfile.Options{Root: root, Flat: flat, Force: force, DryRun: dryRun}
 
-	results := make([]outcome, 0, len(wanted)+len(missing))
+	results := make([]attachfile.Outcome, 0, len(wanted)+len(missing))
 	for _, a := range wanted {
-		results = append(results, download(c, a, root))
+		results = append(results, attachfile.Write(c, a, opts))
 	}
 	// A name the page doesn't have is that name's failure, not the run's.
 	for _, name := range missing {
-		results = append(results, outcome{
-			name:   name,
-			status: statusFailed,
-			err:    fmt.Errorf("no attachment named %q on page %s", name, pageID),
-			code:   jsonout.CodeNotFound,
+		results = append(results, attachfile.Outcome{
+			Name:   name,
+			Status: attachfile.StatusFailed,
+			Err:    fmt.Errorf("no attachment named %q on page %s", name, pageID),
+			Code:   jsonout.CodeNotFound,
 		})
 	}
 	return report(results)
-}
-
-// outcome is what happened to one attachment.
-type outcome struct {
-	name     string // the stored attachment name
-	destPath string // the local path written (or that would be)
-	status   string
-	err      error
-	code     jsonout.Code
 }
 
 // selectAttachments picks the attachments named on the command line, preserving
@@ -141,91 +126,16 @@ func selectAttachments(attachments []client.Attachment, names []string) (
 	return wanted, missing
 }
 
-// download resolves one attachment's destination and writes it.
-func download(c *client.ConfluenceClient, a client.Attachment, root string) outcome {
-	res := outcome{name: a.Title}
-
-	path, err := destPath(root, a, flat)
-	if err != nil {
-		res.status, res.err, res.code = statusFailed, err, jsonout.CodeValidation
-		return res
-	}
-	res.destPath = path
-
-	if _, err := os.Stat(path); err == nil && !force {
-		res.status = statusSkipped
-		return res
-	}
-	if dryRun {
-		res.status = statusDownloaded
-		return res
-	}
-
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		res.status, res.err, res.code = statusFailed, err, jsonout.CodeIO
-		return res
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		res.status, res.err, res.code = statusFailed, err, jsonout.CodeIO
-		return res
-	}
-	defer func() { _ = f.Close() }()
-	if err := c.DownloadAttachment(a, f); err != nil {
-		res.status, res.err, res.code = statusFailed, err, jsonout.CodeFor(err)
-		return res
-	}
-	res.status = statusDownloaded
-	return res
-}
-
-// destPath resolves where an attachment is written, and is the only place a
-// server-controlled string becomes a filesystem path.
-//
-// The recorded source path is used, not a decode of the attachment name: there
-// is no way to tell a hand-uploaded "a%2Fb.png" from one markfluence published,
-// so decoding by default would scatter a literally-named file into a/b.png. An
-// attachment with no recorded source keeps its stored name.
-//
-// The result must stay inside root. A source path may legitimately contain ".."
-// -- an image in a directory above its page is a supported layout -- so ".."
-// cannot simply be refused; the resolved path is compared against root instead.
-// Escaping is an error rather than a silent clip, because the path comes from an
-// attachment comment, which anyone who can edit the page controls.
-func destPath(root string, a client.Attachment, flat bool) (string, error) {
-	rel := a.Title
-	if !flat {
-		if src := a.Meta().Source; src != "" {
-			rel = src
-		}
-	}
-	// A stored name is a single path element by construction; guard anyway, since
-	// it is server data.
-	if filepath.IsAbs(rel) {
-		return "", fmt.Errorf("attachment %q resolves to the absolute path %q", a.Title, rel)
-	}
-
-	path := filepath.Join(root, filepath.FromSlash(rel))
-	if path != root && !strings.HasPrefix(path, root+string(os.PathSeparator)) {
-		return "", fmt.Errorf("attachment %q resolves to %q, outside the destination directory",
-			a.Title, path)
-	}
-	if path == root {
-		return "", fmt.Errorf("attachment %q has no filename", a.Title)
-	}
-	return path, nil
-}
-
 // report prints the per-attachment outcomes and returns the command's exit
 // status: 1 if any attachment failed.
-func report(results []outcome) error {
+func report(results []attachfile.Outcome) error {
 	failed := 0
 	skipped := 0
 	for _, r := range results {
-		switch r.status {
-		case statusFailed:
+		switch r.Status {
+		case attachfile.StatusFailed:
 			failed++
-		case statusSkipped:
+		case attachfile.StatusSkipped:
 			skipped++
 		}
 	}
@@ -249,13 +159,13 @@ func report(results []outcome) error {
 	}
 
 	for _, r := range results {
-		switch r.status {
-		case statusSkipped:
-			ui.Dim(fmt.Sprintf("%-10s %s  (exists; --force to overwrite)", r.status, r.destPath))
-		case statusFailed:
-			ui.Error(fmt.Sprintf("%-10s %s: %s", r.status, r.name, r.err))
+		switch r.Status {
+		case attachfile.StatusSkipped:
+			ui.Dim(fmt.Sprintf("%-10s %s  (exists; --force to overwrite)", r.Status, r.DestPath))
+		case attachfile.StatusFailed:
+			ui.Error(fmt.Sprintf("%-10s %s: %s", r.Status, r.Name, r.Err))
 		default:
-			ui.Success(fmt.Sprintf("%-10s %s", r.status, r.destPath))
+			ui.Success(fmt.Sprintf("%-10s %s", r.Status, r.DestPath))
 		}
 	}
 	if failed > 0 {

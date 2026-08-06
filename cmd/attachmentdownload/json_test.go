@@ -6,17 +6,20 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/mozilla/markfluence/internal/attachfile"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/schematest"
 )
 
 func TestSchemaConformance(t *testing.T) {
 	results := []any{
-		buildResult(outcome{name: "assets%2Fx.png", destPath: "out/assets/x.png", status: statusDownloaded}),
-		buildResult(outcome{name: "notes.pdf", destPath: "out/notes.pdf", status: statusSkipped}),
-		buildResult(outcome{
-			name: "evil.png", status: statusFailed,
-			err: errors.New("outside the destination directory"), code: jsonout.CodeValidation,
+		buildResult(attachfile.Outcome{
+			Name: "assets%2Fx.png", DestPath: "out/assets/x.png", Status: attachfile.StatusDownloaded,
+		}),
+		buildResult(attachfile.Outcome{Name: "notes.pdf", DestPath: "out/notes.pdf", Status: attachfile.StatusSkipped}),
+		buildResult(attachfile.Outcome{
+			Name: "evil.png", Status: attachfile.StatusFailed,
+			Err: errors.New("outside the destination directory"), Code: jsonout.CodeValidation,
 		}),
 	}
 	env := jsonout.NewEnvelope(command, results,
@@ -38,9 +41,9 @@ func TestSchemaConformance(t *testing.T) {
 }
 
 func TestBuildResultFailureCarriesErrorAndNullDest(t *testing.T) {
-	res := buildResult(outcome{
-		name: "evil.png", status: statusFailed,
-		err: errors.New("boom"), code: jsonout.CodeValidation,
+	res := buildResult(attachfile.Outcome{
+		Name: "evil.png", Status: attachfile.StatusFailed,
+		Err: errors.New("boom"), Code: jsonout.CodeValidation,
 	})
 	if res.OK {
 		t.Error("ok = true, want false for a failure")
@@ -63,7 +66,9 @@ func TestBuildResultFailureCarriesErrorAndNullDest(t *testing.T) {
 
 func TestJSONDownloadResultMarshal(t *testing.T) {
 	b, err := json.MarshalIndent(
-		buildResult(outcome{name: "assets%2Fx.png", destPath: "out/assets/x.png", status: statusDownloaded}),
+		buildResult(attachfile.Outcome{
+			Name: "assets%2Fx.png", DestPath: "out/assets/x.png", Status: attachfile.StatusDownloaded,
+		}),
 		"", "  ")
 	if err != nil {
 		t.Fatal(err)
