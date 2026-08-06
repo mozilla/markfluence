@@ -9,7 +9,7 @@
   "properties": {
     "schema_version": { "const": 1 },
     "markfluence_version": { "type": "string" },
-    "command": { "enum": ["info", "read", "update", "create", "fix", "attachment-list", "attachment-upload", "attachment-download"] },
+    "command": { "enum": ["info", "read", "update", "create", "fix", "attachment-list", "attachment-upload", "attachment-download", "export"] },
     "results": { "type": "array" },
     "summary": { "type": "object" }
   },
@@ -69,6 +69,17 @@
             }
           },
           "summary": { "$ref": "#/$defs/attachmentSummary" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "command": { "const": "export" } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "results": {
+            "items": { "oneOf": [{ "$ref": "#/$defs/exportResult" }, { "$ref": "#/$defs/singleOpFailure" }] }
+          },
+          "summary": { "$ref": "#/$defs/basicSummary" }
         }
       }
     },
@@ -319,6 +330,43 @@
         "status": { "enum": ["created", "updated", "skipped", "failed"] },
         "dry_run": { "type": "boolean" },
         "filename": { "type": "string" },
+        "error": { "$ref": "#/$defs/stringOrNull" },
+        "code": { "$ref": "#/$defs/codeOrNull" }
+      }
+    },
+    "exportResult": {
+      "description": "One exported page. status is whether the page file was written or skipped; the attachments array holds every attachment considered, including unreferenced ones (dest_path null, status skipped_unreferenced). warnings lists references the page makes to attachments that are not attached.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ok", "page_id", "title", "space", "parent", "dry_run", "status",
+        "dest_path", "attachments", "warnings", "error", "code"
+      ],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "page_id": { "type": "string" },
+        "title": { "type": "string" },
+        "space": { "type": "string" },
+        "parent": { "$ref": "#/$defs/stringOrNull" },
+        "dry_run": { "type": "boolean" },
+        "status": { "enum": ["wrote", "skipped", ""] },
+        "dest_path": { "$ref": "#/$defs/stringOrNull" },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "filename", "dest_path", "error", "code"],
+            "properties": {
+              "status": { "enum": ["downloaded", "skipped", "skipped_unreferenced", "failed"] },
+              "filename": { "type": "string" },
+              "dest_path": { "$ref": "#/$defs/stringOrNull" },
+              "error": { "$ref": "#/$defs/stringOrNull" },
+              "code": { "$ref": "#/$defs/codeOrNull" }
+            }
+          }
+        },
+        "warnings": { "type": "array", "items": { "type": "string" } },
         "error": { "$ref": "#/$defs/stringOrNull" },
         "code": { "$ref": "#/$defs/codeOrNull" }
       }
