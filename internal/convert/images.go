@@ -39,39 +39,44 @@ func (r *storageRenderer) renderImage(
 	}
 	alt := nodeText(node, source)
 	attrs := r.parseImageTitle(string(n.Title), src)
+	// src is a URL; fsPath is the file it names. Everything touching the
+	// filesystem -- and the attachment name derived from it -- uses fsPath. The
+	// broken messages stay on src so they echo what the author wrote. Decoding
+	// before withinRoot is what keeps an encoded "..%2F" from slipping past it.
+	fsPath := decodeImageSrc(src)
 
 	switch {
 	case isRemoteURL(src):
 		_, _ = w.WriteString(acImage(alt, attrs, "", src))
 
-	case !supportedImageExts[strings.ToLower(filepath.Ext(src))]:
+	case !supportedImageExts[strings.ToLower(filepath.Ext(fsPath))]:
 		msg := fmt.Sprintf("IMAGE BROKEN: %s (unsupported type)", src)
 		r.broken = append(r.broken, msg)
 		_, _ = w.WriteString(html.EscapeString(msg))
 
-	case !r.withinRoot(filepath.Join(r.baseDir, src)):
+	case !r.withinRoot(filepath.Join(r.baseDir, fsPath)):
 		msg := fmt.Sprintf("IMAGE BROKEN: %s (outside the documentation root)", src)
 		r.broken = append(r.broken, msg)
 		_, _ = w.WriteString(html.EscapeString(msg))
 
-	case !isFile(filepath.Join(r.baseDir, src)):
+	case !isFile(filepath.Join(r.baseDir, fsPath)):
 		msg := fmt.Sprintf("IMAGE BROKEN: %s (not found)", src)
 		r.broken = append(r.broken, msg)
 		_, _ = w.WriteString(html.EscapeString(msg))
 
 	default:
-		filename := AttachmentFilename(src)
+		filename := AttachmentFilename(fsPath)
 		if !r.seen[filename] {
 			if r.seen == nil {
 				r.seen = map[string]bool{}
 			}
 			r.seen[filename] = true
-			abs, err := filepath.Abs(filepath.Join(r.baseDir, src))
+			abs, err := filepath.Abs(filepath.Join(r.baseDir, fsPath))
 			if err != nil {
-				abs = filepath.Join(r.baseDir, src)
+				abs = filepath.Join(r.baseDir, fsPath)
 			}
 			r.attachments = append(r.attachments, Attachment{
-				Filename: filename, Path: abs, Source: normalizeSrc(src),
+				Filename: filename, Path: abs, Source: normalizeSrc(fsPath),
 			})
 		}
 		_, _ = w.WriteString(acImage(alt, attrs, filename, ""))
