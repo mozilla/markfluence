@@ -59,17 +59,23 @@ link scrolls — open the page in a browser.
 ## Verifying against a real instance
 
 Point a `.env` at a site you can write to, publish a scratch page, and read it
-back. Reference the page id in whatever you write down, the way
-`internal/convert/tables.go` cites page `2913502220` for the cell-background
-swatches, so the next person can re-check rather than re-derive.
+back — `body-format=atlas_doc_format` for anything about rendering, a browser for
+anything visual.
 
-Probe pages used for the findings here:
+**Probes are ephemeral. Delete them when you are done.** The finding is the
+artifact worth keeping; the `.md` file and the page it published are scratch.
+A probe `.md` also hard-codes a `page_id` in whoever ran it, so keeping it around
+means the next person's `update` writes to someone else's page.
+
+That puts one obligation on whatever you write here: **the entry has to stand on
+its own.** Say what was sent and what came back, concretely enough that someone
+can reconstruct the experiment without the original page. Page ids below are
+historical provenance, not live links — several have already been deleted.
 
 | page | what it established |
 |---|---|
 | `2952855567` | attachment names with spaces and non-ASCII; the comment charset bug; heading anchors |
-| `2952004326` | table layouts, cell alignment, storage rewriting |
-| `2913502220` | the cell-background swatch palette |
-
-These are scratch pages in one person's personal space. They are not fixtures and
-nothing depends on them existing.
+| `2952004326` | table layouts and the colgroup width bands; cell alignment; storage rewriting |
+| `2913796912` | `data-table-width`, px vs percentage colgroups, `__autoSize` |
+| `2942664752` | cell backgrounds reaching ADF, including non-palette hex |
+| `2913502220` | the cell-background swatch palette, read off an editor-authored page |
