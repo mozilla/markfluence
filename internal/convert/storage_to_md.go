@@ -407,7 +407,7 @@ func (r *mdRenderer) renderImage(n *snode) string {
 			// sourceFor yields a filesystem path; a destination is a URL, so a
 			// space or a "%" in the path has to be encoded or the markdown does
 			// not parse as an image at all.
-			src = encodeImageSrc(r.sourceFor(k.attrs["ri:filename"]))
+			src = encodeDestination(r.sourceFor(k.attrs["ri:filename"]))
 		case "ri:url":
 			src = k.attrs["ri:value"]
 		}

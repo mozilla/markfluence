@@ -43,7 +43,7 @@ func (r *storageRenderer) renderImage(
 	// filesystem -- and the attachment name derived from it -- uses fsPath. The
 	// broken messages stay on src so they echo what the author wrote. Decoding
 	// before withinRoot is what keeps an encoded "..%2F" from slipping past it.
-	fsPath := decodeImageSrc(src)
+	fsPath := decodeDestination(src)
 
 	switch {
 	case isRemoteURL(src):
