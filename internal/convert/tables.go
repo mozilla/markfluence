@@ -15,12 +15,13 @@ import (
 // tableLayout is the Confluence table layout every table is published with.
 // Without a layout attribute Confluence auto-sizes the table but leaves it
 // unanchored; "align-start" auto-sizes it to its content and left-aligns it on the
-// page, which is what a markdown table should look like. The other values Confluence
-// accepts are "center", "wide", and "full-width".
+// page, which is what a markdown table should look like. The other values
+// Confluence accepts are "align-end", "center", "wide", and "full-width".
 //
-// Note that a colwidth <colgroup> on a table with no layout attribute makes
-// Confluence default the layout to "full-width", so this attribute must stay if
-// column widths are ever emitted.
+// Keep this attribute if column widths are ever emitted: a <colgroup> on a table
+// with no layout makes Confluence pick one from the total column width, so the
+// table silently acquires a layout nobody asked for. Which one it picks, and the
+// rest of the table vocabulary, is in docs/confluence/storage-format.md.
 const tableLayout = "align-start"
 
 // renderTable emits the <table> tag with the Confluence layout attribute. Only the
