@@ -1,0 +1,75 @@
+# What we know about Confluence
+
+Atlassian does not document the storage format, and documents parts of the REST
+API loosely enough that markfluence's behavior rests on things we established by
+experiment. This directory is where those findings live so they survive the
+person who ran the experiment.
+
+- [api.md](api.md) — auth, the gateway, v1/v2, pagination, downloads, retries
+- [attachments.md](attachments.md) — names, comments, what round-trips
+- [storage-format.md](storage-format.md) — tables, macros, what Confluence rewrites
+- [links-and-anchors.md](links-and-anchors.md) — heading anchors and page links
+- [page-width.md](page-width.md) — the content properties behind `page_width`
+
+## How to read an entry
+
+Every claim carries its provenance, because "someone wrote this down once" and
+"I watched this happen" deserve different amounts of trust:
+
+- **Verified `DATE`** — observed directly, with the observation described. Re-runnable.
+- **Transcribed** — carried over from a code comment or commit message. Believed
+  accurate and probably verified when written, but not re-checked.
+- **Unverified** — asserted somewhere, not confirmed, with the reason it wasn't.
+
+When you verify something, say how. A claim you cannot reproduce from the note is
+a claim the next person has to establish from scratch.
+
+## Two traps that produce confident, wrong answers
+
+Both of these have cost real time. Read them before designing an experiment.
+
+### `body-format=view` is not what the browser renders
+
+The REST API's `view` body format is a legacy renderer. Its output can differ
+from the live page in ways that look authoritative and are not.
+
+Two cases we hit, both on 2026-08-07:
+
+- **Heading anchors.** `view` reports ids like
+  `pagetitlewithoutpunctuation-HeadingTextWithoutSpaces`. The live page uses a
+  different scheme entirely (see [links-and-anchors.md](links-and-anchors.md)).
+  Reading `view` produces a tidy proof that `confluenceSlug` is broken for every
+  heading containing a space. It isn't.
+- **Table cell alignment.** `view` happily echoes `<td align="center">` and
+  `style="text-align: …"`, suggesting Confluence honors both. ADF shows it
+  honors only one of them.
+
+### Storage is not the renderer
+
+Confluence stores much more than it renders. `body.storage` will faithfully
+return an attribute the renderer ignores completely — including values that are
+outright invalid.
+
+So **`body.storage` can only prove what was stored, never what takes effect.**
+To find out what Confluence actually does with markup, read
+`body-format=atlas_doc_format` (ADF), which is the model Cloud renders from.
+For anything visual that ADF cannot settle — how wide a table draws, whether a
+link scrolls — open the page in a browser.
+
+## Verifying against a real instance
+
+Point a `.env` at a site you can write to, publish a scratch page, and read it
+back. Reference the page id in whatever you write down, the way
+`internal/convert/tables.go` cites page `2913502220` for the cell-background
+swatches, so the next person can re-check rather than re-derive.
+
+Probe pages used for the findings here:
+
+| page | what it established |
+|---|---|
+| `2952855567` | attachment names with spaces and non-ASCII; the comment charset bug; heading anchors |
+| `2952004326` | table layouts, cell alignment, storage rewriting |
+| `2913502220` | the cell-background swatch palette |
+
+These are scratch pages in one person's personal space. They are not fixtures and
+nothing depends on them existing.
