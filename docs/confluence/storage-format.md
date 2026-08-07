@@ -56,16 +56,55 @@ Two things worth noting. `align-end` is accepted and is missing from the list in
 `internal/convert/tables.go`. And an invalid value is stored happily but
 discarded by the renderer — a clean demonstration that storage validates nothing.
 
-### A `<colgroup>` induces a layout
+### A `<colgroup>` induces a layout, chosen by total width
 
-**Verified 2026-08-07.** A table with a `<colgroup>` and *no* `data-layout`
-comes back as ADF `layout: default` with `colwidth: [200.0]` on the cell, where
-the same table without a colgroup has no layout at all.
+A table with a `<colgroup>` and no `data-layout` does not stay layout-less.
+Confluence assigns one, picking the **narrowest layout the table fits in**.
 
-The code comment in `tables.go` says this defaults the layout to `full-width`.
-The value is actually `default`. The operational advice is unchanged and still
-correct: **if column widths are ever emitted, the explicit `data-layout` must
-stay**, or the table silently picks up a layout nobody asked for.
+**Verified 2026-08-07.** Single-column tables, colgroup width swept, read as ADF:
+
+| total colgroup width | induced ADF `layout` |
+|---|---|
+| ≤ 680px | `default` |
+| 685–960px | `wide` |
+| ≥ 980px | `full-width` |
+| *(no colgroup at all)* | none — no layout attribute |
+
+680 and 960 are Confluence's own content-width bands, so this is not an
+arbitrary threshold: the table gets the first layout wide enough to hold it.
+Column count is irrelevant — only the sum matters. Three columns of 200/910/200
+and one column of 1110 both land on `full-width`.
+
+This is worth stating carefully because two earlier write-ups each generalized
+from one band and got it wrong. `internal/convert/tables.go` says a colgroup
+defaults the layout to `full-width` — true only above ~980px. An earlier draft
+of this document said `default` — true only below ~680px, which is where the
+one-column 200px test case it was based on happened to fall.
+
+The operational advice is unchanged and is what actually matters: **if column
+widths are ever emitted, keep the explicit `data-layout`**, or the table
+silently acquires a layout determined by arithmetic nobody wrote down.
+
+## Column widths
+
+`data-table-width` on the `<table>` becomes ADF `width`. Column widths in the
+`<colgroup>` become per-cell `colwidth`.
+
+**Verified 2026-08-07**, recovered from probe page `2913796912`:
+
+| written | ADF |
+|---|---|
+| `data-table-width="1110"` | `width: 1110.0` |
+| px colgroup, with or without `data-table-width` | `colwidth` preserved as given |
+| **percentage** colgroup **with** `data-table-width="1110"` | resolved to px against that width — 25%/75% became `[277.5]`/`[832.5]` |
+| **percentage** colgroup **without** `data-table-width` | **`colwidth` dropped entirely** |
+
+So a percentage colgroup is only meaningful alongside `data-table-width`;
+without it the widths are silently discarded. px is unconditional.
+
+A table with no attributes at all comes back as ADF `__autoSize: true` rather
+than any layout — that is the "auto-sizes but unanchored" state
+`data-layout="align-start"` exists to replace.
 
 ## Cell alignment: only one form works
 
@@ -97,9 +136,14 @@ is the one form that does nothing.
 
 ## Cell background colors
 
-`data-highlight-colour` on a `<td>`/`<th>` sets a cell background, and it accepts
-**any** hex — `#ff00ff` persists fine (**verified 2026-08-07**), so it is not
-limited to a palette.
+`data-highlight-colour` on a `<td>`/`<th>` sets a cell background. It reaches ADF
+as a cell `background` attribute, and it accepts **any** hex, not just palette
+colors.
+
+**Verified 2026-08-07.** `#ff00ff` persists and reaches ADF; recovered from probe
+page `2942664752`, so does `#c0ffee`, alongside the named swatches resolving to
+their hexes (`#ffffff`, `#f4f5f7`, `#b3bac5`, …). Backgrounds work on `<th>` as
+well as `<td>`.
 
 The 21 named swatches in `internal/convert/tables.go` are markfluence's
 vocabulary, not the server's: they are what the Confluence editor's cell
