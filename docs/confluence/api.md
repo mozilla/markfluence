@@ -98,9 +98,15 @@ Confluence returns 429 with a `Retry-After` header rather than a bare 429.
 
 ## Scopes
 
-A scoped token needs: `read:confluence-content.all`, `write:confluence-content`,
-`read:confluence-space.summary`, `read:confluence-props`, `write:confluence-props`,
-`write:confluence-file`, `read:confluence-user`.
+A scoped token needs:
 
-**Transcribed.** No delete scope appears because markfluence never deletes
-anything.
+* `read:confluence-content.all`
+* `write:confluence-content`
+* `read:confluence-space.summary`
+* `read:confluence-props`
+* `write:confluence-props`
+* `write:confluence-file`
+* `read:confluence-user`
+
+**Transcribed.** No delete scope appears because (currently) markfluence never
+deletes anything.
