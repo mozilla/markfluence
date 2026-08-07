@@ -162,14 +162,19 @@ func (r *storageRenderer) rewriteHref(href string) (string, bool) {
 	rewritten := false
 
 	if strings.HasPrefix(href, "#") {
-		if nf := r.anchorMap[r.currentBasename][href[1:]]; nf != "" {
+		if nf := r.anchorMap[r.currentBasename][decodeDestination(href[1:])]; nf != "" {
 			// Same-page anchors become fake cross-file links to the current
-			// file so the doc-link step can fully qualify them.
-			href = r.currentBasename + "#" + escapeFragment(nf)
+			// file so the doc-link step can fully qualify them. The filename is
+			// encoded going in because what is being built here is a
+			// destination, and this one may still be emitted as an href if the
+			// doc-link step cannot resolve it (a file with no page_id yet).
+			href = encodeDestination(r.currentBasename) + "#" + escapeFragment(nf)
 			rewritten = true
 		}
 	} else if path, frag, ok := splitMarkdownAnchor(href); ok {
-		if nf := r.anchorMap[filepath.Base(path)][frag]; nf != "" {
+		if nf := r.anchorMap[docKey(path)][decodeDestination(frag)]; nf != "" {
+			// path keeps the spelling it was written with: it is a destination,
+			// and the doc-link step decodes it again for its own lookup.
 			href = path + "#" + escapeFragment(nf)
 			rewritten = true
 		}
@@ -195,7 +200,7 @@ func (r *storageRenderer) rewriteDocLink(href string) (string, bool) {
 	if strings.Contains(path, "://") || strings.HasPrefix(path, "//") {
 		return "", false
 	}
-	entry, ok := r.pageMap[filepath.Base(path)]
+	entry, ok := r.pageMap[docKey(path)]
 	if !ok {
 		return "", false
 	}
@@ -212,6 +217,15 @@ func (r *storageRenderer) rewriteDocLink(href string) (string, bool) {
 		newHref = fmt.Sprintf("%s/wiki/pages/viewpage.action?pageId=%s", r.baseURL, entry.pageID)
 	}
 	return newHref + fragment, true
+}
+
+// docKey turns a link destination into the key the page and anchor maps are
+// built with: the bare filename as it appears on disk. Both maps are keyed by
+// os.ReadDir's e.Name(), so the destination has to be decoded first -- a link
+// to "my doc.md" is spelled "my%20doc.md", and comparing that to the filename
+// silently misses, publishing a relative href that is a dead link on Confluence.
+func docKey(dest string) string {
+	return filepath.Base(decodeDestination(dest))
 }
 
 // splitMarkdownAnchor splits "path.md#fragment" into its path and fragment,

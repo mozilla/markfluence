@@ -731,6 +731,16 @@ Examples:
 **Links to sibling `.md` files** are rewritten to the target page's Confluence
 URL; **heading anchors** are rewritten to Confluence's anchor scheme.
 
+As with image paths, a link destination is a URL: a sibling whose filename has a
+space is written `[see](my%20doc.md)` (or `[see](<my doc.md>)`), and a bare
+`[see](my doc.md)` is not a link at all. The same applies to the fragment, so a
+non-ASCII heading anchor may arrive as `#caf%C3%A9-section`. Both are decoded
+before markfluence matches them against files and headings on disk, so either
+spelling resolves. A link it cannot resolve — a target with no `page_id`, or a
+file that isn't there — is left exactly as written and published as-is, which on
+Confluence is a dead relative link. There is no warning for this, so check the
+targets when a link matters.
+
 **Comment directives:**
 - `<!-- confluence-toc -->` — replaced with Confluence table-of-contents macro.
 - `<!-- markfluence-version -->` — replaced with the build stamp,
