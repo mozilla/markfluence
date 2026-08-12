@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,6 +29,7 @@ type scripted struct {
 	responses []resp
 	calls     []string
 	bodies    []string
+	ctypes    []string
 	idx       int
 }
 
@@ -36,6 +40,15 @@ func (s *scripted) lastBody() string {
 		return ""
 	}
 	return s.bodies[len(s.bodies)-1]
+}
+
+// lastContentType returns the Content-Type of the most recent request. An upload
+// needs it to reparse the body: the multipart boundary lives there.
+func (s *scripted) lastContentType() string {
+	if len(s.ctypes) == 0 {
+		return ""
+	}
+	return s.ctypes[len(s.ctypes)-1]
 }
 
 type resp struct {
@@ -50,6 +63,7 @@ func newServer(t *testing.T, responses ...resp) (*ConfluenceClient, *scripted) {
 		s.calls = append(s.calls, r.Method)
 		body, _ := io.ReadAll(r.Body)
 		s.bodies = append(s.bodies, string(body))
+		s.ctypes = append(s.ctypes, r.Header.Get("Content-Type"))
 		if s.idx >= len(s.responses) {
 			t.Errorf("unexpected extra request: %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(500)
@@ -804,6 +818,78 @@ func TestSyncAttachmentsStampsSource(t *testing.T) {
 	}
 	if !strings.Contains(s.lastBody(), "path=assets/x.png") {
 		t.Errorf("upload body did not record the source path:\n%s", s.lastBody())
+	}
+}
+
+// uploadParts reparses the multipart body of the last request into one entry per
+// form field: the part's headers alongside its raw bytes.
+func uploadParts(t *testing.T, s *scripted) map[string]struct {
+	header textproto.MIMEHeader
+	value  string
+} {
+	t.Helper()
+	_, params, err := mime.ParseMediaType(s.lastContentType())
+	if err != nil {
+		t.Fatalf("upload Content-Type %q: %v", s.lastContentType(), err)
+	}
+	out := map[string]struct {
+		header textproto.MIMEHeader
+		value  string
+	}{}
+	mr := multipart.NewReader(strings.NewReader(s.lastBody()), params["boundary"])
+	for {
+		p, err := mr.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("reading upload parts: %v", err)
+		}
+		b, err := io.ReadAll(p)
+		if err != nil {
+			t.Fatalf("reading part %q: %v", p.FormName(), err)
+		}
+		out[p.FormName()] = struct {
+			header textproto.MIMEHeader
+			value  string
+		}{p.Header, string(b)}
+	}
+	return out
+}
+
+// TestSyncAttachmentsLabelsTextPartsUTF8 covers the charset label on the upload
+// form. A multipart text part with no Content-Type is decoded as ISO-8859-1 by
+// Confluence's servlet stack, which double-encodes every non-ASCII byte of the
+// recorded path -- so `read` recovers a filename that does not exist. The bytes
+// are UTF-8 either way; what has to survive is the label saying so.
+func TestSyncAttachmentsLabelsTextPartsUTF8(t *testing.T) {
+	path, sum := writeTempImage(t)
+	source := "assets/probe-café.png"
+	c, s := newServer(t, resp{200, `{"results":[]}`}, resp{200, `{}`})
+	_, err := c.SyncAttachments("1", []LocalAttachment{
+		{Path: path, Filename: "assets%2Fprobe-café.png", Source: source},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	parts := uploadParts(t, s)
+	if got := parts["_charset_"].value; got != "UTF-8" {
+		t.Errorf("_charset_ field = %q, want UTF-8", got)
+	}
+	for _, name := range []string{"_charset_", "comment", "minorEdit"} {
+		got := parts[name].header.Get("Content-Type")
+		if _, params, err := mime.ParseMediaType(got); err != nil || params["charset"] != "UTF-8" {
+			t.Errorf("%s part Content-Type = %q, want a UTF-8 charset", name, got)
+		}
+	}
+	if want := attachmentComment(sum, source); parts["comment"].value != want {
+		t.Errorf("comment part = %q, want %q", parts["comment"].value, want)
+	}
+	// The name rides in Content-Disposition, which was never affected; check it
+	// stays literal UTF-8 rather than being escaped into \u form.
+	if got := parts["file"].header.Get("Content-Disposition"); !strings.Contains(got, "probe-café.png") {
+		t.Errorf("file part Content-Disposition = %q, want a literal UTF-8 filename", got)
 	}
 }
 
