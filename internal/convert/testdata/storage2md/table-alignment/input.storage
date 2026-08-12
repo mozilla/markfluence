@@ -1,0 +1,24 @@
+<table data-layout="align-start">
+<thead>
+<tr>
+<th>Plain</th>
+<th><p style="text-align: center;">Paragraph form</p></th>
+<th style="text-align: right;">Cell form</th>
+<th><p style="text-align: end;">ADF names</p></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>a</td>
+<td><p style="text-align: center;">b</p></td>
+<td style="text-align: right;">c</td>
+<td><p style="text-align: start;">d</p></td>
+</tr>
+<tr>
+<td>e</td>
+<td><p style="text-align: center;">f</p></td>
+<td>g</td>
+<td><p style="text-align: end;">h</p></td>
+</tr>
+</tbody>
+</table>

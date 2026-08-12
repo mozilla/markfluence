@@ -120,6 +120,41 @@ func TestRoundTripStableCallouts(t *testing.T) {
 	}
 }
 
+// TestRoundTripTableAlignment checks which column alignments survive
+// md -> storage -> md. Center and right make the trip. Left does not: Confluence
+// has no explicit left, so a ":---" column publishes with no alignment markup and
+// is indistinguishable from an unaligned one on the way back.
+func TestRoundTripTableAlignment(t *testing.T) {
+	src := strings.Join([]string{
+		"| Left | Center | Right | Plain |",
+		"| :--- | :---: | ---: | --- |",
+		"| a | b | c | d |",
+	}, "\n") + "\n"
+	want := strings.Join([]string{
+		"| Left | Center | Right | Plain |",
+		"| --- | :---: | ---: | --- |",
+		"| a | b | c | d |",
+	}, "\n") + "\n"
+
+	md := frontmatter.Parse("main.md", src)
+	page, err := convert.MdToConfluence(md, "https://wiki.example.net", "ENG", "vtest")
+	if err != nil {
+		t.Fatalf("MdToConfluence: %v", err)
+	}
+	// The align attribute is the one form Confluence discards, so it must not be
+	// what carries the alignment.
+	if strings.Contains(page.HTML, "align=\"") {
+		t.Errorf("published storage still uses the align attribute:\n%s", page.HTML)
+	}
+	got, err := convert.StorageToMarkdown(page.HTML, nil)
+	if err != nil {
+		t.Fatalf("StorageToMarkdown: %v", err)
+	}
+	if got != want {
+		t.Errorf("round-trip mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
 // TestStorageToMarkdownStripsGeneratedIDs checks that the server-generated
 // ac:macro-id and ac:local-id attributes are dropped from passthrough output.
 func TestStorageToMarkdownStripsGeneratedIDs(t *testing.T) {
