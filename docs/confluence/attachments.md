@@ -27,7 +27,7 @@ spaced filename was reachable only through the rarely-used `![](<a b.png>)`
 spelling; now the ordinary `%20` spelling reaches it, so these names are common
 rather than theoretical.
 
-## The comment field is charset-broken
+## An unlabeled multipart text part is decoded as Latin-1
 
 markfluence records the source path and a checksum in the attachment's comment:
 
@@ -35,26 +35,30 @@ markfluence records the source path and a checksum in the attachment's comment:
 markfluence: sha256=<hex> path=<source path>
 ```
 
-**For a non-ASCII path this comes back corrupted. Verified 2026-08-07** —
-same upload, one field intact and one not:
+A multipart text part sent without a `Content-Type` carries no charset, and
+Confluence's servlet stack defaults such a part to ISO-8859-1. UTF-8 bytes sent
+that way are read as Latin-1 characters and re-encoded, so a non-ASCII path
+comes back double-encoded.
+
+**Verified 2026-08-07** on one upload whose comment went out unlabeled — the
+name intact, the comment not:
 
 ```
 name    bytes: assets%2Fprobe-caf\xc3\xa9.png            <- correct UTF-8 "é"
 comment bytes: path=assets/probe-caf\xc3\x83\xc2\xa9.png <- UTF-8 of "Ã©"
 ```
 
-`\xc3\x83\xc2\xa9` is the UTF-8 encoding of `Ã©`: our UTF-8 bytes were read as
-two Latin-1 characters and re-encoded.
+`\xc3\x83\xc2\xa9` is the UTF-8 encoding of `Ã©`. The name is unaffected because
+it does not travel in a text part — it rides in the file part's
+`Content-Disposition`, which the same stack reads as UTF-8. ASCII values are
+unaffected either way, including a spaced name like `probe image.png`.
 
-The cause is on our side. `uploadAttachment` sends the comment with
-`multipart.Writer.WriteField`, which emits the part with no `Content-Type` and
-therefore no charset; Confluence's servlet stack defaults an unlabeled text part
-to ISO-8859-1. The filename survives because it does not go through
-`WriteField` — it rides in the file part's `Content-Disposition`.
-
-Consequence: `read` returns a path that does not exist, `export` writes the
-wrong filename, and republishing the export uploads a second attachment and
-orphans the first. Tracked as **issue #64**.
+So `uploadAttachment` writes every text part through `writeTextField`, which
+sets `Content-Type: text/plain; charset=UTF-8` explicitly, and leads the form
+with a `_charset_` field — the other conventional remedy for a Java stack, kept
+as a belt-and-suspenders since only the per-part label is confirmed to work.
+**Anything added to that form must use `writeTextField`, never
+`multipart.Writer.WriteField`.**
 
 ## Where the metadata lives
 

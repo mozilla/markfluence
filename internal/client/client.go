@@ -756,6 +756,25 @@ func (c *ConfluenceClient) syncAttachments(pageID string, attachments []LocalAtt
 	return actions, nil
 }
 
+// writeTextField writes a multipart form field with an explicit UTF-8 charset.
+// multipart.Writer.WriteField emits the part with no Content-Type, and
+// Confluence's servlet stack decodes an unlabeled text part as ISO-8859-1 --
+// which double-encodes every non-ASCII byte of the path recorded in an
+// attachment's comment. The file part never had the problem: its name rides in
+// Content-Disposition, which the server reads as UTF-8. See
+// docs/confluence/attachments.md.
+func writeTextField(mw *multipart.Writer, name, value string) error {
+	h := textproto.MIMEHeader{}
+	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name=%q`, name))
+	h.Set("Content-Type", "text/plain; charset=UTF-8")
+	part, err := mw.CreatePart(h)
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(part, value)
+	return err
+}
+
 // uploadAttachment posts a multipart attachment upload to rawURL.
 func (c *ConfluenceClient) uploadAttachment(rawURL, filename, comment, filePath, contentType string) error {
 	f, err := os.Open(filePath)
@@ -766,10 +785,15 @@ func (c *ConfluenceClient) uploadAttachment(rawURL, filename, comment, filePath,
 
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
-	if err := mw.WriteField("comment", comment); err != nil {
+	// _charset_ first: the servlet reads it as it parses, and it is the
+	// conventional way to tell a Java stack how to decode unlabeled parts.
+	if err := writeTextField(mw, "_charset_", "UTF-8"); err != nil {
 		return err
 	}
-	if err := mw.WriteField("minorEdit", "true"); err != nil {
+	if err := writeTextField(mw, "comment", comment); err != nil {
+		return err
+	}
+	if err := writeTextField(mw, "minorEdit", "true"); err != nil {
 		return err
 	}
 	h := textproto.MIMEHeader{}
