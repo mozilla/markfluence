@@ -22,7 +22,7 @@ Basic auth is unchanged; only the base URL moves.
 
 ```console
 $ curl -s https://YOUR-SITE.atlassian.net/_edge/tenant_info
-{"cloudId":"d8febd08-…"}
+{"cloudId":"<a uuid>"}
 ```
 
 No credentials. That is why it can be a `--cloud-id` flag while the token cannot.
@@ -43,7 +43,7 @@ must use `SiteURL()`, or readers get gateway URLs they cannot open.
 
 A v1 collection cannot be paged with `_links.next` the way v2 paths can.
 
-**Verified 2026-08-07** against page `2952855567` (3 attachments):
+**Verified 2026-08-07** against a page with 3 attachments:
 
 | request | `_links` keys |
 |---|---|

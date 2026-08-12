@@ -69,13 +69,9 @@ means the next person's `update` writes to someone else's page.
 
 That puts one obligation on whatever you write here: **the entry has to stand on
 its own.** Say what was sent and what came back, concretely enough that someone
-can reconstruct the experiment without the original page. Page ids below are
-historical provenance, not live links — several have already been deleted.
+can reconstruct the experiment from the note alone.
 
-| page | what it established |
-|---|---|
-| `2952855567` | attachment names with spaces and non-ASCII; the comment charset bug; heading anchors |
-| `2952004326` | table layouts and the colgroup width bands; cell alignment; storage rewriting |
-| `2913796912` | `data-table-width`, px vs percentage colgroups, `__autoSize` |
-| `2942664752` | cell backgrounds reaching ADF, including non-palette hex |
-| `2913502220` | the cell-background swatch palette, read off an editor-authored page |
+Do not cite page ids. They mean nothing on anyone else's instance, and the page
+they point at is scratch that should already have been deleted. Describe the
+setup instead — "a page with three attachments", "a single-column table with a
+200px colgroup" — which is what someone re-running the experiment actually needs.

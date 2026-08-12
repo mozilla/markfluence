@@ -6,11 +6,11 @@ markfluence rewrites a heading anchor with `confluenceSlug`: preserve case and
 punctuation, collapse runs of whitespace to single hyphens. For a heading
 `Café Section` that gives `#Café-Section`.
 
-**Verified 2026-08-07** on page `2952855567`, in a browser:
+**Verified 2026-08-07** in a browser, on a published page with a heading
+`Café Section`:
 
-- Confluence's own "copy link" for that heading yields
-  `…/markfluence+link+and+image+encoding+probe#Caf%C3%A9-Section` — which is
-  `Café-Section` percent-encoded.
+- Confluence's own "copy link" for that heading ends `#Caf%C3%A9-Section` —
+  which is `Café-Section` percent-encoded.
 - Links written by markfluence as `#Café-Section` (unencoded) jump to the
   section. The browser encodes on navigation, so both forms resolve.
 

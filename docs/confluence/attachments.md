@@ -16,7 +16,7 @@ collide and `read` can recover the original path exactly. See
 | a literal space | stored and returned byte-identically; renders | **Verified 2026-08-07** |
 | non-ASCII (`é`) | stored and returned byte-identically, NFC preserved | **Verified 2026-08-07** |
 
-**Verified 2026-08-07** on page `2952855567`, which carries attachments named
+**Verified 2026-08-07** on a page carrying attachments named
 `assets%2Fprobe image.png` and `assets%2Fprobe-café.png`. Both render. The
 rendered `<img src>` shows the stored name re-escaped once more —
 `assets%252Fprobe%20image.png` — confirming Confluence matches `ri:filename`
@@ -70,7 +70,7 @@ orphans the first. Tracked as **issue #64**.
   "comment": "markfluence: sha256=… path=…",
   "mediaTypeDescription": "PNG Image",
   "fileId": "…",
-  "collectionName": "contentId-2952855567"
+  "collectionName": "contentId-<page id>"
 }
 ```
 

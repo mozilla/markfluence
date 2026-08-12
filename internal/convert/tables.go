@@ -52,9 +52,9 @@ const cellBGAttr = "mfCellBG"
 // cellBGSwatches maps a color name to its hex. These are the 21 swatches the
 // Confluence editor's cell background picker offers, so a color set from markdown
 // is indistinguishable from one set by hand in the editor (and shows up as the
-// selected swatch there). Read off an editor-authored page (2913502220) on
-// 2026-08-04; the picker is a grid of seven hue columns by three shades, where the
-// grey column runs white / light grey / grey.
+// selected swatch there). Read off an editor-authored page on 2026-08-04; the
+// picker is a grid of seven hue columns by three shades, where the grey column
+// runs white / light grey / grey.
 //
 // Confluence accepts any hex in data-highlight-colour, so this map is markfluence's
 // vocabulary rather than a limit imposed by the server; #rrggbb also works
