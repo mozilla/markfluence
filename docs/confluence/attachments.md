@@ -60,6 +60,20 @@ as a belt-and-suspenders since only the per-part label is confirmed to work.
 **Anything added to that form must use `writeTextField`, never
 `multipart.Writer.WriteField`.**
 
+### A wrong recorded path repairs itself
+
+A skip does not rewrite the comment, so an attachment whose stored `path=` is
+wrong would keep it until its bytes happened to change. `planAttachments`
+therefore treats a *recorded path that disagrees with the local source* as an
+update even when the checksum matches. The name is the encoding of the path, so
+the two are always in lockstep — under a matching name, a differing path means
+the stored comment does not say what markfluence wrote.
+
+A legacy comment records no path at all. That is not a disagreement and stays a
+skip; re-uploading every one of those is the churn the checksum comparison
+exists to avoid. Those attachments gain a path the next time their bytes change,
+or under `attachment-upload --force`.
+
 ## Where the metadata lives
 
 `fileSize` and `mediaType` are under `extensions`, not at the top level.

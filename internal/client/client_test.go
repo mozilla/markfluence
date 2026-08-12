@@ -893,6 +893,53 @@ func TestSyncAttachmentsLabelsTextPartsUTF8(t *testing.T) {
 	}
 }
 
+// TestSyncAttachmentsRestampsMangledSource covers the repair path: a recorded
+// path that disagrees with the local source is an update even when the checksum
+// says the bytes are unchanged, since a skip would leave the wrong path stored
+// until the file happened to change.
+func TestSyncAttachmentsRestampsMangledSource(t *testing.T) {
+	path, sum := writeTempImage(t)
+	// A comment stored double-encoded: "é" recorded as "Ã©".
+	list := `{"results":[{"id":"a1","title":"assets%2Fprobe-café.png","metadata":{"comment":"` +
+		attachmentComment(sum, "assets/probe-cafÃ©.png") + `"}}]}`
+	c, s := newServer(t, resp{200, list}, resp{200, `{}`})
+	actions, err := c.SyncAttachments("1", []LocalAttachment{
+		{Path: path, Filename: "assets%2Fprobe-café.png", Source: "assets/probe-café.png"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(actions) != 1 || actions[0].Action != "updated" {
+		t.Fatalf("actions = %v, want [updated]", actions)
+	}
+	if got := uploadParts(t, s)["comment"].value; got != attachmentComment(sum, "assets/probe-café.png") {
+		t.Errorf("restamped comment = %q", got)
+	}
+}
+
+// TestSyncAttachmentsSkipsLegacyCommentWithNoSource pins the limit of that
+// restamping: a legacy comment records no path at all, which is not a
+// disagreement. Treating it as one would re-upload every attachment stamped by
+// an older markfluence -- the churn the checksum comparison exists to avoid.
+func TestSyncAttachmentsSkipsLegacyCommentWithNoSource(t *testing.T) {
+	path, sum := writeTempImage(t)
+	list := `{"results":[{"id":"a1","title":"x.png","metadata":{"comment":"` +
+		legacyChecksumPrefix + sum + `"}}]}`
+	c, s := newServer(t, resp{200, list})
+	actions, err := c.SyncAttachments("1", []LocalAttachment{
+		{Path: path, Filename: "x.png", Source: "assets/x.png"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(actions) != 1 || actions[0].Action != "skipped" {
+		t.Fatalf("actions = %v, want [skipped]", actions)
+	}
+	if !eqStrings(s.calls, []string{"GET"}) {
+		t.Errorf("calls = %v, want [GET] (no upload)", s.calls)
+	}
+}
+
 // TestSyncAttachmentsSkipsWhenCurrentChecksumMatches is the new-format twin of the
 // legacy skip test.
 func TestSyncAttachmentsSkipsWhenCurrentChecksumMatches(t *testing.T) {

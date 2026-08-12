@@ -676,16 +676,26 @@ func (c *ConfluenceClient) planAttachments(pageID string, attachments []LocalAtt
 			// rather than having to re-derive the id.
 			p.existingID = cur.ID
 		}
+		meta := cur.Meta()
 		switch {
 		case !ok:
 			p.action = "created"
-		case cur.Meta().SHA256 == sum:
+		case meta.SHA256 != sum:
+			p.action = "updated"
+		case meta.Source != "" && meta.Source != att.Source:
+			// The bytes are unchanged but the recorded path is wrong, so re-upload
+			// to restamp the comment -- otherwise a path mangled in transit would
+			// survive every later publish. The name is the encoding of the path, so
+			// the two move together: a disagreement under the same name means the
+			// stored comment does not say what we wrote. An empty Source is not a
+			// disagreement -- that is a legacy comment, and re-uploading every one
+			// of those is exactly the churn the checksum comparison avoids.
+			p.action = "updated"
+		default:
 			// Compare the checksum, not the whole comment: an attachment stamped
 			// by an older markfluence is unchanged and must not be re-uploaded
 			// merely because the comment format has moved on.
 			p.action = "skipped"
-		default:
-			p.action = "updated"
 		}
 		plans = append(plans, p)
 	}
