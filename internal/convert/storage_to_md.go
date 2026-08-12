@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -265,15 +266,108 @@ func (r *mdRenderer) renderTable(n *snode) string {
 	head := r.cellTexts(header)
 	var b strings.Builder
 	b.WriteString("| " + strings.Join(head, " | ") + " |\n")
-	seps := make([]string, len(head))
-	for i := range seps {
-		seps[i] = "---"
-	}
-	b.WriteString("| " + strings.Join(seps, " | ") + " |")
+	b.WriteString("| " + strings.Join(columnSeparators(header, rows, len(head)), " | ") + " |")
 	for _, row := range rows {
 		b.WriteString("\n| " + strings.Join(r.cellTexts(row), " | ") + " |")
 	}
 	return b.String()
+}
+
+// alignSeparators are the GFM delimiter cells, keyed by the alignment recovered
+// from storage.
+var alignSeparators = map[string]string{
+	"left":   ":---",
+	"center": ":---:",
+	"right":  "---:",
+}
+
+// textAlignRE pulls the value out of a text-align declaration anywhere in a style
+// attribute.
+var textAlignRE = regexp.MustCompile(`(?i)text-align\s*:\s*([a-z]+)`)
+
+// columnSeparators builds the delimiter row, recovering each column's alignment
+// from its cells.
+//
+// Confluence aligns a paragraph while GFM aligns a column, so a column whose
+// cells disagree cannot be represented: the most common alignment wins and the
+// rest are dropped. Cells that declare nothing do not vote -- a single centered
+// cell in a column of plain ones still centers the column, which is the only
+// reading that survives the round trip at all.
+func columnSeparators(header *snode, rows []*snode, cols int) []string {
+	counts := make([]map[string]int, cols)
+	order := make([]map[string]int, cols)
+	seen := 0
+	for _, tr := range append([]*snode{header}, rows...) {
+		if tr == nil {
+			continue
+		}
+		i := 0
+		for _, c := range tr.kids {
+			if c.name != "th" && c.name != "td" {
+				continue
+			}
+			if i >= cols {
+				break
+			}
+			if a := cellAlignment(c); a != "" {
+				if counts[i] == nil {
+					counts[i], order[i] = map[string]int{}, map[string]int{}
+				}
+				counts[i][a]++
+				if _, ok := order[i][a]; !ok {
+					seen++
+					order[i][a] = seen
+				}
+			}
+			i++
+		}
+	}
+
+	seps := make([]string, cols)
+	for i := range seps {
+		seps[i] = "---"
+		best := ""
+		for a, n := range counts[i] {
+			// Ties go to whichever alignment appeared first, so the delimiter row
+			// does not depend on map iteration order.
+			if best == "" || n > counts[i][best] || (n == counts[i][best] && order[i][a] < order[i][best]) {
+				best = a
+			}
+		}
+		if sep, ok := alignSeparators[best]; ok {
+			seps[i] = sep
+		}
+	}
+	return seps
+}
+
+// cellAlignment reports the alignment stored on one cell, normalized to the GFM
+// vocabulary. Confluence's own form is a text-align on a paragraph inside the
+// cell, which is what markfluence writes; the cell-level form works too and is
+// read for the same reason. "start"/"end" are ADF's names for left/right and turn
+// up in hand-edited storage.
+func cellAlignment(c *snode) string {
+	styles := []string{c.attrs["style"]}
+	for _, k := range c.kids {
+		if k.name == "p" {
+			styles = append(styles, k.attrs["style"])
+		}
+	}
+	for _, s := range styles {
+		m := textAlignRE.FindStringSubmatch(s)
+		if m == nil {
+			continue
+		}
+		switch strings.ToLower(m[1]) {
+		case "left", "start":
+			return "left"
+		case "center":
+			return "center"
+		case "right", "end":
+			return "right"
+		}
+	}
+	return ""
 }
 
 // rowHasHeaderCell reports whether a <tr> contains a <th>.
