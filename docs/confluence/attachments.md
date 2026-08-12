@@ -56,9 +56,23 @@ unaffected either way, including a spaced name like `probe image.png`.
 So `uploadAttachment` writes every text part through `writeTextField`, which
 sets `Content-Type: text/plain; charset=UTF-8` explicitly, and leads the form
 with a `_charset_` field — the other conventional remedy for a Java stack, kept
-as a belt-and-suspenders since only the per-part label is confirmed to work.
-**Anything added to that form must use `writeTextField`, never
-`multipart.Writer.WriteField`.**
+as a belt-and-suspenders. **Anything added to that form must use
+`writeTextField`, never `multipart.Writer.WriteField`.**
+
+The label is what fixes it. **Verified 2026-08-12** by uploading two attachments
+whose paths differ only in a non-ASCII letter — one replacing an existing
+attachment (`POST .../child/attachment/<id>/data`), one new
+(`POST .../child/attachment`). Both comments come back byte-identical to what
+was sent:
+
+```
+comment bytes: path=assets/probe-caf\xc3\xa9.png   <- replace endpoint
+comment bytes: path=assets/probe-na\xc3\xafve.png  <- create endpoint
+```
+
+Both endpoints also accept the `_charset_` field without complaint. Which of the
+two remedies is doing the work is untested — they were added together, and there
+is no reason to take either away.
 
 ### A wrong recorded path repairs itself
 
@@ -73,6 +87,13 @@ A legacy comment records no path at all. That is not a disagreement and stays a
 skip; re-uploading every one of those is the churn the checksum comparison
 exists to avoid. Those attachments gain a path the next time their bytes change,
 or under `attachment-upload --force`.
+
+**Verified 2026-08-12** against an attachment left double-encoded by an earlier
+upload, re-uploading the same bytes so only the path disagreed: planned as
+`updated` where the previous build planned `skipped (unchanged)`, and the stored
+comment came back corrected. `attachment-download` then wrote the file to
+`assets/probe-café.png` instead of `assets/probe-cafÃ©.png`, and `read` emitted
+`assets/probe-caf%C3%A9.png` instead of `assets/probe-caf%C3%83%C2%A9.png`.
 
 ## Where the metadata lives
 
