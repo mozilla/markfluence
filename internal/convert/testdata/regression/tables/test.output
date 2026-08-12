@@ -1,6 +1,6 @@
 {
   "attachments": [],
   "broken": [],
-  "html": "<h1>Tables</h1>\n<p>A GFM table with alignment:</p>\n<table data-layout=\"align-start\">\n<thead>\n<tr>\n<th align=\"left\">Name</th>\n<th align=\"center\">Role</th>\n<th align=\"right\">Count</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td align=\"left\">Alice</td>\n<td align=\"center\">Maintainer</td>\n<td align=\"right\">12</td>\n</tr>\n<tr>\n<td align=\"left\">Bob</td>\n<td align=\"center\">Contributor</td>\n<td align=\"right\">3</td>\n</tr>\n</tbody>\n</table>\n<p>Text after the table.</p>\n",
+  "html": "<h1>Tables</h1>\n<p>A GFM table with alignment:</p>\n<table data-layout=\"align-start\">\n<thead>\n<tr>\n<th>Name</th>\n<th><p style=\"text-align: center;\">Role</p></th>\n<th><p style=\"text-align: right;\">Count</p></th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Alice</td>\n<td><p style=\"text-align: center;\">Maintainer</p></td>\n<td><p style=\"text-align: right;\">12</p></td>\n</tr>\n<tr>\n<td>Bob</td>\n<td><p style=\"text-align: center;\">Contributor</p></td>\n<td><p style=\"text-align: right;\">3</p></td>\n</tr>\n</tbody>\n</table>\n<p>Text after the table.</p>\n",
   "warnings": []
 }

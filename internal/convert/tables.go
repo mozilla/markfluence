@@ -192,9 +192,29 @@ func trimLeadingSpaces(n ast.Node, source []byte) {
 	txt.Segment = seg
 }
 
+// cellAlignStyle maps a GFM column alignment onto the text-align Confluence
+// honors, or "" for a cell that needs no alignment markup.
+//
+// The GFM renderer's align attribute is the one form Confluence discards, so
+// alignment has to ride on a paragraph inside the cell instead. Left is
+// deliberately absent: Confluence has no explicit left -- it is the default, and
+// ADF's alignment mark carries only center and end -- so AlignLeft and AlignNone
+// are indistinguishable once published. See docs/confluence/storage-format.md.
+func cellAlignStyle(a east.Alignment) string {
+	switch a {
+	case east.AlignCenter:
+		return "center"
+	case east.AlignRight:
+		return "right"
+	default:
+		return ""
+	}
+}
+
 // renderTableCell emits a <th>/<td>, adding data-highlight-colour for a cell with
-// a background color marker. It otherwise reproduces what the GFM renderer emits,
-// including the align attribute Confluence discards (see issue #48).
+// a background color marker and, for an aligned column, the <p> wrapper that
+// carries the alignment. A cell needing neither is what the GFM renderer would
+// emit, minus the discarded align attribute.
 func (r *storageRenderer) renderTableCell(
 	w util.BufWriter, _ []byte, node ast.Node, entering bool,
 ) (ast.WalkStatus, error) {
@@ -203,19 +223,23 @@ func (r *storageRenderer) renderTableCell(
 	if n.Parent().Kind() == east.KindTableHeader {
 		tag = "th"
 	}
+	align := cellAlignStyle(n.Alignment)
 	if !entering {
+		if align != "" {
+			_, _ = w.WriteString("</p>")
+		}
 		_, _ = w.WriteString("</" + tag + ">\n")
 		return ast.WalkContinue, nil
 	}
 	_, _ = w.WriteString("<" + tag)
-	if n.Alignment != east.AlignNone {
-		_, _ = w.WriteString(` align="` + n.Alignment.String() + `"`)
-	}
 	if v, ok := n.AttributeString(cellBGAttr); ok {
 		if hex, ok := v.(string); ok {
 			_, _ = w.WriteString(` data-highlight-colour="` + hex + `"`)
 		}
 	}
 	_ = w.WriteByte('>')
+	if align != "" {
+		_, _ = w.WriteString(`<p style="text-align: ` + align + `;">`)
+	}
 	return ast.WalkContinue, nil
 }
