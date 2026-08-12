@@ -107,10 +107,11 @@ A table with no attributes at all comes back as ADF `__autoSize: true` rather
 than any layout — that is the "auto-sizes but unanchored" state
 `data-layout="align-start"` exists to replace.
 
-## Cell alignment: only one form works
+## Cell alignment rides on a paragraph, not the cell
 
-GFM alignment becomes `align="left|center|right"` on `<th>`/`<td>`. Confluence
-stores that and ignores it.
+The obvious form is the one that does nothing. GFM alignment becomes
+`align="left|center|right"` on `<th>`/`<td>`, and Confluence stores that and
+ignores it.
 
 **Verified 2026-08-07.** Four cells, one page, read back as ADF:
 
@@ -121,17 +122,31 @@ stores that and ignores it.
 | `<td><p style="text-align: center;">` | `alignment` / `center` |
 | `<td><p style="text-align: right;">` | `alignment` / **`end`** |
 
-So right maps to `end`, and there is no explicit left — Confluence's default.
+So right maps to `end`. The cell-level `style` form works too, but markfluence
+writes the paragraph-level one, since that is what Confluence's own editor emits
+and the cell-level form may simply be normalized into it.
 
-Note the cell-level `style` form also works, which issue #48 does not mention;
-it only documents the paragraph-level form. Prefer paragraph-level anyway, since
-that is what Confluence's own editor emits, and the cell-level form may simply be
-normalized into it.
+**Verified 2026-08-12** on a markfluence-published table whose delimiter row was
+`| --- | :--- | :---: | ---: |`, read back as ADF: the center column carries
+`alignment` / `center` and the right column `alignment` / `end`, on the `<th>`
+row as well as the `<td>` rows. The plain and left columns carry no mark.
 
-This is issue **#48**, still open: markfluence emits the `align` attribute, which
-is the one form that does nothing.
+### There is no explicit left
 
-> Checking this with `body-format=view` will tell you both `align` and
+**Verified 2026-08-12** on the same page, from hand-written cells alongside the
+published table:
+
+| written | stored | ADF mark |
+|---|---|---|
+| `text-align: left` | kept verbatim | **none** |
+| `text-align: start` | **dropped** — comes back as `style=""` | none |
+| `text-align: justify` | kept verbatim | none |
+
+Left is Confluence's default and cannot be stated; `start` does not even survive
+the sanitizer. So `:---` and `---` publish identically, and a `:---` column reads
+back as `---`. Only center and right make the round trip.
+
+> Checking any of this with `body-format=view` will tell you both `align` and
 > `text-align` survive, because the legacy renderer echoes them. That is wrong.
 > Use ADF.
 
