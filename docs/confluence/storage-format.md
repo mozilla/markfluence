@@ -13,8 +13,8 @@ model Cloud renders from.
 The passthrough for raw `ac:`/`ri:` markup relies on Confluence returning what
 it was given. It very nearly does, with two rewrites.
 
-**Verified 2026-08-07** on page `2952004326`, writing storage via the REST API
-and diffing what came back:
+**Verified 2026-08-07**, writing storage via the REST API and diffing what came
+back:
 
 ```diff
 - <col style="width: 200.0px;"/>
@@ -90,7 +90,8 @@ silently acquires a layout determined by arithmetic nobody wrote down.
 `data-table-width` on the `<table>` becomes ADF `width`. Column widths in the
 `<colgroup>` become per-cell `colwidth`.
 
-**Verified 2026-08-07**, recovered from probe page `2913796912`:
+**Verified 2026-08-07**, from a probe sweeping table attributes one hypothesis
+per table:
 
 | written | ADF |
 |---|---|
@@ -140,17 +141,16 @@ is the one form that does nothing.
 as a cell `background` attribute, and it accepts **any** hex, not just palette
 colors.
 
-**Verified 2026-08-07.** `#ff00ff` persists and reaches ADF; recovered from probe
-page `2942664752`, so does `#c0ffee`, alongside the named swatches resolving to
-their hexes (`#ffffff`, `#f4f5f7`, `#b3bac5`, …). Backgrounds work on `<th>` as
-well as `<td>`.
+**Verified 2026-08-07.** `#ff00ff` and `#c0ffee` both persist and reach ADF,
+alongside the named swatches resolving to their hexes (`#ffffff`, `#f4f5f7`,
+`#b3bac5`, …). Backgrounds work on `<th>` as well as `<td>`.
 
 The 21 named swatches in `internal/convert/tables.go` are markfluence's
 vocabulary, not the server's: they are what the Confluence editor's cell
 background picker offers, so a color set from markdown is indistinguishable from
-one set by hand and shows as the selected swatch. Read off an editor-authored
-page (`2913502220`) on 2026-08-04; the picker is seven hue columns by three
-shades, with the grey column running white / light grey / grey. **Transcribed.**
+one set by hand and shows as the selected swatch. Read off an editor-authored page on
+2026-08-04; the picker is seven hue columns by three shades, with the grey
+column running white / light grey / grey. **Transcribed.**
 
 ## Callout macros
 

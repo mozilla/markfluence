@@ -9,8 +9,7 @@ editor disagree about how wide the page is.
 | `content-appearance-published` | what a reader sees |
 | `content-appearance-draft` | what the editor shows |
 
-**Verified 2026-08-07** on page `2952855567`, published by markfluence with
-`page_width: max`:
+**Verified 2026-08-07** on a page markfluence published with `page_width: max`:
 
 ```
 content-appearance-published -> ["max"]
