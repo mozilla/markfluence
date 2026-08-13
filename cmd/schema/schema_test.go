@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mozilla/markfluence/internal/jsonout"
 	schemadoc "github.com/mozilla/markfluence/schema"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -76,9 +77,11 @@ func TestOutputIsAUsableSchema(t *testing.T) {
 	}
 }
 
-// TestSchemaVersionMatchesDocument keeps the constant the help text quotes tied
-// to the schema_version the document itself pins.
-func TestSchemaVersionMatchesDocument(t *testing.T) {
+// TestEmbeddedSchemaDescribesEmittedVersion ties the embedded document to the
+// version markfluence actually emits: bumping jsonout.SchemaVersion without
+// embedding the matching schema would have this command hand out a contract for
+// the wrong version.
+func TestEmbeddedSchemaDescribesEmittedVersion(t *testing.T) {
 	var doc struct {
 		Properties struct {
 			SchemaVersion struct {
@@ -86,11 +89,12 @@ func TestSchemaVersionMatchesDocument(t *testing.T) {
 			} `json:"schema_version"`
 		} `json:"properties"`
 	}
-	if err := json.Unmarshal([]byte(schemadoc.Latest), &doc); err != nil {
+	if err := json.Unmarshal([]byte(schemadoc.V1), &doc); err != nil {
 		t.Fatalf("unmarshaling schema: %v", err)
 	}
-	if got := doc.Properties.SchemaVersion.Const; got != schemadoc.Version {
-		t.Errorf("schema pins schema_version %d, schema.Version = %d", got, schemadoc.Version)
+	if got := doc.Properties.SchemaVersion.Const; got != jsonout.SchemaVersion {
+		t.Errorf("embedded schema pins schema_version %d, jsonout.SchemaVersion = %d",
+			got, jsonout.SchemaVersion)
 	}
 }
 
