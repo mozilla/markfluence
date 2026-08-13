@@ -15,6 +15,7 @@ import (
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
@@ -135,14 +136,26 @@ func processFile(filename string, c *client.ConfluenceClient) *updateResult {
 			jsonout.CodeValidation)
 	}
 	r.pageID = pageID
+	// Before the request: an id that is not digits earns a 400 whose raw body is
+	// the least useful thing markfluence can show a reader.
+	if !pageref.IsDigits(pageID) {
+		return r.fail(errors.New(pageref.NotNumericMessage(pageID)), jsonout.CodeValidation)
+	}
 	width, applyWidth, err := resolveWidth(pageWidthFlag, mf)
 	if err != nil {
 		return r.fail(err, jsonout.CodeValidation)
 	}
 
-	page, err := c.GetPage(pageID)
+	// GetPageOrNil, not GetPage: a 404 here means the page_id is wrong, which is
+	// worth saying in words. Every other transport failure still reports itself.
+	page, err := c.GetPageOrNil(pageID)
 	if err != nil {
 		return r.fail(err, jsonout.CodeFor(err))
+	}
+	if page == nil {
+		// update cannot conjure the page: the remedy is a right id, or create.
+		return r.fail(errors.New(pageref.NotFoundMessage(pageID,
+			"correct it, or remove it and use create instead")), jsonout.CodeNotFound)
 	}
 	r.space = client.SpaceKeyFromWebUI(page.Links.WebUI)
 	if title == "" {
