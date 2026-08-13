@@ -169,9 +169,21 @@ the Markdown file.
 Page width defaults to `max`; set it with `--page-width narrow|wide|max` (which
 overrides the frontmatter `page_width` and may apply across a batch).
 
-All files are validated first — if any would fail (a page already exists at its
-`page_id`, a title clash in the space, an unresolvable parent), nothing is
-created.
+All files are validated first — if any would fail (a problem with its `page_id`, a
+title clash in the space, an unresolvable parent), nothing is created. Both kinds
+of clash name the page in the way, so you can go look at it:
+
+```console
+$ markfluence create docs/runbook.md
+[docs/runbook.md] a page already exists at page_id 123 ("Deploy Runbook"): https://wiki.example.net/wiki/spaces/ENG/pages/123/Deploy+Runbook
+Aborting: 1 file(s) failed validation; nothing was created.
+```
+
+A file whose `page_id` doesn't resolve is also a failure, not a fresh page:
+`create` will not publish a second copy and overwrite the id it can't explain.
+Remove the `page_id` to create a new page, or correct it. A `page_id` that isn't a
+numeric id at all (a pasted URL, a leftover placeholder) is reported as such
+without asking Confluence about it.
 
 On success `title`, `space`, `parent`, `page_id`, and `page_width` are written
 back into each file — unless `--no-persist` is given, in which case nothing is
