@@ -1,10 +1,16 @@
 package update
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/frontmatter"
+	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 )
 
@@ -126,5 +132,66 @@ func TestPageURLUsesSiteNotGateway(t *testing.T) {
 				t.Errorf("pageURL = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestProcessFileRejectsNonNumericPageID covers the local half of the fix: a
+// page_id that is not an id never reaches the API, so the reader gets a sentence
+// instead of a 400 body. The client points at a host that does not resolve, so a
+// request would fail loudly rather than pass.
+func TestProcessFileRejectsNonNumericPageID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.md")
+	if err := os.WriteFile(path, []byte("---\ntitle: T\npage_id: TODO\n---\nbody\n"), 0o644); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	r := processFile(path, client.New(client.Config{SiteURL: "https://wiki.example.net"}))
+	if r.ok {
+		t.Fatal("a non-numeric page_id must fail the file")
+	}
+	if !strings.Contains(r.errMsg, `"TODO"`) || !strings.Contains(r.errMsg, "not a numeric page id") {
+		t.Errorf("errMsg = %q, want the not-numeric sentence", r.errMsg)
+	}
+	if r.code != jsonout.CodeValidation {
+		t.Errorf("code = %q, want %q", r.code, jsonout.CodeValidation)
+	}
+}
+
+// TestProcessFileReportsMissingPage is the issue itself: a page_id the server
+// answers 404 for used to surface as "GET https://...: HTTP 404: {...}".
+func TestProcessFileReportsMissingPage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/wiki/api/v2/pages/999" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL)
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"errors":[{"status":404,"code":"NOT_FOUND"}]}`))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.md")
+	if err := os.WriteFile(path, []byte("---\ntitle: T\npage_id: 999\n---\nbody\n"), 0o644); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	r := processFile(path, client.New(client.Config{SiteURL: srv.URL}))
+	if r.ok {
+		t.Fatal("a page_id that resolves to nothing must fail the file")
+	}
+	want := "page_id 999 not found (deleted, trashed, or wrong); " +
+		"correct it, or remove it and use create instead"
+	if r.errMsg != want {
+		t.Errorf("errMsg =\n %q\nwant\n %q", r.errMsg, want)
+	}
+	// The raw transport error must not leak: no method, URL, or response body.
+	for _, unwanted := range []string{"HTTP 404", "GET ", srv.URL, "errors"} {
+		if strings.Contains(r.errMsg, unwanted) {
+			t.Errorf("errMsg = %q, should not contain %q", r.errMsg, unwanted)
+		}
+	}
+	if r.code != jsonout.CodeNotFound {
+		t.Errorf("code = %q, want %q", r.code, jsonout.CodeNotFound)
 	}
 }
