@@ -346,7 +346,10 @@ func resolveFile(
 		return record{}, err
 	}
 	if len(dupes) > 0 {
-		return record{}, fmt.Errorf("a page titled %q already exists in space %s", title, spaceKey)
+		// Link the page in the way of the title, as the page_id conflict above does:
+		// the fix is usually to look at it and pick a different title.
+		return record{}, fmt.Errorf("a page titled %q already exists in space %s: %s",
+			title, spaceKey, pageURL(c, &dupes[0], dupes[0].ID))
 	}
 
 	abs, _ := filepath.Abs(filename)
