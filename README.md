@@ -123,6 +123,7 @@ General:
 
 ```sh
 markfluence --help
+markfluence schema --help
 ```
 
 Manipulating Confluence pages:
@@ -472,6 +473,9 @@ and `summary` shapes are selected by `command`, and the stderr error object is
 `#/$defs/errorObject`. A test validates markfluence's actual output against it, so
 the schema cannot drift from the implementation.
 
+The binary carries that same schema, so a consumer can fetch the contract
+without knowing anything about this repository (see [`schema`](#schema)).
+
 Notes on the schema:
 
 - **Per-command stable.** Each command always emits the same keys in the same
@@ -510,6 +514,35 @@ Errors and exit codes:
 
 - Error `code` values: `CONFIG`, `AUTH`, `NOT_FOUND`, `VALIDATION`, `CONVERT`,
   `IO`, `NETWORK`, `API`.
+
+### `schema`
+
+```
+Usage: markfluence schema
+```
+
+Print the JSON Schema for [`--json` output](#--json-output) to stdout. The schema
+is embedded in the binary, so a script, a CI job, or an agent can fetch the
+contract at runtime — validating markfluence's own output, or generating types
+from it — without reading it out of this repository:
+
+```console
+$ markfluence schema | jq -r '.properties.command.enum | join(" ")'
+info read update create fix attachment-list attachment-upload attachment-download export
+
+$ markfluence update docs/*.md --json > out.json
+$ markfluence schema > schema.json
+$ check-jsonschema --schemafile schema.json out.json
+```
+
+The printed document is byte-identical to
+[`schema/json-output/v1.json`](schema/json-output/v1.json) at the revision the
+binary was built from, and describes the `schema_version` that binary emits.
+Because the tests validate real output against the same embedded copy, the
+schema you get from a binary is the one its output was checked against.
+
+Nothing here talks to Confluence, so no credentials are needed. The output is
+already JSON; `--json` changes nothing.
 
 ## GitHub Actions
 
