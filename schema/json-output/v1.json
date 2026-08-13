@@ -266,6 +266,7 @@
       }
     },
     "createResult": {
+      "description": "One input file's create outcome. page_id and url describe the created page; on a failure they are null, except when the file's frontmatter page_id blocked creation -- then page_id is that id and url is the page already at it (null when the id resolves to nothing).",
       "type": "object",
       "additionalProperties": false,
       "required": [

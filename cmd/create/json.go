@@ -167,11 +167,11 @@ func abort(args []string, errs []failure) error {
 	for _, a := range args {
 		argSet[a] = true
 	}
-	errMap := map[string]string{}
+	errMap := map[string]failure{}
 	var extra []failure // failures not tied to an input file, e.g. "(hierarchy)"
 	for _, e := range errs {
 		if argSet[e.filename] {
-			errMap[e.filename] = e.message
+			errMap[e.filename] = e
 		} else {
 			extra = append(extra, e)
 		}
@@ -180,15 +180,15 @@ func abort(args []string, errs []failure) error {
 	var items []any
 	failed := 0
 	for _, a := range args {
-		if msg, bad := errMap[a]; bad {
-			items = append(items, abortedResult(a, statusFailed, msg, jsonout.CodeValidation))
+		if f, bad := errMap[a]; bad {
+			items = append(items, abortedResult(a, statusFailed, f, jsonout.CodeValidation))
 			failed++
 		} else {
-			items = append(items, abortedResult(a, statusNotCreated, "", ""))
+			items = append(items, abortedResult(a, statusNotCreated, failure{}, ""))
 		}
 	}
 	for _, e := range extra {
-		items = append(items, abortedResult(e.filename, statusFailed, e.message, jsonout.CodeValidation))
+		items = append(items, abortedResult(e.filename, statusFailed, e, jsonout.CodeValidation))
 		failed++
 	}
 
@@ -202,18 +202,25 @@ func abort(args []string, errs []failure) error {
 
 // abortedResult builds a minimal result for a file when the batch aborted before
 // creation. Fields that require a live/created page stay null; arrays are [].
-func abortedResult(file, status, errMsg string, code jsonout.Code) jsonCreateResult {
+//
+// f is this file's failure, or the zero value for a file that was never reached
+// (status not_created). A page_id failure fills page_id -- the id in the file, the
+// thing to go fix -- and, when a page is really at that id, url.
+func abortedResult(file, status string, f failure, code jsonout.Code) jsonCreateResult {
 	res := jsonCreateResult{
 		OK:          false,
 		Status:      status,
 		DryRun:      dryRunOpt,
 		File:        file,
+		PageID:      nullableStr(f.pageID),
+		URL:         nullableStr(f.url),
 		Attachments: []jsonout.Attachment{},
 		Warnings:    []string{},
 		Broken:      []string{},
 	}
-	if errMsg != "" {
-		res.Error = &errMsg
+	if f.message != "" {
+		msg := f.message
+		res.Error = &msg
 		c := code
 		res.Code = &c
 	}
