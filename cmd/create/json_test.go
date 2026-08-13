@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/schematest"
 )
@@ -41,13 +42,17 @@ func TestSchemaConformance(t *testing.T) {
 	}
 	schematest.ValidateEnvelope(t, buf.Bytes())
 
-	// The phase-1 abort envelope.
+	// The phase-1 abort envelope, including the one failure that names a page:
+	// a page_id already taken reports page_id and url on a result that is not ok.
 	abortItems := []any{
-		abortedResult("bad.md", statusFailed, "no title given", jsonout.CodeValidation),
-		abortedResult("ok.md", statusNotCreated, "", ""),
+		abortedResult("bad.md", statusFailed, failure{message: "no title given"}, jsonout.CodeValidation),
+		abortedResult("taken.md", statusFailed, newFailure("taken.md",
+			pageIDFailureFor(testClient(), "123", &client.Page{ID: "123", Title: "Runbook"})),
+			jsonout.CodeValidation),
+		abortedResult("ok.md", statusNotCreated, failure{}, ""),
 	}
 	abortEnv := jsonout.NewEnvelope("create", abortItems,
-		createSummary{Total: 2, Succeeded: 0, Failed: 1, Aborted: true})
+		createSummary{Total: 3, Succeeded: 0, Failed: 2, Aborted: true})
 	buf.Reset()
 	if err := jsonout.Emit(&buf, abortEnv); err != nil {
 		t.Fatalf("Emit: %v", err)
@@ -130,15 +135,43 @@ func TestJSONResultDryRunInSetParent(t *testing.T) {
 
 func TestAbortedResultShapes(t *testing.T) {
 	// A validation-failed file.
-	failed := abortedResult("bad.md", statusFailed, "no title given", jsonout.CodeValidation)
+	failed := abortedResult("bad.md", statusFailed, failure{message: "no title given"}, jsonout.CodeValidation)
 	if failed.OK || failed.Status != "failed" || failed.Error == nil ||
 		failed.Code == nil || *failed.Code != jsonout.CodeValidation {
 		t.Errorf("failed abort result unexpected: %+v", failed)
 	}
 	// A file that simply wasn't created (batch aborted).
-	nc := abortedResult("ok.md", statusNotCreated, "", "")
+	nc := abortedResult("ok.md", statusNotCreated, failure{}, "")
 	if nc.OK || nc.Status != "not_created" || nc.Error != nil || nc.Code != nil {
 		t.Errorf("not_created abort result unexpected: %+v", nc)
+	}
+	// Neither carries a page: page_id/url are for a page_id failure only.
+	for name, res := range map[string]jsonCreateResult{"failed": failed, "not_created": nc} {
+		if res.PageID != nil || res.URL != nil {
+			t.Errorf("%s abort result should have null page_id/url, got %+v", name, res)
+		}
+	}
+
+	// A page_id already taken: the result names the page in fields, not just prose.
+	taken := abortedResult("taken.md", statusFailed, newFailure("taken.md",
+		pageIDFailureFor(testClient(), "123", &client.Page{ID: "123", Title: "Runbook"})),
+		jsonout.CodeValidation)
+	if taken.PageID == nil || *taken.PageID != "123" {
+		t.Errorf("page_id = %v, want 123", taken.PageID)
+	}
+	if taken.URL == nil || *taken.URL != "https://wiki.example.net/wiki/pages/viewpage.action?pageId=123" {
+		t.Errorf("url = %v, want the existing page's URL", taken.URL)
+	}
+
+	// A page_id that resolves to nothing: the id is reported, but there is no page
+	// to link, so url stays null.
+	missing := abortedResult("gone.md", statusFailed, newFailure("gone.md",
+		pageIDFailureFor(testClient(), "999", nil)), jsonout.CodeValidation)
+	if missing.PageID == nil || *missing.PageID != "999" {
+		t.Errorf("page_id = %v, want 999", missing.PageID)
+	}
+	if missing.URL != nil {
+		t.Errorf("url = %v, want null for an id that resolves to nothing", missing.URL)
 	}
 	// Arrays must be [] not null.
 	if nc.Attachments == nil || nc.Warnings == nil || nc.Broken == nil {
