@@ -21,6 +21,34 @@ make build            # produces ./bin/markfluence
 
 TBD — published to a tap on the first release.
 
+### Shell completions
+
+markfluence generates its own completion scripts for bash, zsh, fish, and
+PowerShell. The release archives ship them under `completions/`, and a Homebrew
+install puts them where each shell looks, so a `brew install` needs nothing
+further.
+
+Otherwise, to load them into the current shell:
+
+```sh
+source <(markfluence completion bash)   # bash
+source <(markfluence completion zsh)    # zsh
+markfluence completion fish | source    # fish
+```
+
+To install them permanently, `markfluence completion <shell> --help` prints the
+path your shell reads on your platform. For example, on Linux with bash:
+
+```sh
+markfluence completion bash > /etc/bash_completion.d/markfluence
+```
+
+Completion offers Markdown files wherever a `FILE` or `PAGE` argument goes (the
+page-id and URL forms of `PAGE` you type out), the values of flags like
+`--page-width` and `--format`, and directories for `--dest`. Attachment names
+aren't completed: they live on the server, and completion never makes a network
+call.
+
 ## Configure
 
 markfluence needs a Confluence site URL, a username, and an API token. Each is
@@ -791,6 +819,7 @@ make lint               # golangci-lint (installs the pinned version into ./bin)
 make vet                # go vet ./...
 make fmt                # go fmt ./...
 make regen-regressions  # regenerate the converter's golden test outputs
+make completions        # write the shell completion scripts to ./completions
 ```
 
 The converter's behavior is pinned by a golden-file regression suite under
