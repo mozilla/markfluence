@@ -45,6 +45,12 @@ const (
 // DefaultWidth is the width used when page_width is unset or blank.
 const DefaultWidth = Max
 
+// Vocabulary lists the accepted widths, narrowest first. It is what
+// --page-width completes to; Declared is what validates against it.
+func Vocabulary() []string {
+	return []string{string(Narrow), string(Wide), string(Max)}
+}
+
 // vocabToProperty maps a Width to its content-property value.
 var vocabToProperty = map[Width]string{
 	Narrow: "default",
