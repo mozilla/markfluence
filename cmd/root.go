@@ -14,6 +14,7 @@ import (
 	"github.com/mozilla/markfluence/cmd/fix"
 	"github.com/mozilla/markfluence/cmd/info"
 	"github.com/mozilla/markfluence/cmd/read"
+	"github.com/mozilla/markfluence/cmd/schema"
 	"github.com/mozilla/markfluence/cmd/update"
 	"github.com/mozilla/markfluence/internal/buildinfo"
 	"github.com/mozilla/markfluence/internal/jsonout"
@@ -144,4 +145,5 @@ func init() {
 	rootCmd.AddCommand(attachmentupload.Cmd)
 	rootCmd.AddCommand(attachmentdownload.Cmd)
 	rootCmd.AddCommand(export.Cmd)
+	rootCmd.AddCommand(schema.Cmd)
 }
