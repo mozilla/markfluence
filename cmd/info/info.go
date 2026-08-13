@@ -93,14 +93,19 @@ func fatalFail(msg string, code jsonout.Code) error {
 // exiting 1.
 func operationalFail(pageID string, err error, code jsonout.Code) error {
 	if ui.IsJSON() {
-		res := map[string]any{"ok": false, "page_id": pageID, "error": err.Error(), "code": code}
-		env := jsonout.NewEnvelope("info", []any{res},
-			map[string]int{"total": 1, "succeeded": 0, "failed": 1})
-		_ = jsonout.Emit(os.Stdout, env)
+		_ = jsonout.Emit(os.Stdout, failEnvelope(pageID, err, code))
 	} else {
 		ui.Error(err.Error())
 	}
 	return ui.SilentExit(1)
+}
+
+// failEnvelope is the document operationalFail writes, split out so the schema
+// conformance test can validate the envelope this command really emits instead
+// of a hand-copied duplicate of it.
+func failEnvelope(pageID string, err error, code jsonout.Code) jsonout.Envelope {
+	return jsonout.NewEnvelope("info", []any{jsonout.NewSingleOpFailure(pageID, err, code)},
+		map[string]int{"total": 1, "succeeded": 0, "failed": 1})
 }
 
 // report is the resolved metadata for a page, feeding both the human "label:

@@ -52,9 +52,9 @@ func TestSchemaConformancePageFailure(t *testing.T) {
 	res := result{page: testPage(), err: errors.New("boom"), code: jsonout.CodeAPI}
 	schematest.ValidateEnvelope(t, emit(t, res))
 
-	failRes := map[string]any{"ok": false, "page_id": "9", "error": "page 9 not found", "code": jsonout.CodeNotFound}
-	env := jsonout.NewEnvelope(command, []any{failRes},
-		map[string]int{"total": 1, "succeeded": 0, "failed": 1})
+	// Built by the command, not restated here: a renamed key or a changed summary
+	// in failEnvelope has to reach the schema through this test.
+	env := failEnvelope("9", errors.New("page 9 not found"), jsonout.CodeNotFound)
 	var buf bytes.Buffer
 	if err := jsonout.Emit(&buf, env); err != nil {
 		t.Fatal(err)

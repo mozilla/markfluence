@@ -3,6 +3,7 @@ package info
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/client"
@@ -132,8 +133,9 @@ func TestSchemaConformance(t *testing.T) {
 	}
 	schematest.ValidateEnvelope(t, buf.Bytes())
 
-	failRes := map[string]any{"ok": false, "page_id": "999", "error": "page 999 not found", "code": jsonout.CodeNotFound}
-	failEnv := jsonout.NewEnvelope("info", []any{failRes}, map[string]int{"total": 1, "succeeded": 0, "failed": 1})
+	// Built by the command, not restated here: a renamed key or a changed summary
+	// in failEnvelope has to reach the schema through this test.
+	failEnv := failEnvelope("999", errors.New("page 999 not found"), jsonout.CodeNotFound)
 	buf.Reset()
 	if err := jsonout.Emit(&buf, failEnv); err != nil {
 		t.Fatalf("Emit: %v", err)

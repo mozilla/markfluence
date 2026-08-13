@@ -30,3 +30,26 @@ type Attachment struct {
 	Action   string `json:"action"`
 	Filename string `json:"filename"`
 }
+
+// SingleOpFailure is the results[0] entry a single-target command emits when its
+// one operation against the page fails (not found, fetch error) --
+// #/$defs/singleOpFailure in the schema.
+//
+// It is a struct rather than the map each command used to build inline because
+// every field then marshals unconditionally, which is what lets the schema's
+// additionalProperties:false and required catch a renamed or added key. A map
+// only carries the keys the caller remembered to set, so drift in one showed up
+// nowhere.
+type SingleOpFailure struct {
+	OK     bool   `json:"ok"`
+	PageID string `json:"page_id"`
+	Error  string `json:"error"`
+	Code   Code   `json:"code"`
+}
+
+// NewSingleOpFailure builds the failure result for a page. OK is always false --
+// the schema pins it to that constant, since this shape exists only to report a
+// failure.
+func NewSingleOpFailure(pageID string, err error, code Code) SingleOpFailure {
+	return SingleOpFailure{OK: false, PageID: pageID, Error: err.Error(), Code: code}
+}
