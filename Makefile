@@ -10,7 +10,9 @@ LDFLAGS = -ldflags "-X github.com/mozilla/markfluence/internal/buildinfo.Version
 GOLANGCI_LINT_VERSION ?= v2.6.0
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
 
-.PHONY: help all build build-linux install lint vet fmt fmt-check test regen-regressions
+COMPLETIONS_DIR ?= completions
+
+.PHONY: help all build build-linux install completions lint vet fmt fmt-check test regen-regressions
 
 help:  ## Show this help
 	@echo "Available rules:"
@@ -26,6 +28,16 @@ build-linux: $(LOCALBIN)  ## Cross-compile a linux/amd64 binary into ./bin
 
 install:  ## Install the markfluence binary
 	go install $(LDFLAGS) .
+
+# The release generates completions from the CLI itself (a goreleaser `before`
+# hook runs this rule), so the shipped scripts can never drift from the
+# commands and flags that exist.
+completions:  ## Generate bash/zsh/fish completion scripts into ./completions
+	rm -rf $(COMPLETIONS_DIR)
+	mkdir -p $(COMPLETIONS_DIR)
+	for shell in bash zsh fish; do \
+	  go run . completion $$shell > $(COMPLETIONS_DIR)/markfluence.$$shell; \
+	done
 
 lint: $(GOLANGCI_LINT)  ## Lint with golangci-lint
 	$(GOLANGCI_LINT) run
