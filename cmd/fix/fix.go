@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/completion"
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pagewidth"
@@ -27,8 +28,9 @@ var Cmd = &cobra.Command{
 		"Populates/refreshes page_id, space, parent, and page_width (and fills a\n" +
 		"missing title) from the live page. Each file is processed independently;\n" +
 		"the command exits non-zero if any file failed.",
-	Args: cobra.MinimumNArgs(1),
-	RunE: run,
+	Args:              cobra.MinimumNArgs(1),
+	ValidArgsFunction: completion.MarkdownFiles,
+	RunE:              run,
 }
 
 func init() {

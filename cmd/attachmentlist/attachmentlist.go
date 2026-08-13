@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/completion"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/ui"
@@ -32,8 +33,9 @@ var Cmd = &cobra.Command{
 		"SOURCE is a dash when no source path is recorded: the attachment was\n" +
 		"uploaded by hand, or it was published before markfluence recorded one.\n" +
 		"Use --json, whose managed field tells those two apart.",
-	Args: cobra.ExactArgs(1),
-	RunE: run,
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: completion.MarkdownFiles,
+	RunE:              run,
 }
 
 func run(cmd *cobra.Command, args []string) error {

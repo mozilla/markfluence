@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/completion"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
@@ -29,8 +30,9 @@ var Cmd = &cobra.Command{
 	Long: "Print metadata about a Confluence page.\n\n" +
 		"PAGE is a numeric page id, a Confluence page URL, or a markdown file\n" +
 		"whose frontmatter has a page_id.",
-	Args: cobra.ExactArgs(1),
-	RunE: run,
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: completion.MarkdownFiles,
+	RunE:              run,
 }
 
 func init() {
