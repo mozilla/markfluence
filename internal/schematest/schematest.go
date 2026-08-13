@@ -3,16 +3,18 @@
 // the drift guard: because the schema uses additionalProperties:false
 // throughout, any new field on a result struct fails validation until the schema
 // is updated to match.
+//
+// It validates against the copy embedded in package schema -- the same bytes
+// `markfluence schema` prints -- so what ships is what these tests checked.
 package schematest
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
-	"runtime"
+	"strings"
 	"sync"
 	"testing"
 
+	"github.com/mozilla/markfluence/schema"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -25,20 +27,8 @@ var (
 	compileErr error
 )
 
-// schemaPath resolves the schema file relative to this source file, so tests
-// find it regardless of which package's directory they run in.
-func schemaPath() string {
-	_, file, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(file), "..", "..", "schema", "json-output", "v1.json")
-}
-
 func compile() {
-	data, err := os.ReadFile(schemaPath())
-	if err != nil {
-		compileErr = err
-		return
-	}
-	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+	doc, err := jsonschema.UnmarshalJSON(strings.NewReader(schema.V1))
 	if err != nil {
 		compileErr = err
 		return
