@@ -13,6 +13,7 @@ import (
 
 	"github.com/mozilla/markfluence/internal/attachfile"
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/completion"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pagedoc"
 	"github.com/mozilla/markfluence/internal/pageref"
@@ -52,8 +53,9 @@ var Cmd = &cobra.Command{
 		"previews locally. Only attachments the page references are exported;\n" +
 		"--all-attachments takes everything on the page.\n\n" +
 		"This is the one-command form of `read` plus `attachment-download`.",
-	Args: cobra.ExactArgs(1),
-	RunE: run,
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: completion.MarkdownFiles,
+	RunE:              run,
 }
 
 func init() {
@@ -67,6 +69,8 @@ func init() {
 	Cmd.Flags().BoolVar(&force, "force", false, "Overwrite files that already exist.")
 	Cmd.Flags().BoolVar(&dryRun, "dry-run", false,
 		"Preview what would be written without creating any files.")
+
+	completion.RegisterFlag(Cmd, "dest", completion.Directories)
 }
 
 func run(cmd *cobra.Command, args []string) error {

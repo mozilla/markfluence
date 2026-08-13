@@ -9,6 +9,7 @@ import (
 
 	"github.com/mozilla/markfluence/internal/attachfile"
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/completion"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/ui"
@@ -41,8 +42,9 @@ var Cmd = &cobra.Command{
 		"previews locally. An attachment without a recorded path is written\n" +
 		"under its stored name. --flat writes everything under stored names.\n\n" +
 		"A file that already exists is skipped unless --force.",
-	Args: cobra.MinimumNArgs(1),
-	RunE: run,
+	Args:              cobra.MinimumNArgs(1),
+	ValidArgsFunction: completion.PageThenNames,
+	RunE:              run,
 }
 
 func init() {
@@ -52,6 +54,8 @@ func init() {
 	Cmd.Flags().BoolVar(&force, "force", false, "Overwrite files that already exist.")
 	Cmd.Flags().BoolVar(&dryRun, "dry-run", false,
 		"Preview what would be written without creating any files.")
+
+	completion.RegisterFlag(Cmd, "dest", completion.Directories)
 }
 
 func run(cmd *cobra.Command, args []string) error {

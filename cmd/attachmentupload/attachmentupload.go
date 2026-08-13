@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/completion"
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pageref"
@@ -39,8 +40,9 @@ var Cmd = &cobra.Command{
 		"markfluence encodes it the way publishing would, so `--name\n" +
 		"assets/x.png` produces the attachment an image written as\n" +
 		"![](assets/x.png) resolves to.",
-	Args: cobra.MinimumNArgs(2),
-	RunE: run,
+	Args:              cobra.MinimumNArgs(2),
+	ValidArgsFunction: completion.PageThenFiles,
+	RunE:              run,
 }
 
 func init() {

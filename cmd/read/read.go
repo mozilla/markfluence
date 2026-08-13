@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/completion"
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pagedoc"
@@ -34,13 +35,16 @@ var Cmd = &cobra.Command{
 		"markdown file whose frontmatter has a page_id.\n\n" +
 		"The default markdown output carries title/page_id/space/page_width\n" +
 		"frontmatter and is a best-effort inverse of what create/update publish.",
-	Args: cobra.ExactArgs(1),
-	RunE: run,
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: completion.MarkdownFiles,
+	RunE:              run,
 }
 
 func init() {
 	Cmd.Flags().StringVar(&formatFlag, "format", formatMarkdown,
 		"Output format: markdown (default) or storage")
+
+	completion.RegisterFlag(Cmd, "format", completion.Values(formatMarkdown, formatStorage))
 }
 
 func run(cmd *cobra.Command, args []string) error {

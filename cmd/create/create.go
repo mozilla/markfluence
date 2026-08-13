@@ -12,6 +12,7 @@ import (
 
 	"github.com/mozilla/markfluence/internal/buildinfo"
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/completion"
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/jsonout"
@@ -40,8 +41,9 @@ var Cmd = &cobra.Command{
 		"the frontmatter (--title requires a single FILE). Unless --no-persist is\n" +
 		"given, each created page's title/space/parent/page_id/page_width are written\n" +
 		"back into the frontmatter.",
-	Args: cobra.MinimumNArgs(1),
-	RunE: run,
+	Args:              cobra.MinimumNArgs(1),
+	ValidArgsFunction: completion.MarkdownFiles,
+	RunE:              run,
 }
 
 func init() {
@@ -57,6 +59,8 @@ func init() {
 		"Do not write anything back into the frontmatter.")
 	Cmd.Flags().BoolVar(&dryRunOpt, "dry-run", false,
 		"Preview what would be created without writing to Confluence or files.")
+
+	completion.RegisterFlag(Cmd, "page-width", completion.Values(pagewidth.Vocabulary()...))
 }
 
 // parentInfo describes a resolved parent. kind is top|inset|published|external.

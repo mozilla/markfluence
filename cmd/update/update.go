@@ -11,6 +11,7 @@ import (
 
 	"github.com/mozilla/markfluence/internal/buildinfo"
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/completion"
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/jsonout"
@@ -38,8 +39,9 @@ var Cmd = &cobra.Command{
 		"required (from --page-id or frontmatter). Page width is asserted only when\n" +
 		"set via --page-width or a page_width frontmatter line. Each file is processed\n" +
 		"independently; the command exits non-zero if any file failed.",
-	Args: cobra.MinimumNArgs(1),
-	RunE: run,
+	Args:              cobra.MinimumNArgs(1),
+	ValidArgsFunction: completion.MarkdownFiles,
+	RunE:              run,
 }
 
 func init() {
@@ -53,6 +55,8 @@ func init() {
 		"Override the target page id (requires a single FILE).")
 	Cmd.Flags().StringVar(&pageWidthFlag, "page-width", "",
 		"Override the page width: narrow, wide, or max.")
+
+	completion.RegisterFlag(Cmd, "page-width", completion.Values(pagewidth.Vocabulary()...))
 }
 
 func run(cmd *cobra.Command, args []string) error {
