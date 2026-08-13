@@ -225,6 +225,12 @@ Page width is asserted only when `--page-width` is passed or a `page_width`
 frontmatter line is present — otherwise the live page's width is left untouched.
 `update` never writes back to the file.
 
+A `page_id` that no longer resolves fails that file with what to do about it
+(`page_id 999 not found (deleted, trashed, or wrong); correct it, or remove it and
+use create instead`), and one that isn't a numeric id at all is reported without
+asking Confluence. Since `update` writes nothing back, fixing the id is always
+safe: the file is exactly as you left it.
+
 Updates are skipped when a file hasn't changed since the page's last version
 (compared by mtime) unless `--force` is given. Each file is processed
 independently; the command exits non-zero if any file fails.
