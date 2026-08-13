@@ -471,12 +471,6 @@ func (c *ConfluenceClient) GetPageBodyOrNil(pageID string) (*Page, error) {
 	return &p, nil
 }
 
-// PageExists reports whether a page with this id currently exists.
-func (c *ConfluenceClient) PageExists(pageID string) (bool, error) {
-	p, err := c.GetPageOrNil(pageID)
-	return p != nil, err
-}
-
 // ResolveSpaceID resolves a space key to its numeric space id, or "" if unknown.
 func (c *ConfluenceClient) ResolveSpaceID(spaceKey string) (string, error) {
 	var out struct {
