@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/mozilla/markfluence/internal/schematest"
 )
 
 // TestRootCommandWiring is the step-1 smoke test: it confirms the root command
@@ -69,6 +71,54 @@ func TestCompletionScripts(t *testing.T) {
 				t.Errorf("%s completion script looks empty or generic:\n%s", shell, script)
 			}
 		})
+	}
+}
+
+// noJSONEnvelope lists the subcommands that emit no --json envelope, and so
+// have no business in the schema's command enum. Keeping it explicit means
+// adding a command that reports nothing machine-readable is a deliberate entry
+// here rather than a silent omission from the contract.
+var noJSONEnvelope = map[string]string{
+	"help":       "cobra's own; prints help text",
+	"completion": "cobra's own; prints a shell script",
+	"schema":     "prints the schema document itself, not an envelope",
+}
+
+// TestCommandEnumMatchesRegisteredCommands ties the CLI's command list to the
+// --json contract in both directions. Without it, a new command's only nudge
+// toward the schema is its own conformance test -- which a developer can satisfy
+// by adding the name to the command enum and stopping, leaving its results
+// unvalidated (see internal/schematest/document.go).
+func TestCommandEnumMatchesRegisteredCommands(t *testing.T) {
+	rootCmd.InitDefaultCompletionCmd()
+
+	inEnum := make(map[string]bool)
+	for _, name := range schematest.Commands(t) {
+		inEnum[name] = true
+	}
+
+	registered := make(map[string]bool)
+	for _, c := range rootCmd.Commands() {
+		name := c.Name()
+		registered[name] = true
+		if _, exempt := noJSONEnvelope[name]; exempt {
+			if inEnum[name] {
+				t.Errorf("command %q is listed as emitting no JSON envelope but is in the "+
+					"schema's command enum", name)
+			}
+			continue
+		}
+		if !inEnum[name] {
+			t.Errorf("command %q is not in the schema's command enum: add it (with an "+
+				"if/then branch for its results and summary), or list it in noJSONEnvelope",
+				name)
+		}
+	}
+
+	for name := range inEnum {
+		if !registered[name] {
+			t.Errorf("schema's command enum lists %q, which is not a registered command", name)
+		}
 	}
 }
 
