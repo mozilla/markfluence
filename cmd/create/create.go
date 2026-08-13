@@ -16,6 +16,7 @@ import (
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
@@ -84,7 +85,86 @@ type record struct {
 }
 
 // failure is a phase-1 validation error against a file (or "(hierarchy)").
-type failure struct{ filename, message string }
+// pageID and url are set only for a frontmatter page_id failure, which is the one
+// validation error that can name a page: see pageIDFailure.
+type failure struct {
+	filename, message string
+	pageID, url       string
+}
+
+// pageIDFailure is a phase-1 failure about a file's frontmatter page_id. create
+// needs that id to point at nothing, and there are three ways it can fail: the id
+// is not a page id at all, it resolves to nothing (so publishing would silently
+// create a second page and overwrite the id), or a page is already there.
+//
+// It is a typed error rather than a plain one so the --json result can report
+// page_id (always) and url (when a page is really there) as fields instead of
+// leaving a consumer to parse them out of the message.
+type pageIDFailure struct {
+	pageID  string
+	title   string // the live page's title, when one exists
+	url     string // the live page's URL, when one exists
+	message string
+}
+
+func (e *pageIDFailure) Error() string { return e.message }
+
+// newFailure records a phase-1 error against a file, carrying over the fields of
+// a page_id failure so abort() can report them without re-fetching anything.
+func newFailure(filename string, err error) failure {
+	f := failure{filename: filename, message: err.Error()}
+	var pf *pageIDFailure
+	if errors.As(err, &pf) {
+		f.pageID, f.url = pf.pageID, pf.url
+	}
+	return f
+}
+
+// checkPageID validates a file's frontmatter page_id for creation. An empty id is
+// what create expects, and is no error.
+//
+// The numeric check comes first because a page_id that is not digits (a pasted
+// URL, a leftover "TODO") makes the API answer 400, whose raw body was what the
+// user used to see.
+func checkPageID(c *client.ConfluenceClient, pageID string) error {
+	if pageID == "" {
+		return nil
+	}
+	if !pageref.IsDigits(pageID) {
+		return &pageIDFailure{
+			pageID: pageID,
+			message: fmt.Sprintf("page_id %q is not a numeric page id; correct it or remove it",
+				pageID),
+		}
+	}
+	page, err := c.GetPageOrNil(pageID)
+	if err != nil {
+		return err
+	}
+	return pageIDFailureFor(c, pageID, page)
+}
+
+// pageIDFailureFor turns a resolved page_id into its failure, or nil when the id
+// is free to create against. page is nil when the id resolves to nothing.
+func pageIDFailureFor(c *client.ConfluenceClient, pageID string, page *client.Page) error {
+	if page == nil {
+		// Wording mirrors fix's locatePage, which reports the same condition; only
+		// the remedy differs, since removing the id here means "create a new page".
+		return &pageIDFailure{
+			pageID: pageID,
+			message: fmt.Sprintf("page_id %s not found (deleted, trashed, or wrong); "+
+				"remove it to create a new page, or correct it", pageID),
+		}
+	}
+	url := pageURL(c, page, pageID)
+	return &pageIDFailure{
+		pageID: pageID,
+		title:  page.Title,
+		url:    url,
+		message: fmt.Sprintf("a page already exists at page_id %s (%q): %s",
+			pageID, page.Title, url),
+	}
+}
 
 func run(cmd *cobra.Command, args []string) error {
 	if overrideNeedsSingleFile(titleOpt, len(args)) {
@@ -121,7 +201,7 @@ func run(cmd *cobra.Command, args []string) error {
 	for _, filename := range args {
 		r, err := resolveFile(filename, c, inSetAbs, spaceCache)
 		if err != nil {
-			errs = append(errs, failure{filename, err.Error()})
+			errs = append(errs, newFailure(filename, err))
 			continue
 		}
 		records = append(records, r)
@@ -135,13 +215,13 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 		for _, r := range records {
 			if r.parent.kind == "inset" && byAbs[r.parent.abs].spaceID != r.spaceID {
-				errs = append(errs, failure{r.filename, "parent page is not in the target space"})
+				errs = append(errs, failure{filename: r.filename, message: "parent page is not in the target space"})
 			}
 		}
 		if len(errs) == 0 {
 			ordered, err = topoSort(records, byAbs)
 			if err != nil {
-				errs = append(errs, failure{"(hierarchy)", err.Error()})
+				errs = append(errs, failure{filename: "(hierarchy)", message: err.Error()})
 			}
 		}
 	}
@@ -225,6 +305,13 @@ func resolveFile(
 		return record{}, err
 	}
 
+	// Before the space, parent, and duplicate-title lookups: a page_id that is
+	// already taken or already broken is the most specific thing wrong with the
+	// file, and reporting it first also spares three API calls the file cannot use.
+	if err := checkPageID(c, mf.PageID()); err != nil {
+		return record{}, err
+	}
+
 	// Space: --space or frontmatter 'space'; both set and differing is an error.
 	fmSpace := mf.Frontmatter["space"]
 	if spaceOpt != "" && fmSpace != "" && spaceOpt != fmSpace {
@@ -254,15 +341,6 @@ func resolveFile(
 		return record{}, err
 	}
 
-	if mf.PageID() != "" {
-		exists, err := c.PageExists(mf.PageID())
-		if err != nil {
-			return record{}, err
-		}
-		if exists {
-			return record{}, errors.New("a page already exists at this page_id")
-		}
-	}
 	dupes, err := c.SearchPagesByTitle(title, spaceID)
 	if err != nil {
 		return record{}, err
