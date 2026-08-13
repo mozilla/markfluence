@@ -5,6 +5,9 @@ dist: dist
 before:
   hooks:
     - go mod tidy
+    # Writes ./completions/markfluence.{bash,zsh,fish}, packaged below. They are
+    # generated from the CLI, so they always match this build's commands.
+    - make completions
 
 builds:
   - id: markfluence
@@ -30,6 +33,12 @@ archives:
   - id: markfluence
     formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # Naming `files` replaces goreleaser's defaults, so the license and readme
+    # are listed again alongside the completions.
+    files:
+      - LICENSE
+      - README.md
+      - completions/*
 
 checksum:
   name_template: "checksums.txt"
@@ -56,3 +65,9 @@ homebrew_casks:
       name: "github-actions[bot]"
       email: "41898282+github-actions[bot]@users.noreply.github.com"
     commit_msg_template: "chore: bump markfluence cask to {{ .Tag }}"
+    # Paths within the extracted archive; the cask installs them where each
+    # shell looks, so a brew install completes out of the box.
+    completions:
+      bash: completions/markfluence.bash
+      zsh: completions/markfluence.zsh
+      fish: completions/markfluence.fish
