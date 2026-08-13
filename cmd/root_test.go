@@ -21,7 +21,9 @@ func TestRootCommandWiring(t *testing.T) {
 }
 
 func TestSubcommandsRegistered(t *testing.T) {
-	want := map[string]bool{"update": false, "create": false, "fix": false, "info": false, "read": false}
+	want := map[string]bool{
+		"update": false, "create": false, "fix": false, "info": false, "read": false, "schema": false,
+	}
 	for _, c := range rootCmd.Commands() {
 		delete(want, c.Name())
 	}
