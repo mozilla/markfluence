@@ -131,11 +131,7 @@ func checkPageID(c *client.ConfluenceClient, pageID string) error {
 		return nil
 	}
 	if !pageref.IsDigits(pageID) {
-		return &pageIDFailure{
-			pageID: pageID,
-			message: fmt.Sprintf("page_id %q is not a numeric page id; correct it or remove it",
-				pageID),
-		}
+		return &pageIDFailure{pageID: pageID, message: pageref.NotNumericMessage(pageID)}
 	}
 	page, err := c.GetPageOrNil(pageID)
 	if err != nil {
@@ -151,9 +147,8 @@ func pageIDFailureFor(c *client.ConfluenceClient, pageID string, page *client.Pa
 		// Wording mirrors fix's locatePage, which reports the same condition; only
 		// the remedy differs, since removing the id here means "create a new page".
 		return &pageIDFailure{
-			pageID: pageID,
-			message: fmt.Sprintf("page_id %s not found (deleted, trashed, or wrong); "+
-				"remove it to create a new page, or correct it", pageID),
+			pageID:  pageID,
+			message: pageref.NotFoundMessage(pageID, "remove it to create a new page, or correct it"),
 		}
 	}
 	url := pageURL(c, page, pageID)

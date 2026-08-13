@@ -13,6 +13,7 @@ import (
 	"github.com/mozilla/markfluence/internal/completion"
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
@@ -154,9 +155,8 @@ func locatePage(fm map[string]string, c *client.ConfluenceClient) (*client.Page,
 			return nil, err
 		}
 		if page == nil {
-			return nil, fmt.Errorf(
-				"page_id %s not found (deleted, trashed, or wrong); "+
-					"remove it to search by title, or correct it", pageID)
+			return nil, errors.New(
+				pageref.NotFoundMessage(pageID, "remove it to search by title, or correct it"))
 		}
 		return page, nil
 	}
