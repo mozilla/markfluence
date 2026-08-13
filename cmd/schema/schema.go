@@ -5,6 +5,7 @@ package schema
 import (
 	"fmt"
 
+	"github.com/mozilla/markfluence/internal/jsonout"
 	schemadoc "github.com/mozilla/markfluence/schema"
 	"github.com/spf13/cobra"
 )
@@ -20,7 +21,7 @@ var Cmd = &cobra.Command{
 		"version this binary emits. Both the schema command and the tests that\n"+
 		"validate real --json output read that same embedded copy.\n\n"+
 		"The output is the schema document itself, so --json changes nothing here.",
-		schemadoc.Version),
+		jsonout.SchemaVersion),
 	Args: cobra.NoArgs,
 	// The command takes no arguments; without this, completion would offer every
 	// file in the directory.
@@ -31,7 +32,7 @@ var Cmd = &cobra.Command{
 func run(cmd *cobra.Command, _ []string) error {
 	// Verbatim, newline-terminated bytes: what is printed is byte-identical to
 	// the published schema file, which is what lets a consumer diff or cache it.
-	if _, err := fmt.Fprint(cmd.OutOrStdout(), schemadoc.Latest); err != nil {
+	if _, err := fmt.Fprint(cmd.OutOrStdout(), schemadoc.V1); err != nil {
 		return fmt.Errorf("writing schema: %w", err)
 	}
 	return nil
