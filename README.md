@@ -164,7 +164,8 @@ in the frontmatter.
 
 Optional parent can be specified on the command line (`--parent PAGE_ID`) or
 in the frontmatter. In the frontmatter, you can specify the page id or
-the Markdown file.
+the Markdown file. The parent may also be a **folder** — the Confluence Cloud
+content type — in which case give its id the same way you would a page's.
 
 Page width defaults to `max`; set it with `--page-width narrow|wide|max` (which
 overrides the frontmatter `page_width` and may apply across a batch).
@@ -670,7 +671,7 @@ to round-trip.
 | Field | Value domain | Notes |
 | --- | --- | --- |
 | `space` | a space key (e.g. `ENG`, or a personal space like `~1234abcd`) | Target space for `create` (or pass `--space`); written back by `create`. Always a key, never a numeric space id. |
-| `parent` | `null`, a numeric page id, or a relative `.md` path | `null` = top-level page; a page id = an existing parent page; a `.md` path = a parent authored in the same run (`create` resolves it in dependency order, then rewrites the value to `<page_id>  # <original.md>`). Used by `create` (or `--parent`). |
+| `parent` | `null`, a numeric page **or folder** id, or a relative `.md` path | `null` = top-level page; an id = an existing parent, which may be a page or a Cloud folder (the value is just an id either way — nothing records which kind it is); a `.md` path = a parent authored in the same run (`create` resolves it in dependency order, then rewrites the value to `<page_id>  # <original.md>`). Used by `create` (or `--parent`). |
 | `page_id` | a numeric page id, or `null` | The target page. `update` looks it up by `title` and writes it back when missing; `create` writes it after creating the page. `null`/absent means "no page yet." |
 | `title` | text (**required**) | The Confluence page title. |
 | `page_width` | `narrow`, `wide`, or `max` | The published page width (the UI's "Adjust width" options; `narrow`/`wide`/`max` map to the `default`/`full-width`/`max` appearance properties). Absent or blank defaults to `max`. `create`/`update` assert it on every publish (so a width set in the Confluence UI is overwritten unless the frontmatter matches); `fix` writes back the live page's width. |
