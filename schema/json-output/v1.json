@@ -9,7 +9,7 @@
   "properties": {
     "schema_version": { "const": 1 },
     "markfluence_version": { "type": "string" },
-    "command": { "enum": ["info", "read", "update", "create", "fix", "children", "attachment-list", "attachment-upload", "attachment-download", "export"] },
+    "command": { "enum": ["info", "read", "update", "create", "fix", "children", "find", "attachment-list", "attachment-upload", "attachment-download", "export"] },
     "results": { "type": "array" },
     "summary": { "type": "object" }
   },
@@ -113,6 +113,15 @@
       }
     },
     {
+      "if": { "properties": { "command": { "const": "find" } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "results": { "items": { "$ref": "#/$defs/findResult" } },
+          "summary": { "$ref": "#/$defs/basicSummary" }
+        }
+      }
+    },
+    {
       "if": { "properties": { "command": { "const": "attachment-list" } }, "required": ["command"] },
       "then": {
         "properties": {
@@ -147,6 +156,21 @@
         "parent_id": { "type": "string" },
         "depth": { "type": "integer", "minimum": 1 },
         "space": { "$ref": "#/$defs/stringOrNull" },
+        "url": { "$ref": "#/$defs/stringOrNull" }
+      }
+    },
+    "findResult": {
+      "description": "One page or folder whose title matches exactly. There is no failure variant: find names no page to fail about, so a failed search is an error object on stderr with no envelope. status may be \"archived\" -- such a page is absent from the page tree but still reserves its title, so it blocks creating a page with that title in the same space. A folder reserves nothing, so a folder match is discovery only and never explains a creation conflict. space and url are both derived from the match's link, so a row missing one is missing both.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "id", "type", "title", "space", "status", "url"],
+      "properties": {
+        "ok": { "const": true },
+        "id": { "type": "string" },
+        "type": { "enum": ["page", "folder"] },
+        "title": { "type": "string" },
+        "space": { "$ref": "#/$defs/stringOrNull" },
+        "status": { "type": "string" },
         "url": { "$ref": "#/$defs/stringOrNull" }
       }
     },
