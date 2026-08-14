@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/mozilla/markfluence/cmd/attachmentdownload"
 	"github.com/mozilla/markfluence/cmd/attachmentlist"
@@ -19,6 +20,7 @@ import (
 	"github.com/mozilla/markfluence/cmd/schema"
 	"github.com/mozilla/markfluence/cmd/update"
 	"github.com/mozilla/markfluence/internal/buildinfo"
+	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
@@ -60,6 +62,7 @@ var rootCmd = &cobra.Command{
 		}
 		ui.SetDebug(debugFlag)
 		ui.SetJSON(jsonFlag)
+		client.SetRetryLogger(logRetry)
 		return nil
 	},
 	// Bare `markfluence` prints help; subcommands carry the work.
@@ -150,4 +153,42 @@ func init() {
 	rootCmd.AddCommand(attachmentdownload.Cmd)
 	rootCmd.AddCommand(export.Cmd)
 	rootCmd.AddCommand(schema.Cmd)
+}
+
+// logRetry renders a retry decision as a --debug line.
+//
+// internal/client produces no output of its own, so this is where a retry
+// becomes visible. It matters because the alternative is silence: five attempts
+// at the 120-second upload timeout plus backoff is roughly twelve minutes with
+// nothing on screen, and a decision *not* to retry is exactly as worth seeing as
+// a decision to.
+func logRetry(ev client.RetryEvent) {
+	if !ui.IsDebug() {
+		return
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s %s: attempt %d ", ev.Method, ev.URL, ev.Attempt+1)
+	switch {
+	case ev.Err != nil:
+		fmt.Fprintf(&b, "failed: %v", ev.Err)
+	default:
+		fmt.Fprintf(&b, "got HTTP %d", ev.Status)
+	}
+	if ev.Retrying {
+		fmt.Fprintf(&b, "; retrying in %s", ev.Delay.Round(time.Millisecond))
+	} else {
+		b.WriteString("; not retrying")
+	}
+	if r := ev.RateLimit; !r.Empty() {
+		fmt.Fprintf(&b, " [rate limit: limit=%s remaining=%s reset=%s near=%s reason=%s]",
+			orDash(r.Limit), orDash(r.Remaining), orDash(r.Reset), orDash(r.NearLimit), orDash(r.Reason))
+	}
+	ui.Debug(b.String())
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }

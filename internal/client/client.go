@@ -352,17 +352,38 @@ func (c *ConfluenceClient) send(req *http.Request, timeout time.Duration) (int, 
 
 	for attempt := 0; ; attempt++ {
 		res, err := c.attempt(req, timeout)
+		ev := RetryEvent{
+			Method: req.Method, URL: req.URL.String(), Attempt: attempt,
+			Status: res.status, Err: err, RateLimit: res.rateLimit,
+		}
 		switch {
 		case err != nil:
-			if attempt < maxRetries && isIdempotent(req.Method) {
-				sleep(backoff(attempt, 0))
-				continue
+			ev.Retrying = attempt < maxRetries && isIdempotent(req.Method)
+			if !ev.Retrying {
+				logRetry(ev)
+				return 0, nil, err
 			}
-			return 0, nil, err
-		case attempt < maxRetries && retryableStatus(res.status, req.Method, res.hasRetryAfter):
-			sleep(backoff(attempt, res.retryAfter))
+			ev.Delay = backoff(attempt, 0)
+			logRetry(ev)
+			sleep(ev.Delay)
+			continue
+		case retryableStatus(res.status, req.Method, res.hasRetryAfter):
+			ev.Retrying = attempt < maxRetries
+			if !ev.Retrying { // retries exhausted
+				logRetry(ev)
+				return res.status, res.body, nil
+			}
+			ev.Delay = backoff(attempt, res.retryAfter)
+			logRetry(ev)
+			sleep(ev.Delay)
 			continue
 		default:
+			// Report a failure that was eligible for a retry and did not get
+			// one, so the rule that refused it is visible. A success, or an
+			// ordinary 4xx the command layer will report itself, is not news.
+			if res.status >= 500 || res.status == http.StatusTooManyRequests {
+				logRetry(ev)
+			}
 			return res.status, res.body, nil
 		}
 	}
@@ -379,6 +400,7 @@ type attemptResult struct {
 	// parseRetryAfter.
 	retryAfter    time.Duration
 	hasRetryAfter bool
+	rateLimit     RateLimitInfo
 }
 
 // attempt performs a single HTTP round trip under a fresh timeout context.
@@ -405,7 +427,11 @@ func (c *ConfluenceClient) attempt(req *http.Request, timeout time.Duration) (at
 		return attemptResult{}, err
 	}
 	delay, ok := parseRetryAfter(resp.Header.Get("Retry-After"))
-	return attemptResult{status: resp.StatusCode, body: data, retryAfter: delay, hasRetryAfter: ok}, nil
+	return attemptResult{
+		status: resp.StatusCode, body: data,
+		retryAfter: delay, hasRetryAfter: ok,
+		rateLimit: rateLimitFrom(resp.Header),
+	}, nil
 }
 
 // isIdempotent reports whether retrying a method can't cause a duplicate write.
