@@ -247,14 +247,28 @@ func TestSendExhaustsRetries(t *testing.T) {
 }
 
 func TestParseRetryAfter(t *testing.T) {
-	if d := parseRetryAfter("5"); d != 5*time.Second {
-		t.Errorf("parseRetryAfter(5) = %v, want 5s", d)
-	}
-	if d := parseRetryAfter(""); d != 0 {
-		t.Errorf("parseRetryAfter(empty) = %v, want 0", d)
-	}
-	if d := parseRetryAfter("garbage"); d != 0 {
-		t.Errorf("parseRetryAfter(garbage) = %v, want 0", d)
+	for _, tc := range []struct {
+		name, in string
+		want     time.Duration
+		wantOK   bool
+	}{
+		{"delta seconds", "5", 5 * time.Second, true},
+		{"absent", "", 0, false},
+		{"unparseable is not an instruction", "garbage", 0, false},
+		// Presence is reported apart from the delay: both of these say "retry,
+		// immediately", and reading them as absent would refuse to retry a 5xx
+		// that explicitly asked for one.
+		{"zero means retry now", "0", 0, true},
+		{"a past date means retry now", "Mon, 02 Jan 2006 15:04:05 GMT", 0, true},
+		{"whitespace is trimmed", "  7  ", 7 * time.Second, true},
+		{"negative is not understood", "-1", 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, ok := parseRetryAfter(tc.in)
+			if d != tc.want || ok != tc.wantOK {
+				t.Errorf("parseRetryAfter(%q) = %v, %v; want %v, %v", tc.in, d, ok, tc.want, tc.wantOK)
+			}
+		})
 	}
 }
 
@@ -1064,5 +1078,73 @@ func TestSyncAttachmentsSkipsWhenCurrentChecksumMatches(t *testing.T) {
 	}
 	if !eqStrings(s.calls, []string{"GET"}) {
 		t.Errorf("calls = %v, want [GET] (no upload)", s.calls)
+	}
+}
+
+// TestRetryableStatus pins the whole matrix, and the 500 rule in particular: a
+// 500 is retryable exactly when the response asks to be called back, which is
+// how a transient 500 gets a retry without a deterministic one burning backoff
+// (docs/confluence/api.md).
+func TestRetryableStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		status        int
+		method        string
+		hasRetryAfter bool
+		want          bool
+	}{
+		{"429 on GET", 429, http.MethodGet, false, true},
+		// 429 is retried even for a POST: the request was rejected before it was
+		// processed, so re-sending cannot duplicate a write.
+		{"429 on POST", 429, http.MethodPost, false, true},
+		{"502 on GET", 502, http.MethodGet, false, true},
+		{"503 on GET", 503, http.MethodGet, false, true},
+		{"504 on GET", 504, http.MethodGet, false, true},
+		{"503 on POST", 503, http.MethodPost, false, false},
+		{"bare 500 on GET", 500, http.MethodGet, false, false},
+		{"500 with Retry-After on GET", 500, http.MethodGet, true, true},
+		{"500 with Retry-After on PUT", 500, http.MethodPut, true, true},
+		// Still a write that may have landed: the header does not make a POST safe.
+		{"500 with Retry-After on POST", 500, http.MethodPost, true, false},
+		{"507 with Retry-After on GET", 507, http.MethodGet, true, true},
+		{"404 with Retry-After on GET", 404, http.MethodGet, true, false},
+		{"400 on GET", 400, http.MethodGet, false, false},
+		{"200 on GET", 200, http.MethodGet, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := retryableStatus(tc.status, tc.method, tc.hasRetryAfter); got != tc.want {
+				t.Errorf("retryableStatus(%d, %s, retry-after=%v) = %v, want %v",
+					tc.status, tc.method, tc.hasRetryAfter, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSendRetries500WithRetryAfter(t *testing.T) {
+	c, n := countingServer(t, func(w http.ResponseWriter, req int32) {
+		if req == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":"1"}`))
+	})
+	if _, err := c.GetPage("1"); err != nil {
+		t.Fatalf("GetPage after a 500 that asked to be retried: %v", err)
+	}
+	if got := atomic.LoadInt32(n); got != 2 {
+		t.Errorf("requests = %d, want 2 (one retry)", got)
+	}
+}
+
+func TestSendDoesNotRetryBare500(t *testing.T) {
+	c, n := countingServer(t, func(w http.ResponseWriter, _ int32) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	if _, err := c.GetPage("1"); err == nil {
+		t.Fatal("GetPage: want an error on a bare 500")
+	}
+	if got := atomic.LoadInt32(n); got != 1 {
+		t.Errorf("requests = %d, want 1 (a bare 500 is not retried)", got)
 	}
 }
