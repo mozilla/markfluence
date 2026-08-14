@@ -180,7 +180,7 @@ func TestProcessFileReportsMissingPage(t *testing.T) {
 	if r.ok {
 		t.Fatal("a page_id that resolves to nothing must fail the file")
 	}
-	want := "page_id 999 not found (deleted, trashed, or wrong); " +
+	want := "page_id 999 not found (deleted or wrong); " +
 		"correct it, or remove it and use create instead"
 	if r.errMsg != want {
 		t.Errorf("errMsg =\n %q\nwant\n %q", r.errMsg, want)
