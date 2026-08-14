@@ -13,13 +13,15 @@ import (
 func TestSchemaConformance(t *testing.T) {
 	// A normal (non-aborted) create batch.
 	parent := "123"
+	parentType := "folder"
 	parentFile := "index.md"
 	results := []*createResult{
 		{
 			file: "child.md", ok: true, status: statusCreated,
 			pageID: "456", title: "Child", space: "ENG", parent: &parent, url: "https://x/456",
-			width:     &jsonout.PageWidth{Value: "max", Default: false},
-			persisted: true,
+			parentType: &parentType,
+			width:      &jsonout.PageWidth{Value: "max", Default: false},
+			persisted:  true,
 		},
 		{
 			// A dry-run of an in-set child: no page id/url yet, parent unresolved
@@ -66,12 +68,14 @@ func (e errString) Error() string { return string(e) }
 
 func TestJSONResultCreated(t *testing.T) {
 	parent := "123"
+	parentType := "folder"
 	r := &createResult{
 		file: "child.md", ok: true, status: statusCreated,
 		pageID: "456", title: "Child", space: "ENG", parent: &parent,
-		url:       "https://wiki.example.net/wiki/spaces/ENG/pages/456/Child",
-		width:     &jsonout.PageWidth{Value: "max", Default: false},
-		persisted: true,
+		parentType: &parentType,
+		url:        "https://wiki.example.net/wiki/spaces/ENG/pages/456/Child",
+		width:      &jsonout.PageWidth{Value: "max", Default: false},
+		persisted:  true,
 	}
 	got, err := json.MarshalIndent(r.jsonResult(), "", "  ")
 	if err != nil {
@@ -86,6 +90,7 @@ func TestJSONResultCreated(t *testing.T) {
   "title": "Child",
   "space": "ENG",
   "parent": "123",
+  "parent_type": "folder",
   "parent_file": null,
   "url": "https://wiki.example.net/wiki/spaces/ENG/pages/456/Child",
   "page_width": {

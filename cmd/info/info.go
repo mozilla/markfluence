@@ -114,6 +114,7 @@ func failEnvelope(pageID string, err error, code jsonout.Code) jsonout.Envelope 
 type report struct {
 	id, title, status, space string
 	parentID                 string // "" for a top-level page
+	parentType               string // "page" or "folder"; "" for a top-level page
 	versionNum               int
 	widthKnown               bool
 	width                    jsonout.PageWidth
@@ -145,6 +146,7 @@ func buildReport(page *client.Page, c *client.ConfluenceClient, withProps bool) 
 		status:     page.Status,
 		space:      client.SpaceKeyFromWebUI(page.Links.WebUI),
 		parentID:   page.ParentID,
+		parentType: page.ParentType,
 		versionNum: page.Version.Number,
 		createdAt:  page.CreatedAt,
 		creator:    authorName(c, page.AuthorID, cache),

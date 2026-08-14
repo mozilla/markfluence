@@ -26,6 +26,7 @@ type createResult struct {
 	title       string
 	space       string
 	parent      *string
+	parentType  *string
 	parentFile  *string
 	url         string
 	width       *jsonout.PageWidth
@@ -92,6 +93,7 @@ type jsonCreateResult struct {
 	Title       *string              `json:"title"`
 	Space       *string              `json:"space"`
 	Parent      *string              `json:"parent"`
+	ParentType  *string              `json:"parent_type"`
 	ParentFile  *string              `json:"parent_file"`
 	URL         *string              `json:"url"`
 	PageWidth   *jsonout.PageWidth   `json:"page_width"`
@@ -113,6 +115,7 @@ func (r *createResult) jsonResult() jsonCreateResult {
 		Title:       nullableStr(r.title),
 		Space:       nullableStr(r.space),
 		Parent:      r.parent,
+		ParentType:  r.parentType,
 		ParentFile:  r.parentFile,
 		URL:         nullableStr(r.url),
 		PageWidth:   r.width,

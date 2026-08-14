@@ -2,6 +2,8 @@ package create
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -190,6 +192,99 @@ func TestPageURLUsesSiteNotGateway(t *testing.T) {
 			page := &client.Page{ID: "42", Links: client.Links{Base: tc.base, WebUI: tc.webu}}
 			if got := pageURL(c, page, "42"); got != tc.want {
 				t.Errorf("pageURL = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// parentServer stands in for Confluence for the parent lookups, routing by path
+// so a folder id can 404 as a page and resolve as a folder -- which is the whole
+// shape of the bug in #68.
+func parentServer(t *testing.T, pages, folders map[string]string) *client.ConfluenceClient {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body string
+		var ok bool
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/wiki/api/v2/pages/"):
+			body, ok = pages[strings.TrimPrefix(r.URL.Path, "/wiki/api/v2/pages/")]
+		case strings.HasPrefix(r.URL.Path, "/wiki/api/v2/folders/"):
+			body, ok = folders[strings.TrimPrefix(r.URL.Path, "/wiki/api/v2/folders/")]
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"errors":[{"status":404,"code":"NOT_FOUND"}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return client.New(client.Config{SiteURL: srv.URL})
+}
+
+// TestCheckParentInSpaceAcceptsFolder is #68: a folder id is a legitimate parent,
+// but every v2 page route answers one with 404, so looking it up as a page and
+// stopping there rejected a parent Confluence would have accepted.
+func TestCheckParentInSpaceAcceptsFolder(t *testing.T) {
+	const space = "77"
+	for _, tc := range []struct {
+		name     string
+		pages    map[string]string
+		folders  map[string]string
+		wantKind string
+		wantErr  string
+	}{
+		{
+			name:     "a page parent",
+			pages:    map[string]string{"100": `{"id":"100","spaceId":"77"}`},
+			wantKind: "page",
+		},
+		{
+			name:     "a folder parent",
+			folders:  map[string]string{"200": `{"id":"200","type":"folder","spaceId":"77"}`},
+			wantKind: "folder",
+		},
+		{
+			name:    "neither kind exists",
+			wantErr: "parent 300 not found: no page or folder has that id",
+		},
+		{
+			name:    "a folder in the wrong space",
+			folders: map[string]string{"200": `{"id":"200","type":"folder","spaceId":"99"}`},
+			wantErr: "parent folder 200 is not in the target space",
+		},
+		{
+			name:    "a page in the wrong space",
+			pages:   map[string]string{"100": `{"id":"100","spaceId":"99"}`},
+			wantErr: "parent page 100 is not in the target space",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := parentServer(t, tc.pages, tc.folders)
+			id := "300"
+			if len(tc.pages) > 0 {
+				id = "100"
+			} else if len(tc.folders) > 0 {
+				id = "200"
+			}
+
+			kind, err := checkParentInSpace(c, id, space)
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatalf("want error %q, got kind %q", tc.wantErr, kind)
+				}
+				if err.Error() != tc.wantErr {
+					t.Errorf("error = %q, want %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if kind != tc.wantKind {
+				t.Errorf("kind = %q, want %q", kind, tc.wantKind)
 			}
 		})
 	}

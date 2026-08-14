@@ -12,10 +12,12 @@ import (
 
 func TestSchemaConformance(t *testing.T) {
 	parent := "456"
+	parentType := "page"
 	res := jsonReadResult{
 		OK: true, PageID: "123", Title: "X", Space: "ENG", Parent: &parent,
-		PageWidth: &jsonout.PageWidth{Value: "max", Default: true},
-		Format:    "markdown", Body: "# X\n\nhello",
+		ParentType: &parentType,
+		PageWidth:  &jsonout.PageWidth{Value: "max", Default: true},
+		Format:     "markdown", Body: "# X\n\nhello",
 	}
 	env := jsonout.NewEnvelope("read", []any{res}, map[string]int{"total": 1, "succeeded": 1, "failed": 0})
 	var buf bytes.Buffer
@@ -36,15 +38,17 @@ func TestSchemaConformance(t *testing.T) {
 
 func TestJSONReadResultMarshal(t *testing.T) {
 	parent := "456"
+	parentType := "page"
 	res := jsonReadResult{
-		OK:        true,
-		PageID:    "123",
-		Title:     "X",
-		Space:     "ENG",
-		Parent:    &parent,
-		PageWidth: &jsonout.PageWidth{Value: "max", Default: true},
-		Format:    "markdown",
-		Body:      "# X\n\nhello",
+		OK:         true,
+		PageID:     "123",
+		Title:      "X",
+		Space:      "ENG",
+		Parent:     &parent,
+		ParentType: &parentType,
+		PageWidth:  &jsonout.PageWidth{Value: "max", Default: true},
+		Format:     "markdown",
+		Body:       "# X\n\nhello",
 	}
 	b, err := json.MarshalIndent(res, "", "  ")
 	if err != nil {
@@ -56,6 +60,7 @@ func TestJSONReadResultMarshal(t *testing.T) {
   "title": "X",
   "space": "ENG",
   "parent": "456",
+  "parent_type": "page",
   "page_width": {
     "value": "max",
     "default": true

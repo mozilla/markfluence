@@ -11,14 +11,15 @@ import (
 // echoed. parent is null for a top-level page; page_width is null when the
 // (best-effort) width read fails.
 type jsonReadResult struct {
-	OK        bool               `json:"ok"`
-	PageID    string             `json:"page_id"`
-	Title     string             `json:"title"`
-	Space     string             `json:"space"`
-	Parent    *string            `json:"parent"`
-	PageWidth *jsonout.PageWidth `json:"page_width"`
-	Format    string             `json:"format"`
-	Body      string             `json:"body"`
+	OK         bool               `json:"ok"`
+	PageID     string             `json:"page_id"`
+	Title      string             `json:"title"`
+	Space      string             `json:"space"`
+	Parent     *string            `json:"parent"`
+	ParentType *string            `json:"parent_type"`
+	PageWidth  *jsonout.PageWidth `json:"page_width"`
+	Format     string             `json:"format"`
+	Body       string             `json:"body"`
 }
 
 // buildResult assembles the JSON result. Unlike the human path, the metadata is
@@ -37,6 +38,10 @@ func buildResult(c *client.ConfluenceClient, page *client.Page, format, body str
 	if page.ParentID != "" {
 		p := page.ParentID
 		res.Parent = &p
+	}
+	if page.ParentType != "" {
+		pt := page.ParentType
+		res.ParentType = &pt
 	}
 	if w, explicit, err := pagewidth.Read(c, page.ID); err == nil {
 		res.PageWidth = &jsonout.PageWidth{Value: string(w), Default: !explicit}
