@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"html"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -58,6 +59,40 @@ type SearchResult struct {
 	Title      string `json:"title"`
 	URL        string `json:"url"`
 	Excerpt    string `json:"excerpt"`
+}
+
+// The markers Confluence wraps matched terms in. siteSearch ~ decorates both the
+// row's title and its excerpt with them; 40 of 50 rows sampled carried them
+// (docs/confluence/search.md).
+const (
+	highlightOpen  = "@@@hl@@@"
+	highlightClose = "@@@endhl@@@"
+)
+
+// cleanExcerpt turns a raw search excerpt into a single line of plain text.
+//
+// Three passes, in this order:
+//
+//   - strip the highlight markers siteSearch ~ puts around every matched term;
+//   - unescape HTML entities exactly once -- the field arrives escaped, as in
+//     "Base Load Engineer&#39;s Hand-off Log";
+//   - collapse every run of whitespace, including the newlines 40 of 50 rows
+//     carry, to a single space, and trim.
+//
+// Stripping precedes unescaping because an entity-encoded marker has never been
+// observed, while an entity that decodes to whitespace is handled by collapsing
+// last. A page whose body literally contains "@@@hl@@@" loses it; that is
+// accepted, and it is not a thing anyone writes.
+//
+// Collapsing happens here rather than at the point of display so there is one
+// canonical excerpt: the human output and --json cannot disagree about it, and a
+// --json consumer does not inherit the index's arbitrary line breaks.
+func cleanExcerpt(s string) string {
+	s = strings.ReplaceAll(s, highlightOpen, "")
+	s = strings.ReplaceAll(s, highlightClose, "")
+	// strings.Fields splits on any whitespace run and drops the empties, so
+	// rejoining is the collapse and the trim at once.
+	return strings.Join(strings.Fields(html.UnescapeString(s)), " ")
 }
 
 // escapeCQL escapes a value for use inside a double-quoted CQL string literal.
