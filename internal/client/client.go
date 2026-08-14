@@ -493,6 +493,45 @@ func (c *ConfluenceClient) GetFolderOrNil(folderID string) (*Folder, error) {
 	return &f, nil
 }
 
+// ChildNode is one row of a v1 child collection: a page or a folder directly
+// under some parent. Type says which.
+//
+// Child listing is v1 because v2 cannot do it: every v2 page route refuses a
+// folder id, so there is no way to see inside a folder, and
+// /pages/{id}/children silently omits folders from a page's children — a wrong
+// answer rather than a partial one (docs/confluence/folders.md).
+//
+// No expand is needed. A bare v1 child row already carries webui (so a URL and,
+// via SpaceKeyFromWebUI, a space key), status, and extensions.position.
+type ChildNode struct {
+	ID     string `json:"id"`
+	Type   string `json:"type"` // "page" or "folder"
+	Title  string `json:"title"`
+	Status string `json:"status"`
+	// Position orders siblings the way Confluence displays them. Pages and
+	// folders come from separate requests, so merging the two by this value is
+	// the only way to reproduce the order a reader sees.
+	Extensions struct {
+		Position int64 `json:"position"`
+	} `json:"extensions"`
+	Links Links `json:"_links"`
+}
+
+// ListChildPages lists the pages directly under pageID, which may name a page or
+// a folder.
+func (c *ConfluenceClient) ListChildPages(id string) ([]ChildNode, error) {
+	return listV1[ChildNode](c, "/wiki/rest/api/content/"+id+"/child/page", nil)
+}
+
+// ListChildFolders lists the folders directly under id.
+//
+// Folders nest, so this is not a leaf query: a folder may hold folders that hold
+// the only pages in a subtree. Listing pages without also descending folders can
+// report an empty result for a subtree that has pages in it.
+func (c *ConfluenceClient) ListChildFolders(id string) ([]ChildNode, error) {
+	return listV1[ChildNode](c, "/wiki/rest/api/content/"+id+"/child/folder", nil)
+}
+
 // GetPageBodyOrNil fetches a page including its storage-format body, returning
 // nil (no error) on HTTP 404. The plain GetPage/GetPageOrNil stay bodyless so
 // metadata-only callers don't pay to transfer the body.
@@ -602,36 +641,40 @@ func (c *ConfluenceClient) GetUser(accountID string) string {
 
 // --- attachments (v1) --------------------------------------------------------
 
-// attachmentPageSize is the per-request page size for ListAttachments.
-const attachmentPageSize = 250
+// v1PageSize is the per-request page size for a v1 collection.
+const v1PageSize = 250
 
-// ListAttachments lists all of a page's attachments, with the comment, version,
-// and extensions expanded.
+// listV1 collects every row of a v1 collection, paging by start/limit offset.
 //
-// Pagination is by start/limit offset rather than _links.next: a v1 collection
-// omits next when the results fit one page, and its next is relative to the
-// /wiki context rather than the v2 paths resolveNext is written for.
-func (c *ConfluenceClient) ListAttachments(pageID string) ([]Attachment, error) {
-	var all []Attachment
-	for start := 0; ; start += attachmentPageSize {
-		var out struct {
-			Results []Attachment `json:"results"`
+// Offset, not _links.next: a v1 collection omits next when the results fit one
+// page, so its absence cannot terminate the loop, and when present it is
+// relative to the /wiki context rather than the v2 paths resolveNext handles
+// (see docs/confluence/api.md). Termination is a short page instead.
+func listV1[T any](c *ConfluenceClient, path string, params url.Values) ([]T, error) {
+	var all []T
+	for start := 0; ; start += v1PageSize {
+		q := url.Values{"limit": {strconv.Itoa(v1PageSize)}, "start": {strconv.Itoa(start)}}
+		for k, vs := range params {
+			q[k] = vs
 		}
-		err := c.doJSON(http.MethodGet,
-			c.baseURL+"/wiki/rest/api/content/"+pageID+"/child/attachment",
-			url.Values{
-				"expand": {"metadata.comment,version,extensions"},
-				"limit":  {strconv.Itoa(attachmentPageSize)},
-				"start":  {strconv.Itoa(start)},
-			}, nil, &out, timeoutRead)
-		if err != nil {
+		var out struct {
+			Results []T `json:"results"`
+		}
+		if err := c.doJSON(http.MethodGet, c.baseURL+path, q, nil, &out, timeoutRead); err != nil {
 			return nil, err
 		}
 		all = append(all, out.Results...)
-		if len(out.Results) < attachmentPageSize {
+		if len(out.Results) < v1PageSize {
 			return all, nil
 		}
 	}
+}
+
+// ListAttachments lists all of a page's attachments, with the comment, version,
+// and extensions expanded.
+func (c *ConfluenceClient) ListAttachments(pageID string) ([]Attachment, error) {
+	return listV1[Attachment](c, "/wiki/rest/api/content/"+pageID+"/child/attachment",
+		url.Values{"expand": {"metadata.comment,version,extensions"}})
 }
 
 // DownloadAttachment fetches an attachment's bytes and writes them to w.
