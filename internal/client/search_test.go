@@ -171,6 +171,151 @@ func TestSearchCQLParsesAHit(t *testing.T) {
 	}
 }
 
+// TestSearchCQLRequestsTheExcerptMode: excerpt= is passed explicitly so what
+// ships is what was tested, and an unrecognized value returns an empty excerpt
+// rather than an error -- which is exactly why it must not be left to a default
+// that could change underneath us.
+func TestSearchCQLRequestsTheExcerptMode(t *testing.T) {
+	c, s := newSearchServer(t, page(""))
+	if _, err := c.SearchCQL(`title = "x"`); err != nil {
+		t.Fatalf("SearchCQL: %v", err)
+	}
+	if want := "excerpt=" + excerptMode; !strings.Contains(s.urls[0], want) {
+		t.Errorf("first request = %q, want it to carry %q", s.urls[0], want)
+	}
+}
+
+// TestSearchCQLCarriesTheExcerptModeOntoLaterPages: the server's next link
+// carries cql, limit and the cursor but not excerpt, so without re-attaching it
+// page two would be requested differently from page one.
+func TestSearchCQLCarriesTheExcerptModeOntoLaterPages(t *testing.T) {
+	c, s := newSearchServer(t,
+		page("/rest/api/search?next=true&cursor=abc&limit=250", row("1")),
+		page("", row("2")),
+	)
+	if _, err := c.SearchCQL("type = folder"); err != nil {
+		t.Fatalf("SearchCQL: %v", err)
+	}
+	if want := "excerpt=" + excerptMode; !strings.Contains(s.urls[1], want) {
+		t.Errorf("second request = %q, want it to carry %q", s.urls[1], want)
+	}
+	// The cursor must survive having excerpt merged in, and there must still be
+	// exactly one query string.
+	if !strings.Contains(s.urls[1], "cursor=abc") {
+		t.Errorf("second request = %q, want it to keep the cursor", s.urls[1])
+	}
+	if n := strings.Count(s.urls[1], "?"); n != 1 {
+		t.Errorf("second request = %q, want exactly one %q", s.urls[1], "?")
+	}
+}
+
+// TestSearchCQLBoundedStopsAtTheBound checks the truncation contract: at most max
+// rows, and "more" reported from the surplus row rather than from totalSize.
+func TestSearchCQLBoundedStopsAtTheBound(t *testing.T) {
+	c, s := newSearchServer(t,
+		page("/rest/api/search?next=true&cursor=a&limit=3", row("1"), row("2")),
+		page("/rest/api/search?next=true&cursor=b&limit=3", row("3"), row("4")),
+	)
+	got, more, err := c.searchCQLBounded("type = page", 3)
+	if err != nil {
+		t.Fatalf("searchCQLBounded: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d rows, want 3", len(got))
+	}
+	if !more {
+		t.Error("more = false, want true -- a surplus row was returned")
+	}
+	// It must stop as soon as the bound is exceeded rather than walking to the
+	// end of the cursor.
+	if len(s.urls) != 2 {
+		t.Errorf("made %d requests, want 2", len(s.urls))
+	}
+}
+
+// TestSearchCQLBoundedExactlyAtTheBound: max rows with the cursor exhausted is
+// not truncation. Reporting "more exist" here would send a caller off to re-run
+// with --limit all for nothing.
+func TestSearchCQLBoundedExactlyAtTheBound(t *testing.T) {
+	c, _ := newSearchServer(t, page("", row("1"), row("2"), row("3")))
+	got, more, err := c.searchCQLBounded("type = page", 3)
+	if err != nil {
+		t.Fatalf("searchCQLBounded: %v", err)
+	}
+	if len(got) != 3 || more {
+		t.Errorf("got %d rows, more = %v; want 3 and false", len(got), more)
+	}
+}
+
+// TestSearchCQLBoundedIgnoresTotalSize: the canned pages report totalSize 99, so
+// a bound-checking loop that consulted it would claim more rows exist after the
+// cursor has run out.
+func TestSearchCQLBoundedIgnoresTotalSize(t *testing.T) {
+	c, _ := newSearchServer(t, page("", row("1")))
+	got, more, err := c.searchCQLBounded("type = page", 10)
+	if err != nil {
+		t.Fatalf("searchCQLBounded: %v", err)
+	}
+	if len(got) != 1 || more {
+		t.Errorf("got %d rows, more = %v; want 1 and false (totalSize is 99 and must not be read)",
+			len(got), more)
+	}
+}
+
+// TestSearchCQLBoundedShortPageStillWalks: the short-page trap again, but under a
+// bound, where the temptation to treat a short page as the end is stronger.
+func TestSearchCQLBoundedShortPageStillWalks(t *testing.T) {
+	c, _ := newSearchServer(t,
+		page("/rest/api/search?next=true&cursor=a&limit=101", row("1")),
+		page("", row("2"), row("3")),
+	)
+	got, more, err := c.searchCQLBounded("type = page", 100)
+	if err != nil {
+		t.Fatalf("searchCQLBounded: %v", err)
+	}
+	if len(got) != 3 || more {
+		t.Errorf("got %d rows, more = %v; want 3 and false", len(got), more)
+	}
+}
+
+func TestSearchRequestSize(t *testing.T) {
+	tests := []struct {
+		name string
+		max  int
+		want int
+	}{
+		// One more than asked for, so the surplus answers "are there more?".
+		{"small bound", 5, 6},
+		{"one below the page size", searchPageSize - 1, searchPageSize},
+		// Never more than a page: the bound cannot enlarge a request.
+		{"at the page size", searchPageSize, searchPageSize},
+		{"above the page size", searchPageSize + 100, searchPageSize},
+		// Unbounded, and defensively the same for a negative.
+		{"unbounded", 0, searchPageSize},
+		{"negative", -1, searchPageSize},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := searchRequestSize(tt.max); got != tt.want {
+				t.Errorf("searchRequestSize(%d) = %d, want %d", tt.max, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSearchCQLBoundedAsksForOneExtraRow pins the request size end-to-end, since
+// asking for exactly max would make "more exist" unanswerable without a second
+// request.
+func TestSearchCQLBoundedAsksForOneExtraRow(t *testing.T) {
+	c, s := newSearchServer(t, page("", row("1")))
+	if _, _, err := c.searchCQLBounded("type = page", 25); err != nil {
+		t.Fatalf("searchCQLBounded: %v", err)
+	}
+	if !strings.Contains(s.urls[0], "limit=26") {
+		t.Errorf("first request = %q, want limit=26", s.urls[0])
+	}
+}
+
 func TestEscapeCQL(t *testing.T) {
 	tests := []struct {
 		name, in, want string
