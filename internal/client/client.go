@@ -141,17 +141,38 @@ func (e *HTTPError) Error() string {
 
 // Page is a Confluence page (v2). Fields not needed by the CLI are omitted.
 type Page struct {
-	ID        string  `json:"id"`
-	Title     string  `json:"title"`
-	Status    string  `json:"status"`
-	SpaceID   string  `json:"spaceId"`
-	ParentID  string  `json:"parentId"`
-	AuthorID  string  `json:"authorId"`
-	OwnerID   string  `json:"ownerId"`
-	CreatedAt string  `json:"createdAt"`
-	Version   Version `json:"version"`
-	Body      Body    `json:"body"`
-	Links     Links   `json:"_links"`
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Status   string `json:"status"`
+	SpaceID  string `json:"spaceId"`
+	ParentID string `json:"parentId"`
+	// ParentType is what kind of thing ParentID names: "page" or "folder" (a
+	// Cloud-only content type). It is the only way to tell the two apart without
+	// a second request, and a folder is a legitimate parent — see
+	// docs/confluence/folders.md.
+	ParentType string  `json:"parentType"`
+	AuthorID   string  `json:"authorId"`
+	OwnerID    string  `json:"ownerId"`
+	CreatedAt  string  `json:"createdAt"`
+	Version    Version `json:"version"`
+	Body       Body    `json:"body"`
+	Links      Links   `json:"_links"`
+}
+
+// Folder is a Confluence Cloud folder: a content type that holds pages and can
+// be a page's parent, but is not itself a page. Every v2 page route answers a
+// folder id with 404, which is why it needs its own lookup. Data Center has no
+// folder type. See docs/confluence/folders.md.
+type Folder struct {
+	ID         string  `json:"id"`
+	Type       string  `json:"type"`
+	Title      string  `json:"title"`
+	Status     string  `json:"status"`
+	SpaceID    string  `json:"spaceId"`
+	ParentID   string  `json:"parentId"`
+	ParentType string  `json:"parentType"`
+	Version    Version `json:"version"`
+	Links      Links   `json:"_links"`
 }
 
 // Body holds a page's body in the representations we request. Only the format
@@ -452,6 +473,24 @@ func (c *ConfluenceClient) GetPageOrNil(pageID string) (*Page, error) {
 		return nil, err
 	}
 	return &p, nil
+}
+
+// GetFolderOrNil fetches a folder's metadata, returning nil (no error) on HTTP
+// 404. It exists so a caller handed an id can find out whether it names a folder
+// after the page lookup comes back empty: the two live in separate route
+// families and a folder 404s as a page. The response carries spaceId, so a
+// parent-in-space check works on a folder exactly as it does on a page.
+func (c *ConfluenceClient) GetFolderOrNil(folderID string) (*Folder, error) {
+	var f Folder
+	err := c.doJSON(http.MethodGet, c.baseURL+"/wiki/api/v2/folders/"+folderID, nil, nil, &f, timeoutRead)
+	if err != nil {
+		var he *HTTPError
+		if errors.As(err, &he) && he.StatusCode == http.StatusNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &f, nil
 }
 
 // GetPageBodyOrNil fetches a page including its storage-format body, returning

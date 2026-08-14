@@ -327,6 +327,52 @@ func TestGetPagePropagatesError(t *testing.T) {
 	}
 }
 
+// --- folders -----------------------------------------------------------------
+
+func TestGetFolderOrNilReturnsFolder(t *testing.T) {
+	c, _ := newServer(t, resp{200, `{"id":"9","type":"folder","title":"Reports",` +
+		`"status":"current","spaceId":"77","parentId":"5","parentType":"page"}`})
+	f, err := c.GetFolderOrNil("9")
+	if err != nil {
+		t.Fatalf("GetFolderOrNil: %v", err)
+	}
+	if f == nil {
+		t.Fatal("want a folder, got nil")
+	}
+	// spaceId is the field that lets a parent-in-space check treat a folder like
+	// a page, so it is the one worth asserting.
+	if f.SpaceID != "77" {
+		t.Errorf("SpaceID = %q, want %q", f.SpaceID, "77")
+	}
+	if f.Type != "folder" || f.Title != "Reports" {
+		t.Errorf("Type/Title = %q/%q, want folder/Reports", f.Type, f.Title)
+	}
+}
+
+func TestGetFolderOrNilReturnsNilOn404(t *testing.T) {
+	c, _ := newServer(t, resp{404, `{"errors":[{"status":404}]}`})
+	f, err := c.GetFolderOrNil("9")
+	if err != nil {
+		t.Fatalf("a 404 must not be an error: %v", err)
+	}
+	if f != nil {
+		t.Errorf("want nil folder, got %+v", f)
+	}
+}
+
+// TestGetPageReportsParentType pins the field that distinguishes a folder parent
+// from a page parent without a second request.
+func TestGetPageReportsParentType(t *testing.T) {
+	c, _ := newServer(t, resp{200, `{"id":"1","title":"X","parentId":"9","parentType":"folder"}`})
+	p, err := c.GetPage("1")
+	if err != nil {
+		t.Fatalf("GetPage: %v", err)
+	}
+	if p.ParentType != "folder" {
+		t.Errorf("ParentType = %q, want %q", p.ParentType, "folder")
+	}
+}
+
 func TestResolveSpaceID(t *testing.T) {
 	c, _ := newServer(t, resp{200, `{"results":[{"id":"123"}]}`})
 	if id, err := c.ResolveSpaceID("ENG"); err != nil || id != "123" {
