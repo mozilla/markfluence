@@ -134,6 +134,8 @@ markfluence update --help
 markfluence fix --help
 markfluence info --help
 markfluence read --help
+markfluence find --help
+markfluence children --help
 markfluence export --help
 ```
 
@@ -362,6 +364,58 @@ default of `1` is what keeps the casual case cheap.
 Trashed pages and folders are not listed. Finding nothing is a success, not a
 failure: the command prints `No children.` and exits 0, so `--json` reporting an
 empty `results` array is how a script tests for an empty subtree.
+
+### `find`
+
+```
+Usage: markfluence find TITLE [flags]
+```
+
+Find the pages and folders whose title is `TITLE`. This is the one handle the
+other commands cannot resolve: they take a page id, a page URL, or a Markdown
+file with a `page_id`, and `find` is how you get from a title to one of those.
+
+```sh
+markfluence find "Deploy runbook"
+markfluence find "Deploy runbook" --space ENG
+markfluence find "Deploy runbook" --json | jq -r '.results[] | select(.type=="page") | .id'
+```
+
+```
+TYPE    ID          SPACE          STATUS    TITLE           URL
+folder  2950660103  CLOUDSERVICES  current   Deploy runbook  https://org.atlassian.net/wiki/spaces/CLOUDSERVICES/folder/2950660103
+page    5144768     CEX            current   Deploy runbook  https://org.atlassian.net/wiki/spaces/CEX/pages/5144768/Deploy+runbook
+page    3277005     AVSE           archived  Deploy runbook  https://org.atlassian.net/wiki/spaces/AVSE/pages/3277005/Deploy+runbook
+```
+
+The match is **exact and case-insensitive** — not a substring search. Results are
+ordered by space, then type, then id. `--space` takes a space **key**, never a
+numeric space id, the same rule frontmatter follows; an unknown key is an error
+rather than an empty result, since a typo would otherwise be indistinguishable
+from "no such page".
+
+**Archived pages are included, and marked.** An archived page does not appear in
+the page tree, but it still holds its title — `create` in that space will be
+refused until it is restored or renamed. That is the main reason to run `find`
+before publishing, and why the `STATUS` column is not decoration.
+
+**Folders are included too, but they never explain a conflict.** A folder id is
+a legitimate `parent`, so being able to look one up by name is useful. A folder
+does not reserve a title: a page can be created with a folder's exact name in
+the same space. So a folder row is somewhere to publish, never a reason you
+cannot.
+
+Trashed pages are not listed. Finding nothing is a success: the command prints
+`No matches found.` and exits 0, so `--json` reporting an empty `results` array
+is how a script tests "does this title exist yet?" before deciding to create or
+update.
+
+Answering takes two requests, because no single Confluence API can see all
+three: the v2 pages route covers current and archived pages but cannot see a
+folder, while CQL covers folders but cannot see an archived page. If either
+request fails the whole command fails — half an answer here reads as "nothing
+found", which is the one wrong answer that causes a duplicate. The details are
+in [docs/confluence/search.md](docs/confluence/search.md).
 
 ### `export`
 
