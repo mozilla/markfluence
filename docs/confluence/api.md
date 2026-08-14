@@ -111,15 +111,81 @@ Note the join: `_links.download` is context-relative, so the full URL is
 
 ## Retries
 
-`send` centralizes retry and backoff: 429 for any method, honoring `Retry-After`;
-502/503/504 and network errors for idempotent methods only; exponential backoff
-with a cap. `SetContentProperty` retries once on top of that, which recovers a
-lost response to a create POST.
+### What Atlassian says
 
-**Unverified.** This is markfluence's policy rather than an observation about
-Confluence, and confirming the server side means provoking rate limits and
-gateway errors deliberately. The claim worth testing someday is narrower: that
-Confluence returns 429 with a `Retry-After` header rather than a bare 429.
+**Transcribed 2026-08-14** from
+[Confluence rate limiting](https://developer.atlassian.com/cloud/confluence/rate-limiting/)
+and the identical
+[Jira platform](https://developer.atlassian.com/cloud/jira/platform/rate-limiting/)
+guidance:
+
+- A 429 carries **`Retry-After`** — "only returned with 429 responses. Indicates
+  how many seconds to wait before retrying" — along with `X-RateLimit-Limit`,
+  `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `X-RateLimit-NearLimit` and
+  `RateLimit-Reason`.
+- "Some transient 5xx responses (such as 503) may also include a `Retry-After`
+  header. While these are not rate limit responses, you can handle them with
+  similar retry logic."
+- "Only retry if the API is idempotent and the response includes a `Retry-After`
+  header."
+- "Use exponential backoff and add random jitter to delays to avoid the
+  thundering herd problem."
+- Nothing distinguishes **500** from 503.
+
+> **Not verified first-hand, on purpose.** Confirming these against a live site
+> means deliberately tripping rate limits, which degrades a shared instance for
+> everyone else using it — a poor trade for a header the vendor publishes. If a
+> 429 ever happens during ordinary use, `--debug` prints the headers, and this
+> section can be upgraded to **Verified** with no artificial load.
+
+### What markfluence does
+
+| response | retried? |
+|---|---|
+| 429 | always, any method — the request was rejected before processing |
+| 502 / 503 / 504 | idempotent methods only |
+| any other 5xx **with** `Retry-After` | idempotent methods only — this is how a 500 becomes retryable |
+| any other 5xx **without** `Retry-After` | no |
+| network error | idempotent methods only |
+| anything else | no |
+
+`send` centralizes all of it. Backoff is exponential from `baseBackoff`, jittered
+by a random factor in [0.7, 1.3], capped at `maxBackoff`; a server-supplied
+`Retry-After` is used as given (still capped) and is **not** jittered, since it
+is an instruction rather than a guess.
+
+The 500 rule is Atlassian's own — retry when the server asks to be called back —
+and it avoids having to guess whether a given 500 is transient. A bare 500 is
+usually a deterministic rejection of that particular request, so retrying it just
+buys backoff on something that will not succeed.
+
+502/503/504 stay unconditional rather than also requiring `Retry-After`.
+Conforming strictly there would stop retrying a bare 502 from a proxy, which is
+transient in practice.
+
+**Worst case is long and, without `--debug`, silent.** Five attempts at the
+120-second upload timeout plus backoff is roughly twelve minutes on one
+attachment. That is why retry decisions are reported through a hook.
+
+### Retrying a versioned PUT can turn a success into an error
+
+`isIdempotent` counts `PUT` as safe to retry, which is true of HTTP `PUT` in
+general and **not** true of a `PUT` carrying an optimistic-concurrency version.
+
+`UpdatePage` sends `version.number = N`. If it lands and the response is lost,
+the retry re-sends version N, which Confluence refuses because N already exists —
+so a successful update surfaces as a failure. `SetContentProperty` has always had
+a bespoke retry-once-that-re-reads-first for exactly this shape.
+
+`UpdatePage` now recovers the same way: on any error it re-reads the page and
+treats the write as successful only when the version, the title, **and** the
+stored body all match what was sent. Version alone would be wrong — a concurrent
+human edit could have created that version, and claiming success over someone
+else's content is far worse than reporting a failure that actually succeeded.
+
+**Unobserved:** what status a stale-version PUT actually returns. The recovery
+triggers on *any* error specifically so nothing depends on the answer; guessing a
+status and getting it wrong would leave the recovery silently never firing.
 
 ## Scopes
 
