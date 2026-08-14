@@ -18,6 +18,7 @@ type jsonInfoResult struct {
 	PageStatus string             `json:"page_status"`
 	Space      string             `json:"space"`
 	Parent     *string            `json:"parent"`
+	ParentType *string            `json:"parent_type"`
 	Version    jsonVersion        `json:"version"`
 	PageWidth  *jsonout.PageWidth `json:"page_width"`
 	Created    *jsonout.Stamp     `json:"created"`
@@ -45,6 +46,7 @@ func (r report) jsonResult() jsonInfoResult {
 		PageStatus: r.status,
 		Space:      r.space,
 		Parent:     nullable(r.parentID),
+		ParentType: nullable(r.parentType),
 		Version:    jsonVersion{Number: r.versionNum},
 		Created:    stamp(r.createdAt, r.creatorID, r.creator),
 		Updated:    stamp(r.updatedAt, r.editorID, r.editor),

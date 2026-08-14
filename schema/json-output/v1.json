@@ -120,6 +120,10 @@
     "stringOrNull": {
       "type": ["string", "null"]
     },
+    "parentTypeOrNull": {
+      "description": "What kind of object the parent id names. A folder is a Cloud-only content type that can parent a page; null when the page is top-level.",
+      "enum": ["page", "folder", null]
+    },
     "pageWidth": {
       "type": "object",
       "additionalProperties": false,
@@ -178,7 +182,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "ok", "page_id", "title", "page_status", "space", "parent",
+        "ok", "page_id", "title", "page_status", "space", "parent", "parent_type",
         "version", "page_width", "created", "updated", "message", "url", "properties"
       ],
       "properties": {
@@ -188,6 +192,7 @@
         "page_status": { "type": "string" },
         "space": { "type": "string" },
         "parent": { "$ref": "#/$defs/stringOrNull" },
+        "parent_type": { "$ref": "#/$defs/parentTypeOrNull" },
         "version": {
           "type": "object",
           "additionalProperties": false,
@@ -218,13 +223,14 @@
     "readResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ok", "page_id", "title", "space", "parent", "page_width", "format", "body"],
+      "required": ["ok", "page_id", "title", "space", "parent", "parent_type", "page_width", "format", "body"],
       "properties": {
         "ok": { "const": true },
         "page_id": { "type": "string" },
         "title": { "type": "string" },
         "space": { "type": "string" },
         "parent": { "$ref": "#/$defs/stringOrNull" },
+        "parent_type": { "$ref": "#/$defs/parentTypeOrNull" },
         "page_width": { "$ref": "#/$defs/pageWidthOrNull" },
         "format": { "enum": ["markdown", "storage"] },
         "body": { "type": "string" }
@@ -270,7 +276,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "ok", "status", "dry_run", "file", "page_id", "title", "space", "parent", "parent_file", "url",
+        "ok", "status", "dry_run", "file", "page_id", "title", "space", "parent", "parent_type", "parent_file", "url",
         "page_width", "persisted", "attachments", "warnings", "broken", "error", "code"
       ],
       "properties": {
@@ -282,6 +288,7 @@
         "title": { "$ref": "#/$defs/stringOrNull" },
         "space": { "$ref": "#/$defs/stringOrNull" },
         "parent": { "$ref": "#/$defs/stringOrNull" },
+        "parent_type": { "$ref": "#/$defs/parentTypeOrNull" },
         "parent_file": { "$ref": "#/$defs/stringOrNull" },
         "url": { "$ref": "#/$defs/stringOrNull" },
         "page_width": { "$ref": "#/$defs/pageWidthOrNull" },
@@ -340,7 +347,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "ok", "page_id", "title", "space", "parent", "dry_run", "status",
+        "ok", "page_id", "title", "space", "parent", "parent_type", "dry_run", "status",
         "dest_path", "attachments", "warnings", "error", "code"
       ],
       "properties": {
@@ -349,6 +356,7 @@
         "title": { "type": "string" },
         "space": { "type": "string" },
         "parent": { "$ref": "#/$defs/stringOrNull" },
+        "parent_type": { "$ref": "#/$defs/parentTypeOrNull" },
         "dry_run": { "type": "boolean" },
         "status": { "enum": ["wrote", "skipped", ""] },
         "dest_path": { "$ref": "#/$defs/stringOrNull" },

@@ -18,6 +18,7 @@ func fullReport() report {
 		status:     "current",
 		space:      "ENG",
 		parentID:   "456",
+		parentType: "page",
 		versionNum: 7,
 		widthKnown: true,
 		width:      jsonout.PageWidth{Value: "max", Default: true},
@@ -50,6 +51,7 @@ func TestJSONResultFull(t *testing.T) {
   "page_status": "current",
   "space": "ENG",
   "parent": "456",
+  "parent_type": "page",
   "version": {
     "number": 7
   },

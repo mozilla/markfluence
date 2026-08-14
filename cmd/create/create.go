@@ -66,10 +66,15 @@ func init() {
 
 // parentInfo describes a resolved parent. kind is top|inset|published|external.
 type parentInfo struct {
-	kind    string
-	id      string // page id (published/external)
-	abs     string // absolute path of an in-set parent
-	display string // original .md path when the parent was a file reference
+	kind string
+	id   string // page id (published/external)
+	abs  string // absolute path of an in-set parent
+	// parentType is what the parent *is* on the server: "page" or "folder". It
+	// does not vary the behavior of create — Confluence accepts either as a
+	// parentId — it exists so --json can report which one was used. Empty for a
+	// top-level page.
+	parentType string
+	display    string // original .md path when the parent was a file reference
 }
 
 // record is a validated file ready for creation.
@@ -374,7 +379,9 @@ func resolveParent(
 		}
 		parentAbs, _ := filepath.Abs(parentPath)
 		if inSetAbs[parentAbs] {
-			return parentInfo{kind: "inset", abs: parentAbs, display: parentValue}, nil
+			// An in-set parent is a page this run creates, so its kind is known
+			// without asking the server.
+			return parentInfo{kind: "inset", abs: parentAbs, parentType: "page", display: parentValue}, nil
 		}
 		pmf, err := frontmatter.ParseFile(parentPath)
 		if err != nil {
@@ -384,30 +391,54 @@ func resolveParent(
 		if pID == "" {
 			return parentInfo{}, fmt.Errorf("parent not yet published (no page_id): %s", parentValue)
 		}
-		if err := checkParentInSpace(c, pID, spaceID); err != nil {
+		parentType, err := checkParentInSpace(c, pID, spaceID)
+		if err != nil {
 			return parentInfo{}, err
 		}
-		return parentInfo{kind: "published", id: pID, display: parentValue}, nil
+		return parentInfo{kind: "published", id: pID, parentType: parentType, display: parentValue}, nil
 	}
 
-	if err := checkParentInSpace(c, parentValue, spaceID); err != nil {
+	parentType, err := checkParentInSpace(c, parentValue, spaceID)
+	if err != nil {
 		return parentInfo{}, err
 	}
-	return parentInfo{kind: "external", id: parentValue}, nil
+	return parentInfo{kind: "external", id: parentValue, parentType: parentType}, nil
 }
 
-func checkParentInSpace(c *client.ConfluenceClient, parentID, spaceID string) error {
+// checkParentInSpace verifies that parentID names something in spaceID that can
+// hold a page, and reports what it is ("page" or "folder").
+//
+// A parent may be either, and the two live in separate v2 route families: a
+// folder id answers every page route with 404, so finding nothing as a page
+// proves nothing until the folder route has also been asked. Publishing into a
+// folder needs no other accommodation — Confluence accepts a folder as parentId
+// — so the only thing that ever blocked it was refusing it here
+// (docs/confluence/folders.md).
+func checkParentInSpace(c *client.ConfluenceClient, parentID, spaceID string) (string, error) {
 	p, err := c.GetPageOrNil(parentID)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if p == nil {
-		return fmt.Errorf("parent page %s not found", parentID)
+	if p != nil {
+		if p.SpaceID != spaceID {
+			return "", fmt.Errorf("parent page %s is not in the target space", parentID)
+		}
+		return "page", nil
 	}
-	if p.SpaceID != spaceID {
-		return fmt.Errorf("parent page %s is not in the target space", parentID)
+
+	f, err := c.GetFolderOrNil(parentID)
+	if err != nil {
+		return "", err
 	}
-	return nil
+	if f != nil {
+		if f.SpaceID != spaceID {
+			return "", fmt.Errorf("parent folder %s is not in the target space", parentID)
+		}
+		return "folder", nil
+	}
+
+	// Neither kind, so "page" would be the wrong noun in the error.
+	return "", fmt.Errorf("parent %s not found: no page or folder has that id", parentID)
 }
 
 // topoSort orders records parents-before-children, seeding the queue in input
@@ -465,6 +496,11 @@ func parentField(p parentInfo, parentID string) (value, comment string) {
 func createOne(r record, parentID string, c *client.ConfluenceClient, persist bool) *createResult {
 	res := newResult(r)
 	res.parent = nullableStr(parentID)
+	// parent_type tracks parent: both null for a top-level page, and both null in
+	// a dry-run whose parent is an in-set page that has no id yet.
+	if parentID != "" {
+		res.parentType = nullableStr(r.parent.parentType)
+	}
 
 	// SiteURL, not BaseURL: rewritten links are published into the page, so they
 	// must point at the site even when requests go through the gateway.

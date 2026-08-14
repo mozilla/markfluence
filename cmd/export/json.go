@@ -11,6 +11,7 @@ type jsonExportResult struct {
 	Title       string             `json:"title"`
 	Space       string             `json:"space"`
 	Parent      *string            `json:"parent"`
+	ParentType  *string            `json:"parent_type"`
 	DryRun      bool               `json:"dry_run"`
 	Status      string             `json:"status"`
 	DestPath    *string            `json:"dest_path"`
@@ -45,6 +46,7 @@ func buildResult(r result) jsonExportResult {
 		res.Title = r.page.Title
 		res.Space = client.SpaceKeyFromWebUI(r.page.Links.WebUI)
 		res.Parent = nullable(r.page.ParentID)
+		res.ParentType = nullable(r.page.ParentType)
 	}
 	for _, a := range r.attachments {
 		entry := jsonExportAttach{
