@@ -567,21 +567,30 @@ func (c *ConfluenceClient) ResolveSpaceID(spaceKey string) (string, error) {
 	return out.Results[0].ID, nil
 }
 
-// SearchPagesByTitle returns current pages matching title exactly, optionally
-// restricted to spaceID (pass "" for no restriction).
-func (c *ConfluenceClient) SearchPagesByTitle(title, spaceID string) ([]Page, error) {
-	params := url.Values{"title": {title}, "status": {"current"}}
+// Page statuses accepted by the v2 pages route's status filter. The parameter
+// repeats, so several may be asked for at once.
+const (
+	StatusCurrent  = "current"
+	StatusArchived = "archived"
+)
+
+// SearchPagesByTitle returns pages whose title matches exactly, optionally
+// restricted to spaceID (pass "" for no restriction) and to the given statuses
+// (none means current only).
+//
+// The match is exact and case-insensitive -- not a prefix or substring search.
+// Passing no statuses is deliberately *not* the same as sending no status
+// parameter: the route's own default includes archived pages, so an omitted
+// filter would quietly widen every caller (docs/confluence/search.md).
+func (c *ConfluenceClient) SearchPagesByTitle(title, spaceID string, statuses ...string) ([]Page, error) {
+	if len(statuses) == 0 {
+		statuses = []string{StatusCurrent}
+	}
+	params := url.Values{"title": {title}, "status": statuses}
 	if spaceID != "" {
 		params.Set("space-id", spaceID)
 	}
-	var out struct {
-		Results []Page `json:"results"`
-	}
-	err := c.doJSON(http.MethodGet, c.baseURL+"/wiki/api/v2/pages", params, nil, &out, timeoutRead)
-	if err != nil {
-		return nil, err
-	}
-	return out.Results, nil
+	return listV2[Page](c, "/wiki/api/v2/pages", params)
 }
 
 // CreatePage creates a page with storage-format body. Pass parentID "" for a
@@ -966,28 +975,50 @@ func resolveNext(base, next string) string {
 	return base + next
 }
 
-// ListContentProperties returns all of a page's content properties, following
-// pagination.
-func (c *ConfluenceClient) ListContentProperties(pageID string) ([]Property, error) {
-	var results []Property
-	rawURL := c.baseURL + "/wiki/api/v2/pages/" + pageID + "/properties"
-	params := url.Values{"limit": {"250"}}
+// v2PageSize is the per-request page size for a v2 collection.
+const v2PageSize = 250
+
+// listV2 collects every row of a v2 collection, following the cursor in
+// _links.next.
+//
+// Termination is a missing next link, which is reliable here in a way it is not
+// for v1 (see listV1): a v2 collection reports next whenever more remains. The
+// link is a /wiki-prefixed absolute path, the form resolveNext appends to the
+// base unchanged, so the gateway's /ex/confluence/{cloudId} segment survives.
+// It already carries the cursor and limit, which is why params go out only on
+// the first request.
+//
+// This is not the helper for /wiki/rest/api/search. That endpoint ignores
+// start, needs the /wiki prefix added to its next link, and reports short pages
+// mid-collection -- see searchCQL and docs/confluence/search.md.
+func listV2[T any](c *ConfluenceClient, path string, params url.Values) ([]T, error) {
+	q := url.Values{"limit": {strconv.Itoa(v2PageSize)}}
+	for k, vs := range params {
+		q[k] = vs
+	}
+	var all []T
+	rawURL := c.baseURL + path
 	for rawURL != "" {
 		var out struct {
-			Results []Property `json:"results"`
+			Results []T `json:"results"`
 			Links   struct {
 				Next string `json:"next"`
 			} `json:"_links"`
 		}
-		if err := c.doJSON(http.MethodGet, rawURL, params, nil, &out, timeoutRead); err != nil {
+		if err := c.doJSON(http.MethodGet, rawURL, q, nil, &out, timeoutRead); err != nil {
 			return nil, err
 		}
-		results = append(results, out.Results...)
-		// The next link already carries the cursor and limit as query params.
+		all = append(all, out.Results...)
 		rawURL = resolveNext(c.baseURL, out.Links.Next)
-		params = nil
+		q = nil
 	}
-	return results, nil
+	return all, nil
+}
+
+// ListContentProperties returns all of a page's content properties, following
+// pagination.
+func (c *ConfluenceClient) ListContentProperties(pageID string) ([]Property, error) {
+	return listV2[Property](c, "/wiki/api/v2/pages/"+pageID+"/properties", nil)
 }
 
 // SetContentProperty idempotently sets a content property, returning "set" or
