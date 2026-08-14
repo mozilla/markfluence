@@ -1,9 +1,11 @@
 package client
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -338,6 +340,34 @@ func TestEscapeCQL(t *testing.T) {
 	}
 }
 
+// pageRow builds a page search hit, with the row-level title and excerpt in the
+// decorated, entity-escaped form the server really sends.
+func pageRow(id, contentTitle, rowTitle, excerpt string) string {
+	return fmt.Sprintf(
+		`{"entityType":"content","title":%q,"url":"/spaces/ENG/pages/%s/slug","excerpt":%q,`+
+			`"content":{"id":%q,"type":"page","status":"current","title":%q,`+
+			`"_links":{"webui":"/spaces/ENG/pages/%s/slug"}}}`,
+		rowTitle, id, excerpt, id, contentTitle, id)
+}
+
+// spaceRow builds the content-less row a `type = space` query returns: no content
+// object at all, the addressable data in a sibling space object.
+func spaceRow(key string) string {
+	return fmt.Sprintf(
+		`{"entityType":"space","title":%q,"url":"/spaces/%s",`+
+			`"space":{"key":%q,"name":%q,"status":"current"}}`, key, key, key, key)
+}
+
+// cqlOf pulls the cql parameter back out of a recorded request URL.
+func cqlOf(t *testing.T, rawURL string) string {
+	t.Helper()
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parsing %q: %v", rawURL, err)
+	}
+	return u.Query().Get("cql")
+}
+
 func TestCleanExcerpt(t *testing.T) {
 	tests := []struct {
 		name, in, want string
@@ -364,5 +394,200 @@ func TestCleanExcerpt(t *testing.T) {
 				t.Errorf("cleanExcerpt(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestBuildTextCQL(t *testing.T) {
+	tests := []struct {
+		name, query, space, ctype, want string
+	}{
+		{
+			"typed", "deploy runbook", "", SearchTypePage,
+			`type = page and siteSearch ~ "deploy runbook"`,
+		},
+		{
+			"typed and scoped", "deploy", "ENG", SearchTypePage,
+			`type = page and siteSearch ~ "deploy" and space = "ENG"`,
+		},
+		{
+			"blogpost", "deploy", "", SearchTypeBlogpost,
+			`type = blogpost and siteSearch ~ "deploy"`,
+		},
+		// SearchTypeAll drops the clause rather than emitting `type = all`.
+		{"all", "deploy", "", SearchTypeAll, `siteSearch ~ "deploy"`},
+		{"all and scoped", "deploy", "ENG", SearchTypeAll, `siteSearch ~ "deploy" and space = "ENG"`},
+		{"empty type", "deploy", "", "", `siteSearch ~ "deploy"`},
+		// Both interpolated values are escaped: a bare quote in either would end
+		// the literal and turn the rest into query syntax.
+		{
+			"escapes the query", `a" or type=page`, "", SearchTypePage,
+			`type = page and siteSearch ~ "a\" or type=page"`,
+		},
+		{
+			"escapes the space key", "deploy", `a"b`, SearchTypePage,
+			`type = page and siteSearch ~ "deploy" and space = "a\"b"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildTextCQL(tt.query, tt.space, tt.ctype)
+			if got != tt.want {
+				t.Errorf("buildTextCQL(%q, %q, %q) =\n  %q\nwant\n  %q",
+					tt.query, tt.space, tt.ctype, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSearchTextUsesSiteSearchNotText is the ranking decision, pinned. text ~
+// ranked six unrelated pages above every obviously-relevant one, and with score
+// at 0.0 there is no client-side re-ranking to recover from that.
+func TestSearchTextUsesSiteSearchNotText(t *testing.T) {
+	c, s := newSearchServer(t, page("", pageRow("1", "T", "T", "")))
+	if _, err := c.SearchText("deploy", "", SearchTypePage, 25); err != nil {
+		t.Fatalf("SearchText: %v", err)
+	}
+	cql := cqlOf(t, s.urls[0])
+	if !strings.Contains(cql, "siteSearch ~") {
+		t.Errorf("cql = %q, want it to match with siteSearch ~", cql)
+	}
+	if strings.Contains(cql, "text ~") {
+		t.Errorf("cql = %q, want no text ~ -- it does not rank usefully", cql)
+	}
+}
+
+// TestSearchTextReadsContentTitleNotTheRowTitle: the row's title is
+// entity-escaped and marker-decorated, so reading it would surface
+// "Deployment @@@hl@@@runbook@@@endhl@@@" as a page title.
+func TestSearchTextReadsContentTitleNotTheRowTitle(t *testing.T) {
+	c, _ := newSearchServer(t, page("", pageRow(
+		"123", "Deployment runbook", "Deployment @@@hl@@@runbook@@@endhl@@@", "an excerpt")))
+	got, err := c.SearchText("runbook", "", SearchTypePage, 25)
+	if err != nil {
+		t.Fatalf("SearchText: %v", err)
+	}
+	if len(got.Matches) != 1 {
+		t.Fatalf("got %d matches, want 1", len(got.Matches))
+	}
+	m := got.Matches[0]
+	if m.Title != "Deployment runbook" {
+		t.Errorf("title = %q, want the clean content.title", m.Title)
+	}
+	if m.ID != "123" || m.Type != "page" || m.Space != "ENG" {
+		t.Errorf("match = %+v, want id/type/space from the content object", m)
+	}
+	if want := "/wiki/spaces/ENG/pages/123/slug"; !strings.HasSuffix(m.URL, want) {
+		t.Errorf("url = %q, want it to end with %q", m.URL, want)
+	}
+}
+
+// TestSearchTextCountsContentLessRows: a `type = space` query returns hundreds of
+// rows with no content object. Dropping them quietly would report a successful
+// empty result for a query that matched plenty.
+func TestSearchTextCountsContentLessRows(t *testing.T) {
+	c, _ := newSearchServer(t, page("", spaceRow("EW"), spaceRow("ENG")))
+	got, err := c.SearchText("deploy", "", SearchTypeAll, 25)
+	if err != nil {
+		t.Fatalf("SearchText: %v", err)
+	}
+	if len(got.Matches) != 0 {
+		t.Errorf("got %d matches, want 0", len(got.Matches))
+	}
+	if got.Skipped != 2 {
+		t.Errorf("skipped = %d, want 2", got.Skipped)
+	}
+}
+
+// TestSearchTextMixesContentAndContentLessRows: the content rows still come back,
+// and the skipped count is not silently folded into them.
+func TestSearchTextMixesContentAndContentLessRows(t *testing.T) {
+	c, _ := newSearchServer(t, page("",
+		pageRow("1", "One", "One", ""), spaceRow("EW"), pageRow("2", "Two", "Two", "")))
+	got, err := c.SearchText("deploy", "", SearchTypeAll, 25)
+	if err != nil {
+		t.Fatalf("SearchText: %v", err)
+	}
+	if len(got.Matches) != 2 || got.Skipped != 1 {
+		t.Errorf("got %d matches and %d skipped, want 2 and 1", len(got.Matches), got.Skipped)
+	}
+}
+
+// TestSearchTextPreservesServerOrder: the server's relevance order is the only
+// order there is, so nothing may sort these -- not even into a stable one.
+func TestSearchTextPreservesServerOrder(t *testing.T) {
+	c, _ := newSearchServer(t, page("",
+		pageRow("300", "Zebra", "Zebra", ""),
+		pageRow("100", "Apple", "Apple", ""),
+		pageRow("200", "Mango", "Mango", "")))
+	got, err := c.SearchText("x", "", SearchTypePage, 25)
+	if err != nil {
+		t.Fatalf("SearchText: %v", err)
+	}
+	var ids []string
+	for _, m := range got.Matches {
+		ids = append(ids, m.ID)
+	}
+	want := []string{"300", "100", "200"}
+	if strings.Join(ids, ",") != strings.Join(want, ",") {
+		t.Errorf("ids = %v, want %v (the server's order, neither id- nor title-sorted)", ids, want)
+	}
+}
+
+// TestSearchTextRefusesAnUnknownSpace: CQL answers an unknown space key with zero
+// rows, which reads exactly like "no matches" -- and the next move on that is to
+// create a page that already exists.
+func TestSearchTextRefusesAnUnknownSpace(t *testing.T) {
+	c, s := newSearchServer(t, `{"results":[]}`)
+	_, err := c.SearchText("deploy", "NOPE", SearchTypePage, 25)
+	if !errors.Is(err, ErrSpaceNotFound) {
+		t.Fatalf("err = %v, want ErrSpaceNotFound", err)
+	}
+	// It must refuse before searching, not after.
+	if len(s.urls) != 1 {
+		t.Errorf("made %d requests, want 1 (the space lookup only)", len(s.urls))
+	}
+}
+
+// TestSearchRawCQLPassesTheQueryThrough: no escaping, no type clause, no space
+// clause. Adding any of them would regroup a query containing `or` and silently
+// answer a different question.
+func TestSearchRawCQLPassesTheQueryThrough(t *testing.T) {
+	c, s := newSearchServer(t, page("", pageRow("1", "T", "T", "")))
+	raw := `type = page and (title ~ "a" or title ~ "b")`
+	if _, err := c.SearchRawCQL(raw, 25); err != nil {
+		t.Fatalf("SearchRawCQL: %v", err)
+	}
+	if got := cqlOf(t, s.urls[0]); got != raw {
+		t.Errorf("cql = %q, want it verbatim: %q", got, raw)
+	}
+}
+
+// TestSearchTextReportsMore ties the bound to what a caller reports: the surplus
+// row is dropped and More says so, without any count being claimed.
+func TestSearchTextReportsMore(t *testing.T) {
+	c, _ := newSearchServer(t, page("",
+		pageRow("1", "A", "A", ""), pageRow("2", "B", "B", ""), pageRow("3", "C", "C", "")))
+	got, err := c.SearchText("x", "", SearchTypePage, 2)
+	if err != nil {
+		t.Fatalf("SearchText: %v", err)
+	}
+	if len(got.Matches) != 2 || !got.More {
+		t.Errorf("got %d matches, more = %v; want 2 and true", len(got.Matches), got.More)
+	}
+}
+
+// TestSearchTextCleansTheExcerpt: the cleaning has to be on the path a command
+// actually uses, not only in the helper's own unit test.
+func TestSearchTextCleansTheExcerpt(t *testing.T) {
+	// A real newline, since the index breaks excerpts at the source's own lines.
+	c, _ := newSearchServer(t, page("", pageRow("1", "T", "T",
+		"@@@hl@@@Deploy@@@endhl@@@ing to prod.\nSee Engineer&#39;s guide.")))
+	got, err := c.SearchText("deploy", "", SearchTypePage, 25)
+	if err != nil {
+		t.Fatalf("SearchText: %v", err)
+	}
+	want := "Deploying to prod. See Engineer's guide."
+	if got.Matches[0].Excerpt != want {
+		t.Errorf("excerpt = %q, want %q", got.Matches[0].Excerpt, want)
 	}
 }
