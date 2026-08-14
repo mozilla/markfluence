@@ -98,6 +98,22 @@ Two consequences that matter more than the nesting itself:
   folder. Descending `/child/folder` is what makes the difference between a
   correct answer and a confidently empty one.
 
+### Trashing a node nulls its parent, and it still returns 200
+
+A trashed folder or page keeps answering `GET /wiki/api/v2/{folders,pages}/{id}`
+with 200, but reports `status: "trashed"`, `parentId: null`, `parentType: null`,
+and `position: null`. The parent link is gone, not merely stale.
+
+Two things follow, and the first one will waste an afternoon if it is not written
+down:
+
+- **A tree that verified correctly can stop verifying** once the fixtures are
+  cleaned up, with no error to explain it — the ids still resolve, they just have
+  no parent and appear in no child listing. If a walk suddenly returns nothing,
+  check `status` before suspecting the walk.
+- **Trashed children are absent from v1 child listings**, which is the wanted
+  behavior: a child listing shows what is live without needing a status filter.
+
 ### v1 enumerates both kinds, and is the only way *into* a folder
 
 | request | result |
