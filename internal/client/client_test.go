@@ -1208,3 +1208,139 @@ func TestBackoffCapsAfterJitter(t *testing.T) {
 		t.Errorf("backoff(0,0) = %v, want it capped at %v", got, maxBackoff)
 	}
 }
+
+// --- UpdatePage lost-response recovery ---------------------------------------
+
+// updateServer answers the PUT with putStatus, then serves getBody for the
+// re-read, recording the paths it saw.
+func updateServer(t *testing.T, putStatus int, getBody string) (*ConfluenceClient, *[]string) {
+	t.Helper()
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Method)
+		if r.Method == http.MethodPut {
+			w.WriteHeader(putStatus)
+			_, _ = w.Write([]byte(`{"errors":[{"status":409,"title":"version conflict"}]}`))
+			return
+		}
+		if getBody == "" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(getBody))
+	}))
+	t.Cleanup(srv.Close)
+	return New(Config{SiteURL: srv.URL, Username: "u", Token: "t"}), &seen
+}
+
+func livePage(version int, title, body string) string {
+	return fmt.Sprintf(
+		`{"id":"1","title":%q,"status":"current","version":{"number":%d},`+
+			`"body":{"storage":{"value":%q,"representation":"storage"}}}`,
+		title, version, body)
+}
+
+// TestUpdatePageRecoversALostResponse: the PUT landed and its response was
+// lost, so the retry hit a version conflict. The re-read proves our content is
+// there, and a successful update must not be reported as a failure.
+func TestUpdatePageRecoversALostResponse(t *testing.T) {
+	const title, body, version = "Runbook", "<p>new</p>", 5
+	c, seen := updateServer(t, http.StatusConflict, livePage(version, title, body))
+
+	got, err := c.UpdatePage("1", title, body, version, "msg")
+	if err != nil {
+		t.Fatalf("UpdatePage = %v, want the recovered page", err)
+	}
+	if got == nil || got.Version.Number != version {
+		t.Fatalf("page = %+v, want version %d", got, version)
+	}
+	if len(*seen) != 2 || (*seen)[1] != http.MethodGet {
+		t.Errorf("requests = %v, want a PUT then a re-read GET", *seen)
+	}
+}
+
+// TestUpdatePageDoesNotClaimSomeoneElsesWrite is the reason the check is not
+// version-only: a concurrent edit can produce the version we asked for, and
+// reporting success over content that is not ours is the worst outcome here.
+func TestUpdatePageDoesNotClaimSomeoneElsesWrite(t *testing.T) {
+	const title, body, version = "Runbook", "<p>ours</p>", 5
+	c, _ := updateServer(t, http.StatusConflict, livePage(version, title, "<p>theirs</p>"))
+
+	got, err := c.UpdatePage("1", title, body, version, "msg")
+	if err == nil {
+		t.Fatalf("UpdatePage = %+v, want the original error when the body is not ours", got)
+	}
+	if got != nil {
+		t.Errorf("page = %+v, want nil", got)
+	}
+}
+
+func TestUpdatePageRecoveryRequiresTheTitleToo(t *testing.T) {
+	const body, version = "<p>new</p>", 5
+	c, _ := updateServer(t, http.StatusConflict, livePage(version, "Renamed by someone", body))
+
+	if _, err := c.UpdatePage("1", "Runbook", body, version, "msg"); err == nil {
+		t.Fatal("UpdatePage: want the original error when the title differs")
+	}
+}
+
+func TestUpdatePageRecoveryRequiresTheVersion(t *testing.T) {
+	const title, body = "Runbook", "<p>new</p>"
+	// The page is still at 4: our write never landed, so this is a real failure.
+	c, _ := updateServer(t, http.StatusConflict, livePage(4, title, body))
+
+	if _, err := c.UpdatePage("1", title, body, 5, "msg"); err == nil {
+		t.Fatal("UpdatePage: want the original error when our write did not land")
+	}
+}
+
+// TestUpdatePageReportsTheOriginalErrorWhenTheReReadFails: the recovery must
+// never turn a failure into a different, more confusing failure.
+func TestUpdatePageReportsTheOriginalErrorWhenTheReReadFails(t *testing.T) {
+	c, _ := updateServer(t, http.StatusForbidden, "") // re-read 404s
+
+	_, err := c.UpdatePage("1", "Runbook", "<p>new</p>", 5, "msg")
+	if err == nil {
+		t.Fatal("UpdatePage: want an error")
+	}
+	var he *HTTPError
+	if !errors.As(err, &he) || he.StatusCode != http.StatusForbidden {
+		t.Errorf("err = %v, want the original 403", err)
+	}
+}
+
+// TestUpdatePageRecoveryIsReported: it succeeded, so no warning -- but the
+// unusual sequence leaves a trace under --debug.
+func TestUpdatePageRecoveryIsReported(t *testing.T) {
+	events := captureRetries(t)
+	const title, body, version = "Runbook", "<p>new</p>", 5
+	c, _ := updateServer(t, http.StatusConflict, livePage(version, title, body))
+
+	if _, err := c.UpdatePage("1", title, body, version, "msg"); err != nil {
+		t.Fatalf("UpdatePage: %v", err)
+	}
+	var noted bool
+	for _, ev := range *events {
+		if ev.Note != "" {
+			noted = true
+			if ev.Err == nil {
+				t.Error("the recovery event carries no error; it should say what it recovered from")
+			}
+		}
+	}
+	if !noted {
+		t.Errorf("no recovery event was reported: %+v", *events)
+	}
+}
+
+// TestUpdatePageSuccessDoesNotReRead: the recovery costs a GET, and must only
+// cost it on the failure path.
+func TestUpdatePageSuccessDoesNotReRead(t *testing.T) {
+	c, seen := updateServer(t, http.StatusOK, "")
+	if _, err := c.UpdatePage("1", "Runbook", "<p>new</p>", 5, "msg"); err != nil {
+		t.Fatalf("UpdatePage: %v", err)
+	}
+	if len(*seen) != 1 {
+		t.Errorf("requests = %v, want just the PUT", *seen)
+	}
+}

@@ -167,6 +167,11 @@ func logRetry(ev client.RetryEvent) {
 		return
 	}
 	var b strings.Builder
+	if ev.Note != "" {
+		fmt.Fprintf(&b, "%s %s: %s (after: %v)", ev.Method, ev.URL, ev.Note, ev.Err)
+		ui.Debug(b.String())
+		return
+	}
 	fmt.Fprintf(&b, "%s %s: attempt %d ", ev.Method, ev.URL, ev.Attempt+1)
 	switch {
 	case ev.Err != nil:
