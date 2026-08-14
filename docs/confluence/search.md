@@ -1,4 +1,12 @@
-# Search: finding content by title
+# Search: finding content
+
+Two questions, two commands, and — for one of them — two APIs.
+
+`find` resolves an **exact title** to an id. `search` answers **full text**:
+"which page is about deploys?", where the title is not known. Both end up at
+`/wiki/rest/api/search` for at least part of the answer, so the pagination,
+injection and index-lag facts below are shared. The parts that differ are in
+[Full text](#full-text-verified-2026-08-14).
 
 Resolving a title to an id needs two different APIs, because neither one can see
 everything markfluence cares about.
@@ -187,8 +195,202 @@ Note also that archiving, unlike trashing, does **not** null `parentId`: sampled
 archived pages kept `parentId` and `parentType: "page"`. Compare
 [folders.md](folders.md), where a trashed node reports `parentId: null`.
 
+## Full text: verified 2026-08-14
+
+Everything above is about matching a title exactly. Full text is the same
+endpoint and a different set of traps.
+
+### `siteSearch ~` ranks; `text ~` does not
+
+This is the one that decides whether the feature works. For the query
+`deploy runbook`, `type = page` in both cases:
+
+| # | `text ~ "deploy runbook"` | `siteSearch ~ "deploy runbook"` |
+|---|---|---|
+| 1 | Monitor Base Load Engineer Runbook | **Deployment runbook** |
+| 2 | Base Load Engineer's Hand-off Log | **Runbook: Grafana deploys** |
+| 3 | Local Models Selection | **Runbook: Prod deployment** |
+| 4 | Merino Curated Recommendations | **Runbook: Stage deployment** |
+| 5 | LCM Team Resources — Global Operations and Governance | **Runbook: deploying changes** |
+| 6 | Treeherder | **SubPlat: Runbook** |
+
+Same corpus, near-identical totals (`text ~` reported 3060, `siteSearch ~`
+3071–3073), completely different ordering. `text ~` is the field Atlassian
+documents and the one confluence-cli uses; on this evidence it is the wrong one.
+
+`siteSearch` is undocumented but the 400 above names it as a valid field, and it
+behaves like the site's own search UI. Both accept a `space` clause and both work
+through the gateway.
+
+**There is no client-side fallback.** `score` is `0.0` on every row of every
+query sampled, so the server's order is the only order there is. Nothing may
+re-sort a full-text result set, and `search` deliberately does not.
+
+The cost of `siteSearch` is that it decorates the response — see below.
+
+### Full text is AND across terms, not a phrase
+
+| query | totalSize |
+|---|---|
+| `text ~ "deploy"` | 3329 |
+| `text ~ "runbook"` | 751 |
+| `text ~ "deploy runbook"` | 304 |
+| `text ~ "runbook deploy"` | 304 |
+| `text ~ "deploy AND runbook"` | 304 |
+| `text ~ "zzzzq deploy"` | **0** |
+
+Reversing the words changes nothing, so it is not adjacency. Adding a term that
+matches nothing collapses the result to zero, so every term is required. `AND`
+makes no difference either way.
+
+So adding a word narrows the search, and a user who expects a quoted phrase does
+not get one. That belongs in the help text, not just here.
+
+### An untyped query returns content markfluence cannot use
+
+`text ~ "deploy"`, first 100 rows: **94 page, 3 attachment, 2 database, 1
+comment**. An attachment id and a comment id are dead ends for every markfluence
+verb.
+
+`siteSearch ~ "deploy"` returned 99 pages out of the first 99 — its ranking
+floats pages up on its own. That is luck at the top of the list and not a filter:
+untyped reported 3358 against 3073 for `type = page`, so roughly 285 non-page
+hits are further down. Type pinning matters for an unbounded walk even where the
+first page looks clean.
+
+Valid `type` values, all with `siteSearch ~ "deploy"`:
+
+| type | hits |
+|---|---|
+| `page` | 3073 |
+| `comment` | 144 |
+| `attachment` | 127 |
+| `blogpost` | 6 |
+| `database` | 2 |
+| `whiteboard` | 2 |
+| `folder` | **0** |
+| `embed` | 0 |
+| `space` | 0 |
+| `bogustype` | **400** `Unsupported value for type, got : bogustype` |
+
+**Full text cannot see folders**, structurally — a folder has no body. So unlike
+`find`, a full-text search has no folder half: one request, no merge, no
+`extensions.position` ordering to preserve. It cannot see archived pages either,
+for the reasons already given above.
+
+`type in (page, folder)` parses, so a list is available if one is ever wanted.
+
+### The row-level `title` is escaped and decorated; `content.title` is not
+
+The row's own `title` is **HTML-escaped and carries highlight markers**:
+
+```
+row.title      'Base Load Engineer&#39;s Hand-off Log'
+content.title  "Base Load Engineer's Hand-off Log"
+
+row.title      'Deployment @@@hl@@@runbook@@@endhl@@@'
+content.title  'Deployment runbook'
+```
+
+`content.title` was clean for both, on every row sampled, in both modes. Checked
+against 245 folder rows as well: 9 had `&` in the row title (`Apps &amp;
+Actions`, `Fastly Developers&#39; guide`) and `content.title` was correct in every
+case, matching what v2 `/folders/{id}` returns for the same id.
+
+**Always read `content.title`.** This is why `find`'s folder half is correct as
+written, and it must not be "simplified" to the row's `title`.
+
+`content._links.webui` was byte-identical to the row's `url` on all 50 rows
+sampled, so either works for a URL; `content._links.webui` is preferred for
+consistency with the rule above.
+
+### The excerpt needs cleaning, and `excerpt=` is a live parameter
+
+`excerpt` exists **only** at the row level, so there is no clean variant to
+prefer. Over 50 rows fetched with `excerpt=highlight`:
+
+- **40 carried `@@@hl@@@` / `@@@endhl@@@`**
+- 40 contained newlines
+- 2 contained HTML entities
+- 0 were empty
+
+So stripping the markers and unescaping entities is required for the common case,
+not defensive coding.
+
+| `excerpt=` | result |
+|---|---|
+| *(unset)* | 150–450 chars — same as `highlight` |
+| `highlight` | 150–450 chars, markers present |
+| `indexed` | truncated to **50 chars** |
+| `none` | empty string, 200 |
+| `bogus` | **empty string, 200** |
+
+An unrecognized value is not an error. markfluence passes `excerpt=highlight`
+explicitly anyway, to pin the behavior that was actually tested — with the
+consequence that if Atlassian ever renames the value, excerpts silently go empty
+rather than failing. **That is the thing to watch here.**
+
+### An empty query is a 500, not a 400
+
+```
+type = page and siteSearch ~ ""   →   500
+java.lang.NullPointerException: query parameter is required.
+```
+
+Compare `title = ""`, which is a 400. So rejecting a blank query before sending
+anything is load-bearing rather than tidy: without the guard a usage error
+surfaces as an operational failure carrying a Java exception message.
+
+### Some rows have no `content` object at all
+
+`type = space` returns 388 rows on the site tested, and none of them has a
+`content` object. The addressable data is in a sibling `space` object:
+
+```json
+{ "entityType": "space", "title": "Engineering Workflow", "url": "/spaces/EW",
+  "space": { "key": "EW", "name": "Engineering Workflow", "status": "current" } }
+```
+
+A space has no id in that payload, only a key, so such a row cannot become a
+result whose `id` is required — and no markfluence verb takes a space anyway.
+Skipping it is right; skipping it **silently** is not, because a query matching
+only these rows would otherwise report a successful empty result. `search` counts
+them and reports the count.
+
+Note that `type = user` does **not** return user rows: it returned ordinary
+content (90250 hits, i.e. effectively unfiltered), as did `space.type = global`.
+Spaces are the confirmed content-less case; users are not reachable this way.
+
+### Fields that look useful and are not
+
+- **`score`** — `0.0` on every row of every query sampled. Not usable for
+  ranking, not worth reporting.
+- **`breadcrumbs`** — an empty array on all 50 rows sampled. There is no free
+  ancestor path here.
+- **`content.status`** — `current` on everything, necessarily, since CQL cannot
+  see archived content. A search result carrying a status field would imply a
+  distinction it cannot make.
+- **`archivedResultCount`** — already covered above: `0` everywhere, including
+  where archived-space content was demonstrably added.
+
+`resultGlobalContainer` **is** populated, as
+`{"title": "Ecosystems", "displayUrl": "/spaces/PXI"}` — the space's *display
+name*, which `SpaceKeyFromWebUI` cannot give us. Unused, since the key is the
+handle every command takes, but it is the only place the human-readable space
+name comes free.
+
 ## What this means for markfluence
 
+- **Full text means `siteSearch ~`, and the result order is the server's.** With
+  `score` at `0.0` there is nothing to re-rank with, so a truncating `--limit`
+  keeps the *top* N and must say when it dropped anything.
+- **Pin the content type.** An untyped full-text query returns attachment,
+  comment and database ids, none of which any command accepts.
+- **Read `content.title`, never the row's `title`.** The latter is
+  entity-escaped and marker-decorated.
+- **Clean every excerpt**: strip `@@@hl@@@`/`@@@endhl@@@`, unescape entities
+  once, then collapse whitespace. 40 of 50 rows needed it.
+- **Reject a blank query locally**, since the server answers with a 500.
 - **`find` needs both APIs.** v2 for pages, current and archived; CQL for
   folders. Neither covers the other's blind spot, so dropping one silently drops
   a category of answer.
@@ -215,3 +417,13 @@ archived pages kept `parentId` and `parentType: "page"`. Compare
   field to ask with.
 - **What `archivedResultCount` actually counts.** `0` on every sample, including
   ones where archived-space content was demonstrably added to the results.
+- **Why `score` is `0.0`.** Whether the field is unpopulated on this endpoint or
+  genuinely computed as zero was not established. Either way it is unusable, and
+  the ranking is demonstrably not arbitrary — `siteSearch` returns a sensible
+  order while reporting the same zero.
+- **Whether `siteSearch` is stable.** It is not in Atlassian's CQL field
+  reference; it is named as valid by the error message for an invalid field, and
+  it works. An undocumented field could change without notice.
+- **What `siteSearch ~` does differently from `text ~`.** Only that it ranks
+  better was established, not why. Totals differ slightly (3071 vs 3060 for
+  `type = page`), so the matching is not identical either.

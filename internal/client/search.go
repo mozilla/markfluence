@@ -31,9 +31,11 @@ const maxSearchPages = 200
 // "/spaces/{key}/folder/{id}"), so it yields a space key through
 // SpaceKeyFromWebUI and an absolute URL by joining the site's /wiki context.
 //
-// EntityType is "content" for a page or folder. The index also holds spaces and
-// users, which have titles but no content object, so a query that does not
-// constrain type can return rows whose Content is zero.
+// EntityType is "content" for a page or folder. A query that does not constrain
+// type can return rows whose Content is zero: `type = space` answers with
+// entityType "space" and no content object at all, the addressable data sitting
+// in a sibling space object instead. (`type = user` does *not* behave that way --
+// it returns ordinary content rows, effectively unfiltered.)
 type SearchResult struct {
 	Content struct {
 		ID     string `json:"id"`
