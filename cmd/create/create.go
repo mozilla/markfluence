@@ -166,6 +166,40 @@ func pageIDFailureFor(c *client.ConfluenceClient, pageID string, page *client.Pa
 	}
 }
 
+// checkTitleFree reports an error when the title is already taken in the space.
+//
+// It asks for archived pages as well as current ones. An archived page is
+// absent from the page tree but still reserves its title -- Confluence rejects
+// the POST with "A page already exists with the same TITLE in this space"
+// (docs/confluence/search.md). Checking only current pages let validation pass
+// and the create fail, and in a batch that failure lands after earlier pages
+// have already been created, which is exactly what the two-phase design exists
+// to prevent.
+//
+// Folders are deliberately not checked. A folder does not reserve a title:
+// creating a page with a folder's exact name in the same space succeeds.
+func checkTitleFree(c *client.ConfluenceClient, title, spaceKey, spaceID string) error {
+	dupes, err := c.SearchPagesByTitle(title, spaceID, client.StatusCurrent, client.StatusArchived)
+	if err != nil {
+		return err
+	}
+	if len(dupes) == 0 {
+		return nil
+	}
+	// Link the page in the way of the title, as the page_id conflict does: the
+	// fix is usually to look at it and pick a different title.
+	d := dupes[0]
+	if d.Status == client.StatusArchived {
+		// Say it is archived, or the author goes looking in the page tree for a
+		// page that is not there and concludes markfluence is wrong.
+		return fmt.Errorf("an archived page titled %q already exists in space %s and still holds "+
+			"that title; restore it, rename it, or pick another title: %s",
+			title, spaceKey, pageURL(c, &d, d.ID))
+	}
+	return fmt.Errorf("a page titled %q already exists in space %s: %s",
+		title, spaceKey, pageURL(c, &d, d.ID))
+}
+
 func run(cmd *cobra.Command, args []string) error {
 	if overrideNeedsSingleFile(titleOpt, len(args)) {
 		return fatalFail("--title applies to a single page; pass exactly one FILE", jsonout.CodeConfig)
@@ -341,15 +375,8 @@ func resolveFile(
 		return record{}, err
 	}
 
-	dupes, err := c.SearchPagesByTitle(title, spaceID)
-	if err != nil {
+	if err := checkTitleFree(c, title, spaceKey, spaceID); err != nil {
 		return record{}, err
-	}
-	if len(dupes) > 0 {
-		// Link the page in the way of the title, as the page_id conflict above does:
-		// the fix is usually to look at it and pick a different title.
-		return record{}, fmt.Errorf("a page titled %q already exists in space %s: %s",
-			title, spaceKey, pageURL(c, &dupes[0], dupes[0].ID))
 	}
 
 	abs, _ := filepath.Abs(filename)
