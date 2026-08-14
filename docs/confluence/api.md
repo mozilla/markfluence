@@ -49,6 +49,11 @@ must use `SiteURL()`, or readers get gateway URLs they cannot open.
 
 A v1 collection cannot be paged with `_links.next` the way v2 paths can.
 
+> **`/rest/api/search` is the exception, and it fails the other way.** It ignores
+> `start` entirely and can only be paged by its cursor, and a short page there
+> does *not* mean the end. Applying the offset rule below to it silently
+> truncates the results. See [search.md](search.md).
+
 **Verified 2026-08-07** against a page with 3 attachments:
 
 | request | `_links` keys |
@@ -63,6 +68,20 @@ Two problems, hence the `start`/`limit` offset paging in `ListAttachments`:
 2. When present it is `/rest/api/content/…?next=true&limit=1&start=1` — relative
    to the `/wiki` context, not a v2-style path. The same response reports
    `_links.base = https://SITE/wiki` and `_links.context = /wiki`.
+
+## v2 collections paginate with a cursor
+
+`_links.next` on a v2 collection is a site-relative absolute path carrying the
+cursor and the limit, e.g. `/wiki/api/v2/pages?limit=1&title=…&cursor=…`.
+
+**Verified 2026-08-14** against `GET /wiki/api/v2/pages?title=…&limit=1` on a
+title with two matches. Because the path already includes the `/wiki` prefix,
+`resolveNext` appends it to the base unchanged and the gateway's
+`/ex/confluence/{cloudId}` segment survives. That is what `listV2` pages with,
+and it is why `ListContentProperties` and `SearchPagesByTitle` can share one
+helper.
+
+Unlike v1, absence of `next` is a reliable end-of-collection signal here.
 
 ## Attachment downloads and the redirect
 
