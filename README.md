@@ -318,6 +318,51 @@ markfluence read 1234567890 --format storage > page.storage.xml
 markfluence read "https://org.atlassian.net/wiki/spaces/ENG/pages/1234567890/Title"
 ```
 
+### `children`
+
+```
+Usage: markfluence children PAGE [flags]
+```
+
+List the pages and folders under a page or folder. `PAGE` is a numeric id, a
+Confluence page **or folder** URL, or a markdown file whose frontmatter has a
+`page_id`.
+
+```sh
+markfluence children 1234567890                  # direct children
+markfluence children 1234567890 --depth 3
+markfluence children 1234567890 --depth all
+markfluence children "https://org.atlassian.net/wiki/spaces/ENG/folder/1234567890"
+markfluence children docs/index.md               # children of the page index.md publishes to
+markfluence children 1234567890 --json | jq -r '.results[] | select(.type=="page") | .id'
+```
+
+```
+TYPE    ID          TITLE
+folder  2876047392  Articles
+page    1675427879  MozCloud planning
+page    1671692338    MozCloud observability focus and issues
+```
+
+Titles indent by depth; `TYPE` and `ID` stay aligned so the output is still
+greppable. Siblings appear in the order Confluence displays them, which takes a
+merge — pages and folders come from separate requests.
+
+**Folders are listed, not just traversed.** A folder can hold the only pages in a
+subtree, so listing pages alone would show nothing for a folder that contains
+folders. A folder also counts as a level: at the default `--depth 1` a child
+folder appears as a row, and `--depth 2` shows what is inside it.
+
+`--depth` takes a positive number or `all`, defaulting to `1`. `0` is rejected
+rather than treated as "unlimited" — a common convention elsewhere, and silently
+walking an entire space for someone who meant "none" is worse than an error.
+`--depth all` is genuinely unbounded: it costs two requests per node, and the
+default of `1` is what keeps the casual case cheap.
+
+Trashed pages and folders are not listed. Finding nothing is a success, not a
+failure: the command prints `No children.` and exits 0, so `--json` reporting an
+empty `results` array is how a script tests for an empty subtree.
+
 ### `export`
 
 ```
