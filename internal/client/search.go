@@ -24,6 +24,16 @@ const searchPageSize = 250
 // avoid.
 const maxSearchPages = 200
 
+// excerptMode is the excerpt= value asked for on every search request.
+//
+// It is passed explicitly even though the server's default is identical, so what
+// ships is what was tested. The tradeoff is recorded rather than avoided: an
+// unrecognized excerpt= value returns 200 with an *empty* excerpt rather than an
+// error, so if Atlassian ever renames this value, excerpts go silently missing
+// (docs/confluence/search.md). "indexed" is not an alternative -- it truncates to
+// 50 characters.
+const excerptMode = "highlight"
+
 // SearchResult is one row of a CQL search.
 //
 // The addressable fields live under content; the row's own url is
@@ -79,13 +89,34 @@ func escapeCQL(s string) string {
 //     pages and to be nonzero against an empty results array, so nothing here
 //     may branch on it.
 func (c *ConfluenceClient) SearchCQL(cql string) ([]SearchResult, error) {
+	rows, _, err := c.searchCQLBounded(cql, 0)
+	return rows, err
+}
+
+// searchCQLBounded is SearchCQL with a row bound. It returns at most max rows
+// plus whether more were available; max <= 0 means every row.
+//
+// The bound exists because a full-text query is not a title lookup: one word can
+// match thousands of pages, and walking all of them is thousands of rows over
+// dozens of sequential requests for a caller who wanted to know whether a page
+// existed.
+//
+// It asks the server for max+1 rows and reports the surplus as "more" rather than
+// counting anything. totalSize cannot supply that count -- it drifted 294 -> 292
+// -> 291 against 289 rows actually collected, and read 1 against an empty results
+// array (docs/confluence/search.md).
+func (c *ConfluenceClient) searchCQLBounded(cql string, max int) ([]SearchResult, bool, error) {
 	var all []SearchResult
 	rawURL := c.baseURL + searchPath
-	params := url.Values{"cql": {cql}, "limit": {strconv.Itoa(searchPageSize)}}
+	params := url.Values{
+		"cql":     {cql},
+		"limit":   {strconv.Itoa(searchRequestSize(max))},
+		"excerpt": {excerptMode},
+	}
 
 	for page := 0; rawURL != ""; page++ {
 		if page >= maxSearchPages {
-			return nil, fmt.Errorf("CQL search did not terminate after %d pages (query: %s)",
+			return nil, false, fmt.Errorf("CQL search did not terminate after %d pages (query: %s)",
 				maxSearchPages, cql)
 		}
 		var out struct {
@@ -95,17 +126,33 @@ func (c *ConfluenceClient) SearchCQL(cql string) ([]SearchResult, error) {
 			} `json:"_links"`
 		}
 		if err := c.doJSON(http.MethodGet, rawURL, params, nil, &out, timeoutRead); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		all = append(all, out.Results...)
+		if max > 0 && len(all) > max {
+			return all[:max], true, nil
+		}
 		rawURL = searchNextURL(c.baseURL, out.Links.Next)
 		// The next link carries the cursor, limit and cql already.
 		params = nil
 	}
-	return all, nil
+	return all, false, nil
 }
 
-// searchNextURL turns /search's _links.next into an absolute URL.
+// searchRequestSize is the limit to ask for, given a row bound.
+//
+// One more than the caller needs, so the surplus answers "are there more?"
+// without touching totalSize -- and never more than the page size, since a bound
+// of 5 should be one small request rather than a 250-row fetch that discards 245.
+func searchRequestSize(max int) int {
+	if max <= 0 || max >= searchPageSize {
+		return searchPageSize
+	}
+	return max + 1
+}
+
+// searchNextURL turns /search's _links.next into an absolute URL, re-attaching
+// the excerpt mode.
 //
 // Unlike a v2 next link, this one is relative to the /wiki context --
 // "/rest/api/search?next=true&cursor=..." -- so the prefix has to be added
@@ -115,8 +162,31 @@ func searchNextURL(base, next string) string {
 	if next == "" {
 		return ""
 	}
-	if strings.HasPrefix(next, "http://") || strings.HasPrefix(next, "https://") {
-		return next
+	abs := next
+	if !strings.HasPrefix(next, "http://") && !strings.HasPrefix(next, "https://") {
+		abs = resolveNext(base, "/wiki"+next)
 	}
-	return resolveNext(base, "/wiki"+next)
+	return withExcerptMode(abs)
+}
+
+// withExcerptMode sets excerpt= on an already-built URL.
+//
+// The next link carries cql, limit and the cursor but *not* excerpt, and doJSON
+// appends its params with a bare "?" -- so passing excerpt alongside a next link
+// would produce a second "?" and a malformed URL, while passing nothing would
+// request page two differently from page one. Setting it on the parsed URL is
+// where both are fixable at once.
+//
+// A URL that will not parse is returned unchanged: it came from resolveNext or
+// from the server, so failing the walk over it would trade a working request for
+// an error.
+func withExcerptMode(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	q := u.Query()
+	q.Set("excerpt", excerptMode)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
