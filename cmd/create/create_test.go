@@ -289,3 +289,69 @@ func TestCheckParentInSpaceAcceptsFolder(t *testing.T) {
 		})
 	}
 }
+
+// searchServer stands in for the duplicate-title lookup, recording the request
+// URL so a test can assert which statuses were actually asked for.
+func searchServer(t *testing.T, body string) (*client.ConfluenceClient, *string) {
+	t.Helper()
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.String()
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return client.New(client.Config{SiteURL: srv.URL}), &got
+}
+
+// TestCheckTitleFreeSeesArchivedPages: an archived page is invisible in the page
+// tree but still reserves its title, so a check that asked only for current
+// pages passed validation and then failed the POST -- in a batch, after earlier
+// pages had already been created.
+func TestCheckTitleFreeSeesArchivedPages(t *testing.T) {
+	t.Run("the request asks for archived too", func(t *testing.T) {
+		c, url := searchServer(t, `{"results":[],"_links":{}}`)
+		if err := checkTitleFree(c, "Runbook", "ENG", "77"); err != nil {
+			t.Fatalf("checkTitleFree: %v", err)
+		}
+		for _, want := range []string{"status=current", "status=archived", "space-id=77"} {
+			if !strings.Contains(*url, want) {
+				t.Errorf("request %q does not contain %q", *url, want)
+			}
+		}
+	})
+
+	t.Run("an archived clash says so", func(t *testing.T) {
+		c, _ := searchServer(t, `{"results":[{"id":"400","title":"Runbook","status":"archived",`+
+			`"_links":{"webui":"/spaces/ENG/pages/400/Runbook"}}],"_links":{}}`)
+		err := checkTitleFree(c, "Runbook", "ENG", "77")
+		if err == nil {
+			t.Fatal("want an error for a title held by an archived page")
+		}
+		// Naming the archive is the point: otherwise the author searches the page
+		// tree, finds nothing, and concludes the check is broken.
+		for _, want := range []string{"archived", `"Runbook"`, "ENG", "/spaces/ENG/pages/400/Runbook"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("message %q does not mention %q", err.Error(), want)
+			}
+		}
+	})
+
+	t.Run("a current clash reads as before", func(t *testing.T) {
+		c, _ := searchServer(t, `{"results":[{"id":"500","title":"Runbook","status":"current",`+
+			`"_links":{"webui":"/spaces/ENG/pages/500/Runbook"}}],"_links":{}}`)
+		err := checkTitleFree(c, "Runbook", "ENG", "77")
+		if err == nil {
+			t.Fatal("want an error for a title held by a current page")
+		}
+		if strings.Contains(err.Error(), "archived") {
+			t.Errorf("message %q should not mention archiving for a current page", err.Error())
+		}
+	})
+
+	t.Run("a free title is no error", func(t *testing.T) {
+		c, _ := searchServer(t, `{"results":[],"_links":{}}`)
+		if err := checkTitleFree(c, "Brand New", "ENG", "77"); err != nil {
+			t.Errorf("checkTitleFree = %v, want nil", err)
+		}
+	})
+}
