@@ -337,3 +337,32 @@ func TestEscapeCQL(t *testing.T) {
 		})
 	}
 }
+
+func TestCleanExcerpt(t *testing.T) {
+	tests := []struct {
+		name, in, want string
+	}{
+		{"plain", "Deploying to prod", "Deploying to prod"},
+		// siteSearch ~ wraps every matched term; 40 of 50 sampled rows had these.
+		{"markers", "a @@@hl@@@deploy@@@endhl@@@ runbook", "a deploy runbook"},
+		{"entity", "Base Load Engineer&#39;s Log", "Base Load Engineer's Log"},
+		{"ampersand", "Apps &amp; Actions", "Apps & Actions"},
+		// The index breaks excerpts at the source's own line boundaries.
+		{"newlines", "one\ntwo\nthree", "one two three"},
+		{"whitespace runs", "one  \t\n  two", "one two"},
+		{"trims", "  padded  ", "padded"},
+		{"all at once", "@@@hl@@@Deploy@@@endhl@@@&#39;s\n  guide", "Deploy's guide"},
+		{"empty", "", ""},
+		{"whitespace only", " \n\t ", ""},
+		// A single unescape pass, so text that was literally "&#39;" in the page
+		// survives as itself rather than decoding twice.
+		{"double escaped", "a &amp;#39; b", "a &#39; b"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cleanExcerpt(tt.in); got != tt.want {
+				t.Errorf("cleanExcerpt(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
