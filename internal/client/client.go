@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -448,7 +449,15 @@ func retryableStatus(status int, method string, hasRetryAfter bool) bool {
 }
 
 // backoff returns the delay before a retry: the server's Retry-After when given,
-// otherwise exponential (baseBackoff * 2^attempt), both capped at maxBackoff.
+// otherwise exponential (baseBackoff * 2^attempt) with jitter, both capped at
+// maxBackoff.
+//
+// Only the exponential path is jittered. A Retry-After is an instruction rather
+// than a guess, and spreading it risks coming back before the server said to.
+// The exponential path has no such authority behind it, and Atlassian asks for
+// jitter explicitly: without it, every client that hit the same limit retries in
+// lockstep at 1s, 2s, 4s, 8s. That is not hypothetical for markfluence -- see
+// the GitHub Action, where parallel jobs share one rate limit.
 func backoff(attempt int, retryAfter time.Duration) time.Duration {
 	if retryAfter > 0 {
 		if retryAfter > maxBackoff {
@@ -457,10 +466,32 @@ func backoff(attempt int, retryAfter time.Duration) time.Duration {
 		return retryAfter
 	}
 	d := baseBackoff << attempt
-	if d <= 0 || d > maxBackoff { // d <= 0 guards a shift overflow
+	if d <= 0 { // guards a shift overflow
+		return maxBackoff
+	}
+	// Jitter first, then cap, so the cap stays a real ceiling rather than
+	// something jitter can push past.
+	if d = jitter(d); d > maxBackoff {
 		return maxBackoff
 	}
 	return d
+}
+
+// The range Atlassian suggests spreading a delay over.
+const (
+	jitterLow  = 0.7
+	jitterHigh = 1.3
+)
+
+// jitter is the spreading primitive; a package variable for the same reason
+// sleep is: the backoff tests assert exact durations, and a random factor would
+// make them flap. Tests stub it to the identity and exercise jitterDelay
+// directly.
+var jitter = jitterDelay
+
+// jitterDelay spreads d over [jitterLow, jitterHigh] of its nominal value.
+func jitterDelay(d time.Duration) time.Duration {
+	return time.Duration(float64(d) * (jitterLow + rand.Float64()*(jitterHigh-jitterLow)))
 }
 
 // parseRetryAfter parses a Retry-After header (delta-seconds or an HTTP date),
