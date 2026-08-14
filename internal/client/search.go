@@ -225,3 +225,157 @@ func withExcerptMode(rawURL string) string {
 	u.RawQuery = q.Encode()
 	return u.String()
 }
+
+// Content types a full-text search may be restricted to.
+//
+// This is markfluence's vocabulary, not Confluence's. The index also holds
+// attachments, comments, databases and whiteboards, all of which match a
+// full-text query and none of which is an id any markfluence command accepts.
+// SearchTypeFolder is absent on purpose: full text cannot see a folder at all
+// (docs/confluence/search.md), and the command that finds one is `find`.
+const (
+	SearchTypePage     = "page"
+	SearchTypeBlogpost = "blogpost"
+	// SearchTypeAll drops the type clause, returning whatever the index holds.
+	SearchTypeAll = "all"
+)
+
+// SearchMatch is one full-text hit: addressable, and cleaned.
+//
+// Every field comes from the row's content object rather than from the row
+// itself. The row-level title is HTML-escaped *and* carries highlight markers
+// where content.title is neither, and that is not a corner case -- see
+// docs/confluence/search.md. Nothing here may be switched back to the row.
+//
+// Type is a plain string rather than a closed set. A SearchTypeAll or raw-CQL
+// search can return whiteboard, database, or whatever content type Atlassian adds
+// next, and a closed set would turn a new one into a validation failure.
+//
+// There is deliberately no Status. CQL cannot see archived content, so every hit
+// is current, and carrying the field would imply a distinction a full-text search
+// cannot make.
+type SearchMatch struct {
+	ID      string
+	Type    string
+	Title   string
+	Space   string
+	URL     string
+	Excerpt string
+}
+
+// SearchResults is what a full-text search returns.
+//
+// A struct rather than extra return values, so a field can be added without
+// breaking every caller -- Skipped is the second field this shape grew.
+type SearchResults struct {
+	// Matches is in the server's relevance order, which is the only order there
+	// is: score is 0.0 on every row of every query sampled, so nothing may
+	// re-sort these.
+	Matches []SearchMatch
+	// More reports that the row bound was reached with rows still available. A
+	// flag rather than a count, because totalSize cannot supply one.
+	More bool
+	// Skipped counts index rows with no addressable content object. `type =
+	// space` answers with hundreds of them, carrying a space object instead.
+	// They are counted rather than dropped quietly: a query matching only those
+	// would otherwise look like a successful empty result, and an empty result is
+	// what a caller acts on.
+	Skipped int
+}
+
+// SearchText runs a full-text search, optionally restricted to a space key and to
+// one content type, returning at most limit matches (limit <= 0 for all of them).
+//
+// The query is matched with `siteSearch ~`, not the `text ~` that Atlassian
+// documents. That is not a stylistic choice: for "deploy runbook", `text ~`
+// ranked six unrelated pages above every page whose title contains both words,
+// while `siteSearch ~` returned them in order. With score at 0.0 on every row
+// there is no client-side re-ranking to fall back on, so the field choice is the
+// whole of the ranking (docs/confluence/search.md).
+//
+// Multi-word queries are ANDed across terms and are not phrase matches -- word
+// order does not matter, and one non-matching term empties the result.
+//
+// contentType is one of the SearchType constants; SearchTypeAll leaves the query
+// untyped, which is the only way this returns rows a markfluence command cannot
+// use. The caller is expected to have validated it.
+func (c *ConfluenceClient) SearchText(query, spaceKey, contentType string, limit int) (SearchResults, error) {
+	if spaceKey != "" {
+		// The id is discarded: CQL matches on the key. This call exists only to
+		// refuse an unknown key, which CQL would answer with zero rows -- reading
+		// exactly like "no matches", on which a caller's next move is to create
+		// the page it thinks is missing. Same guard, same reason, as FindByTitle.
+		spaceID, err := c.ResolveSpaceID(spaceKey)
+		if err != nil {
+			return SearchResults{}, err
+		}
+		if spaceID == "" {
+			return SearchResults{}, fmt.Errorf("%w: %q", ErrSpaceNotFound, spaceKey)
+		}
+	}
+	return c.searchMatches(buildTextCQL(query, spaceKey, contentType), limit)
+}
+
+// SearchRawCQL runs a caller-supplied CQL query.
+//
+// Nothing is escaped, prepended or appended: the caller owns the query, which is
+// the entire point of the escape hatch. A space or type clause added here would
+// silently regroup a query containing `or` and answer a different question, which
+// is why the command refuses those flags alongside raw CQL rather than merging
+// them.
+func (c *ConfluenceClient) SearchRawCQL(cql string, limit int) (SearchResults, error) {
+	return c.searchMatches(cql, limit)
+}
+
+// buildTextCQL assembles the full-text query.
+//
+// The type clause leads and the space clause trails, matching the form the
+// probes in docs/confluence/search.md used. Both the query and the space key go
+// through escapeCQL: a bare quote in either ends the string literal and turns the
+// remainder into query syntax.
+func buildTextCQL(query, spaceKey, contentType string) string {
+	cql := fmt.Sprintf(`siteSearch ~ "%s"`, escapeCQL(query))
+	if contentType != "" && contentType != SearchTypeAll {
+		cql = fmt.Sprintf("type = %s and %s", contentType, cql)
+	}
+	if spaceKey != "" {
+		cql += fmt.Sprintf(` and space = "%s"`, escapeCQL(spaceKey))
+	}
+	return cql
+}
+
+// searchMatches runs a bounded query and converts its rows into matches.
+//
+// Note that a skipped row is not replaced: a bound of 25 over rows including
+// three content-less ones yields 22 matches. That is honest -- 25 rows were
+// examined -- and it is unreachable unless the caller asked for an untyped or raw
+// query.
+func (c *ConfluenceClient) searchMatches(cql string, limit int) (SearchResults, error) {
+	rows, more, err := c.searchCQLBounded(cql, limit)
+	if err != nil {
+		return SearchResults{}, err
+	}
+	out := SearchResults{Matches: make([]SearchMatch, 0, len(rows)), More: more}
+	for _, r := range rows {
+		if r.Content.ID == "" {
+			out.Skipped++
+			continue
+		}
+		// webui and the row's url were byte-identical on all 50 rows sampled, so
+		// the fallback is belt-and-braces rather than a known case -- but a row
+		// with neither would otherwise lose both its space key and its URL.
+		link := r.Content.Links.WebUI
+		if link == "" {
+			link = r.URL
+		}
+		out.Matches = append(out.Matches, SearchMatch{
+			ID:      r.Content.ID,
+			Type:    r.Content.Type,
+			Title:   r.Content.Title,
+			Space:   SpaceKeyFromWebUI(link),
+			URL:     c.contextURL(link),
+			Excerpt: cleanExcerpt(r.Excerpt),
+		})
+	}
+	return out, nil
+}
