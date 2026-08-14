@@ -711,6 +711,13 @@ func (c *ConfluenceClient) CreatePage(spaceID, title, body, parentID string) (*P
 }
 
 // UpdatePage updates a page with new storage-format body at the given version.
+//
+// On failure it checks whether the update landed anyway, because a versioned
+// PUT is not as idempotent as its method suggests. send retries a PUT on a
+// transport failure or a 502/503/504; if the first one reached Confluence and
+// only its response was lost, the retry re-sends version N, which is refused
+// because N now exists -- so a successful update surfaces as an error. Compare
+// SetContentProperty, which has always re-read first for the same reason.
 func (c *ConfluenceClient) UpdatePage(pageID, title, body string, version int, message string) (*Page, error) {
 	payload := map[string]any{
 		"id":      pageID,
@@ -721,10 +728,58 @@ func (c *ConfluenceClient) UpdatePage(pageID, title, body string, version int, m
 	}
 	var p Page
 	err := c.doJSON(http.MethodPut, c.baseURL+"/wiki/api/v2/pages/"+pageID, nil, payload, &p, timeoutWrite)
-	if err != nil {
-		return nil, err
+	if err == nil {
+		return &p, nil
 	}
-	return &p, nil
+	if landed := c.updateLanded(pageID, title, body, version); landed != nil {
+		logRetry(RetryEvent{
+			Method: http.MethodPut,
+			URL:    c.baseURL + "/wiki/api/v2/pages/" + pageID,
+			Status: statusOf(err),
+			Err:    err,
+			Note:   "the update had already been applied; reporting success",
+		})
+		return landed, nil
+	}
+	return nil, err
+}
+
+// updateLanded reports the page when a failed update turns out to have been
+// applied, and nil otherwise.
+//
+// All three of version, title, and body must match what was sent. The version
+// number alone is not proof: a concurrent human edit could have produced it,
+// and claiming success over someone else's content is far worse than reporting
+// a failure that actually succeeded. body.storage is the right field to compare
+// precisely because it reports what was *stored* rather than what renders.
+//
+// Anything unexpected -- a differing body, a differing version, a re-read that
+// itself fails -- returns nil, leaving the caller with the original error. If
+// Confluence ever normalizes stored bytes the comparison simply stops matching
+// and this stops firing, which is the safe direction.
+//
+// It runs after *any* error rather than after a particular conflict status,
+// because what a stale-version PUT returns has not been observed. Guessing a
+// status and getting it wrong would leave this silently never firing -- failing
+// exactly the way it did before it existed.
+func (c *ConfluenceClient) updateLanded(pageID, title, body string, version int) *Page {
+	live, err := c.GetPageBodyOrNil(pageID)
+	if err != nil || live == nil {
+		return nil
+	}
+	if live.Version.Number != version || live.Title != title || live.Body.Storage.Value != body {
+		return nil
+	}
+	return live
+}
+
+// statusOf extracts the HTTP status from an error, or 0 if it carries none.
+func statusOf(err error) int {
+	var he *HTTPError
+	if errors.As(err, &he) {
+		return he.StatusCode
+	}
+	return 0
 }
 
 // --- users -------------------------------------------------------------------

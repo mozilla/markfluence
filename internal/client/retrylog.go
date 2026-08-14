@@ -55,6 +55,12 @@ type RetryEvent struct {
 	// will have, and it is invisible otherwise.
 	Retrying  bool
 	RateLimit RateLimitInfo
+	// Note carries a recovery that is not a retry decision: UpdatePage finding
+	// that a failed write had already been applied. That is reported here rather
+	// than as a warning because the run did what was asked -- but "the server
+	// errored and markfluence called it published" is exactly what you want a
+	// trace of when something looks wrong later.
+	Note string
 }
 
 // retryLogger receives every retry decision. It is package-level and set once
