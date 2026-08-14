@@ -23,7 +23,8 @@ func newFindServer(t *testing.T, f *findServer) *ConfluenceClient {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.urls = append(f.urls, r.URL.String())
-		body, status := "", 200
+		var body string
+		var status int
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/wiki/api/v2/spaces"):
 			body, status = f.spaces, f.spacesStatus
