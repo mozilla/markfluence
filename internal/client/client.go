@@ -341,15 +341,16 @@ func (c *ConfluenceClient) doJSON(
 // send sets common headers and executes req, retrying transient failures with
 // exponential backoff (honoring Retry-After). Each attempt runs under a fresh
 // context with the given per-attempt timeout. 429 is retried for any method (the
-// request was rejected before processing); 502/503/504 and network errors are
-// retried only for idempotent methods, so a non-idempotent POST is retried solely
-// on 429.
+// request was rejected before processing); 502/503/504, any other 5xx that
+// carries Retry-After, and network errors are retried only for idempotent
+// methods, so a non-idempotent POST is retried solely on 429. See
+// retryableStatus and docs/confluence/api.md.
 func (c *ConfluenceClient) send(req *http.Request, timeout time.Duration) (int, []byte, error) {
 	req.SetBasicAuth(c.username, c.token)
 	req.Header.Set("Accept", "application/json")
 
 	for attempt := 0; ; attempt++ {
-		status, body, retryAfter, err := c.attempt(req, timeout)
+		res, err := c.attempt(req, timeout)
 		switch {
 		case err != nil:
 			if attempt < maxRetries && isIdempotent(req.Method) {
@@ -357,18 +358,30 @@ func (c *ConfluenceClient) send(req *http.Request, timeout time.Duration) (int, 
 				continue
 			}
 			return 0, nil, err
-		case attempt < maxRetries && retryableStatus(status, req.Method):
-			sleep(backoff(attempt, retryAfter))
+		case attempt < maxRetries && retryableStatus(res.status, req.Method, res.hasRetryAfter):
+			sleep(backoff(attempt, res.retryAfter))
 			continue
 		default:
-			return status, body, nil
+			return res.status, res.body, nil
 		}
 	}
 }
 
-// attempt performs a single HTTP round trip under a fresh timeout context,
-// returning the status, body, and any Retry-After delay the response advertised.
-func (c *ConfluenceClient) attempt(req *http.Request, timeout time.Duration) (int, []byte, time.Duration, error) {
+// attemptResult is what one round trip reported. It is a struct rather than a
+// pile of return values because the retry decision, the delay, and what gets
+// logged each need a different part of it.
+type attemptResult struct {
+	status int
+	body   []byte
+	// retryAfter is the delay the response advertised; hasRetryAfter says
+	// whether it advertised one at all, which is not the same thing -- see
+	// parseRetryAfter.
+	retryAfter    time.Duration
+	hasRetryAfter bool
+}
+
+// attempt performs a single HTTP round trip under a fresh timeout context.
+func (c *ConfluenceClient) attempt(req *http.Request, timeout time.Duration) (attemptResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -376,21 +389,22 @@ func (c *ConfluenceClient) attempt(req *http.Request, timeout time.Duration) (in
 	if req.GetBody != nil { // rebuild the body so retries don't send an empty one
 		body, err := req.GetBody()
 		if err != nil {
-			return 0, nil, 0, err
+			return attemptResult{}, err
 		}
 		r.Body = body
 	}
 
 	resp, err := c.http.Do(r)
 	if err != nil {
-		return 0, nil, 0, err
+		return attemptResult{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return 0, nil, 0, err
+		return attemptResult{}, err
 	}
-	return resp.StatusCode, data, parseRetryAfter(resp.Header.Get("Retry-After")), nil
+	delay, ok := parseRetryAfter(resp.Header.Get("Retry-After"))
+	return attemptResult{status: resp.StatusCode, body: data, retryAfter: delay, hasRetryAfter: ok}, nil
 }
 
 // isIdempotent reports whether retrying a method can't cause a duplicate write.
@@ -404,11 +418,29 @@ func isIdempotent(method string) bool {
 }
 
 // retryableStatus reports whether a response status warrants a retry.
-func retryableStatus(status int, method string) bool {
-	switch status {
-	case http.StatusTooManyRequests:
+//
+// hasRetryAfter is what makes a 500 retryable: Atlassian's guidance is to retry
+// an idempotent request when the response asks to be called back, and it draws
+// no line between 500 and 503 (docs/confluence/api.md). That answers "is this
+// 500 transient?" without guessing -- a bare 500 is usually a deterministic
+// rejection of that particular request, so retrying only buys backoff on
+// something that will not succeed.
+//
+// It is the header's presence that matters, not the delay: "Retry-After: 0" is
+// a request to retry immediately, not the absence of one.
+//
+// 502/503/504 stay unconditional rather than also requiring the header.
+// Conforming strictly would stop retrying a bare 502 from a proxy, which is
+// transient in practice.
+func retryableStatus(status int, method string, hasRetryAfter bool) bool {
+	switch {
+	case status == http.StatusTooManyRequests:
 		return true
-	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+	case status == http.StatusBadGateway,
+		status == http.StatusServiceUnavailable,
+		status == http.StatusGatewayTimeout:
+		return isIdempotent(method)
+	case status >= 500 && hasRetryAfter:
 		return isIdempotent(method)
 	default:
 		return false
@@ -432,21 +464,29 @@ func backoff(attempt int, retryAfter time.Duration) time.Duration {
 }
 
 // parseRetryAfter parses a Retry-After header (delta-seconds or an HTTP date),
-// returning 0 when absent or unparseable.
-func parseRetryAfter(v string) time.Duration {
+// reporting whether one was present and understood.
+//
+// Presence is reported separately from the delay because the two mean different
+// things: "0", and a date already in the past, both parse to a zero delay and
+// still mean "retry, immediately". Since a 5xx is retryable precisely when the
+// server asked to be called back, collapsing those into "no header" would refuse
+// to retry a response that explicitly requested one. An unparseable value is not
+// an instruction, so it reports absent.
+func parseRetryAfter(v string) (time.Duration, bool) {
 	v = strings.TrimSpace(v)
 	if v == "" {
-		return 0
+		return 0, false
 	}
 	if secs, err := strconv.Atoi(v); err == nil && secs >= 0 {
-		return time.Duration(secs) * time.Second
+		return time.Duration(secs) * time.Second, true
 	}
 	if t, err := http.ParseTime(v); err == nil {
 		if d := time.Until(t); d > 0 {
-			return d
+			return d, true
 		}
+		return 0, true
 	}
-	return 0
+	return 0, false
 }
 
 // --- pages -------------------------------------------------------------------
