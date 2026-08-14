@@ -6,6 +6,12 @@ Pages and content properties use **v2** (`/wiki/api/v2/...`). Attachment writes
 and the user lookup use **v1** (`/wiki/rest/api/...`) because v2 does not cover
 them.
 
+Child enumeration is the third v1 exception, and the least obvious one, since v2
+does have children routes. It cannot be used: v2 refuses a folder id on every
+page route, so there is no way to list what is inside a folder, and
+`/pages/{id}/children` silently omits folders from a page's children — returning
+a wrong answer rather than a partial one. See [folders.md](folders.md).
+
 **Verified 2026-08-07.** Against the gateway, `GET /wiki/api/v2/pages`,
 `GET /wiki/rest/api/content/{id}/child/attachment`, and
 `GET /wiki/rest/api/user/current` all return 200. The path suffixes are
