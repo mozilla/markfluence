@@ -2,8 +2,8 @@
 // line into a page id.
 //
 // Three spellings are accepted, because all three are things a user naturally
-// has to hand: a bare numeric id, a Confluence page URL (pasted from a browser),
-// and a markdown file whose frontmatter carries a page_id. Every command that
+// has to hand: a bare numeric id, a Confluence page or folder URL (pasted from a
+// browser), and a markdown file whose frontmatter carries a page_id. Every command that
 // takes a page argument accepts all three, so the meaning of that argument does
 // not depend on which command it was given to.
 package pageref
@@ -18,9 +18,15 @@ import (
 	"github.com/mozilla/markfluence/internal/frontmatter"
 )
 
-// pagePathRE matches the numeric id in a modern Confluence page URL path,
+// pagePathRE matches the numeric id in a modern Confluence content URL path,
 // e.g. /wiki/spaces/ENG/pages/123456/Some+Title (the trailing slug is optional).
-var pagePathRE = regexp.MustCompile(`/pages/(\d+)(?:/|$)`)
+//
+// /folder/ is accepted alongside /pages/ because a folder is a legitimate
+// argument to a command that walks a tree, and a folder URL is what a browser
+// hands you. The id is all this returns, so a command that can only use a page
+// reports its own not-found rather than a parse error -- the tradeoff for the
+// argument meaning the same thing everywhere.
+var pagePathRE = regexp.MustCompile(`/(?:pages|folder)/(\d+)(?:/|$)`)
 
 // Resolve turns a command-line page argument into a page id.
 //
@@ -47,11 +53,12 @@ func Resolve(arg string) (string, error) {
 		return id, nil
 	}
 	return "", fmt.Errorf(
-		"%q is not a numeric page id, a Confluence page URL, or a markdown file with a page_id", arg)
+		"%q is not a numeric id, a Confluence page or folder URL, or a markdown file with a page_id", arg)
 }
 
-// fromURL pulls a page id out of a Confluence URL: the modern
-// /wiki/.../pages/<id>/... path form, or a legacy ?pageId=<id> query parameter.
+// fromURL pulls a content id out of a Confluence URL: the modern
+// /wiki/.../pages/<id>/... or /wiki/.../folder/<id> path form, or a legacy
+// ?pageId=<id> query parameter.
 func fromURL(arg string) (string, bool) {
 	u, err := url.Parse(arg)
 	if err != nil || u.Host == "" {
