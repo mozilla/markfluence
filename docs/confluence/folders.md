@@ -10,7 +10,10 @@ scoped token:
 - a page (call it the **container page**) with 15 direct children — 12 pages and
   3 folders;
 - one of those folders holding 2 pages, one of which markfluence had previously
-  published to.
+  published to;
+- another folder under the same container page holding **a second folder**, which
+  in turn holds one page — so a page sitting two folders deep, and an outer folder
+  with no child pages of its own.
 
 ## Verified 2026-08-13
 
@@ -75,6 +78,26 @@ anything was skipped.
 `direct-children` paginates with a genuine cursor. Uncapped, `_links` holds only
 `base`; with `?limit=2`, `_links.next` appears carrying a `?cursor=…`.
 
+### Folders nest, and a folder's parent can be a folder
+
+`GET /wiki/rest/api/content/{folderId}/child/folder` on the outer folder returned
+the inner one, and `GET /wiki/api/v2/folders/{innerId}` reported `parentId` = the
+outer folder with **`parentType: "folder"`**. So the parent chain is not
+page-then-folder-then-pages; folders can stack to arbitrary depth.
+
+Two consequences that matter more than the nesting itself:
+
+- **`parentType: "folder"` says nothing about depth.** The page two folders down
+  reports exactly what a page one folder down reports — `parentType: "folder"` and
+  its immediate `parentId`. There is no hint in a page's own metadata that a chain
+  of folders sits above it.
+- **A pages-only listing of that outer folder returns zero rows.**
+  `/child/page` on a folder whose children are all folders is an empty
+  collection, not an error. So a non-recursive walk does not report "0 pages, 1
+  folder" — it reports nothing at all, and looks indistinguishable from an empty
+  folder. Descending `/child/folder` is what makes the difference between a
+  correct answer and a confidently empty one.
+
 ### v1 enumerates both kinds, and is the only way *into* a folder
 
 | request | result |
@@ -93,8 +116,11 @@ absence cannot terminate a loop.
 
 ## Unverified
 
-- **Whether folders nest.** `/child/folder` inside one folder returned zero rows.
-  That is one folder, not a rule; treat nested folders as possible.
+- **A folder at a space root.** Every folder observed had a parent — a page in one
+  case, a folder in another. What `parentType` reports for a folder created
+  directly at the top of a space was not observed.
+- **How deep nesting may go**, and whether Confluence enforces a limit. Two levels
+  were verified; nothing suggests two is special.
 - **Data Center.** Asserted to have no folder content type. Not tested — no DC
   instance was available.
 
@@ -107,5 +133,9 @@ absence cannot terminate a loop.
   the user lookup. Not a preference: v2 cannot enumerate inside a folder at all,
   and its page-children route hides folders. Walking with
   `/child/page` + `/child/folder` also gets `webui` on every row.
+- **A child walk has to recurse through folders, not just list them.** Because
+  folders nest and a folder may hold no pages at its own level, stopping at
+  `/child/page` can report an empty result for a subtree that contains pages. The
+  recursion is over folders even when only pages are being reported.
 - **Publishing needs nothing.** A page whose parent is a folder updates normally;
   only pre-flight parent validation was ever involved.
