@@ -21,6 +21,10 @@ func TestResolveURL(t *testing.T) {
 		{"https://org.atlassian.net/wiki/spaces/ENG/pages/123456", "123456"},
 		{"https://org.atlassian.net/wiki/spaces/ENG/pages/123456/", "123456"},
 		{"https://org.atlassian.net/wiki/pages/viewpage.action?pageId=987", "987"},
+		// A folder URL, which is what the browser hands you for a folder. children
+		// takes one; the id is all Resolve reports either way.
+		{"https://org.atlassian.net/wiki/spaces/~60c/folder/2972975121", "2972975121"},
+		{"https://org.atlassian.net/wiki/spaces/ENG/folder/2972975121/", "2972975121"},
 		// A query id wins over a path that has none.
 		{"https://org.atlassian.net/wiki/x?pageId=42", "42"},
 	}
