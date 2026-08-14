@@ -20,6 +20,9 @@ import (
 
 func TestMain(m *testing.M) {
 	sleep = func(time.Duration) {} // don't actually sleep between retries in tests
+	// Backoff assertions want exact durations; TestJitterDelay exercises the
+	// real spreading function directly.
+	jitter = func(d time.Duration) time.Duration { return d }
 	os.Exit(m.Run())
 }
 
@@ -1146,5 +1149,62 @@ func TestSendDoesNotRetryBare500(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(n); got != 1 {
 		t.Errorf("requests = %d, want 1 (a bare 500 is not retried)", got)
+	}
+}
+
+// TestJitterDelay exercises the real spreading function, which TestMain stubs
+// out everywhere else.
+func TestJitterDelay(t *testing.T) {
+	const nominal = 4 * time.Second
+	lo := time.Duration(float64(nominal) * jitterLow)
+	hi := time.Duration(float64(nominal) * jitterHigh)
+
+	var sawBelow, sawAbove bool
+	for i := 0; i < 500; i++ {
+		d := jitterDelay(nominal)
+		if d < lo || d > hi {
+			t.Fatalf("jitterDelay(%v) = %v, want within [%v, %v]", nominal, d, lo, hi)
+		}
+		if d < nominal {
+			sawBelow = true
+		}
+		if d > nominal {
+			sawAbove = true
+		}
+	}
+	// Spreading in only one direction would still satisfy the bounds while
+	// leaving every client bunched on one side.
+	if !sawBelow || !sawAbove {
+		t.Errorf("jitter never went both under and over nominal (below=%v above=%v)", sawBelow, sawAbove)
+	}
+	if jitterDelay(0) != 0 {
+		t.Errorf("jitterDelay(0) = %v, want 0", jitterDelay(0))
+	}
+}
+
+// TestBackoffJittersExponentialNotRetryAfter: a Retry-After is an instruction,
+// so it goes through untouched; the exponential guess is what gets spread.
+func TestBackoffJittersExponentialNotRetryAfter(t *testing.T) {
+	orig := jitter
+	t.Cleanup(func() { jitter = orig })
+	jitter = func(d time.Duration) time.Duration { return d * 2 } // visible, deterministic
+
+	if got := backoff(0, 0); got != 2*baseBackoff {
+		t.Errorf("backoff(0,0) = %v, want the exponential delay jittered to %v", got, 2*baseBackoff)
+	}
+	if got := backoff(0, 3*time.Second); got != 3*time.Second {
+		t.Errorf("backoff(0, 3s) = %v, want 3s unjittered", got)
+	}
+}
+
+// TestBackoffCapsAfterJitter: jitter must not be able to push a delay past the
+// ceiling, so the cap is applied last.
+func TestBackoffCapsAfterJitter(t *testing.T) {
+	orig := jitter
+	t.Cleanup(func() { jitter = orig })
+	jitter = func(time.Duration) time.Duration { return maxBackoff * 10 }
+
+	if got := backoff(0, 0); got != maxBackoff {
+		t.Errorf("backoff(0,0) = %v, want it capped at %v", got, maxBackoff)
 	}
 }
