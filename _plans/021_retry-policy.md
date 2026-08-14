@@ -212,3 +212,28 @@ blips.
 4. `feat(client): surface retry decisions through a hook`
 5. `fix(client): recover a lost UpdatePage response`
 6. `docs: update the architecture notes for the retry policy`
+
+## What changed while implementing
+
+Written before the code, and two decisions above turned out to be wrong as
+specified. Recorded here rather than edited away, since the mistakes are the
+useful part.
+
+**"A 5xx *with* `Retry-After`" was specified as a positive delay, which is not
+the same thing.** The first implementation gated on `retryAfter > 0`, and the
+existing suite failed immediately: it sends `Retry-After: 0` to keep tests from
+sleeping. But `0` — and an HTTP date already in the past — both parse to a zero
+delay and both mean *retry, immediately*, which is still the server asking to be
+called back. Reading them as "no header" would refuse to retry a response that
+had explicitly requested one. `parseRetryAfter` now returns presence alongside
+the delay, and `retryableStatus` takes the bool. The rule was right; the signal
+chosen to express it was not.
+
+**The `UpdatePage` recovery needed a field the hook did not have.** The plan said
+a recovery is "reported through the retry hook", but a recovery is not a retry
+decision — none of `Attempt`, `Delay` or `Retrying` mean anything for it.
+`RetryEvent` gained a `Note` field carrying the recovery, and the renderer
+short-circuits on it.
+
+Neither changed the design's shape, and both are visible in the commits, but the
+plan as written would mislead a reader into thinking the delay was the signal.

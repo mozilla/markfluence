@@ -9,10 +9,16 @@ import (
 // the whole reason it lives here is that the three must not drift apart.
 func TestNotFoundMessage(t *testing.T) {
 	got := NotFoundMessage("999", "remove it to create a new page, or correct it")
-	want := "page_id 999 not found (deleted, trashed, or wrong); " +
+	want := "page_id 999 not found (deleted or wrong); " +
 		"remove it to create a new page, or correct it"
 	if got != want {
 		t.Errorf("NotFoundMessage =\n %q\nwant\n %q", got, want)
+	}
+	// Trashing must not be offered as a cause: a trashed page answers 200 with
+	// status "trashed" and never reaches this message, so suggesting it would
+	// send someone debugging that case down a dead end (#17).
+	if strings.Contains(got, "trashed") {
+		t.Errorf("NotFoundMessage = %q, must not name trashing as a cause", got)
 	}
 }
 

@@ -35,6 +35,17 @@ This matters beyond `find`: it is the same match `create`'s duplicate check has
 always relied on, and the CQL form below agrees with it, so the two halves of a
 search cannot disagree about what counts as a match.
 
+### Space keys are case-insensitive on both sides
+
+`GET /wiki/api/v2/spaces?keys=` resolved `webplatforms`, `WEBPLATFORMS` and
+`WebPlatforms` to the same space, and CQL's `space =` behaves the same way (see
+below).
+
+That the *two* agree is the point. `find` resolves `--space` through the v2
+lookup purely to reject an unknown key up front, then hands the key itself to
+CQL — so if the v2 lookup were the stricter of the two, that guard would refuse
+keys the search would have matched. It isn't, so it can't.
+
 ### A v2 `/pages` list row carries `_links.webui`
 
 Each row's `_links` holds `editui`, `edituiv2`, `tinyui`, and **`webui`**; the
