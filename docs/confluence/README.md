@@ -11,6 +11,7 @@ person who ran the experiment.
 - [links-and-anchors.md](links-and-anchors.md) — heading anchors and page links
 - [page-width.md](page-width.md) — the content properties behind `page_width`
 - [folders.md](folders.md) — the Cloud folder type, and why child listing is v1
+- [search.md](search.md) — finding content by title and by full text, and `/search`'s paging traps
 
 ## How to read an entry
 
