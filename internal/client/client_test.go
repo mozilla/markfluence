@@ -373,6 +373,66 @@ func TestGetPageReportsParentType(t *testing.T) {
 	}
 }
 
+// TestListChildNodesDecodesRows pins the three fields a bare v1 child row is
+// relied on to carry: webui (a URL and a space key), status, and the position
+// that lets pages and folders be merged into display order.
+func TestListChildNodesDecodesRows(t *testing.T) {
+	c, s := newServer(t, resp{200, `{"results":[
+		{"id":"11","type":"page","title":"Getting started","status":"current",
+		 "extensions":{"position":258155665},
+		 "_links":{"webui":"/spaces/ENG/pages/11/Getting+started"}}]}`})
+	got, err := c.ListChildPages("1")
+	if err != nil {
+		t.Fatalf("ListChildPages: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len = %d, want 1", len(got))
+	}
+	n := got[0]
+	if n.Type != "page" || n.Status != "current" {
+		t.Errorf("type/status = %q/%q, want page/current", n.Type, n.Status)
+	}
+	if n.Extensions.Position != 258155665 {
+		t.Errorf("position = %d, want 258155665", n.Extensions.Position)
+	}
+	if SpaceKeyFromWebUI(n.Links.WebUI) != "ENG" {
+		t.Errorf("space from webui = %q, want ENG", SpaceKeyFromWebUI(n.Links.WebUI))
+	}
+	if !eqStrings(s.calls, []string{"GET"}) {
+		t.Errorf("calls = %v, want one GET", s.calls)
+	}
+}
+
+// TestListChildFoldersHitsTheFolderPath is the guard against listing only pages:
+// folders come from a separate v1 path, and missing it loses whole subtrees.
+func TestListChildFoldersHitsTheFolderPath(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_, _ = w.Write([]byte(`{"results":[{"id":"22","type":"folder","title":"Articles",` +
+			`"status":"current","extensions":{"position":666},` +
+			`"_links":{"webui":"/spaces/ENG/folder/22"}}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	c := New(Config{SiteURL: srv.URL, Username: "u", Token: "t"})
+
+	got, err := c.ListChildFolders("1")
+	if err != nil {
+		t.Fatalf("ListChildFolders: %v", err)
+	}
+	if gotPath != "/wiki/rest/api/content/1/child/folder" {
+		t.Errorf("path = %q, want the v1 child/folder path", gotPath)
+	}
+	if len(got) != 1 || got[0].Type != "folder" {
+		t.Fatalf("got %+v, want one folder row", got)
+	}
+	// A folder's webui is /spaces/{key}/folder/{id}, not /pages/, and the space
+	// key still has to come out of it.
+	if SpaceKeyFromWebUI(got[0].Links.WebUI) != "ENG" {
+		t.Errorf("space from a folder webui = %q, want ENG", SpaceKeyFromWebUI(got[0].Links.WebUI))
+	}
+}
+
 func TestResolveSpaceID(t *testing.T) {
 	c, _ := newServer(t, resp{200, `{"results":[{"id":"123"}]}`})
 	if id, err := c.ResolveSpaceID("ENG"); err != nil || id != "123" {
@@ -522,11 +582,11 @@ func TestListAttachmentsDecodesMetadata(t *testing.T) {
 
 // TestListAttachmentsPaginates covers the offset loop: a full first page means
 // there may be more, and a short page ends it. Without this, a page with more
-// than attachmentPageSize attachments is silently truncated.
+// than v1PageSize attachments is silently truncated.
 func TestListAttachmentsPaginates(t *testing.T) {
 	var full strings.Builder
 	full.WriteString(`{"results":[`)
-	for i := range attachmentPageSize {
+	for i := range v1PageSize {
 		if i > 0 {
 			full.WriteByte(',')
 		}
@@ -542,8 +602,8 @@ func TestListAttachmentsPaginates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != attachmentPageSize+1 {
-		t.Fatalf("len = %d, want %d", len(got), attachmentPageSize+1)
+	if len(got) != v1PageSize+1 {
+		t.Fatalf("len = %d, want %d", len(got), v1PageSize+1)
 	}
 	if got[len(got)-1].Title != "last.png" {
 		t.Errorf("last title = %q, want last.png", got[len(got)-1].Title)
