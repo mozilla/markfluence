@@ -9,7 +9,7 @@
   "properties": {
     "schema_version": { "const": 1 },
     "markfluence_version": { "type": "string" },
-    "command": { "enum": ["info", "read", "update", "create", "fix", "children", "find", "attachment-list", "attachment-upload", "attachment-download", "export"] },
+    "command": { "enum": ["info", "read", "update", "create", "fix", "children", "find", "search", "attachment-list", "attachment-upload", "attachment-download", "export"] },
     "results": { "type": "array" },
     "summary": { "type": "object" }
   },
@@ -122,6 +122,15 @@
       }
     },
     {
+      "if": { "properties": { "command": { "const": "search" } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "results": { "items": { "$ref": "#/$defs/searchResult" } },
+          "summary": { "$ref": "#/$defs/searchSummary" }
+        }
+      }
+    },
+    {
       "if": { "properties": { "command": { "const": "attachment-list" } }, "required": ["command"] },
       "then": {
         "properties": {
@@ -172,6 +181,34 @@
         "space": { "$ref": "#/$defs/stringOrNull" },
         "status": { "type": "string" },
         "url": { "$ref": "#/$defs/stringOrNull" }
+      }
+    },
+    "searchResult": {
+      "description": "One full-text match. The array is in Confluence's relevance order, best first; that order is the only ranking available (the API reports score as 0.0 on every row), so re-sorting results discards it. There is no failure variant and no status field: search names no page to fail about, so a failed search is an error object on stderr with no envelope, and the search index cannot see archived content, so every hit is current -- use find to discover an archived page. type is an open string rather than an enum because --type all and --cql can return whiteboard, database, or any content type Atlassian adds. space and url are both derived from the hit's link, so a result missing one is missing both; excerpt is null when the match was in the title alone, and is always a single line with Confluence's highlight markers removed and entities unescaped.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "id", "type", "title", "space", "url", "excerpt"],
+      "properties": {
+        "ok": { "const": true },
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "space": { "$ref": "#/$defs/stringOrNull" },
+        "url": { "$ref": "#/$defs/stringOrNull" },
+        "excerpt": { "$ref": "#/$defs/stringOrNull" }
+      }
+    },
+    "searchSummary": {
+      "description": "search's summary. failed is always 0, since a failed search is an error object with no envelope rather than a failed result. truncated says --limit was reached with matches left over; it is a flag and not a count because the API's totalSize is an estimate that has been observed both to drift between pages and to be nonzero against an empty results array. skipped counts index rows that carried no addressable content object -- a `type = space` hit, for example -- which is reachable only via --cql or --type all; it is reported rather than dropped quietly, because otherwise such a query yields total 0 and reads as a genuine miss.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "succeeded", "failed", "truncated", "skipped"],
+      "properties": {
+        "total": { "type": "integer" },
+        "succeeded": { "type": "integer" },
+        "failed": { "type": "integer" },
+        "truncated": { "type": "boolean" },
+        "skipped": { "type": "integer", "minimum": 0 }
       }
     },
     "stringOrNull": {
