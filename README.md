@@ -135,6 +135,7 @@ markfluence fix --help
 markfluence info --help
 markfluence read --help
 markfluence find --help
+markfluence search --help
 markfluence children --help
 markfluence export --help
 ```
@@ -374,6 +375,7 @@ Usage: markfluence find TITLE [flags]
 Find the pages and folders whose title is `TITLE`. This is the one handle the
 other commands cannot resolve: they take a page id, a page URL, or a Markdown
 file with a `page_id`, and `find` is how you get from a title to one of those.
+If you do not know the title, use [`search`](#search) instead.
 
 ```sh
 markfluence find "Deploy runbook"
@@ -416,6 +418,80 @@ folder, while CQL covers folders but cannot see an archived page. If either
 request fails the whole command fails — half an answer here reads as "nothing
 found", which is the one wrong answer that causes a duplicate. The details are
 in [docs/confluence/search.md](docs/confluence/search.md).
+
+### `search`
+
+```
+Usage: markfluence search QUERY [flags]
+```
+
+Find pages by **full text**, for when you do not know the title. `find` answers
+"does a page called *this* exist?"; `search` answers "where is the page about
+deploys?".
+
+```sh
+markfluence search "deploy runbook"
+markfluence search "deploy runbook" --space ENG --limit 10
+markfluence search deploy --limit all --json | jq -r '.results[].id'
+markfluence search 'type = page and label = "runbook"' --cql
+```
+
+```
+Deployment runbook
+  page 2064154670  PXI
+  https://org.atlassian.net/wiki/spaces/PXI/pages/2064154670/Deployment+runbook
+  Keep an eye on the deploy-packages job...to be deployed)
+
+Runbook: Prod deployment
+  page 1293156436  CLOUDSERVICES
+  https://org.atlassian.net/wiki/spaces/CLOUDSERVICES/pages/1293156436/Runbook+Prod+deployment
+  "Deploy failed" message in #crash-ingestion-bots...look at logs in Github Actions
+
+    Showing 2 matches; more exist (use --limit all).
+```
+
+Each hit is a block rather than a table row, because the excerpt is what tells
+you *why* it matched, and an excerpt is too long for a column.
+
+**Multiple words are ANDed, and it is not a phrase search.** Every word must
+appear somewhere in the page, in any order — `"deploy runbook"` and
+`"runbook deploy"` return the same set. Adding a word narrows the search;
+quoting does not require the words to be adjacent.
+
+**Results are in Confluence's relevance order, best first, and markfluence never
+re-sorts them.** The API reports a relevance score of `0.0` on every row, so the
+order it returns is the only ranking that exists — which is also why a `--json`
+consumer should not sort `results`.
+
+**`--limit` defaults to 25, and never truncates silently.** It takes a positive
+number or `all`; `0` is refused rather than read as "unlimited", the same rule
+`--depth` follows. When there are more matches than were shown, the command says
+so. It reports *that* more exist rather than how many, because the API's own
+total is an estimate that disagrees with what it returns.
+
+**`--type` defaults to `page`**, and also accepts `blogpost` or `all`. The search
+index holds attachments, comments, databases and whiteboards too, and all of them
+match text — but their ids are not something any other markfluence command
+accepts, so they are behind `all`. `--type folder` is refused with a pointer to
+`find`: a folder has no text, so it can never match a full-text query.
+
+**`--cql` passes QUERY straight through as [CQL](https://developer.atlassian.com/cloud/confluence/advanced-searching-using-cql/)**,
+with no escaping and no clauses added. It cannot be combined with `--space` or
+`--type`: those would have to be ANDed onto your query, which would regroup a
+query containing `or` and silently answer something else. Put the clauses in the
+query yourself. `--limit` still applies, since it bounds paging rather than the
+query.
+
+**Two things `search` cannot find.** Archived pages are invisible to the search
+index entirely, and so are folders. Both are what `find` is for. The index also
+lags by up to about a minute, so a page created moments ago may not be there yet
+— anything that has to be correct *now* should use `find`.
+
+Finding nothing is a success: the command prints `No matches found.` and exits 0.
+
+The evidence behind the query it builds — including why it uses `siteSearch` and
+not the `text` field Atlassian documents — is in
+[docs/confluence/search.md](docs/confluence/search.md).
 
 ### `export`
 
@@ -617,12 +693,23 @@ Notes on the schema:
   `not_created` — and sets `summary.aborted: true`.
 - **Warnings and broken image/link notices** are data (`warnings`/`broken`
   arrays on each result), not stderr log lines.
+- **The discovery commands list what they found**, so `results` is one object per
+  match (`find`, `search`) or per node (`children`), and `summary.total` is that
+  count. `search`'s summary carries two extra fields: `truncated`, meaning
+  `--limit` was reached with matches left over, and `skipped`, counting index rows
+  that had no page id to report (reachable only via `--cql` or `--type all`).
+  Neither is a count of matches you could get by asking again for more.
 
 Errors and exit codes:
 
 - **Per-file operational failures** appear in `results` as
   `{ "ok": false, "error": "…", "code": "…" }`; the command exits `1` if any
   file failed.
+- **`find` and `search` have no failed-result variant.** They name no page, so
+  there is no id to attach a failure to: an operational failure prints the same
+  typed error object to **stderr** and exits `1`, with no envelope on stdout.
+  Emitting an empty `results` array would be worse than emitting nothing, since
+  "no matches" is a meaningful answer that a caller acts on.
 - **Fatal/pre-flight failures** (bad flags, credential resolution) print a typed
   error object to **stderr** and exit `2`:
 
