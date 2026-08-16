@@ -403,29 +403,32 @@ func TestBuildTextCQL(t *testing.T) {
 	}{
 		{
 			"typed", "deploy runbook", "", SearchTypePage,
-			`type = page and siteSearch ~ "deploy runbook"`,
+			`siteSearch ~ "deploy runbook" and text ~ "deploy runbook" and type = page`,
 		},
 		{
 			"typed and scoped", "deploy", "ENG", SearchTypePage,
-			`type = page and siteSearch ~ "deploy" and space = "ENG"`,
+			`siteSearch ~ "deploy" and text ~ "deploy" and type = page and space = "ENG"`,
 		},
 		{
 			"blogpost", "deploy", "", SearchTypeBlogpost,
-			`type = blogpost and siteSearch ~ "deploy"`,
+			`siteSearch ~ "deploy" and text ~ "deploy" and type = blogpost`,
 		},
 		// SearchTypeAll drops the clause rather than emitting `type = all`.
-		{"all", "deploy", "", SearchTypeAll, `siteSearch ~ "deploy"`},
-		{"all and scoped", "deploy", "ENG", SearchTypeAll, `siteSearch ~ "deploy" and space = "ENG"`},
-		{"empty type", "deploy", "", "", `siteSearch ~ "deploy"`},
-		// Both interpolated values are escaped: a bare quote in either would end
-		// the literal and turn the rest into query syntax.
+		{"all", "deploy", "", SearchTypeAll, `siteSearch ~ "deploy" and text ~ "deploy"`},
+		{
+			"all and scoped", "deploy", "ENG", SearchTypeAll,
+			`siteSearch ~ "deploy" and text ~ "deploy" and space = "ENG"`,
+		},
+		{"empty type", "deploy", "", "", `siteSearch ~ "deploy" and text ~ "deploy"`},
+		// Every interpolated value is escaped: a bare quote in any of them would
+		// end the literal and turn the rest into query syntax.
 		{
 			"escapes the query", `a" or type=page`, "", SearchTypePage,
-			`type = page and siteSearch ~ "a\" or type=page"`,
+			`siteSearch ~ "a\" or type=page" and text ~ "a\" or type=page" and type = page`,
 		},
 		{
 			"escapes the space key", "deploy", `a"b`, SearchTypePage,
-			`type = page and siteSearch ~ "deploy" and space = "a\"b"`,
+			`siteSearch ~ "deploy" and text ~ "deploy" and type = page and space = "a\"b"`,
 		},
 	}
 	for _, tt := range tests {
@@ -439,6 +442,50 @@ func TestBuildTextCQL(t *testing.T) {
 	}
 }
 
+// TestBuildTextCQLLeadsWithSiteSearch is a regression guard, and the thing to
+// read before reordering anything in buildTextCQL.
+//
+// Confluence silently drops a siteSearch clause that sits in the *middle* of
+// three: `type = page and siteSearch ~ "netlify" and space = "SRE"` returned 1122
+// rows, byte-identical to `type = page and space = "SRE"` -- every page in the
+// space, presented as a search result. The same clauses with siteSearch leading
+// returned the honest 15.
+//
+// So the clause must never be preceded by another. This asserts the property
+// rather than a literal string, so it keeps holding as clauses are added.
+func TestBuildTextCQLLeadsWithSiteSearch(t *testing.T) {
+	for _, tt := range []struct {
+		name, query, space, ctype string
+	}{
+		{"query only", "netlify", "", SearchTypeAll},
+		{"with type", "netlify", "", SearchTypePage},
+		{"with space", "netlify", "SRE", SearchTypeAll},
+		// The combination that was broken: three clauses.
+		{"with type and space", "netlify", "SRE", SearchTypePage},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildTextCQL(tt.query, tt.space, tt.ctype)
+			if !strings.HasPrefix(got, "siteSearch ~ ") {
+				t.Errorf("cql = %q\nwant it to *begin* with the siteSearch clause: "+
+					"Confluence drops that clause when another precedes it and a third follows, "+
+					"turning a scoped search into a listing of the whole space", got)
+			}
+		})
+	}
+}
+
+// TestBuildTextCQLKeepsTheTextFallback: siteSearch supplies the ranking and text
+// supplies a floor. If the siteSearch clause is ever dropped -- by a reordering
+// here or a change on Atlassian's side -- text keeps the results constrained to
+// content that contains the query, so the failure degrades to a worse order
+// rather than to every page in the space.
+func TestBuildTextCQLKeepsTheTextFallback(t *testing.T) {
+	got := buildTextCQL("netlify", "SRE", SearchTypePage)
+	if !strings.Contains(got, `text ~ "netlify"`) {
+		t.Errorf("cql = %q, want a redundant text clause as the safety net", got)
+	}
+}
+
 // TestSearchTextUsesSiteSearchNotText is the ranking decision, pinned. text ~
 // ranked six unrelated pages above every obviously-relevant one, and with score
 // at 0.0 there is no client-side re-ranking to recover from that.
@@ -448,11 +495,14 @@ func TestSearchTextUsesSiteSearchNotText(t *testing.T) {
 		t.Fatalf("SearchText: %v", err)
 	}
 	cql := cqlOf(t, s.urls[0])
-	if !strings.Contains(cql, "siteSearch ~") {
-		t.Errorf("cql = %q, want it to match with siteSearch ~", cql)
+	if !strings.HasPrefix(cql, "siteSearch ~") {
+		t.Errorf("cql = %q, want siteSearch ~ leading -- it is what ranks, and Confluence "+
+			"drops the clause if anything precedes it with a third clause following", cql)
 	}
-	if strings.Contains(cql, "text ~") {
-		t.Errorf("cql = %q, want no text ~ -- it does not rank usefully", cql)
+	// text ~ is present deliberately, as the safety net described in
+	// buildTextCQL -- but it must never be what leads, since it ranks poorly.
+	if strings.HasPrefix(cql, "text ~") {
+		t.Errorf("cql = %q, want text ~ as the fallback rather than the lead", cql)
 	}
 }
 

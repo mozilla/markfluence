@@ -26,9 +26,31 @@ Every claim carries its provenance, because "someone wrote this down once" and
 When you verify something, say how. A claim you cannot reproduce from the note is
 a claim the next person has to establish from scratch.
 
-## Two traps that produce confident, wrong answers
+## Three traps that produce confident, wrong answers
 
-Both of these have cost real time. Read them before designing an experiment.
+All of these have cost real time. Read them before designing an experiment.
+
+### A filter you did not verify may not have been applied
+
+Confluence can **silently discard a clause** and answer a broader question with a
+200. [search.md](search.md) documents the case: a `siteSearch` clause in the
+middle of three is dropped, so a space-scoped search returns every page in the
+space, ranked plausibly, with no error.
+
+What made that ship was the probe, not the bug. It was checked against a space
+holding **three pages**, where "every page in the space" and "a real result set"
+are the same small number — so the broken query returned 3 and looked correct. The
+honest answer was 1.
+
+So when probing anything that **narrows** a result set, always compare against the
+unnarrowed count, and do it in a corpus big enough for the two to differ:
+
+- Run the query without the filter. If the filtered and unfiltered totals match,
+  assume the filter did nothing until proven otherwise.
+- Pick a target where the filter should change the number by an order of
+  magnitude. A 3-row space proves nothing.
+- Check the *contents*, not just the count. The tell was a top hit that did not
+  contain the search term anywhere.
 
 ### `body-format=view` is not what the browser renders
 
