@@ -142,7 +142,7 @@ A title containing `" or …` rewrites the query. Escaping is not optional. The
 parser accepts backslash escapes — `title = "a\"b"` returns 200 — so escaping `\`
 then `"` closes it.
 
-### `/search` pagination: cursor-only, and three traps
+### `/search` pagination: cursor-only, and four traps
 
 This is the part most likely to produce a silently truncated answer. `/search`
 is a v1 collection that does **not** follow the v1 offset scheme in
@@ -168,6 +168,19 @@ on `totalSize`, and never report it as a count.
 `_links.next` here is `/rest/api/search?next=true&cursor=…` — **context-relative**,
 like the rest of v1, so it needs the `/wiki` prefix. `resolveNext` appends to the
 base without that prefix, so it is wrong for this endpoint.
+
+**4. The next link does not carry every parameter you sent.** It reproduces `cql`,
+`limit`, the cursor, and a `start` that does nothing — but **not `excerpt`**. So a
+walk that sets `excerpt=` on the first request and then follows the cursor asks
+for page one and page two differently, and only the first page's excerpts are the
+ones that were asked for. It is currently invisible because the server's default
+happens to equal `highlight`; it stops being invisible the moment that default
+changes or a different value is wanted.
+
+Re-attaching it means editing the *parsed* next URL rather than appending, since
+the link already carries a query string — appending `?excerpt=…` to it produces a
+second `?` and a malformed request. Do not assume any other parameter survives the
+cursor either; only `cql` and `limit` were confirmed to.
 
 ### The CQL index lags; v2 does not
 
@@ -237,6 +250,10 @@ re-sort a full-text result set, and `search` deliberately does not.
 a parser bug that silently answers a different question.
 
 ### `siteSearch` is dropped when it is the middle clause of three
+
+**Verified 2026-08-16**, later than the rest of this section — and not by probing.
+It was found by running the shipped command on a real query, after everything else
+here had been established and committed.
 
 **This is the worst failure in this file: it turns a scoped search into a listing
 of the whole space, and looks like a working search while doing it.**
@@ -326,7 +343,26 @@ Valid `type` values, all with `siteSearch ~ "deploy"`:
 | `folder` | **0** |
 | `embed` | 0 |
 | `space` | 0 |
-| `bogustype` | **400** `Unsupported value for type, got : bogustype` |
+
+An invalid value 400s and **enumerates the whole vocabulary**, which is worth more
+than the sampling above:
+
+```
+Unsupported value for type, got : bogustype, expected one of :
+[space, user, page, blogpost, comment, attachment, database, whiteboard,
+ slide, embed, folder,
+ com.atlassian.confluence.extra.team-calendars:calendar-content-type,
+ com.atlassian.confluence.extra.team-calendars:space-calendars-view-content-type,
+ ac:com.mxgraph.confluence.plugins.diagramly:drawio-diagram]
+```
+
+So the list is open-ended and partly **installation-specific** — the last three
+entries are app-provided content types, which is the reason a search result's
+`type` must never be validated against a closed set.
+
+Note also that a value being *accepted* does not mean it *filters*: `user` is in
+that list, and `type = user` returns ordinary content rather than users — see
+[below](#some-rows-have-no-content-object-at-all).
 
 **Full text cannot see folders**, structurally — a folder has no body. So unlike
 `find`, a full-text search has no folder half: one request, no merge, no
@@ -481,8 +517,19 @@ name comes free.
   the ranking is demonstrably not arbitrary — `siteSearch` returns a sensible
   order while reporting the same zero.
 - **Whether `siteSearch` is stable.** It is not in Atlassian's CQL field
-  reference; it is named as valid by the error message for an invalid field, and
-  it works. An undocumented field could change without notice.
+  reference; it is named as valid only by the error message for an invalid field.
+  An undocumented field can change without notice, and this one has already been
+  caught being **silently discarded** depending on where it sits in the query, so
+  treat any change in its behavior as plausible. The redundant `text ~` clause
+  exists to bound the damage.
+- **Whether the middle-clause bug has other shapes.** First, last, and
+  middle-of-three were each tested, at three and four clauses, but the rule
+  "position decides" is an empirical description of a parser bug and not a
+  specification. Nothing establishes that first-position is safe in *every*
+  arrangement, only in the ones markfluence emits — which is why the emitted forms
+  are pinned by test rather than trusted.
+- **Whether `text ~` is genuinely immune** or merely was not caught. It returned
+  the honest count in both positions of three, which is evidence, not proof.
 - **What `siteSearch ~` does differently from `text ~`.** Only that it ranks
   better was established, not why. Totals differ slightly (3071 vs 3060 for
   `type = page`), so the matching is not identical either.
