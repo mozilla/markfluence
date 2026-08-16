@@ -120,10 +120,16 @@ func run(cmd *cobra.Command, args []string) error {
 
 	var res client.SearchResults
 	if cqlOpt {
-		ui.Debug("cql: " + query)
 		res, err = c.SearchRawCQL(query, limit)
 	} else {
 		res, err = c.SearchText(query, spaceOpt, typeOpt, limit)
+	}
+	// The query as sent, on both paths, and before the error check so a failing
+	// search still shows what it asked. It stays out of --json: the envelope
+	// reports results, and --debug is where "what did you actually ask?" belongs.
+	// Empty when the failure came before a query was built, e.g. an unknown space.
+	if res.CQL != "" {
+		ui.Debug("cql: " + res.CQL)
 	}
 	if err != nil {
 		// An unknown space key is the user's typo, not a failure of the search.

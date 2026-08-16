@@ -641,3 +641,35 @@ func TestSearchTextCleansTheExcerpt(t *testing.T) {
 		t.Errorf("excerpt = %q, want %q", got.Matches[0].Excerpt, want)
 	}
 }
+
+// TestSearchResultsCarriesTheQuery: the command logs this under --debug, and the
+// one bug this file produced in anger was a clause silently dropped from an
+// assembled query -- which is invisible unless the query itself is reportable.
+func TestSearchResultsCarriesTheQuery(t *testing.T) {
+	c, _ := newSearchServer(t, page("", pageRow("1", "T", "T", "")))
+	got, err := c.SearchText("netlify", "", SearchTypePage, 10)
+	if err != nil {
+		t.Fatalf("SearchText: %v", err)
+	}
+	if want := buildTextCQL("netlify", "", SearchTypePage); got.CQL != want {
+		t.Errorf("CQL = %q, want %q", got.CQL, want)
+	}
+}
+
+// TestSearchResultsCarriesTheQueryOnFailure: it is wanted most when the search
+// did not work.
+func TestSearchResultsCarriesTheQueryOnFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+	c := New(Config{SiteURL: srv.URL, Username: "u", Token: "t"})
+
+	got, err := c.SearchRawCQL(`type = space`, 10)
+	if err == nil {
+		t.Fatal("got no error, want one")
+	}
+	if got.CQL != `type = space` {
+		t.Errorf("CQL = %q, want it carried on the failure path", got.CQL)
+	}
+}
