@@ -249,6 +249,33 @@ re-sort a full-text result set, and `search` deliberately does not.
 `siteSearch` costs two things. It decorates the response (see below) — and it has
 a parser bug that silently answers a different question.
 
+### The order is stable in membership, not in position
+
+**Verified 2026-08-16** by running the same query repeatedly.
+
+Two identical requests return the **same set** of hits, but adjacent hits can
+trade places. Across repeated runs of one 10-hit query the membership never
+changed and positions 4 and 5 swapped:
+
+```
+run 1: …2439807017, 27919779,   2728264348, 27921246…
+run 2: …2439807017, 2728264348, 27919779,   27921246…
+```
+
+Consecutive back-to-back runs were byte-identical; the swap showed up across runs
+seconds apart. Since `score` is `0.0` on every row there is evidently no
+tie-break among equally-ranked hits, so their relative order is arbitrary.
+
+Two consequences:
+
+- **`--limit N` is a stable "top N" as a set**, which is what it needs to be.
+- **A consumer must not diff two runs expecting the same sequence**, and must not
+  treat a position as an identifier. Rank is coarse information here, not an
+  index.
+
+This is not the same thing as the index lag documented above: nothing was edited
+between these runs, and the membership did not change.
+
 ### `siteSearch` is dropped when it is the middle clause of three
 
 **Verified 2026-08-16**, later than the rest of this section — and not by probing.
