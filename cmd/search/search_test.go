@@ -42,7 +42,7 @@ func TestParseLimit(t *testing.T) {
 		{"number", "25", 25, false},
 		{"one", "1", 1, false},
 		{"all", limitAll, 0, false},
-		{"the default", defaultLimit, 25, false},
+		{"the default", defaultLimit, 10, false},
 		// 0 is refused rather than read as unlimited, matching children --depth:
 		// silently returning every match to someone who meant "none" is worse
 		// than an error naming the value that does mean unlimited.
@@ -229,7 +229,7 @@ func TestCmdWiring(t *testing.T) {
 		}
 	}
 	// The defaults are part of the contract: --type page keeps a hit addressable,
-	// and --limit 25 is the bound the issue's "unlimited" was traded for.
+	// and --limit's default is the bound the issue's "unlimited" was traded for.
 	if got := Cmd.Flags().Lookup("type").DefValue; got != client.SearchTypePage {
 		t.Errorf("--type default = %q, want %q", got, client.SearchTypePage)
 	}
