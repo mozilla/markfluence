@@ -281,6 +281,11 @@ type SearchResults struct {
 	// would otherwise look like a successful empty result, and an empty result is
 	// what a caller acts on.
 	Skipped int
+	// CQL is the query actually sent. It is carried out rather than logged here
+	// because internal/client prints nothing, and a caller wants it for --debug:
+	// the one bug this file has produced in anger was a clause silently dropped
+	// from an assembled query, which is invisible without seeing the query.
+	CQL string
 }
 
 // SearchText runs a full-text search, optionally restricted to a space key and to
@@ -376,9 +381,11 @@ func buildTextCQL(query, spaceKey, contentType string) string {
 func (c *ConfluenceClient) searchMatches(cql string, limit int) (SearchResults, error) {
 	rows, more, err := c.searchCQLBounded(cql, limit)
 	if err != nil {
-		return SearchResults{}, err
+		// CQL even on the failure path: a caller logging it under --debug wants it
+		// most when the search did not work.
+		return SearchResults{CQL: cql}, err
 	}
-	out := SearchResults{Matches: make([]SearchMatch, 0, len(rows)), More: more}
+	out := SearchResults{Matches: make([]SearchMatch, 0, len(rows)), More: more, CQL: cql}
 	for _, r := range rows {
 		if r.Content.ID == "" {
 			out.Skipped++

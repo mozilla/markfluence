@@ -35,6 +35,16 @@ the right field the whole ballgame rather than a preference.
 So the shape of the work is close to what the issue describes and the single most
 important decision in it is the one the issue got wrong.
 
+Choosing `siteSearch` then turned out to carry a cost the ranking probe could not
+see: it is undocumented, and Confluence **silently discards the clause** in one
+particular arrangement, which shipped as a `--space` search returning every page
+in the space. That was caught by using the command rather than probing it, and it
+is written up [below](#sitesearch-is-discarded-as-the-middle-clause-of-three)
+along with why the probe missed it. Two further things surfaced during
+implementation and are recorded where they belong rather than as afterthoughts:
+the cursor drops the `excerpt` parameter, and the schema's command enum test is
+bidirectional.
+
 ## What was probed, and what it established
 
 Read-only, against the live Cloud site through the gateway, small page sizes.
@@ -42,12 +52,66 @@ Everything here goes into [docs/confluence/search.md](../docs/confluence/search.
 
 ### `siteSearch ~` ranks; `text ~` does not
 
-The table above. `siteSearch` is not in Atlassian's CQL field documentation but
-the 400 from an invalid field lists it as valid (already recorded in search.md),
-and it is what the site's own search UI behaves like. Both accept a `space`
-clause and both work through the gateway.
+The table above. **`siteSearch` is not documented anywhere** — it is absent from
+Atlassian's [CQL field reference](https://developer.atlassian.com/cloud/confluence/advanced-searching-using-cql/),
+and the only reason we know it exists is that the 400 for an invalid field
+volunteers it. `text` **is** documented, as "a 'master-field' that allows you to
+search for text across a number of other text fields. These are the same fields
+used by Confluence's search user interface."
 
-The cost of `siteSearch` is that it decorates: see the markers below.
+So the documented field claims to be what the search UI uses, and the undocumented
+one is what actually behaves like it.
+
+`siteSearch` costs two things. It decorates the response (the markers below), and
+it has the parser bug in the next section.
+
+### `siteSearch` is discarded as the middle clause of three
+
+**Found by using the command, not by probing it — after everything else in this
+plan was implemented and committed.** It is the most damaging thing in this file:
+it turns a scoped search into a listing of the whole space, while looking like a
+working search.
+
+`search --space SRE netlify` returned "BigQuery Reservation (aka Slots)" and 24
+other pages containing no occurrence of "netlify" anywhere, and did *not* return
+the page titled "Netlify" that lives in that space. `SRE` holds 1122 pages, 15 of
+which mention netlify:
+
+| query | totalSize | first hit |
+|---|---|---|
+| `type = page and space = "SRE"` | 1122 | BigQuery Reservations (aka Slots) |
+| `type = page and siteSearch ~ "netlify" and space = "SRE"` | **1122** | BigQuery Reservations (aka Slots) |
+| `siteSearch ~ "netlify" and type = page and space = "SRE"` | 15 | **Netlify** |
+| `type = page and space = "SRE" and siteSearch ~ "netlify"` | 15 | **Netlify** |
+
+Row two is byte-identical to row one. The clause is **discarded**, not
+deprioritized, with a 200 and no warning. Position is the entire trigger:
+
+| arrangement | honored? |
+|---|---|
+| alone, or either position of two | yes |
+| first of three | **yes** |
+| last of three | **yes** |
+| **middle of three** | **no** |
+| first or last of four | yes |
+
+Parenthesizing does not help, nor does `space.key`, `space in (…)`, an unquoted
+key, or `type in (page)`. `cqlcontext={"spaceKey":"SRE"}` is not a space filter at
+all — it returned the full sitewide count. **`text ~` is immune**, returning the
+honest 14 in either position. Reproduced against a second space: `CLOUDSERVICES`
+holds 561 pages and 0 mentioning netlify, and the broken form returned all 561.
+
+**Why the original probe missed it matters more than the bug does.** The
+space-scoped case *was* probed — against `TABSTACK`, which holds three pages.
+"Every page in the space" and a genuine result set were both 3, so the broken
+query looked correct where the honest answer was 1. A second chance was missed
+too: the smoke test labelled as covering `--space` did not actually pass the flag.
+
+That lesson goes in `docs/confluence/README.md`, as a third entry in its "traps
+that produce confident, wrong answers" section: when probing anything that
+**narrows** a result set, compare against the unnarrowed count, in a corpus large
+enough for the two to differ, and check the contents rather than just the total.
+The tell here was a top hit that did not contain the search term.
 
 ### Multi-word is AND, order-independent — not a phrase match
 
@@ -182,11 +246,33 @@ failure with a Java stack-trace message and the wrong exit code.
 
 ## Decisions locked
 
-### `siteSearch ~` always, with no flag to choose `text ~`
+### `siteSearch ~` ranks, with `text ~` behind it as a floor
 
-The ranking evidence above. A `--text` escape hatch was considered and dropped:
-its only honest help text is "ranks worse", and `--cql` already lets anyone who
-wants `text ~ "..."` write it.
+The ranking evidence above. A `--text` flag to choose between them was considered
+and dropped: its only honest help text is "ranks worse", and `--cql` already lets
+anyone who wants a bare `text ~ "..."` write it.
+
+The emitted query is:
+
+```
+siteSearch ~ "q" and text ~ "q" [and type = T] [and space = "K"]
+```
+
+Both halves of that are load-bearing, for the reason in
+[the clause-position bug](#sitesearch-is-discarded-as-the-middle-clause-of-three)
+below — which was found by *using* the command, after the rest of this plan was
+already written and implemented.
+
+**`siteSearch` must lead.** Confluence silently discards it when it sits in the
+middle of three clauses, returning every page in the space instead.
+
+**The redundant `text ~` clause is a floor.** `siteSearch` supplies the ranking
+and `text` supplies nothing but a guarantee: if the clause is ever dropped again —
+by a reordering here, or a change upstream — `text` still constrains the results
+to content containing the query. That converts the failure mode from "every page
+in the space, presented as a search result" into "the right pages, worse order".
+It costs the few hits `siteSearch` matches and `text` does not (15 → 14 on the
+probe query) and changes no ranking.
 
 ### `--type` is a vocabulary of `page` (default), `blogpost`, `all`
 
@@ -207,10 +293,11 @@ keep growing as Atlassian adds content types. `--cql` covers them.
 Single value, not a comma list, for 1.0 — one `completion.Values` set, one schema
 field.
 
-### `--limit` is a positive number or `all`, default `25`
+### `--limit` is a positive number or `all`, default `10`
 
 A **string** vocabulary, exactly like `children --depth`, and `0` is refused
 rather than read as unlimited for the reason CLAUDE.md already records there.
+Completion offers `5`, `10`, `25`, `all`.
 
 This contradicts the issue, which asks for unlimited by default. The issue's
 argument — "silently returning 10 of 40 matches is a trap" — is correct for
@@ -220,12 +307,19 @@ relevance-ranked top-N *is* the answer rather than a truncation of it. Unlimited
 by default would mean 13 sequential gateway requests for a one-word query typed
 by someone who wanted to see if a page existed, on a shared corporate instance.
 
+**Ten rather than a larger bound, because a hit is a block and not a row.** Title,
+identity, URL and excerpt run to 5–6 lines each, so the default governs screens
+rather than lines: 25 hits measured 140 lines of real output against 51 for 10.
+Past the first ten the relevance ordering has stopped earning anything. (This
+started at 25 and was lowered after reading actual output — the arithmetic is the
+whole argument.)
+
 The issue's actual concern is honored in full: **nothing is ever truncated
 quietly.** With a bound of N, the pager asks for N+1 rows; if it gets them, the
 extra is dropped and the command says so:
 
 ```
-Showing 25 matches; more exist (use --limit all).
+Showing 10 matches; more exist (use --limit all).
 ```
 
 Presence, not a count. `totalSize` cannot supply a count — it drifted 294 → 292 →
@@ -260,6 +354,7 @@ type SearchResults struct {
     Matches []SearchMatch
     More    bool
     Skipped int
+    CQL     string
 }
 
 func (c *ConfluenceClient) SearchText(query, spaceKey, contentType string, limit int) (SearchResults, error)
@@ -269,10 +364,13 @@ func (c *ConfluenceClient) SearchRawCQL(cql string, limit int) (SearchResults, e
 A result **struct** rather than `(matches, more, skipped, error)`, for the reason
 021 gives for `RetryEvent`: fields can be added without breaking the signature.
 Three positional returns plus an error was already at the edge, and `skipped` is
-the second field this design grew after the first draft.
+the second field this design grew after the first draft — and `CQL` the third,
+added during implementation. The struct earned itself twice over.
 
-`SearchText` owns the query construction: the `siteSearch ~` clause with
-`escapeCQL` applied, the type clause, and the space clause.
+`SearchText` owns the query construction, in `buildTextCQL`: the leading
+`siteSearch ~` clause, the `text ~` floor behind it, then the type clause and the
+space clause. `escapeCQL` is applied to the query text and to the space key. The
+clause **order is load-bearing** and pinned by a test — see the bug above.
 
 `Type` is a plain string, not a Go or JSON enum. `--type all` and `--cql` can
 return `whiteboard`, `database`, or whatever Atlassian adds next, and a closed
@@ -295,6 +393,15 @@ The three termination rules from search.md are unchanged and non-negotiable:
 terminate on a **missing `next`** and never on a short page (100, then 98 — still
 carrying a `next` — then 91, against 289 total), ignore `start`, and branch on
 nothing derived from `totalSize`.
+
+**The cursor drops `excerpt`, which the pager has to put back.** Found while
+implementing: the server's `_links.next` carries `cql`, `limit` and the cursor but
+*not* `excerpt`, and `doJSON` appends its params with a bare `?` — so passing the
+parameter alongside a next link would build a second `?` and a malformed URL,
+while passing nothing would request page two differently from page one.
+`searchNextURL` therefore merges it into the parsed cursor URL, and a test asserts
+exactly one `?` survives. Today the default happens to equal `highlight`, so this
+is invisible until it isn't.
 
 ### Excerpt cleaning: strip, unescape, collapse — once, in the client
 
@@ -333,13 +440,19 @@ Runbook: Prod deployment
   https://mozilla-hub.atlassian.net/wiki/spaces/SRE/pages/1210286095/Runbook+Prod+deployment
   Before you start, confirm the on-call has acknowledged the deploy window.
 
-Showing 25 matches; more exist (use --limit all).
+    Showing 10 matches; more exist (use --limit all).
 ```
 
 The excerpt is one indented line and is **not wrapped**. `internal/ui` has no
 terminal-width detection and adding it for this is not worth a wrap helper and
 its tests; the terminal soft-wraps. A hit with an empty excerpt simply has no
 excerpt line.
+
+The truncation notice goes through `ui.Info`, whose 4-space indent is the
+alignment stop every glyph-prefixed helper (`  ✓ `, `  ! `) also lands on — so it
+sits deeper than the 2-space block bodies rather than flush with them. A blank line
+precedes it, or it reads as a field of the last hit rather than a footer about the
+whole result set.
 
 Server relevance order is preserved. **`search` is the first command whose result
 order comes from the server rather than from our own sort** — `sortMatches` must
@@ -420,7 +533,10 @@ corrected: spaces confirmed, but `type = user` returns ordinary content rows
 - `space`, `url` and `excerpt` are `stringOrNull` via the existing `nullable`
   helper pattern.
 - The built CQL goes to `ui.Debug`, not into the envelope. `--debug` is where
-  "what did you actually ask?" belongs.
+  "what did you actually ask?" belongs. `SearchResults` carries it out on **both**
+  paths and **including on failure**, since `internal/client` prints nothing —
+  and because the one bug this command produced in anger was a clause silently
+  dropped from an assembled query, which is undiagnosable without seeing it.
 
 ### Failure reporting mirrors `find`
 
@@ -453,7 +569,8 @@ command needs correcting.
 
 The schema and the command **must land in one commit**: `cmd`'s
 `TestCommandEnumMatchesRegisteredCommands` is bidirectional — it fails on an enum
-entry that is not a registered command as well as the reverse.
+entry that is not a registered command as well as the reverse. (Discovered while
+sequencing these; a schema-first commit would not have built.)
 
 1. `docs(plans): plan the search command` — this file.
 2. `docs(confluence): record what /search does for full text` — retitle
@@ -463,31 +580,54 @@ entry that is not a registered command as well as the reverse.
    "space"` row, and the useless fields. Note that this vindicates `find`'s use
    of `content.title`, and correct the "spaces and users" claim in
    `internal/client/search.go`'s comment — `type = user` returns ordinary content.
+   Also add search.md to `docs/confluence/README.md`, which never listed it.
 3. `feat(client): bound the CQL pager` — `searchCQLBounded`, `SearchCQL`
-   delegating, `min(max+1, searchPageSize)` sizing.
+   delegating, `min(max+1, searchPageSize)` sizing, and the excerpt mode
+   re-attached to the cursor.
 4. `feat(client): clean a CQL search excerpt` — strip/unescape/collapse.
 5. `feat(client): add SearchText and SearchRawCQL` — `SearchMatch`, query
    construction, the space guard, and the skipped-row count.
 6. `feat(search): add the search command` — `cmd/search/{search,json}.go`,
    registration in `root.go`, completion, **and** the schema's `command` enum
    entry, `if/then` branch, `searchResult` and `searchSummary` defs.
-7. `docs(readme): document the search command`.
+7. `docs(readme): document the search command`. Also fix two things in the
+   `--json` section that predate this work: it described `results` as one object
+   per *target*, which never covered the discovery commands, and it documented the
+   stderr error object only for exit-2 fatal failures when `find` already returns
+   one at exit 1.
 8. `docs: add search to the architecture notes` — CLAUDE.md gains a `cmd/search/`
    bullet, the client additions, and the correction to `find`'s "only command
    whose failure is an errorObject" note.
 
+Then, after using the command on a real query:
+
+9. `fix(client): stop Confluence discarding the search term` — lead with
+   `siteSearch`, add the `text ~` floor, two tests pinning both, and the third
+   trap in `docs/confluence/README.md`.
+10. `feat(search): lower the default --limit to 10` — 25 blocks measured 140 lines
+    of output against 51 for 10. Completion values become `5/10/25/all`.
+
 ## Testing
 
-**Client.** `siteSearch ~` query construction with and without space and type;
-`escapeCQL` applied to the query text (reuse the pinned injection string);
+**Client.** Query construction with and without space and type; `escapeCQL`
+applied to the query text *and* the space key (reuse the pinned injection string);
 `ErrSpaceNotFound` on an unknown key; bounded paging stops at `max+1` and reports
-`more`; a short page mid-walk does **not** terminate the walk; termination only
-on a missing `next`; `totalSize` disagreeing with `len(results)` changes nothing;
-page size is `max+1` when small and `searchPageSize` when `max` is 0 or large;
-excerpt cleaning over the real observed forms — markers, `&#39;`, embedded
-newlines, and all three at once; a content-less row (the real `entityType:
-"space"` payload) is skipped and counted, and a mix of content and content-less
-rows returns the content ones with the right skipped count.
+`more`; `max` rows with the cursor exhausted is **not** truncation; a short page
+mid-walk does **not** terminate the walk; termination only on a missing `next`;
+`totalSize` disagreeing with `len(results)` changes nothing; page size is `max+1`
+when small and `searchPageSize` when `max` is 0 or large; the excerpt mode is on
+the first request *and* re-attached to the cursor, with exactly one `?`; excerpt
+cleaning over the real observed forms — markers, `&#39;`, embedded newlines, and
+all three at once; a content-less row (the real `entityType: "space"` payload) is
+skipped and counted, and a mix of content and content-less rows returns the
+content ones with the right skipped count.
+
+**The clause-position guard.** Two tests, and they are the ones that matter most
+here because the failure they prevent is silent and total: the query must *begin*
+with `siteSearch ~` across every flag combination (asserted as a property, so it
+keeps holding as clauses are added), and the `text ~` floor must be present.
+Neither asserts a literal whole-query string alone, or a later clause addition
+would "fix" the test while reintroducing the bug.
 
 **Command.** `--type` accepts `page`/`blogpost`/`all` and refuses `folder` with
 the message naming `find`; `--limit` accepts a positive number and `all` and
