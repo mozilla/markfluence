@@ -286,12 +286,16 @@ type SearchResults struct {
 // SearchText runs a full-text search, optionally restricted to a space key and to
 // one content type, returning at most limit matches (limit <= 0 for all of them).
 //
-// The query is matched with `siteSearch ~`, not the `text ~` that Atlassian
+// The query is ranked by `siteSearch ~`, not the `text ~` that Atlassian
 // documents. That is not a stylistic choice: for "deploy runbook", `text ~`
 // ranked six unrelated pages above every page whose title contains both words,
 // while `siteSearch ~` returned them in order. With score at 0.0 on every row
 // there is no client-side re-ranking to fall back on, so the field choice is the
 // whole of the ranking (docs/confluence/search.md).
+//
+// See buildTextCQL for why the clause order matters, and why `text ~` is in the
+// query anyway. Both guard a failure mode in which a scoped search silently
+// returns every page in the space.
 //
 // Multi-word queries are ANDed across terms and are not phrase matches -- word
 // order does not matter, and one non-matching term empties the result.
@@ -329,14 +333,33 @@ func (c *ConfluenceClient) SearchRawCQL(cql string, limit int) (SearchResults, e
 
 // buildTextCQL assembles the full-text query.
 //
-// The type clause leads and the space clause trails, matching the form the
-// probes in docs/confluence/search.md used. Both the query and the space key go
-// through escapeCQL: a bare quote in either ends the string literal and turns the
-// remainder into query syntax.
+// Two things here are load-bearing and neither is cosmetic. Both exist because
+// Confluence will silently drop the siteSearch clause and answer a completely
+// different question (docs/confluence/search.md).
+//
+// **The siteSearch clause must come first.** Confluence drops it when it is the
+// *middle* clause of three: `type = page and siteSearch ~ "netlify" and space =
+// "SRE"` returned 1122 rows -- byte-identical to `type = page and space = "SRE"`,
+// every page in the space -- while the same three clauses with siteSearch leading
+// returned the honest 15. First and last are both safe; middle is not. This is a
+// server-side parser bug, so the ordering below is the fix, and TestBuildTextCQL
+// pins it.
+//
+// **The redundant text clause is a safety net.** siteSearch supplies the ranking
+// and text supplies nothing but a floor: if the clause is ever dropped again --
+// by a reordering here, or by a change on Atlassian's side -- text still
+// constrains the results to content that actually contains the query. That turns
+// the failure mode from "every page in the space, looking like a working search"
+// into "the right pages, in a worse order". It costs the handful of hits siteSearch
+// matches and text does not (15 -> 14 on the query above); ranking is unchanged.
+//
+// Both the query and the space key go through escapeCQL: a bare quote in either
+// ends the string literal and turns the remainder into query syntax.
 func buildTextCQL(query, spaceKey, contentType string) string {
-	cql := fmt.Sprintf(`siteSearch ~ "%s"`, escapeCQL(query))
+	escaped := escapeCQL(query)
+	cql := fmt.Sprintf(`siteSearch ~ "%s" and text ~ "%s"`, escaped, escaped)
 	if contentType != "" && contentType != SearchTypeAll {
-		cql = fmt.Sprintf("type = %s and %s", contentType, cql)
+		cql += " and type = " + contentType
 	}
 	if spaceKey != "" {
 		cql += fmt.Sprintf(` and space = "%s"`, escapeCQL(spaceKey))

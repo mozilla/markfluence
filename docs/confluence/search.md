@@ -218,15 +218,70 @@ Same corpus, near-identical totals (`text ~` reported 3060, `siteSearch ~`
 3071–3073), completely different ordering. `text ~` is the field Atlassian
 documents and the one confluence-cli uses; on this evidence it is the wrong one.
 
-`siteSearch` is undocumented but the 400 above names it as a valid field, and it
-behaves like the site's own search UI. Both accept a `space` clause and both work
-through the gateway.
+**`siteSearch` is not documented anywhere.** It is absent from Atlassian's [CQL
+field reference](https://developer.atlassian.com/cloud/confluence/advanced-searching-using-cql/);
+the only reason we know it exists is that Confluence's 400 for an invalid field
+volunteers it (`Did you mean one of : space, subtype, space.key, siteSearch,
+space.type`). Meanwhile `text` **is** documented — as "a 'master-field' that
+allows you to search for text across a number of other text fields. These are the
+same fields used by Confluence's search user interface."
+
+That is the irony worth keeping in mind: the documented field claims to be what
+the search UI uses, and the undocumented one is what actually behaves like it.
 
 **There is no client-side fallback.** `score` is `0.0` on every row of every
 query sampled, so the server's order is the only order there is. Nothing may
 re-sort a full-text result set, and `search` deliberately does not.
 
-The cost of `siteSearch` is that it decorates the response — see below.
+`siteSearch` costs two things. It decorates the response (see below) — and it has
+a parser bug that silently answers a different question.
+
+### `siteSearch` is dropped when it is the middle clause of three
+
+**This is the worst failure in this file: it turns a scoped search into a listing
+of the whole space, and looks like a working search while doing it.**
+
+For a space (`SRE`) holding 1122 pages, of which 15 mention "netlify":
+
+| query | totalSize | first hit |
+|---|---|---|
+| `type = page and space = "SRE"` | 1122 | BigQuery Reservations (aka Slots) |
+| `type = page and siteSearch ~ "netlify" and space = "SRE"` | **1122** | BigQuery Reservations (aka Slots) |
+| `siteSearch ~ "netlify" and type = page and space = "SRE"` | 15 | **Netlify** |
+| `type = page and space = "SRE" and siteSearch ~ "netlify"` | 15 | **Netlify** |
+
+The second row is byte-identical to the first. The `siteSearch` clause is
+**discarded**, not merely deprioritized, and no error is returned.
+
+Position is the whole trigger — first and last are safe, middle is not:
+
+| arrangement | honored? |
+|---|---|
+| `siteSearch` alone | yes |
+| `siteSearch` first of two, either order | yes |
+| `siteSearch` first of three | **yes** |
+| `siteSearch` last of three | **yes** |
+| `siteSearch` middle of three | **no** |
+| `siteSearch` first or last of four | yes |
+
+Parenthesizing does not help (`(type = page) and (siteSearch ~ …) and (space = …)`
+still returns 1122), nor does `space.key`, `space in (…)`, an unquoted key, or
+`type in (page)`. Reproduced against a second space (`CLOUDSERVICES`: 561 pages,
+0 mentioning "netlify" — the broken form returned all 561).
+
+**`text ~` is immune.** In the middle of three it returned the honest 14 both
+ways, so this is specific to `siteSearch`.
+
+`cqlcontext={"spaceKey":"SRE"}` is **not** a space filter — it returned the full
+sitewide 48. Do not reach for it to sidestep this.
+
+So markfluence emits `siteSearch ~ "q" and text ~ "q" and type = … and space = …`:
+`siteSearch` leads because it must, and the redundant `text` clause is a floor. If
+the clause is ever dropped again — by a reordering here or a change upstream —
+`text` still constrains the results to content containing the query, so the
+failure degrades to a worse order rather than to every page in the space. It costs
+the handful of hits `siteSearch` matches and `text` does not (15 → 14 above);
+ranking is unchanged.
 
 ### Full text is AND across terms, not a phrase
 
@@ -384,6 +439,10 @@ name comes free.
 - **Full text means `siteSearch ~`, and the result order is the server's.** With
   `score` at `0.0` there is nothing to re-rank with, so a truncating `--limit`
   keeps the *top* N and must say when it dropped anything.
+- **The `siteSearch` clause must come first, and must be backed by a `text`
+  clause.** Middle-of-three gets it silently discarded, which returns the whole
+  space dressed up as a search result. The clause order in `buildTextCQL` is
+  load-bearing and pinned by a test.
 - **Pin the content type.** An untyped full-text query returns attachment,
   comment and database ids, none of which any command accepts.
 - **Read `content.title`, never the row's `title`.** The latter is
