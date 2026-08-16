@@ -431,7 +431,7 @@ deploys?".
 
 ```sh
 markfluence search "deploy runbook"
-markfluence search "deploy runbook" --space ENG --limit 10
+markfluence search "deploy runbook" --space ENG --limit 25
 markfluence search deploy --limit all --json | jq -r '.results[].id'
 markfluence search 'type = page and label = "runbook"' --cql
 ```
@@ -463,7 +463,8 @@ re-sorts them.** The API reports a relevance score of `0.0` on every row, so the
 order it returns is the only ranking that exists — which is also why a `--json`
 consumer should not sort `results`.
 
-**`--limit` defaults to 25, and never truncates silently.** It takes a positive
+**`--limit` defaults to 10, and never truncates silently.** A hit is a block of
+5–6 lines rather than a row, so ten is about a screen. It takes a positive
 number or `all`; `0` is refused rather than read as "unlimited", the same rule
 `--depth` follows. When there are more matches than were shown, the command says
 so. It reports *that* more exist rather than how many, because the API's own

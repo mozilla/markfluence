@@ -32,7 +32,12 @@ const limitAll = "all"
 // truncation of it, and defaulting to unlimited would mean a dozen sequential
 // requests for someone checking whether a page exists. Nothing is truncated
 // quietly -- see the "more exist" line in report.
-const defaultLimit = "25"
+//
+// Ten rather than a larger bound because a hit is a *block*, not a row: title,
+// identity, URL and excerpt run to 5-6 lines each. Twenty-five of those is around
+// 140 lines, which is several screens and past the point where relevance ordering
+// is doing anyone any good.
+const defaultLimit = "10"
 
 var (
 	spaceOpt string
@@ -78,7 +83,7 @@ func init() {
 	completion.RegisterFlag(Cmd, "space", cobra.NoFileCompletions)
 	completion.RegisterFlag(Cmd, "type", completion.Values(
 		client.SearchTypePage, client.SearchTypeBlogpost, client.SearchTypeAll))
-	completion.RegisterFlag(Cmd, "limit", completion.Values("10", "25", "50", limitAll))
+	completion.RegisterFlag(Cmd, "limit", completion.Values("5", "10", "25", limitAll))
 }
 
 func run(cmd *cobra.Command, args []string) error {
