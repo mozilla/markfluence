@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -392,6 +393,108 @@ func TestCleanExcerpt(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := cleanExcerpt(tt.in); got != tt.want {
 				t.Errorf("cleanExcerpt(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCleanExcerptSpans covers the marked runs alongside the text. The cases are
+// the shapes actually observed in docs/confluence/search.md -- markers, entities,
+// embedded newlines -- rather than invented ones.
+func TestCleanExcerptSpans(t *testing.T) {
+	tests := []struct {
+		name, in, wantText string
+		wantSpans          []ExcerptSpan
+	}{
+		{
+			"no markers is one unmatched span", "Deploying to prod", "Deploying to prod",
+			[]ExcerptSpan{{Text: "Deploying to prod"}},
+		},
+		{
+			"a marked term", "a @@@hl@@@deploy@@@endhl@@@ runbook", "a deploy runbook",
+			[]ExcerptSpan{{Text: "a "}, {Text: "deploy", Match: true}, {Text: " runbook"}},
+		},
+		{
+			"marked at the start", "@@@hl@@@Deploy@@@endhl@@@ now", "Deploy now",
+			[]ExcerptSpan{{Text: "Deploy", Match: true}, {Text: " now"}},
+		},
+		{
+			"marked at the end", "now @@@hl@@@deploy@@@endhl@@@", "now deploy",
+			[]ExcerptSpan{{Text: "now "}, {Text: "deploy", Match: true}},
+		},
+		{
+			"two marked terms", "@@@hl@@@Runbook@@@endhl@@@: Grafana @@@hl@@@deploys@@@endhl@@@",
+			"Runbook: Grafana deploys",
+			[]ExcerptSpan{
+				{Text: "Runbook", Match: true}, {Text: ": Grafana "}, {Text: "deploys", Match: true},
+			},
+		},
+		{
+			// Adjacent runs coalesce by flag, so this is one span, not two.
+			"adjacent marked terms", "@@@hl@@@de@@@endhl@@@@@@hl@@@ploy@@@endhl@@@", "deploy",
+			[]ExcerptSpan{{Text: "deploy", Match: true}},
+		},
+		{
+			// The space is inside the marked run, so the highlight stays one block.
+			"a space inside a marked run", "@@@hl@@@foo bar@@@endhl@@@ baz", "foo bar baz",
+			[]ExcerptSpan{{Text: "foo bar", Match: true}, {Text: " baz"}},
+		},
+		{
+			"entity inside a marked run", "@@@hl@@@Engineer&#39;s@@@endhl@@@ log", "Engineer's log",
+			[]ExcerptSpan{{Text: "Engineer's", Match: true}, {Text: " log"}},
+		},
+		{
+			"newline collapses between a marked and an unmatched word",
+			"@@@hl@@@deploys@@@endhl@@@\nStage", "deploys Stage",
+			[]ExcerptSpan{{Text: "deploys", Match: true}, {Text: " Stage"}},
+		},
+		{
+			"markers, entity and newline at once", "@@@hl@@@Deploy@@@endhl@@@&#39;s\n  guide",
+			"Deploy's guide",
+			[]ExcerptSpan{{Text: "Deploy", Match: true}, {Text: "'s guide"}},
+		},
+		{"empty", "", "", nil},
+		{"whitespace only", " \n\t ", "", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			text, spans := cleanExcerptSpans(tt.in)
+			if text != tt.wantText {
+				t.Errorf("text = %q, want %q", text, tt.wantText)
+			}
+			if !reflect.DeepEqual(spans, tt.wantSpans) {
+				t.Errorf("spans = %#v, want %#v", spans, tt.wantSpans)
+			}
+		})
+	}
+}
+
+// TestCleanExcerptSpansReassemble is the invariant that lets Excerpt and Spans
+// coexist: concatenating the spans must reproduce the excerpt exactly. If this
+// ever fails, the human output and --json are describing different text.
+func TestCleanExcerptSpansReassemble(t *testing.T) {
+	inputs := []string{
+		"Deploying to prod",
+		"a @@@hl@@@deploy@@@endhl@@@ runbook",
+		"@@@hl@@@Runbook@@@endhl@@@: Grafana @@@hl@@@deploys@@@endhl@@@",
+		"@@@hl@@@Deploy@@@endhl@@@&#39;s\n  guide",
+		"Base Load Engineer&#39;s Hand-off Log",
+		"one\ntwo\nthree",
+		"  padded  ",
+		"",
+		" \n\t ",
+		"@@@hl@@@foo bar@@@endhl@@@ baz",
+		"a &amp;#39; b",
+	}
+	for _, in := range inputs {
+		t.Run(in, func(t *testing.T) {
+			text, spans := cleanExcerptSpans(in)
+			var b strings.Builder
+			for _, sp := range spans {
+				b.WriteString(sp.Text)
+			}
+			if b.String() != text {
+				t.Errorf("spans reassemble to %q, want %q", b.String(), text)
 			}
 		})
 	}
