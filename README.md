@@ -103,17 +103,54 @@ The cloud ID is not a secret.
 
 The scopes markfluence needs:
 
-| Used for | Classic scope |
-| --- | --- |
-| Reading, creating, and updating pages | `read:confluence-content.all`, `write:confluence-content` |
-| Resolving space keys | `read:confluence-space.summary` |
-| Page width (content properties) | `read:confluence-props`, `write:confluence-props` |
-| Image attachments | `write:confluence-file` |
-| Author names in `info` | `read:confluence-user` |
+| Used for | Commands | Scope |
+| --- | --- | --- |
+| Reading pages, and reading/writing page width | all but `schema` | `read:page:confluence` |
+| Creating and updating pages, and setting page width | `create`, `update`, `fix` | `write:page:confluence` |
+| Resolving a space key to an id | `create`, `find`, `search` | `read:space:confluence` |
+| Looking up a folder (a folder can be a page's parent) | `create`, `children`, `find` | `read:folder:confluence` |
+| CQL queries | `find`, `search` | `search:confluence` |
+| Author names | `info` | `read:confluence-user` |
+| Uploading image attachments | `create`, `update`, `attachment-upload` | `write:confluence-file` |
+| Downloading attachments | `export`, `attachment-download` | `readonly:content.attachment:confluence` |
+| Listing attachments and child pages/folders | `children`, `export`, `read`, `attachment-list` | `read:confluence-content.summary` |
+
+Copy-pasteable:
+
+```
+read:page:confluence
+write:page:confluence
+read:space:confluence
+read:folder:confluence
+search:confluence
+read:confluence-user
+write:confluence-file
+readonly:content.attachment:confluence
+read:confluence-content.summary
+```
+
+> [!IMPORTANT]
+> **The mixture of naming styles is correct, not a copy-paste error.** Atlassian
+> has two scope vocabularies — *classic* (`read:confluence-user`) and *granular*
+> (`read:page:confluence`) — and they are granted independently: holding one does
+> **not** imply the other. markfluence talks to both API versions, and each
+> version accepts only one vocabulary, so the list above is genuinely mixed. A
+> token granted the classic names alone fails with
+> `401 Unauthorized; scope does not match` on almost every command, which is what
+> makes this an easy list to get wrong. The measurements behind that are in
+> [docs/confluence/api.md](docs/confluence/api.md#scopes).
+
+> [!NOTE]
+> Scopes are fixed when a token is issued. A missing one needs a **new** token,
+> not an edit to the existing one.
 
 > [!NOTE]
 > Currently, markfluence doesn't support deleting anything, so it doesn't need
 > delete scopes. This might change in the future.
+
+A **403** (rather than the 401 above) means the opposite problem: the token is
+scoped for the call, but the service account lacks Confluence permission on that
+space or page. Grant the account access; a new token will not help.
 
 [svcacct]: https://support.atlassian.com/user-management/docs/understand-service-accounts/
 
