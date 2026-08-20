@@ -33,12 +33,41 @@ $ curl -s https://YOUR-SITE.atlassian.net/_edge/tenant_info
 
 No credentials. That is why it can be a `--cloud-id` flag while the token cannot.
 
-**A scoped token requires the gateway. Unverified** — asserted in
-`internal/client/config.go` and the README, and it is why the gateway support
-exists at all, but confirming it needs a scoped service-account token. The
-credential available on 2026-08-07 was an unscoped personal token, which returns
-200 against *both* the site domain and the gateway, so it cannot distinguish the
-two cases. To verify: issue a scoped token and expect 401 from the site domain.
+**A scoped token requires the gateway. Verified 2026-08-20** with a scoped
+service-account token — the credential the earlier attempt lacked. An unscoped
+personal token returns 200 against *both* the site domain and the gateway, so it
+cannot distinguish the two cases; a scoped one can.
+
+Two calls the token *is* scoped for, each sent twice with the same basic auth:
+
+| request | gateway | site domain |
+|---|---|---|
+| `GET /wiki/rest/api/user/current` | **200** | **401** |
+| `GET /wiki/rest/api/space/{key}` | **200** | **401** |
+
+The site-domain 401 is a Tomcat HTML error page, not a JSON API error — the
+request is rejected before it reaches Confluence's API layer. Nothing about the
+scopes changed between the two columns, so the base URL is the only variable.
+
+### A scope failure is a 401, not a 403
+
+**Verified 2026-08-20.** Through the gateway, a request the token is *not*
+scoped for returns:
+
+```json
+{"code":401,"message":"Unauthorized; scope does not match"}
+```
+
+Which is worth knowing, because 401 is also what a bad password, a revoked
+token, and a scoped token pointed at the site domain all return. The three are
+distinguishable only by the body: this JSON, a JSON `Unauthorized` without the
+scope clause, and Tomcat HTML respectively. A 403 would mean the token is
+scoped for the call but the account lacks Confluence permission on that
+content — a different fix entirely (grant the service account space access,
+not a new token).
+
+Scopes are fixed when a token is issued, so a missing one needs a *new* token,
+not an edited one.
 
 Two bases exist for a reason: `BaseURL()` is where requests go, `SiteURL()` is
 always the site. Anything a human will see — printed URLs, and the `baseURL`
@@ -201,3 +230,40 @@ A scoped token needs:
 
 **Transcribed.** No delete scope appears because (currently) markfluence never
 deletes anything.
+
+> [!WARNING]
+> **This list is incomplete, and the omission is not a typo.** These are the
+> *classic* scope names, which reach the **v1** routes only. markfluence reads
+> and writes pages through **v2**, and a classic grant does not authorize a v2
+> route. A token holding exactly this list still cannot run `read`.
+
+**Verified 2026-08-20**, with a scoped token holding classic
+`read:confluence-user` and `read:confluence-space.summary` but no content
+scope. The same permission, asked for over each API version:
+
+| granted scope | v1 route | | v2 route | |
+|---|---|---|---|---|
+| `read:confluence-user` | `GET /wiki/rest/api/user/current` | **200** | `GET /wiki/api/v2/users/me` | **401** |
+| `read:confluence-space.summary` | `GET /wiki/rest/api/space/{key}` | **200** | `GET /wiki/api/v2/spaces/{id}` | **401** |
+
+Same token, same resource, same request otherwise. The classic grant is real —
+it returns data over v1 — and it is still rejected over v2. So classic and
+granular are granted separately and neither implies the other.
+
+Which splits what markfluence needs along the version line it already uses:
+
+| markfluence call | version | scope flavor needed |
+|---|---|---|
+| pages read/create/update | v2 | granular |
+| page content properties (page width) | v2 | granular |
+| spaces | v2 | granular |
+| folder lookup | v2 | granular |
+| attachment list/upload/download | v1 | classic |
+| CQL search (`find`, `search`) | v1 | classic |
+| current user (`info`) | v1 | classic |
+
+The granular names are **not recorded here on purpose**: naming them from
+Atlassian's docs without a token to test would be transcription presented as
+fact, which is the mistake this file exists to avoid. Determining them needs a
+token that actually holds them. Until then, a working service-account token
+needs the classic list above *plus* the granular equivalents for the v2 half.
