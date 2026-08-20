@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // searchPath is the v1 CQL search endpoint. There is no v2 equivalent, and no
@@ -69,30 +70,158 @@ const (
 	highlightClose = "@@@endhl@@@"
 )
 
+// ExcerptSpan is one run of excerpt text, flagged when Confluence marked it as a
+// matched term.
+//
+// Concatenating every Text yields the excerpt exactly. That invariant is what
+// lets the spans travel beside SearchMatch.Excerpt rather than replacing it: the
+// human path renders the spans, --json emits the string, and neither can drift
+// from the other.
+type ExcerptSpan struct {
+	Text  string
+	Match bool
+}
+
 // cleanExcerpt turns a raw search excerpt into a single line of plain text.
+//
+// The spans are discarded; see cleanExcerptSpans for what the three passes are
+// and why they happen here.
+func cleanExcerpt(s string) string {
+	text, _ := cleanExcerptSpans(s)
+	return text
+}
+
+// cleanExcerptSpans turns a raw search excerpt into a single line of plain text
+// plus the runs of it Confluence marked as matched terms.
 //
 // Three passes, in this order:
 //
-//   - strip the highlight markers siteSearch ~ puts around every matched term;
+//   - split on the highlight markers siteSearch ~ puts around every matched
+//     term, carrying a matched/not flag alongside the text rather than dropping
+//     it;
 //   - unescape HTML entities exactly once -- the field arrives escaped, as in
 //     "Base Load Engineer&#39;s Hand-off Log";
 //   - collapse every run of whitespace, including the newlines 40 of 50 rows
 //     carry, to a single space, and trim.
 //
-// Stripping precedes unescaping because an entity-encoded marker has never been
+// Splitting precedes unescaping because an entity-encoded marker has never been
 // observed, while an entity that decodes to whitespace is handled by collapsing
 // last. A page whose body literally contains "@@@hl@@@" loses it; that is
 // accepted, and it is not a thing anyone writes.
 //
+// The flags are carried through the passes rather than recovered afterward.
+// Unescaping and collapsing both change length -- "&#39;" is five bytes in and
+// one out -- so marker offsets taken from the raw string do not survive either
+// one, and the rows that carry entities *and* newlines *and* markers together
+// are the common row rather than the corner case.
+//
 // Collapsing happens here rather than at the point of display so there is one
 // canonical excerpt: the human output and --json cannot disagree about it, and a
 // --json consumer does not inherit the index's arbitrary line breaks.
-func cleanExcerpt(s string) string {
-	s = strings.ReplaceAll(s, highlightOpen, "")
-	s = strings.ReplaceAll(s, highlightClose, "")
-	// strings.Fields splits on any whitespace run and drops the empties, so
-	// rejoining is the collapse and the trim at once.
-	return strings.Join(strings.Fields(html.UnescapeString(s)), " ")
+func cleanExcerptSpans(s string) (string, []ExcerptSpan) {
+	runes, flags := markedRunes(s)
+	runes, flags = collapseFlagged(runes, flags)
+	return string(runes), coalesceSpans(runes, flags)
+}
+
+// markedRunes splits a raw excerpt on the highlight markers, unescapes each
+// segment, and returns its runes with a parallel matched/not flag.
+//
+// Unescaping is per-segment rather than over the whole string, which differs
+// only for an entity split across a marker boundary ("&am" + marker + "p;").
+// The server does not decorate mid-entity, and treating that as text is the
+// harmless reading anyway.
+func markedRunes(s string) ([]rune, []bool) {
+	var (
+		runes []rune
+		flags []bool
+		match bool
+	)
+	appendSegment := func(seg string, match bool) {
+		for _, r := range html.UnescapeString(seg) {
+			runes = append(runes, r)
+			flags = append(flags, match)
+		}
+	}
+	for {
+		i, marker := nextMarker(s)
+		if i < 0 {
+			appendSegment(s, match)
+			return runes, flags
+		}
+		appendSegment(s[:i], match)
+		match = marker == highlightOpen
+		s = s[i+len(marker):]
+	}
+}
+
+// nextMarker reports the position and identity of the first highlight marker in
+// s, or -1 when there is none. Neither marker is a substring of the other, so
+// "first" is unambiguous.
+func nextMarker(s string) (int, string) {
+	open := strings.Index(s, highlightOpen)
+	closed := strings.Index(s, highlightClose)
+	switch {
+	case open < 0 && closed < 0:
+		return -1, ""
+	case open < 0:
+		return closed, highlightClose
+	case closed < 0:
+		return open, highlightOpen
+	case open < closed:
+		return open, highlightOpen
+	default:
+		return closed, highlightClose
+	}
+}
+
+// collapseFlagged collapses whitespace runs to a single space and trims the
+// ends, keeping the flags aligned with the text.
+//
+// A collapsed space is matched only when the runes on *both* sides of it are,
+// so a marked run containing a space ("@@@hl@@@foo bar@@@endhl@@@") stays one
+// highlighted block while the space between a matched and an unmatched word
+// does not extend the highlight past the word.
+func collapseFlagged(runes []rune, flags []bool) ([]rune, []bool) {
+	var (
+		outRunes []rune
+		outFlags []bool
+	)
+	for i := 0; i < len(runes); {
+		if !unicode.IsSpace(runes[i]) {
+			outRunes = append(outRunes, runes[i])
+			outFlags = append(outFlags, flags[i])
+			i++
+			continue
+		}
+		j := i
+		for j < len(runes) && unicode.IsSpace(runes[j]) {
+			j++
+		}
+		// Leading and trailing runs are the trim; they produce no space.
+		if len(outRunes) > 0 && j < len(runes) {
+			outRunes = append(outRunes, ' ')
+			outFlags = append(outFlags, outFlags[len(outFlags)-1] && flags[j])
+		}
+		i = j
+	}
+	return outRunes, outFlags
+}
+
+// coalesceSpans groups adjacent runes carrying the same flag into spans.
+func coalesceSpans(runes []rune, flags []bool) []ExcerptSpan {
+	if len(runes) == 0 {
+		return nil
+	}
+	var spans []ExcerptSpan
+	start := 0
+	for i := 1; i <= len(runes); i++ {
+		if i == len(runes) || flags[i] != flags[start] {
+			spans = append(spans, ExcerptSpan{Text: string(runes[start:i]), Match: flags[start]})
+			start = i
+		}
+	}
+	return spans
 }
 
 // escapeCQL escapes a value for use inside a double-quoted CQL string literal.
@@ -261,6 +390,17 @@ type SearchMatch struct {
 	Space   string
 	URL     string
 	Excerpt string
+	// Spans is Excerpt split into the runs Confluence marked as matched terms,
+	// for a caller that wants to highlight them. Concatenating every span's Text
+	// reproduces Excerpt, so a caller that ignores this field loses nothing.
+	//
+	// It sits beside Excerpt rather than replacing it because the string is what
+	// --json emits and what the schema pins; only the human renderer reads the
+	// spans, so the two paths cannot describe the excerpt differently.
+	//
+	// Nil for an empty excerpt, and one unmatched span for an excerpt the server
+	// returned without markers -- 10 of 50 rows sampled.
+	Spans []ExcerptSpan
 }
 
 // SearchResults is what a full-text search returns.
@@ -398,13 +538,15 @@ func (c *ConfluenceClient) searchMatches(cql string, limit int) (SearchResults, 
 		if link == "" {
 			link = r.URL
 		}
+		excerpt, spans := cleanExcerptSpans(r.Excerpt)
 		out.Matches = append(out.Matches, SearchMatch{
 			ID:      r.Content.ID,
 			Type:    r.Content.Type,
 			Title:   r.Content.Title,
 			Space:   SpaceKeyFromWebUI(link),
 			URL:     c.contextURL(link),
-			Excerpt: cleanExcerpt(r.Excerpt),
+			Excerpt: excerpt,
+			Spans:   spans,
 		})
 	}
 	return out, nil
