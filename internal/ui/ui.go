@@ -129,6 +129,20 @@ func Dim(msg string) {
 	fmt.Println(gray.Render("    " + msg))
 }
 
+// Match styles a run of text that a search reported as a matched term, and
+// returns it rather than printing: callers build a block and print it once.
+//
+// Bold rather than a color. The four colors here are semantically spoken for --
+// green success, yellow warning, red error, gray dim -- and reusing one would
+// say something false about a matched word. Bold also survives a light or dark
+// terminal, where a fixed color may not.
+//
+// No jsonMode guard, unlike the printing helpers: this returns a string to a
+// caller that is already inside a non-JSON branch. lipgloss renders it unstyled
+// when color is off (NO_COLOR, --no-color, or stdout not a terminal), so the
+// escape codes never reach a pipe.
+func Match(s string) string { return bold.Render(s) }
+
 // Debug prints a line only when debug mode is enabled.
 func Debug(msg string) {
 	if debug {
