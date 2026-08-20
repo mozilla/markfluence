@@ -218,52 +218,101 @@ status and getting it wrong would leave the recovery silently never firing.
 
 ## Scopes
 
-A scoped token needs:
+**Derived 2026-08-20** from Atlassian's own OpenAPI documents, one lookup per
+call markfluence actually makes:
 
-* `read:confluence-content.all`
-* `write:confluence-content`
-* `read:confluence-space.summary`
-* `read:confluence-props`
-* `write:confluence-props`
-* `write:confluence-file`
-* `read:confluence-user`
+- v1: `https://dac-static.atlassian.com/cloud/confluence/swagger.v3.json`
+- v2: `https://dac-static.atlassian.com/cloud/confluence/openapi-v2.v3.json`
 
-**Transcribed.** No delete scope appears because (currently) markfluence never
-deletes anything.
+Each operation carries an `x-atlassian-oauth2-scopes` array whose entries have a
+`state`. The table takes the `Current` entries; `Beta` alternatives are noted
+below.
 
-> [!WARNING]
-> **This list is incomplete, and the omission is not a typo.** These are the
-> *classic* scope names, which reach the **v1** routes only. markfluence reads
-> and writes pages through **v2**, and a classic grant does not authorize a v2
-> route. A token holding exactly this list still cannot run `read`.
+| call | ver | method + path | scope |
+|---|---|---|---|
+| `GetPage`, `GetPageOrNil` | v2 | `GET /pages/{id}` | `read:page:confluence` |
+| `SearchPagesByTitle` | v2 | `GET /pages` | `read:page:confluence` |
+| `CreatePage` | v2 | `POST /pages` | `write:page:confluence` |
+| `UpdatePage` | v2 | `PUT /pages/{id}` | `write:page:confluence` |
+| `GetFolderOrNil` | v2 | `GET /folders/{id}` | `read:folder:confluence` |
+| space key to id | v2 | `GET /spaces` | `read:space:confluence` |
+| `ListContentProperties` | v2 | `GET /pages/{id}/properties` | `read:page:confluence` |
+| `SetContentProperty` (create) | v2 | `POST /pages/{id}/properties` | `read:page:confluence`, `write:page:confluence` |
+| `SetContentProperty` (update) | v2 | `PUT /pages/{id}/properties/{propId}` | `read:page:confluence`, `write:page:confluence` |
+| `GetUser` | v1 | `GET /user` | `read:confluence-user` |
+| `searchCQL` | v1 | `GET /search` | `search:confluence` |
+| attachment upload | v1 | `POST /content/{id}/child/attachment` | `write:confluence-file` |
+| attachment re-upload | v1 | `POST /content/{id}/child/attachment/{attId}/data` | `write:confluence-file` |
+| `DownloadAttachment` | v1 | `GET /content/{id}/child/attachment/{attId}/download` | `readonly:content.attachment:confluence` |
+| `ListAttachments` | v1 | `GET /content/{id}/child/attachment` | **undocumented, see below** |
+| `ListChildPages` | v1 | `GET /content/{id}/child/page` | **undocumented, see below** |
+| `ListChildFolders` | v1 | `GET /content/{id}/child/folder` | **undocumented, see below** |
+
+Union, which is what a token needs:
+
+```
+read:page:confluence
+write:page:confluence
+read:space:confluence
+read:folder:confluence
+search:confluence
+read:confluence-user
+write:confluence-file
+readonly:content.attachment:confluence
+read:confluence-content.summary
+```
+
+### The list is deliberately mixed, and that is the whole trap
+
+Classic (`read:confluence-user`) and granular (`read:page:confluence`) are
+**separate grants**, and neither implies the other. Note which side of the table
+each style lands on: every v2 row is granular, every v1 row is classic or a
+v1-era granular name. That is not a coincidence, and it is measurable.
 
 **Verified 2026-08-20**, with a scoped token holding classic
-`read:confluence-user` and `read:confluence-space.summary` but no content
-scope. The same permission, asked for over each API version:
+`read:confluence-user` and `read:confluence-space.summary` and no content scope.
+The same permission, asked for over each API version:
 
 | granted scope | v1 route | | v2 route | |
 |---|---|---|---|---|
 | `read:confluence-user` | `GET /wiki/rest/api/user/current` | **200** | `GET /wiki/api/v2/users/me` | **401** |
 | `read:confluence-space.summary` | `GET /wiki/rest/api/space/{key}` | **200** | `GET /wiki/api/v2/spaces/{id}` | **401** |
 
-Same token, same resource, same request otherwise. The classic grant is real —
-it returns data over v1 — and it is still rejected over v2. So classic and
-granular are granted separately and neither implies the other.
+Same token, same resource, same request otherwise. The classic grant is real --
+it returns data over v1 -- and is still rejected over v2. So a token granted only
+the classic names cannot read a page, because pages are v2.
 
-Which splits what markfluence needs along the version line it already uses:
+This is why the older version of this list was wrong in a way that looked right.
+It named `read:confluence-content.all`, `write:confluence-content`,
+`read:confluence-props` and `write:confluence-props`: all classic, all plausible,
+and none of them reaching the v2 routes that do the work. The props pair turns
+out to be unnecessary outright, since a v2 page property is covered by
+`read:page:confluence`/`write:page:confluence` rather than by a
+property-specific scope.
 
-| markfluence call | version | scope flavor needed |
-|---|---|---|
-| pages read/create/update | v2 | granular |
-| page content properties (page width) | v2 | granular |
-| spaces | v2 | granular |
-| folder lookup | v2 | granular |
-| attachment list/upload/download | v1 | classic |
-| CQL search (`find`, `search`) | v1 | classic |
-| current user (`info`) | v1 | classic |
+### Three calls Atlassian no longer documents
 
-The granular names are **not recorded here on purpose**: naming them from
-Atlassian's docs without a token to test would be transcription presented as
-fact, which is the mistake this file exists to avoid. Determining them needs a
-token that actually holds them. Until then, a working service-account token
-needs the classic list above *plus* the granular equivalents for the v2 half.
+`GET /content/{id}/child/attachment`, `/child/page` and `/child/folder` are
+**absent from the v1 OpenAPI document and from the published REST docs**, while
+the `PUT`/`POST` operations on the very same attachment path are present. They
+still work -- markfluence uses all three -- but their scope cannot be looked up.
+
+`read:confluence-content.summary` is the **inferred** requirement, taken from the
+sibling `GET /content/{id}/descendant/{type}`, which is documented, is the same
+kind of read, and asks for exactly that (granular equivalent:
+`read:content-details:confluence`).
+
+**Inferred, not verified.** Confirming it needs a token granted that scope and
+nothing else adjacent. If a service account can read pages but `children`,
+`export` or `attachment-list` still 401, this row is the first suspect.
+
+### Beta alternatives
+
+The v1 rows also carry `Beta`-state granular scopes:
+`read:content-details:confluence` (user lookup, search, attachment writes),
+`write:attachment:confluence` (attachment writes) and
+`read:attachment:confluence` (download). They are not used above, since
+`Current` is what Atlassian recommends, but they are what a granular-only token
+would need if Atlassian ever retires the v1 classic names.
+
+No delete scope appears because (currently) markfluence never deletes anything.
