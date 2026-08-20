@@ -121,19 +121,22 @@ Build the flags alongside the text instead:
 `Excerpt` is then the concatenation, produced by the same pass, so the two cannot
 drift.
 
-### Highlight with bold
+### Highlight with reverse video
 
-`internal/ui` already has `bold`, and the four colors it defines are all
-semantically spoken for: green success, yellow warning, red error, gray dim.
-Reusing one of those would say something false about a matched word. Bold adds no
-palette entry, survives light and dark terminals, and degrades to nothing when
-color is off.
+The four colors `internal/ui` defines are all semantically spoken for: green
+success, yellow warning, red error, gray dim. Reusing one would say something
+false about a matched word. So the highlight is an attribute rather than a
+color, which also survives light and dark terminals where a fixed color may
+not.
+
+**Bold shipped first and was wrong.** It reads clearly in isolation and
+disappears in place: a matched term sits inside 150-450 characters of ordinary
+prose, and weight alone does not find the eye there. Reverse video does, by
+flipping the background rather than thickening the glyphs. It is louder, which
+is the point at this density.
 
 New helper `ui.Match(s string) string`, returning styled text rather than
 printing, since `blocks()` builds a string.
-
-Recorded alternative: reverse video reads as a selection and is louder than a
-search result warrants.
 
 ### `blocks()` renders through an injected highlighter, so it stays testable
 
