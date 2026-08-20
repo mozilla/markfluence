@@ -177,6 +177,70 @@ func TestBlocksOmitsAnEmptyExcerpt(t *testing.T) {
 	}
 }
 
+// TestRenderSpans uses a visible stand-in highlighter, not ui.Match: tests run
+// with stdout not a terminal, where lipgloss emits nothing, so asserting against
+// the real style would pass against unhighlighted text.
+func TestRenderSpans(t *testing.T) {
+	mark := func(s string) string { return "[" + s + "]" }
+	tests := []struct {
+		name  string
+		spans []client.ExcerptSpan
+		want  string
+	}{
+		{"nil spans", nil, ""},
+		{
+			"only the matched runs are wrapped",
+			[]client.ExcerptSpan{{Text: "a "}, {Text: "deploy", Match: true}, {Text: " runbook"}},
+			"a [deploy] runbook",
+		},
+		{
+			"order is preserved",
+			[]client.ExcerptSpan{
+				{Text: "Runbook", Match: true}, {Text: ": Grafana "}, {Text: "deploys", Match: true},
+			},
+			"[Runbook]: Grafana [deploys]",
+		},
+		{
+			"an unmarked excerpt is untouched",
+			[]client.ExcerptSpan{{Text: "Deploying to prod"}},
+			"Deploying to prod",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := renderSpans(tt.spans, mark); got != tt.want {
+				t.Errorf("renderSpans = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestBlocksHighlightsMatchedTerms: a match carrying spans renders them, and one
+// carrying none falls back to the plain excerpt. Both go through blocks, which
+// under test emits no escape codes -- so this asserts the fallback and the
+// reassembly, and TestRenderSpans asserts the wrapping.
+func TestBlocksHighlightsMatchedTerms(t *testing.T) {
+	withSpans := blocks([]client.SearchMatch{{
+		ID: "1", Type: "page", Title: "Runbook", Space: "ENG", URL: "https://x/1",
+		Excerpt: "a deploy runbook",
+		Spans: []client.ExcerptSpan{
+			{Text: "a "}, {Text: "deploy", Match: true}, {Text: " runbook"},
+		},
+	}})
+	if !strings.Contains(withSpans, "  a deploy runbook") {
+		t.Errorf("spans did not reassemble into the excerpt line:\n%s", withSpans)
+	}
+
+	// No spans: the excerpt still prints. A regression here blanks the line.
+	noSpans := blocks([]client.SearchMatch{{
+		ID: "1", Type: "page", Title: "Runbook", Space: "ENG", URL: "https://x/1",
+		Excerpt: "a deploy runbook",
+	}})
+	if !strings.Contains(noSpans, "  a deploy runbook") {
+		t.Errorf("a spanless match lost its excerpt:\n%s", noSpans)
+	}
+}
+
 // TestBlocksDashesAMissingSpace: the id is still the answer, so a hit whose space
 // key could not be derived is a usable block rather than a broken one.
 func TestBlocksDashesAMissingSpace(t *testing.T) {

@@ -294,10 +294,41 @@ func blocks(matches []client.SearchMatch) string {
 			b.WriteString("  " + m.URL + "\n")
 		}
 		if m.Excerpt != "" {
-			b.WriteString("  " + m.Excerpt + "\n")
+			b.WriteString("  " + excerptLine(m) + "\n")
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// excerptLine renders a hit's excerpt with its matched terms highlighted.
+//
+// A match carrying no spans falls back to the plain excerpt, which covers an
+// excerpt the server returned without markers (10 of 50 rows sampled) and any
+// SearchMatch built without them.
+func excerptLine(m client.SearchMatch) string {
+	if len(m.Spans) == 0 {
+		return m.Excerpt
+	}
+	return renderSpans(m.Spans, ui.Match)
+}
+
+// renderSpans concatenates excerpt spans, passing the matched runs through hl.
+//
+// hl is a parameter rather than a direct ui.Match call so this stays testable.
+// Tests run with stdout not a terminal, where lipgloss emits no escape codes at
+// all -- so a test that asserted highlighted output against a hard-wired
+// ui.Match would pass just as happily against text that was never highlighted.
+// A visible stand-in makes the assertion mean something.
+func renderSpans(spans []client.ExcerptSpan, hl func(string) string) string {
+	var b strings.Builder
+	for _, s := range spans {
+		if s.Match {
+			b.WriteString(hl(s.Text))
+			continue
+		}
+		b.WriteString(s.Text)
+	}
+	return b.String()
 }
 
 // orDash renders an underivable space key as "-" rather than a blank, so the
