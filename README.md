@@ -510,11 +510,11 @@ Runbook: Prod deployment
 Each hit is a block rather than a table row, because the excerpt is what tells
 you *why* it matched, and an excerpt is too long for a column.
 
-**Matched terms in the excerpt are shown in bold**, using the positions
+**Matched terms in the excerpt are shown in reverse video**, using the positions
 Confluence reports rather than by matching your query text — so the highlight
 follows the server's own stemming (searching `deploy` marks `deploys`) and works
 under `--cql`, where there are no query words to match against. Some hits come
-back without them; Confluence marked 40 of 50 sampled rows. The bold disappears
+back without them; Confluence marked 40 of 50 sampled rows. The highlight disappears
 under `--no-color`, under `NO_COLOR`, and whenever output is piped or
 redirected, so a captured excerpt is plain text. `--json` is unaffected: its
 `excerpt` is the same plain string it has always been.
