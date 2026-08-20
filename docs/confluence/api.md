@@ -297,14 +297,70 @@ property-specific scope.
 the `PUT`/`POST` operations on the very same attachment path are present. They
 still work -- markfluence uses all three -- but their scope cannot be looked up.
 
-`read:confluence-content.summary` is the **inferred** requirement, taken from the
-sibling `GET /content/{id}/descendant/{type}`, which is documented, is the same
-kind of read, and asks for exactly that (granular equivalent:
-`read:content-details:confluence`).
+`read:confluence-content.summary` is the requirement, from two independent
+sources that agree:
 
-**Inferred, not verified.** Confirming it needs a token granted that scope and
-nothing else adjacent. If a service account can read pages but `children`,
-`export` or `attachment-list` still 401, this row is the first suspect.
+1. **Inferred** from the sibling `GET /content/{id}/descendant/{type}`, which
+   *is* documented, is the same kind of read, and asks for exactly that
+   (granular equivalent: `read:content-details:confluence`).
+2. **Corroborated** by [`pchuri/confluence-cli`][ccli], which calls two of these
+   same three endpoints (`/child/page`, `/child/attachment`) and lists
+   `read:confluence-content.summary` as required. It is not a guess on their
+   part either: they added it after a user hit a 401 without it
+   ([#76][ccli76], fixed in #78, "add read:confluence-content.summary to
+   required scopes documentation").
+
+**Still not verified here.** Confirming it directly needs a token granted that
+scope and nothing else adjacent. If a service account can read pages but
+`children`, `export` or `attachment-list` still 401, this row is the first
+suspect.
+
+[ccli]: https://github.com/pchuri/confluence-cli
+[ccli76]: https://github.com/pchuri/confluence-cli/issues/76
+
+### What confluence-cli's scope table can and cannot settle
+
+It is a useful second source, but only for half the list, and the half it
+misses is the half that matters most. It does pages over **v1**
+(`/rest/api/content`), so its `read:confluence-content.all` and
+`write:confluence-content` are the v1 content scopes. markfluence does pages
+over v2 and needs `read:page:confluence`/`write:page:confluence` instead.
+Copying its table wholesale reproduces exactly the mistake this section
+documents.
+
+Where it does agree, it agrees exactly: `search:confluence`,
+`readonly:content.attachment:confluence` and `write:confluence-file` match what
+the OpenAPI documents say, derived independently.
+
+> **Do not copy its `read:hierarchical-content:confluence`.** That is a real
+> scope, but for `GET /pages/{id}/direct-children` (v2), which is how
+> confluence-cli lists folders. markfluence does not call it. Their code
+> comment justifies the choice by asserting that folders "are not exposed by
+> the v1 `/content/{id}/child/*` endpoints" — which contradicts what we
+> measured: `GET /wiki/rest/api/content/{id}/child/folder` returns 200 with
+> `type: "folder"` rows ([folders.md](folders.md), verified 2026-08-13). Our
+> measurement is first-hand and theirs is a comment, so `read:folder:confluence`
+> stays on the list and `read:hierarchical-content:confluence` stays off it.
+
+### Reading a token's actual scopes, without the admin UI
+
+There is no introspection endpoint for a scoped API token, but the scope gate
+runs *before* routing and validation, which is enough to test one scope at a
+time:
+
+- **401** — the scope gate rejected it. The scope is **absent**.
+- **any other 4xx** (400, 403, 404, 415) — the request got past the gate and
+  failed later. The scope is **present**.
+
+So a request aimed at a deliberately bogus id is a safe probe: it reads
+nothing, writes nothing, and creates nothing, while still reporting whether the
+scope is held. `POST /wiki/rest/api/content/999999999999/child/attachment`
+answering 403 rather than 401 proves `write:confluence-file` is on the token
+without uploading a file.
+
+**Verified 2026-08-20** — this is how the missing scope on the first scoped
+service-account token was found, and it distinguished six held scopes from one
+absent one in a single pass.
 
 ### Beta alternatives
 

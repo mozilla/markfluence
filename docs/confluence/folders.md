@@ -130,6 +130,20 @@ v1 paginates by the `start`/`limit` offset scheme described in
 [api.md](api.md): `_links.next` appears only when the results are capped, so its
 absence cannot terminate a loop.
 
+> **A published claim says the first row above is impossible.**
+> [`pchuri/confluence-cli`][ccli] lists folders through the v2
+> `GET /pages/{id}/direct-children` route instead, justified in a code comment:
+> folders "are not exposed by the v1 `/content/{id}/child/*` endpoints." The
+> table above is a first-hand measurement against a real folder and it says
+> otherwise, so markfluence stays on v1 — which it must anyway, since v2 cannot
+> list *inside* a folder at all. Recorded because a plausible-sounding secondary
+> source contradicting a measurement is exactly the thing that gets a working
+> call rewritten. It also changes the scope list: `direct-children` needs
+> `read:hierarchical-content:confluence`, which markfluence does not require
+> ([api.md](api.md#scopes)).
+
+[ccli]: https://github.com/pchuri/confluence-cli
+
 ## Unverified
 
 - **A folder at a space root.** Every folder observed had a parent — a page in one

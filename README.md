@@ -152,6 +152,26 @@ A **403** (rather than the 401 above) means the opposite problem: the token is
 scoped for the call, but the service account lacks Confluence permission on that
 space or page. Grant the account access; a new token will not help.
 
+#### Checking which scopes a token actually has
+
+Atlassian offers no way to introspect a token, but the scope gate runs before
+routing and validation, so one request per scope tells you. Aim it at an id that
+does not exist — it reads nothing and creates nothing:
+
+```console
+$ CID=your-cloud-id
+$ curl -s -o /dev/null -w '%{http_code}\n' -u "$CONFLUENCE_USERNAME:$CONFLUENCE_TOKEN" \
+    "https://api.atlassian.com/ex/confluence/$CID/wiki/api/v2/pages/999999999999"
+401
+```
+
+- **401** — the scope is **missing**.
+- **any other 4xx** (400/403/404/415) — the request got past the scope gate, so
+  the scope is **present**; it failed later for an unrelated reason.
+
+Swap the path for the one whose scope you want to test, using the table above to
+map scope to route.
+
 [svcacct]: https://support.atlassian.com/user-management/docs/understand-service-accounts/
 
 ## Usage
