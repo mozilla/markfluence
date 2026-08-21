@@ -34,7 +34,7 @@ func TestStorageToMarkdown(t *testing.T) {
 			if err != nil {
 				t.Fatalf("reading input: %v", err)
 			}
-			md, err := convert.StorageToMarkdown(string(in), nil)
+			md, err := convert.StorageToMarkdown(string(in), convert.StorageOptions{})
 			if err != nil {
 				t.Fatalf("StorageToMarkdown: %v", err)
 			}
@@ -80,7 +80,7 @@ func TestStorageToMarkdownAcceptsForwardCorpus(t *testing.T) {
 			if err := json.Unmarshal(data, &page); err != nil {
 				t.Fatalf("parsing golden: %v", err)
 			}
-			if _, err := convert.StorageToMarkdown(page.HTML, nil); err != nil {
+			if _, err := convert.StorageToMarkdown(page.HTML, convert.StorageOptions{}); err != nil {
 				t.Errorf("StorageToMarkdown(%q storage): %v", name, err)
 			}
 		})
@@ -111,7 +111,7 @@ func TestRoundTripStableCallouts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MdToConfluence: %v", err)
 	}
-	got, err := convert.StorageToMarkdown(page.HTML, nil)
+	got, err := convert.StorageToMarkdown(page.HTML, convert.StorageOptions{})
 	if err != nil {
 		t.Fatalf("StorageToMarkdown: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestRoundTripTableAlignment(t *testing.T) {
 	if strings.Contains(page.HTML, "align=\"") {
 		t.Errorf("published storage still uses the align attribute:\n%s", page.HTML)
 	}
-	got, err := convert.StorageToMarkdown(page.HTML, nil)
+	got, err := convert.StorageToMarkdown(page.HTML, convert.StorageOptions{})
 	if err != nil {
 		t.Fatalf("StorageToMarkdown: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestRoundTripTableAlignment(t *testing.T) {
 func TestStorageToMarkdownStripsGeneratedIDs(t *testing.T) {
 	in := `<ac:structured-macro ac:macro-id="abc" ac:local-id="def" ac:name="status">` +
 		`<ac:parameter ac:name="title">DONE</ac:parameter></ac:structured-macro>`
-	got, err := convert.StorageToMarkdown(in, nil)
+	got, err := convert.StorageToMarkdown(in, convert.StorageOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestStorageToMarkdownStripsGeneratedIDs(t *testing.T) {
 // unchanged -- the whole point of emitting them in a form MdToConfluence
 // re-publishes verbatim.
 func TestRoundTripPassthrough(t *testing.T) {
-	for _, name := range []string{"layout", "unknown-macros", "excerpt"} {
+	for _, name := range []string{"layout", "unknown-macros", "excerpt", "aclink"} {
 		t.Run(name, func(t *testing.T) {
 			src, err := os.ReadFile(filepath.Join(storage2mdDir, name, "output.md"))
 			if err != nil {
@@ -188,7 +188,7 @@ func TestRoundTripPassthrough(t *testing.T) {
 			if err != nil {
 				t.Fatalf("MdToConfluence: %v", err)
 			}
-			back, err := convert.StorageToMarkdown(page.HTML, nil)
+			back, err := convert.StorageToMarkdown(page.HTML, convert.StorageOptions{})
 			if err != nil {
 				t.Fatalf("StorageToMarkdown: %v", err)
 			}
@@ -228,7 +228,7 @@ func TestRoundTripEncodedImageSources(t *testing.T) {
 	for _, a := range page.Attachments {
 		sources[a.Filename] = a.Source
 	}
-	md, err := convert.StorageToMarkdown(page.HTML, sources)
+	md, err := convert.StorageToMarkdown(page.HTML, convert.StorageOptions{Sources: sources})
 	if err != nil {
 		t.Fatalf("StorageToMarkdown: %v", err)
 	}
@@ -275,7 +275,7 @@ func imageDests(md string) []string {
 func TestStorageToMarkdownPrefersRecordedSource(t *testing.T) {
 	const in = `<p><ac:image ac:alt="d"><ri:attachment ri:filename="assets%2Fx.png" /></ac:image></p>`
 
-	got, err := convert.StorageToMarkdown(in, nil)
+	got, err := convert.StorageToMarkdown(in, convert.StorageOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +289,7 @@ func TestStorageToMarkdownPrefersRecordedSource(t *testing.T) {
 	// path is encoded on the way out: a destination is a URL, and a bare space
 	// would end it, leaving markdown that is not an image at all.
 	sources := map[string]string{"assets%2Fx.png": "images/original name.png"}
-	got, err = convert.StorageToMarkdown(in, sources)
+	got, err = convert.StorageToMarkdown(in, convert.StorageOptions{Sources: sources})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +303,8 @@ func TestStorageToMarkdownPrefersRecordedSource(t *testing.T) {
 // or a later export writing files -- at an absolute location.
 func TestStorageToMarkdownRefusesAbsoluteSource(t *testing.T) {
 	const in = `<p><ac:image ac:alt="d"><ri:attachment ri:filename="%2Fetc%2Fpasswd.png" /></ac:image></p>`
-	got, err := convert.StorageToMarkdown(in, map[string]string{"%2Fetc%2Fpasswd.png": "/etc/passwd.png"})
+	got, err := convert.StorageToMarkdown(in,
+		convert.StorageOptions{Sources: map[string]string{"%2Fetc%2Fpasswd.png": "/etc/passwd.png"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +340,7 @@ func TestStorageToMarkdownParsesNamespacedLink(t *testing.T) {
 		`Yardstick accounts and access" ri:version-at-save="12" /><ac:link-body>Requesting ` +
 		`Yardstick access</ac:link-body></ac:link> or Terraform.</p>`
 
-	if _, err := convert.StorageToMarkdown(storage, nil); err != nil {
+	if _, err := convert.StorageToMarkdown(storage, convert.StorageOptions{}); err != nil {
 		t.Fatalf("StorageToMarkdown: %v", err)
 	}
 }
@@ -348,7 +349,7 @@ func TestStorageToMarkdownParsesNamespacedLink(t *testing.T) {
 // auto-close fix: dropping "link" must not drop the entries that make a bare
 // <br> or <hr> parse, which is why the list is filtered rather than emptied.
 func TestStorageToMarkdownStillAutoClosesVoidElements(t *testing.T) {
-	md, err := convert.StorageToMarkdown(`<p>one<br>two</p><hr><p>three</p>`, nil)
+	md, err := convert.StorageToMarkdown(`<p>one<br>two</p><hr><p>three</p>`, convert.StorageOptions{})
 	if err != nil {
 		t.Fatalf("StorageToMarkdown: %v", err)
 	}

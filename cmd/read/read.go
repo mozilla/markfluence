@@ -84,7 +84,8 @@ func run(cmd *cobra.Command, args []string) error {
 
 	body := page.Body.Storage.Value
 	if formatFlag == formatMarkdown {
-		body, err = convert.StorageToMarkdown(page.Body.Storage.Value, pagedoc.Sources(c, page))
+		body, err = convert.StorageToMarkdown(page.Body.Storage.Value,
+			convert.StorageOptions{Sources: pagedoc.Sources(c, page)})
 		if err != nil {
 			return operationalFail(pageID, err, jsonout.CodeConvert)
 		}

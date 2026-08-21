@@ -34,7 +34,8 @@ func (d Doc) String() string { return d.Frontmatter + "\n" + d.Body }
 //
 // The page must have been fetched with its body (GetPageBodyOrNil).
 func Render(c *client.ConfluenceClient, page *client.Page) (Doc, error) {
-	body, err := convert.StorageToMarkdown(page.Body.Storage.Value, Sources(c, page))
+	body, err := convert.StorageToMarkdown(page.Body.Storage.Value,
+		convert.StorageOptions{Sources: Sources(c, page)})
 	if err != nil {
 		return Doc{}, err
 	}

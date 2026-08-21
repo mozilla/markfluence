@@ -7,7 +7,12 @@ package convert
 // markfluence never emits degrades gracefully -- macro bodies are rendered, and
 // unknown leaf macros pass through as raw storage (which MdToConfluence's ac:/ri:
 // shield re-publishes verbatim). Parsing uses encoding/xml with the built-in HTML
-// entity table; storage format is well-formed XHTML, so this never errors on it.
+// entity table. Storage format is well-formed XHTML, so the input is never the
+// reason a parse fails -- but the decoder's configuration can be, which is what
+// autoCloseElems exists to say.
+//
+// <ac:link> is the one storage element with enough shape to need its own file:
+// aclink.go.
 
 import (
 	"encoding/json"
@@ -33,17 +38,20 @@ var calloutMacroInverse = map[string]string{
 
 // StorageToMarkdown converts a Confluence storage-format body to Markdown.
 //
-// sources maps an attachment name to the markdown image path it was published
-// from, as recorded on the attachment when markfluence uploaded it. It is
-// optional: a nil map (or a name missing from it) falls back to decoding the
-// attachment name, which is exact for names markfluence created and a
-// best-effort guess for hand-uploaded ones.
-func StorageToMarkdown(storage string, sources map[string]string) (string, error) {
+// opts carries the things this package cannot fetch for itself -- attachment
+// source paths and resolved <ac:link> page URLs -- because internal/convert
+// holds no client. All of it is optional; see StorageOptions.
+func StorageToMarkdown(storage string, opts StorageOptions) (string, error) {
 	root, err := parseStorage(storage)
 	if err != nil {
 		return "", err
 	}
-	r := &mdRenderer{sources: sources}
+	r := &mdRenderer{
+		sources:      opts.Sources,
+		pageLinks:    opts.PageLinks,
+		siteURL:      strings.TrimSuffix(opts.SiteURL, "/"),
+		headingSlugs: headingSlugs(root),
+	}
 	blocks := r.blockStrings(root.kids, "")
 	out := strings.Join(blocks, "\n\n")
 	out = strings.Trim(out, "\n")
@@ -59,6 +67,17 @@ type mdRenderer struct {
 	// sources maps attachment name -> the image path it was published from. May
 	// be nil, in which case paths are recovered by decoding attachment names.
 	sources map[string]string
+
+	// pageLinks maps an <ac:link> page target -> its absolute URL, resolved by
+	// the caller. A target missing from it passes through as raw storage.
+	pageLinks map[PageLinkTarget]string
+
+	// siteURL is the Confluence site base, for a space link. Never the gateway.
+	siteURL string
+
+	// headingSlugs maps this document's own Confluence heading anchors to their
+	// GitHub equivalents, which is how a same-page anchor link is recovered.
+	headingSlugs map[string]string
 }
 
 // sourceFor resolves an attachment name back to the markdown image path to write.
@@ -195,7 +214,7 @@ func (r *mdRenderer) renderBlock(n *snode, listIndent string) string {
 		return r.renderTable(n)
 	case "ac:structured-macro":
 		return r.renderMacro(n, true)
-	case "ac:image", "a", "strong", "b", "em", "i", "code", "del", "s", "strike", "br":
+	case "ac:image", "ac:link", "a", "strong", "b", "em", "i", "code", "del", "s", "strike", "br":
 		// An inline element sitting at block level (Confluence often emits a bare
 		// <ac:image> not wrapped in <p>) is rendered as its own paragraph.
 		return r.renderInline(n)
@@ -490,6 +509,8 @@ func (r *mdRenderer) renderInline(n *snode) string {
 		return r.renderLink(n)
 	case "ac:image":
 		return r.renderImage(n)
+	case "ac:link":
+		return r.renderACLink(n)
 	case "ac:structured-macro":
 		// An inline macro (e.g. status/emoticon) stays raw on one line so it does
 		// not break out of its paragraph.
