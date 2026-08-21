@@ -104,6 +104,12 @@ func encode(w io.Writer, v any) error {
 func CodeFor(err error) Code {
 	var he *client.HTTPError
 	if errors.As(err, &he) {
+		// Asked before the status switch: a rejected credential arrives as a 404
+		// on every v2 route, and reporting that as not_found tells a consumer to
+		// go and check an id that was never the problem.
+		if he.RejectedCredential() {
+			return CodeAuth
+		}
 		switch he.StatusCode {
 		case http.StatusUnauthorized, http.StatusForbidden:
 			return CodeAuth
