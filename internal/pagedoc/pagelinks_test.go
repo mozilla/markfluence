@@ -75,7 +75,7 @@ func TestPageLinksResolvesTitles(t *testing.T) {
 
 	got := PageLinks(c, page)
 	want := map[convert.PageLinkTarget]string{
-		{Title: "Runbook"}:                                      c.SiteURL() + "/wiki/spaces/SRE/pages/100/x",
+		{Title: "Runbook"}: c.SiteURL() + "/wiki/spaces/SRE/pages/100/x",
 		{SpaceKey: "FIREFOX", Title: "Felt Privacy Workstream"}: c.SiteURL() + "/wiki/spaces/FIREFOX/pages/100/x",
 	}
 	if len(got) != len(want) {
