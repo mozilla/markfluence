@@ -134,9 +134,104 @@ type HTTPError struct {
 	Body       string
 }
 
+// Response-body markers for the auth failures whose status code alone points a
+// reader at the wrong thing. Matched as substrings of the body, never inferred
+// from the status: the same 401 arrives for two unrelated reasons, and a
+// rejected credential shows up as 403 on v1 and *404* on v2.
+//
+// Measured 2026-08-21 against the live API -- see docs/confluence/api.md. If
+// Atlassian rewords any of them the hint stops appearing, which is the right
+// way for this to fail: the status and body are printed either way.
+const (
+	bodyScopeMismatch = "scope does not match"
+	// The two v1 phrasings for a rejected credential. /user/current and /search
+	// disagree, and neither is a substring of the other.
+	bodyNoAccessV1  = "caller cannot access Confluence"
+	bodyNotPermitV1 = "not permitted to use Confluence"
+	// A v2 404 whose title names nothing. Every genuine v2 404 names what it
+	// could not find -- "Cannot find a page with id [...]", "Content with id:
+	// [...] not found", "Could not find page with id [...]" -- so the bare title
+	// is the authentication failure, not a missing page.
+	bodyBareNotFound = `"title":"Not Found"`
+
+	hintIndent = "\n    " // aligns under ui.Error's "  ✗ " glyph column
+)
+
 func (e *HTTPError) Error() string {
-	return fmt.Sprintf("%s %s: HTTP %d: %s", e.Method, e.URL, e.StatusCode, e.Body)
+	msg := fmt.Sprintf("%s %s: HTTP %d: %s", e.Method, e.URL, e.StatusCode, e.Body)
+	if h := e.hint(); h != "" {
+		return msg + hintIndent + h
+	}
+	return msg
 }
+
+// hint explains a failure the status code describes badly, or returns "" when
+// there is nothing trustworthy to say.
+//
+// It is *appended* to the status and body rather than replacing them. Each case
+// is a measured response shape rather than a deduction, but a shape can still
+// arrive for a reason not listed here, and a reader being misdirected needs
+// everything they had before the hint existed.
+//
+// Deliberately silent on a 403 that is not one of the credential phrasings:
+// that is the shape a genuine permission denial takes, and "check your token"
+// would send someone to reissue a credential that is working fine.
+func (e *HTTPError) hint() string {
+	switch {
+	case e.StatusCode == http.StatusUnauthorized && strings.Contains(e.Body, bodyScopeMismatch):
+		return "hint: the API token is valid but carries no scope for this call. Scopes are fixed " +
+			"when a token is issued, so this needs a new token rather than an edit to this one -- " +
+			"the list markfluence needs is in README.md."
+	case e.StatusCode == http.StatusUnauthorized && !e.viaGateway() && !jsonBody(e.Body):
+		return "hint: the site domain rejected this before it reached the API. A scoped " +
+			"(service-account) token has to go through the platform gateway -- set " +
+			"CONFLUENCE_CLOUD_ID."
+	case e.RejectedCredential():
+		return "hint: the credentials were rejected. Check CONFLUENCE_USERNAME and " +
+			"CONFLUENCE_TOKEN -- this is what a wrong or revoked token returns, and on a v2 route " +
+			"it arrives as a 404 rather than an auth status."
+	}
+	return ""
+}
+
+// RejectedCredential reports whether the response is the API refusing the
+// credentials outright, which it does with three different statuses depending
+// on the route: 403 on v1, and 404 with an unnamed target on v2.
+//
+// The v2 case is the one worth catching. Without it a revoked token makes every
+// page read answer "page not found", and the obvious next move -- go and check
+// the page id -- is wrong for every id.
+func (e *HTTPError) RejectedCredential() bool {
+	switch e.StatusCode {
+	case http.StatusForbidden:
+		return strings.Contains(e.Body, bodyNoAccessV1) || strings.Contains(e.Body, bodyNotPermitV1)
+	case http.StatusNotFound:
+		return strings.Contains(e.Body, bodyBareNotFound)
+	}
+	return false
+}
+
+// notFound reports whether err means the thing is genuinely absent, as opposed
+// to the API refusing the credentials -- which v2 also answers with a 404.
+//
+// The distinction is the whole reason this helper exists rather than an inline
+// status check. Reading a credential rejection as "absent" is what made a
+// revoked token report "page not found" for every id, sending the reader off to
+// check page ids that were all correct.
+func notFound(err error) bool {
+	var he *HTTPError
+	return errors.As(err, &he) && he.StatusCode == http.StatusNotFound && !he.RejectedCredential()
+}
+
+// viaGateway reports whether the request went to the platform API gateway. The
+// URL already carries the answer, so the error needs no extra field and no
+// construction site has to change.
+func (e *HTTPError) viaGateway() bool { return strings.HasPrefix(e.URL, gatewayPrefix) }
+
+// jsonBody reports whether a body is the API's JSON error rather than a servlet
+// container's HTML page. The distinction is the whole signal for a site-domain
+// 401: reaching the API and being refused looks different from not reaching it.
+func jsonBody(s string) bool { return strings.HasPrefix(strings.TrimSpace(s), "{") }
 
 // --- API types ---------------------------------------------------------------
 
@@ -563,8 +658,7 @@ func (c *ConfluenceClient) GetPageOrNil(pageID string) (*Page, error) {
 	var p Page
 	err := c.doJSON(http.MethodGet, c.baseURL+"/wiki/api/v2/pages/"+pageID, nil, nil, &p, timeoutRead)
 	if err != nil {
-		var he *HTTPError
-		if errors.As(err, &he) && he.StatusCode == http.StatusNotFound {
+		if notFound(err) {
 			return nil, nil
 		}
 		return nil, err
@@ -581,8 +675,7 @@ func (c *ConfluenceClient) GetFolderOrNil(folderID string) (*Folder, error) {
 	var f Folder
 	err := c.doJSON(http.MethodGet, c.baseURL+"/wiki/api/v2/folders/"+folderID, nil, nil, &f, timeoutRead)
 	if err != nil {
-		var he *HTTPError
-		if errors.As(err, &he) && he.StatusCode == http.StatusNotFound {
+		if notFound(err) {
 			return nil, nil
 		}
 		return nil, err
@@ -637,8 +730,7 @@ func (c *ConfluenceClient) GetPageBodyOrNil(pageID string) (*Page, error) {
 	err := c.doJSON(http.MethodGet, c.baseURL+"/wiki/api/v2/pages/"+pageID,
 		url.Values{"body-format": {"storage"}}, nil, &p, timeoutRead)
 	if err != nil {
-		var he *HTTPError
-		if errors.As(err, &he) && he.StatusCode == http.StatusNotFound {
+		if notFound(err) {
 			return nil, nil
 		}
 		return nil, err

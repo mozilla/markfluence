@@ -1344,3 +1344,118 @@ func TestUpdatePageSuccessDoesNotReRead(t *testing.T) {
 		t.Errorf("requests = %v, want just the PUT", *seen)
 	}
 }
+
+// TestHTTPErrorHint covers the three auth failures whose status code alone
+// misdirects. Every body here is a real response recorded in
+// docs/confluence/api.md, not a plausible-looking invention -- the whole point
+// of matching on the body is that the shapes are what they are.
+func TestHTTPErrorHint(t *testing.T) {
+	const (
+		gw   = "https://api.atlassian.com/ex/confluence/cloud-id/wiki/api/v2/pages/1"
+		site = "https://example.atlassian.net/wiki/rest/api/user/current"
+
+		scopeBody = `{"code":401,"message":"Unauthorized; scope does not match"}`
+		credsBody = `{"statusCode":403,"message":"com.atlassian.confluence.mvc.rest.common.` +
+			`exception.StacklessResponseStatusException: 403 FORBIDDEN \"Request rejected ` +
+			`because caller cannot access Confluence\""}`
+		tomcatBody = `<!doctype html><html lang="en"><head><title>HTTP Status 401 – ` +
+			`Unauthorized</title></head></html>`
+	)
+	tests := []struct {
+		name     string
+		err      HTTPError
+		wantHint string // a substring the hint must carry; "" means no hint at all
+	}{
+		{
+			"a missing scope names the scope list",
+			HTTPError{StatusCode: 401, Method: "GET", URL: gw, Body: scopeBody},
+			"no scope for this call",
+		},
+		{
+			"a scoped token at the site domain names the cloud ID",
+			HTTPError{StatusCode: 401, Method: "GET", URL: site, Body: tomcatBody},
+			"CONFLUENCE_CLOUD_ID",
+		},
+		{
+			"rejected credentials on v1 name the username and token",
+			HTTPError{StatusCode: 403, Method: "GET", URL: gw, Body: credsBody},
+			"CONFLUENCE_TOKEN",
+		},
+		{
+			// /search phrases it differently from /user/current.
+			"the other v1 credential phrasing is caught too",
+			HTTPError{StatusCode: 403, Method: "GET", URL: gw,
+				Body: `{"message":"Current user not permitted to use Confluence","statusCode":403}`},
+			"CONFLUENCE_TOKEN",
+		},
+		{
+			// The nastiest one: without this, a revoked token makes every page
+			// read answer "page not found" and the obvious fix is wrong.
+			"a v2 404 with an unnamed target is a credential failure",
+			HTTPError{StatusCode: 404, Method: "GET", URL: gw,
+				Body: `{"errors":[{"status":404,"code":"NOT_FOUND","title":"Not Found","detail":null}]}`},
+			"CONFLUENCE_TOKEN",
+		},
+		{
+			// Every genuine v2 404 names what it could not find.
+			"a v2 404 that names the page is left alone",
+			HTTPError{StatusCode: 404, Method: "GET", URL: gw,
+				Body: `{"errors":[{"status":404,"code":"NOT_FOUND","title":"Cannot find a page with id [1]"}]}`},
+			"",
+		},
+		{
+			"a v2 404 that names a folder is left alone",
+			HTTPError{StatusCode: 404, Method: "GET", URL: gw,
+				Body: `{"errors":[{"status":404,"code":"NOT_FOUND","title":"Content with id: [1] not found"}]}`},
+			"",
+		},
+		// A JSON 401 from the API is the one case the bare status already reads
+		// correctly, so adding a guess there would only add noise.
+		{
+			"a plain JSON 401 gets nothing",
+			HTTPError{StatusCode: 401, Method: "GET", URL: gw, Body: `{"code":401,"message":"Unauthorized"}`},
+			"",
+		},
+		// An HTML 401 from the gateway is not the site-domain case, so the cloud
+		// ID advice would be wrong.
+		{
+			"an HTML 401 from the gateway gets nothing",
+			HTTPError{StatusCode: 401, Method: "GET", URL: gw, Body: tomcatBody},
+			"",
+		},
+		// The shape a real permission denial takes. Telling someone to reissue a
+		// working token is worse than saying nothing.
+		{
+			"an ordinary 403 gets nothing",
+			HTTPError{StatusCode: 403, Method: "GET", URL: gw, Body: `{"statusCode":403,"message":"no"}`},
+			"",
+		},
+		{
+			"an unrecognised 404 gets nothing",
+			HTTPError{StatusCode: 404, Method: "GET", URL: gw, Body: `{"errors":[]}`},
+			"",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.err.Error()
+			// The status, method, URL and body survive in every case: the hint is
+			// additive, so a wrong hint still leaves the reader what they had.
+			for _, must := range []string{tt.err.Method, tt.err.URL, tt.err.Body,
+				fmt.Sprintf("HTTP %d", tt.err.StatusCode)} {
+				if !strings.Contains(got, must) {
+					t.Errorf("Error() dropped %q:\n%s", must, got)
+				}
+			}
+			if tt.wantHint == "" {
+				if strings.Contains(got, "hint:") {
+					t.Errorf("Error() added an unwanted hint:\n%s", got)
+				}
+				return
+			}
+			if !strings.Contains(got, tt.wantHint) {
+				t.Errorf("Error() = %q, want a hint containing %q", got, tt.wantHint)
+			}
+		})
+	}
+}
