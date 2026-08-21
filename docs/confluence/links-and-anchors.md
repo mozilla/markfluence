@@ -57,3 +57,110 @@ publish resolves it.
 
 Not obviously worth fixing — a second publish is cheap — but it surprises anyone
 who checks their links immediately after `create`.
+
+## `<ac:link>`: the editor's own internal link
+
+Everything above is the *forward* direction, where markdown becomes an
+`<a href>`. The editor never writes one of those for an internal link. It writes
+`<ac:link>`, which `read` and `export` have to read back.
+
+### What it looks like in the wild
+
+**Surveyed 2026-08-21**, the 500 most-recently-modified pages on mozilla-hub
+(`GET /wiki/api/v2/pages?sort=-modified-date&body-format=storage`), tallying
+every `<ac:link>` by its attributes and its child elements:
+
+| count | attributes | children |
+|---|---|---|
+| 3346 | — | `ri:user` |
+| 632 | — | `ri:page`, `ac:link-body` |
+| 143 | `ac:local-id`, `ac:card-appearance` | `ri:page`, `ac:link-body` |
+| 48 | `ac:anchor` | `ri:page`, `ac:link-body` |
+| 8 | `ac:local-id`, `ac:card-appearance`, `ac:anchor` | `ri:page`, `ac:link-body` |
+| 6 | `ac:anchor` | `ac:link-body` |
+| 5 | — | `ri:space`, `ac:link-body` |
+| 5 | — | `ri:page` |
+| 2 | — | `ac:link-body` |
+| 1 | — | *(self-closing, inside an `ac:parameter`)* |
+
+A separate 60-page sample also turned up `ri:attachment` with
+`ac:plain-text-link-body`, and `ri:page` with `ac:plain-text-link-body`.
+
+Four things worth knowing before touching the mapping:
+
+**A mention is 80% of all usage** — `<ac:link><ri:user ri:account-id="…"
+ri:local-id="…" /></ac:link>`, no body. Whatever happens to mentions decides
+whether handling `<ac:link>` helps or hurts on a typical page.
+
+**`ac:anchor` is percent-encoded**, unlike everything `confluenceSlug` produces.
+A real value: `Workstream-2%3A-Cross-functional-%E2%80%9CHow-to-Felt-Privacy%E2%80%9D-guidance`.
+So the two spellings of "the same" anchor differ by encoding, and an anchor has
+to be decoded before it will match a heading — the same trap as the fragment in
+*Destinations are URLs* above.
+
+**A body is optional and has two spellings**: `ac:link-body` (rich text) and
+`ac:plain-text-link-body` (CDATA). With neither, Confluence displays the
+target's own title.
+
+**`<ac:link>` occurs inside macro parameters** (the `pagetree` macro's `root`),
+where it is a value and not a link. Those reach `serialize` through the
+unknown-macro path and never the renderer, which is what keeps them intact.
+
+### The mapping
+
+One rule: **convert when the markdown republishes to a link resolving to the
+same target; pass the storage through when it would not.** Passthrough is not a
+failure — the `ac:`/`ri:` shield republishes it byte-identical — so it is the
+right answer wherever a markdown link would break.
+
+| storage | markdown | why |
+|---|---|---|
+| `ri:page` (+`ri:space-key`, +`ac:anchor`), resolved | `[body](URL#anchor)` | absolute URL, republishes to the same page |
+| `ri:page`, unresolved | passthrough | no URL to write |
+| `ac:anchor` alone, heading recovered | `[body](#github-slug)` | the forward path rewrites `#slug` through the anchor map |
+| `ac:anchor` alone, no matching heading | passthrough | a `#slug` matching no heading publishes as a dead relative href, silently |
+| `ri:space` | `[body](SITE/wiki/spaces/KEY)` | absolute URL, no lookup needed |
+| `ri:attachment` | passthrough | only images are uploaded, so `[x](Deck.ppt)` would publish as a dead relative href |
+| `ri:user` | passthrough | markdown has no mention |
+| `ri:blog-post` | passthrough | `SearchPagesByTitle` does not see blog posts |
+| no target at all | passthrough | nothing to link to |
+
+`ac:card-appearance` is dropped: an inline card renders as a chip with the page
+icon, and a markdown link republishes as plain text. The target is unchanged and
+the link still resolves, so by the rule above it converts. The design target has
+always been semantic, not byte-for-byte.
+
+`<ri:page>` names a **title**, never an id, so a URL takes a lookup —
+`pagedoc.PageLinks`, since `internal/convert` holds no client. A same-page
+anchor takes no lookup but cannot be inverted either: `confluenceSlug` turns
+both a space and a hyphen into `-`, so `DOM-Security-Team` could have come from
+either. The heading that produced it is in the document being converted, so it
+is recovered by matching rather than by string surgery.
+
+### The trap: `xml.HTMLAutoClose` swallows `<ac:link>`
+
+`encoding/xml` matches an auto-close name against `Name.Local` alone and ignores
+the namespace prefix:
+
+```go
+for _, s := range d.AutoClose {
+    if strings.EqualFold(s, t1.Name.Local) {
+```
+
+`xml.HTMLAutoClose` contains `link`, the HTML void element. So `<ac:link>` was
+closed the instant it opened, its children became siblings, and the real
+`</ac:link>` arrived against an empty stack:
+
+```
+✗ XML syntax error on line 1: unexpected end element </link>
+```
+
+`Strict = false` does not help. Non-strict mode invents *missing* end tags and
+tolerates mismatched ones; it cannot absorb a surplus one. This was issue **#88**,
+and it made `export` and `read` fail outright on any page carrying an
+editor-authored internal link.
+
+`link` is the only collision in that list — `ac:image` ≠ `img`, `ac:parameter` ≠
+`param`, and every `ri:*` element is self-closing — and `<link>` is a `<head>`
+element that never appears in a storage body, so `autoCloseElems` in
+`internal/convert/storage_to_md.go` drops just that entry.
