@@ -84,12 +84,34 @@ type snode struct {
 	kids  []*snode
 }
 
+// autoCloseElems is xml.HTMLAutoClose without "link", which cannot be left in.
+//
+// The decoder matches an auto-close name against Name.Local alone and ignores
+// the namespace prefix, so the HTML void element "link" also matches Confluence's
+// <ac:link>. The element is then closed the instant it opens, its children become
+// siblings, and the real </ac:link> arrives against an empty stack -- which is a
+// hard error even with Strict off, since non-strict mode invents *missing* end
+// tags but cannot absorb a surplus one. Dropping the entry costs nothing: <link>
+// is a <head> element and never appears in a storage body.
+var autoCloseElems = withoutElem(xml.HTMLAutoClose, "link")
+
+// withoutElem returns names with one entry removed.
+func withoutElem(names []string, drop string) []string {
+	out := make([]string, 0, len(names))
+	for _, n := range names {
+		if n != drop {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 // parseStorage parses a storage fragment into a tree rooted at a nameless node.
 func parseStorage(storage string) (*snode, error) {
 	dec := xml.NewDecoder(strings.NewReader(storage))
 	dec.Strict = false
-	dec.Entity = xml.HTMLEntity       // resolve &nbsp; and friends
-	dec.AutoClose = xml.HTMLAutoClose // treat <br>, <hr>, <img>, ... as void
+	dec.Entity = xml.HTMLEntity    // resolve &nbsp; and friends
+	dec.AutoClose = autoCloseElems // treat <br>, <hr>, <img>, ... as void
 
 	root := &snode{}
 	stack := []*snode{root}

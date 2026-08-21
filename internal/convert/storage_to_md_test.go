@@ -324,3 +324,37 @@ func TestStorageToMarkdownRefusesAbsoluteSource(t *testing.T) {
 		t.Errorf("destination decodes to an absolute path: %q", decoded)
 	}
 }
+
+// TestStorageToMarkdownParsesNamespacedLink is the regression for the crash that
+// made export unusable on any page carrying an editor-authored internal link
+// (#88). The decoder matches an auto-close name against Name.Local and ignores
+// the prefix, so the HTML void element "link" swallowed <ac:link>, and the real
+// </ac:link> then hit an empty stack: "unexpected end element </link>".
+//
+// The assertion is on the error, not the markdown, because the markdown is what
+// the mapping tests cover and only the parse is at stake here.
+func TestStorageToMarkdownParsesNamespacedLink(t *testing.T) {
+	// The real shape, from page 2820571155.
+	const storage = `<p>see <ac:link><ri:page ri:content-title="How to: Create and manage ` +
+		`Yardstick accounts and access" ri:version-at-save="12" /><ac:link-body>Requesting ` +
+		`Yardstick access</ac:link-body></ac:link> or Terraform.</p>`
+
+	if _, err := convert.StorageToMarkdown(storage, nil); err != nil {
+		t.Fatalf("StorageToMarkdown: %v", err)
+	}
+}
+
+// TestStorageToMarkdownStillAutoClosesVoidElements guards the other half of the
+// auto-close fix: dropping "link" must not drop the entries that make a bare
+// <br> or <hr> parse, which is why the list is filtered rather than emptied.
+func TestStorageToMarkdownStillAutoClosesVoidElements(t *testing.T) {
+	md, err := convert.StorageToMarkdown(`<p>one<br>two</p><hr><p>three</p>`, nil)
+	if err != nil {
+		t.Fatalf("StorageToMarkdown: %v", err)
+	}
+	for _, want := range []string{"one", "two", "three"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("missing %q in:\n%s", want, md)
+		}
+	}
+}
