@@ -12,7 +12,7 @@ GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
 
 COMPLETIONS_DIR ?= completions
 
-.PHONY: help all build build-linux install completions lint vet fmt fmt-check test regen-regressions
+.PHONY: help all build build-linux install completions lint vet fmt fmt-check test check regen-regressions
 
 help:  ## Show this help
 	@echo "Available rules:"
@@ -54,6 +54,17 @@ fmt-check:  ## Check formatting without modifying files (fails if any file needs
 
 test:  ## Run tests
 	go test ./...
+
+check:  ## Run every check CI runs, in CI's order -- the pre-flight before calling work done
+	@# This is the single definition of "does it pass", used by both a developer
+	@# and .github/workflows/ci.yml, so the two cannot drift. Recursive rather
+	@# than prerequisites so the order holds under `make -j`, where build and
+	@# lint would otherwise race to populate ./bin.
+	$(MAKE) vet
+	$(MAKE) fmt-check
+	$(MAKE) test
+	$(MAKE) build
+	$(MAKE) lint
 
 regen-regressions:  ## Regenerate the converter regression goldens
 	go test ./internal/convert -run TestRegression -update
