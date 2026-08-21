@@ -34,12 +34,95 @@ func (d Doc) String() string { return d.Frontmatter + "\n" + d.Body }
 //
 // The page must have been fetched with its body (GetPageBodyOrNil).
 func Render(c *client.ConfluenceClient, page *client.Page) (Doc, error) {
-	body, err := convert.StorageToMarkdown(page.Body.Storage.Value,
-		convert.StorageOptions{Sources: Sources(c, page)})
+	body, err := convert.StorageToMarkdown(page.Body.Storage.Value, Options(c, page))
 	if err != nil {
 		return Doc{}, err
 	}
 	return Doc{Frontmatter: Frontmatter(c, page), Body: body}, nil
+}
+
+// Options assembles what the converter cannot fetch for itself: the attachment
+// source paths, the resolved <ac:link> page URLs, and the site base.
+//
+// Both read and export go through it rather than assembling their own, which is
+// the same reason Render exists -- the two must emit byte-identical markdown,
+// and options built in two places are options that can disagree.
+func Options(c *client.ConfluenceClient, page *client.Page) convert.StorageOptions {
+	return convert.StorageOptions{
+		Sources:   Sources(c, page),
+		PageLinks: PageLinks(c, page),
+		// The site, never the gateway: these URLs are published into a page.
+		SiteURL: c.SiteURL(),
+	}
+}
+
+// PageLinks maps each page an <ac:link> in this body points at to its absolute
+// URL. Confluence names a link target by title and never by id, so every one of
+// them costs a lookup -- which is why the converter asks for the list rather
+// than the whole body being scanned speculatively.
+//
+// Best-effort in the same way Sources is: a body with no page link makes no
+// request at all, and a target that fails to resolve is simply left out, which
+// the converter renders as raw storage rather than a link with no destination.
+// A read is worth completing without it.
+func PageLinks(c *client.ConfluenceClient, page *client.Page) map[convert.PageLinkTarget]string {
+	targets := convert.PageLinkTargets(page.Body.Storage.Value)
+	if len(targets) == 0 {
+		return nil
+	}
+	// A link naming no space means the space of the page it sits on.
+	pageSpace := client.SpaceKeyFromWebUI(page.Links.WebUI)
+
+	out := map[convert.PageLinkTarget]string{}
+	spaceIDs := map[string]string{} // space key -> id, resolved once each
+	for _, t := range targets {
+		key := t.SpaceKey
+		if key == "" {
+			key = pageSpace
+		}
+		if key == "" {
+			// Nothing to scope the title to. A site-wide search would answer
+			// with whichever same-titled page sorted first, and a wrong target
+			// is worse than none.
+			continue
+		}
+		spaceID, ok := spaceIDs[key]
+		if !ok {
+			var err error
+			if spaceID, err = c.ResolveSpaceID(key); err != nil {
+				ui.Debug(fmt.Sprintf("resolving space %s for a page link: %v", key, err))
+			}
+			spaceIDs[key] = spaceID
+		}
+		if spaceID == "" {
+			continue
+		}
+		if url := pageURLByTitle(c, t.Title, spaceID); url != "" {
+			out[t] = url
+		}
+	}
+	return out
+}
+
+// pageURLByTitle resolves one title to a page URL, preferring a current page
+// over an archived one of the same title. A title is unique among current pages
+// in a space, so there is at most one of those.
+func pageURLByTitle(c *client.ConfluenceClient, title, spaceID string) string {
+	matches, err := c.PagesByTitle(title, spaceID)
+	if err != nil {
+		ui.Debug(fmt.Sprintf("resolving page link %q: %v", title, err))
+		return ""
+	}
+	url := ""
+	for _, m := range matches {
+		if m.Status == client.StatusCurrent {
+			return m.URL
+		}
+		if url == "" {
+			url = m.URL
+		}
+	}
+	return url
 }
 
 // Sources maps each attachment name on the page to the markdown image path it
