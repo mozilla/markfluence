@@ -58,13 +58,41 @@ scoped for returns:
 {"code":401,"message":"Unauthorized; scope does not match"}
 ```
 
-Which is worth knowing, because 401 is also what a bad password, a revoked
-token, and a scoped token pointed at the site domain all return. The three are
-distinguishable only by the body: this JSON, a JSON `Unauthorized` without the
-scope clause, and Tomcat HTML respectively. A 403 would mean the token is
-scoped for the call but the account lacks Confluence permission on that
-content — a different fix entirely (grant the service account space access,
-not a new token).
+The status alone does not identify it, and neither does the status of the other
+auth failures. **Corrected and re-measured 2026-08-21** — an earlier version of
+this section guessed that a bad password also returns 401, and it does not:
+
+| what is wrong | route | status | body |
+|---|---|---|---|
+| token lacks the scope | v1 or v2 via gateway | **401** | `{"code":401,"message":"Unauthorized; scope does not match"}` |
+| scoped token sent to the site domain | site domain | **401** | Tomcat HTML, no JSON at all |
+| credentials wrong, revoked, or absent | **v1** | **403** | `caller cannot access Confluence` (`/user/current`) or `Current user not permitted to use Confluence` (`/search`) — the two phrasings differ |
+| credentials wrong, revoked, or absent | **v2** | **404** | `{"errors":[{"status":404,"code":"NOT_FOUND","title":"Not Found","detail":null}]}` |
+
+Two of these are worth staring at.
+
+**A rejected credential is a 404 on every v2 route.** Not 401, not 403. Since
+markfluence reads pages over v2, a revoked token made `read` answer
+`page 2848423944 not found` for a page that exists — and the obvious next move,
+go and check the page id, is wrong for every id. It is distinguishable, but only
+by the title: **every genuine v2 404 names what it could not find**, and the
+authentication one does not.
+
+| request | title |
+|---|---|
+| missing page, good credentials | `Cannot find a page with id [999999999999]` |
+| missing folder, good credentials | `Content with id: [999999999999] not found` |
+| missing page's properties, good credentials | `Could not find page with id [999999999999]` |
+| **existing page, bad credentials** | **`Not Found`** |
+
+`client.HTTPError.RejectedCredential` matches on that bare title, and `notFound`
+uses it so the `…OrNil` helpers stop reading a rejected credential as "absent".
+
+**A 403 does not mean what it looks like it means.** It is the *credential*
+failure on v1, not a permission failure — sending no `Authorization` header at
+all returns exactly the same body. A genuine permission denial is a different
+403, which is why the hint fires only on the two measured phrasings and stays
+silent otherwise.
 
 Scopes are fixed when a token is issued, so a missing one needs a *new* token,
 not an edited one.
