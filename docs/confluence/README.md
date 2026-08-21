@@ -26,7 +26,7 @@ Every claim carries its provenance, because "someone wrote this down once" and
 When you verify something, say how. A claim you cannot reproduce from the note is
 a claim the next person has to establish from scratch.
 
-## Three traps that produce confident, wrong answers
+## Four traps that produce confident, wrong answers
 
 All of these have cost real time. Read them before designing an experiment.
 
@@ -79,6 +79,20 @@ To find out what Confluence actually does with markup, read
 `body-format=atlas_doc_format` (ADF), which is the model Cloud renders from.
 For anything visual that ADF cannot settle — how wide a table draws, whether a
 link scrolls — open the page in a browser.
+
+### An auth failure can arrive wearing another status
+
+A rejected credential is a **404** on every v2 route — not 401, not 403 — with a
+body that is a perfectly ordinary "not found". A revoked token therefore makes
+`read` report `page 2848423944 not found` about a page that exists, and the
+obvious next move is to go and check page ids that were all correct.
+
+The tell is that **a genuine v2 404 names what it could not find** and the
+authentication one does not. Full table, and what a 401 and a 403 each actually
+mean here, in [api.md](api.md#scopes).
+
+So when a probe returns "absent", confirm the credentials reached the API before
+believing it. A status code is evidence about the response, not about the cause.
 
 ## Verifying against a real instance
 
