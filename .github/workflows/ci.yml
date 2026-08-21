@@ -29,17 +29,7 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Vet
-        run: make vet
-
-      - name: Format check
-        run: make fmt-check
-
-      - name: Test
-        run: make test
-
-      - name: Build
-        run: make build
-
-      - name: Lint
-        run: make lint
+      # One target rather than a step each, so what CI gates on and what a
+      # developer runs before pushing cannot drift apart. See `make check`.
+      - name: Check
+        run: make check

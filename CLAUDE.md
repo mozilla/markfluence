@@ -11,11 +11,12 @@ Tasks run through a `Makefile` (run `make` with no target for the annotated rule
 - `make build` — build `./bin/markfluence` (version stamped via ldflags)
 - `make test` — `go test ./...` (also runs the `go vet` subset)
 - `make lint` — golangci-lint (installs the pinned v2.6.0 into `./bin`; enables the default set plus `lll` at 120)
-- `make vet` / `make fmt` / `make fmt-check` (`fmt-check` fails without modifying anything, which is the form CI runs)
+- `make check` — the pre-flight: vet, fmt-check, test, build, lint, in CI's order (CI runs this exact target)
+- `make vet` / `make fmt` / `make fmt-check` (`fmt-check` reports without modifying anything)
 - `make regen-regressions` — regenerate the converter's golden outputs (`go test ./internal/convert -run TestRegression -update`)
 - Run a single package/test: `go test ./internal/frontmatter -run TestReadValues`
 
-Run `make vet && make fmt-check && make test && make build && make lint` before considering work done. That is exactly what `.github/workflows/ci.yml` runs, in that order, and it is the whole list — **`make fmt-check` is the one that gets skipped**, since `golangci-lint` does not enable `gofmt` and so `lint` passes on a file CI rejects.
+Run **`make check`** before considering work done: vet, fmt-check, test, build, lint, in that order. CI runs the same target and nothing else, so the two cannot drift. Do not run the pieces individually as a substitute — `fmt-check` is the one that gets forgotten, and `golangci-lint` does not enable `gofmt`, so `lint` passes on a file CI rejects.
 
 ## Configuration
 
