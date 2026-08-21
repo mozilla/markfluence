@@ -56,7 +56,7 @@ func (c *ConfluenceClient) FindByTitle(title, spaceKey string) ([]TitleMatch, er
 		}
 	}
 
-	pages, err := c.SearchPagesByTitle(title, spaceID, StatusCurrent, StatusArchived)
+	pages, err := c.PagesByTitle(title, spaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -66,8 +66,27 @@ func (c *ConfluenceClient) FindByTitle(title, spaceKey string) ([]TitleMatch, er
 	}
 
 	matches := make([]TitleMatch, 0, len(pages)+len(folders))
+	matches = append(matches, pages...)
+	matches = append(matches, folders...)
+	sortMatches(matches)
+	return matches, nil
+}
+
+// PagesByTitle is the page half of FindByTitle: every current or archived page
+// with exactly this title, in the space with this id (pass "" for site-wide).
+//
+// It is separate because a caller resolving an <ac:link> target wants only this
+// half. Running the folder CQL half too would be a second request per link for
+// rows that can never be a link target, and space-id resolution is the caller's
+// to cache when it has several titles in the same space.
+func (c *ConfluenceClient) PagesByTitle(title, spaceID string) ([]TitleMatch, error) {
+	pages, err := c.SearchPagesByTitle(title, spaceID, StatusCurrent, StatusArchived)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]TitleMatch, 0, len(pages))
 	for _, p := range pages {
-		matches = append(matches, TitleMatch{
+		out = append(out, TitleMatch{
 			ID:     p.ID,
 			Type:   "page",
 			Title:  p.Title,
@@ -76,9 +95,7 @@ func (c *ConfluenceClient) FindByTitle(title, spaceKey string) ([]TitleMatch, er
 			URL:    c.contextURL(p.Links.WebUI),
 		})
 	}
-	matches = append(matches, folders...)
-	sortMatches(matches)
-	return matches, nil
+	return out, nil
 }
 
 // findFoldersByTitle is the CQL half. The type is pinned to folder rather than
