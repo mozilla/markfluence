@@ -1,6 +1,6 @@
 ## DOM Security Team
 
-Ping <ac:link><ri:user ri:account-id="712020:eaf0b92e-3224-4340-8fcf-0fb7e898486b" ri:local-id="11278009-2f42-4db4-aded-b8d5a195e294" /></ac:link> about it.
+Ping <ac:link><ri:user ri:account-id="712020:00000000-0000-0000-0000-000000000000" ri:local-id="11111111-1111-1111-1111-111111111111" /></ac:link> about it.
 
 See [DOM Security Team](#dom-security-team) above, but <ac:link ac:anchor="No-Such-Heading"><ac:link-body>elsewhere</ac:link-body></ac:link> is gone.
 
