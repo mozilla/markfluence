@@ -1115,21 +1115,21 @@ Storage markup shown inside a fenced code block stays literal (it isn't activate
 
 ## Development
 
-Requires Go 1.25+. Common tasks (run `make` with no target for the list):
+Requires Go 1.25+.
 
 ```sh
-make build              # build ./bin/markfluence
-make test               # go test ./...
-make lint               # golangci-lint (installs the pinned version into ./bin)
-make vet                # go vet ./...
-make fmt                # go fmt ./...
-make regen-regressions  # regenerate the converter's golden test outputs
-make completions        # write the shell completion scripts to ./completions
+make build   # build ./bin/markfluence
+make test    # go test ./...
+make check   # everything CI runs, in CI's order -- the pre-flight before a PR
 ```
 
-The converter's behavior is pinned by a golden-file regression suite under
-`internal/convert/testdata/regression/`. Run the built binary against Confluence
-by putting a `.env` in the working directory (see [Configure](#configure)).
+Run `make` with no target for the full list of rules. Run the built binary
+against Confluence by putting a `.env` in the working directory (see
+[Configure](#configure)).
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for filing issues, the converter's
+golden-file regression suite, commit conventions, and what to run before opening
+a pull request.
 
 ## Inspirations
 
