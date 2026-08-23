@@ -1,0 +1,66 @@
+name: Documentation
+description: Something in the docs is wrong, unclear, or missing
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This covers the README, `docs/`, `CONTRIBUTING.md`, `SECURITY.md`, and a
+        command's own `--help` text.
+
+  - type: input
+    id: where
+    attributes:
+      label: Which doc?
+      description: >
+        A link, or a repo path and heading. If it's help text rather than a file,
+        name the command instead — `markfluence export --help`.
+      placeholder: docs/confluence/search.md, "Ranking" — or README.md#configure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of problem?
+      options:
+        - Wrong or out of date — it says something that isn't true
+        - Unclear — I couldn't tell what it meant, or read it the wrong way
+        - Missing — there's nothing written about this
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What needs correcting, improving, or writing?
+      description: >
+        For something wrong, quote the line and say what's actually true. For
+        something unclear, say what you concluded from it — the wrong reading is
+        the useful part, since it shows where the wording fails. For something
+        missing, say what you were trying to do when you went looking.
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: What should it say instead?
+      description: >
+        Optional, and rough is fine. If you'd rather write it as a pull request,
+        that's welcome too — see CONTRIBUTING.md.
+    validations:
+      required: false
+
+  - type: textarea
+    id: provenance
+    attributes:
+      label: How do you know?
+      description: >
+        Only for `docs/confluence/`, and only if you're correcting a claim about
+        how Confluence behaves. Those entries carry their provenance, so what
+        matters is what you observed and how — the request you made and what came
+        back, ideally re-runnable. A correction we can't reproduce leaves the next
+        person establishing it from scratch. See docs/confluence/README.md.
+    validations:
+      required: false

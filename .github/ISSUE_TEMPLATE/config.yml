@@ -1,0 +1,10 @@
+# Blank issues stay enabled deliberately. The forms below exist to help someone
+# who doesn't know the codebase file something actionable; they are not a shape
+# every issue has to fit. A design note, a Confluence finding, or a writeup with
+# its own structure should go in a blank issue rather than be squeezed into one.
+blank_issues_enabled: true
+
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/mozilla/markfluence/security/advisories/new
+    about: Don't open a public issue. Report it privately here — see SECURITY.md.
