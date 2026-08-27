@@ -45,6 +45,8 @@ Module `github.com/mozilla/markfluence` (`go 1.25`). `main.go` is a shim to `cmd
 
 **Before changing anything that talks to Confluence, read [docs/confluence/](docs/confluence/)** — what we established by experiment, since Atlassian documents little of it. Two traps recorded there have each already produced a confident wrong conclusion: `body-format=view` is not what the browser renders, and `body.storage` proves only what was stored, never what takes effect.
 
+**[docs/guarantees.md](docs/guarantees.md) holds the properties markfluence holds itself to** — safety (S1-S6), laws (L1-L8), conformance (C1), reporting (R1-R2). Each carries a status, because several are aspirational rather than true today: a spec or PR cites them by id to say what it changes. The ids are permanent and never reused, and a change that downgrades a status says so in the commit message and in that file rather than letting it be noticed later.
+
 ### Layout
 
 - `cmd/root.go` — the cobra root: `--url`/`--username`/`--debug`/`--no-color` persistent flags, version from `internal/buildinfo`, and registration of every subcommand. `Execute()` prints cobra-generated errors (bad args/flags) but not `ui.ErrSilent`, which marks a failure a command already reported.
