@@ -72,6 +72,53 @@ func TestResolveDefaultEnvFileMissingIsFine(t *testing.T) {
 	}
 }
 
+func TestResolveDefaultEnvFileFoundInCwdWithNoProjectFile(t *testing.T) {
+	clearConfluenceEnv(t)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".env"),
+		[]byte("CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// No markfluence.yaml anywhere above dir, so discovery falls back to dir
+	// itself -- today's behavior, preserved.
+	t.Chdir(dir)
+
+	c, err := Resolve(Options{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if c.BaseURL() != "https://wiki" {
+		t.Errorf("baseURL = %q, want https://wiki", c.BaseURL())
+	}
+}
+
+func TestResolveDefaultEnvFileFoundAtDiscoveredProjectRoot(t *testing.T) {
+	clearConfluenceEnv(t)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "markfluence.yaml"), []byte("# marker\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".env"),
+		[]byte("CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(root, "docs", "team")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// No .env in the working directory itself -- only at the project root
+	// discovery finds by walking up.
+	t.Chdir(sub)
+
+	c, err := Resolve(Options{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if c.BaseURL() != "https://wiki" {
+		t.Errorf("baseURL = %q, want https://wiki from the project root's .env", c.BaseURL())
+	}
+}
+
 func TestResolveCloudIDPrecedence(t *testing.T) {
 	clearConfluenceEnv(t)
 	path := writeEnvFile(t,
