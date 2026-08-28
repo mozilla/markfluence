@@ -138,6 +138,96 @@ func TestDiscoverEACCESKeepsWalking(t *testing.T) {
 	}
 }
 
+func TestFromPathUsesTheGivenDirectory(t *testing.T) {
+	dir := t.TempDir()
+	// A markfluence.yaml elsewhere doesn't matter; --root isn't discovery.
+	got, err := FromPath(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = got.FS.Close() }()
+
+	if got.Dir != dir {
+		t.Errorf("Dir = %q, want %q", got.Dir, dir)
+	}
+	if got.File != "" {
+		t.Errorf("File = %q, want empty (no marker written)", got.File)
+	}
+}
+
+func TestFromPathNotesAnExistingMarker(t *testing.T) {
+	dir := t.TempDir()
+	writeProjectFile(t, dir)
+
+	got, err := FromPath(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = got.FS.Close() }()
+
+	if want := filepath.Join(dir, Filename); got.File != want {
+		t.Errorf("File = %q, want %q", got.File, want)
+	}
+}
+
+func TestFromPathRejectsAFile(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "not-a-dir")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FromPath(file); err == nil {
+		t.Fatal("want an error for a --root that names a file, not a directory")
+	}
+}
+
+func TestFromPathRejectsAMissingDirectory(t *testing.T) {
+	if _, err := FromPath(filepath.Join(t.TempDir(), "nope")); err == nil {
+		t.Fatal("want an error for a --root that doesn't exist")
+	}
+}
+
+func TestResolveOverrideSkipsDiscovery(t *testing.T) {
+	override := t.TempDir()
+	// A project file sits above startDir; if Resolve discovered instead of
+	// honoring the override, it would find this one, not override.
+	outer := t.TempDir()
+	writeProjectFile(t, outer)
+	startDir := filepath.Join(outer, "sub")
+	if err := os.Mkdir(startDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Resolve(override, startDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = got.FS.Close() }()
+
+	if got.Dir != override {
+		t.Errorf("Dir = %q, want the override %q, not the discovered %q", got.Dir, override, outer)
+	}
+}
+
+func TestResolveEmptyOverrideDiscovers(t *testing.T) {
+	outer := t.TempDir()
+	writeProjectFile(t, outer)
+	startDir := filepath.Join(outer, "sub")
+	if err := os.Mkdir(startDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Resolve("", startDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = got.FS.Close() }()
+
+	if got.Dir != outer {
+		t.Errorf("Dir = %q, want the discovered %q", got.Dir, outer)
+	}
+}
+
 func TestDiscoverRootFSIsScopedToDir(t *testing.T) {
 	root := t.TempDir()
 	writeProjectFile(t, root)

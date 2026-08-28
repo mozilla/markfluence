@@ -22,6 +22,7 @@ import (
 	"github.com/mozilla/markfluence/cmd/update"
 	"github.com/mozilla/markfluence/internal/buildinfo"
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/completion"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
@@ -32,6 +33,7 @@ var (
 	usernameFlag string
 	cloudIDFlag  string
 	envFileFlag  string
+	rootFlag     string
 	debugFlag    bool
 	noColorFlag  bool
 	jsonFlag     bool
@@ -124,7 +126,12 @@ func init() {
 		"Atlassian cloud ID; set to use a scoped API token via the api.atlassian.com "+
 			"gateway (falls back to $CONFLUENCE_CLOUD_ID, then .env)")
 	rootCmd.PersistentFlags().StringVar(&envFileFlag, "env-file", "",
-		"Path to an env file to read (default: ./.env in the working directory)")
+		"Path to an env file to read (default: .env at the discovered project root, "+
+			"or the working directory if none)")
+	rootCmd.PersistentFlags().StringVar(&rootFlag, "root", "",
+		"Documentation root, overriding discovery (default: the directory holding "+
+			"markfluence.yaml, found by walking up from each file, or the file's own "+
+			"directory if none)")
 	rootCmd.PersistentFlags().BoolVarP(&debugFlag, "debug", "d", false,
 		"Enable verbose debug output")
 	rootCmd.PersistentFlags().BoolVar(&noColorFlag, "no-color", false,
@@ -132,6 +139,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonFlag, "json", false,
 		"Emit machine-readable JSON to stdout instead of human output")
 	rootCmd.PersistentFlags().SortFlags = false
+	completion.RegisterFlag(rootCmd, "root", completion.Directories)
 
 	// The stamp already carries its own "markfluence v" prefix; print it verbatim
 	// rather than cobra's default "markfluence version <...>" wrapper.

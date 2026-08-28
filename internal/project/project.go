@@ -19,6 +19,7 @@ package project
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -94,4 +95,42 @@ func open(dir, file string) (*Root, error) {
 		return nil, err
 	}
 	return &Root{Dir: dir, File: file, FS: root}, nil
+}
+
+// FromPath builds a Root directly from an explicit directory, bypassing
+// discovery entirely. It exists for --root, which overrides discovery for the
+// whole invocation with one value applied uniformly to every file. dir must
+// exist and be a directory; a markfluence.yaml inside it is still noted in
+// File, for accurate reporting, even though --root's meaning doesn't depend
+// on one being there.
+func FromPath(dir string) (*Root, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("--root %s is not a directory", dir)
+	}
+
+	file := ""
+	candidate := filepath.Join(abs, Filename)
+	if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+		file = candidate
+	}
+	return open(abs, file)
+}
+
+// Resolve is the entry point a command should use once it has both an
+// optional --root override and a starting directory: override wins,
+// bypassing discovery via FromPath; an empty override discovers normally via
+// Discover.
+func Resolve(override, startDir string) (*Root, error) {
+	if override != "" {
+		return FromPath(override)
+	}
+	return Discover(startDir)
 }
