@@ -27,6 +27,47 @@ spaced filename was reachable only through the rarely-used `![](<a b.png>)`
 spelling; now the ordinary `%20` spelling reaches it, so these names are common
 rather than theoretical.
 
+## How long a name and a comment may be
+
+Both cap at **255 characters**, and they fail very differently.
+
+**Verified 2026-08-28** by uploading to a scratch page, stepping the length of
+each field:
+
+| field | 255 | 256 | over-limit response |
+|---|---|---|---|
+| comment | stored whole | rejected | **400** — `IllegalArgumentException: The comment is longer than 255 characters` |
+| name | stored whole | rejected | **500** — a raw `HibernateJdbcException` / `SQLException [25P02]` |
+
+Nothing is truncated. That matters more than the limit itself: a silently
+truncated comment would make the stored `path=` disagree with the local source on
+every publish, and [a wrong recorded path repairs itself](#a-wrong-recorded-path-repairs-itself)
+would re-upload the attachment forever trying to correct it.
+
+The name's failure is an unvalidated constraint violation rather than a checked
+one, so it says nothing useful. It is at least not retried — a bare 500 with no
+`Retry-After` is not retryable under the rules in [api.md](api.md#retries).
+
+### The comment limit is what bounds a path
+
+The comment carries fixed overhead — `markfluence: ` + `sha256=` + 64 hex +
+` path=` is **90 characters** — so a recorded source path may be at most
+**165 characters**.
+
+The name limit never binds first. A name is the path with each `/` expanded to
+`%2F`, so a 165-character path would need 45 slashes before it reached 255.
+
+Measured against realistic paths:
+
+```
+path=  12  name=  14  comment= 102   images/x.png
+path=  74  name=  86  comment= 164   platform/services/authentication/docs/runbooks/images/failover-diagram.png
+path= 130  name= 146  comment= 220   engineering/infrastructure/kubernetes/clusters/production/runbooks/…
+```
+
+165 characters is enough for a deep tree but not by a wide margin, and the
+overhead is mostly the checksum — 64 of the 90 characters.
+
 ## An unlabeled multipart text part is decoded as Latin-1
 
 markfluence records the source path and a checksum in the attachment's comment:
