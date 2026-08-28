@@ -4,8 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/mozilla/markfluence/internal/project"
 )
 
 const (
@@ -28,7 +31,8 @@ type Options struct {
 	// CloudID is the --cloud-id value; set it to route requests through the
 	// platform API gateway, which a scoped service-account token requires.
 	CloudID string
-	// EnvFile is the --env-file value; empty means the default ./.env.
+	// EnvFile is the --env-file value; empty means .env at the discovered
+	// project root (see loadEnvFile).
 	EnvFile string
 }
 
@@ -37,8 +41,9 @@ type Options struct {
 // the URL, username, and cloud ID come from opts when set, then
 // $CONFLUENCE_URL/$CONFLUENCE_USERNAME/$CONFLUENCE_CLOUD_ID, then the .env file;
 // the API token comes only from $CONFLUENCE_TOKEN, then .env -- never a flag.
-// opts.EnvFile selects which .env is read: when empty the default ./.env is read
-// best-effort (a missing file is fine); when set it's an explicit path that must
+// opts.EnvFile selects which .env is read: when empty, .env at the discovered
+// project root is read best-effort (a missing file is fine; see loadEnvFile
+// for what "discovered" means here); when set it's an explicit path that must
 // be readable. It returns a friendly error listing whatever is missing.
 //
 // The cloud ID is optional: without one, requests go to the site domain exactly
@@ -106,8 +111,15 @@ func resolveValue(flagVal, envKey string, dotenv map[string]string) string {
 
 // loadEnvFile resolves which .env to read and parses it. An explicit envFile
 // (from --env-file) must be readable, so a read failure is an error. With no
-// explicit path the default ./.env is best-effort: a missing file yields an
-// empty map, matching the prior behavior.
+// explicit path, .env is read from the discovered project root -- the
+// directory holding markfluence.yaml, found by walking up from the working
+// directory, or the working directory itself when there is none (today's
+// behavior). This is its own discovery pass, separate from the per-file root
+// the converter uses: it starts at the working directory rather than a
+// markdown file's directory, runs once before any file is touched, and
+// doesn't bound anything -- it only answers "where is .env." A missing .env,
+// wherever it lands, is fine and yields an empty map, matching prior
+// behavior.
 func loadEnvFile(envFile string) (map[string]string, error) {
 	if envFile != "" {
 		env, err := loadDotenv(envFile)
@@ -116,9 +128,18 @@ func loadEnvFile(envFile string) (map[string]string, error) {
 		}
 		return env, nil
 	}
-	env, err := loadDotenv(dotenvPath)
+
+	dir := "."
+	if cwd, err := os.Getwd(); err == nil {
+		if root, err := project.Discover(cwd); err == nil {
+			dir = root.Dir
+			_ = root.FS.Close()
+		}
+	}
+
+	env, err := loadDotenv(filepath.Join(dir, dotenvPath))
 	if err != nil {
-		return map[string]string{}, nil // a missing ./.env is fine
+		return map[string]string{}, nil // a missing .env is fine
 	}
 	return env, nil
 }
