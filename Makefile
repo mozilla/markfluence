@@ -7,7 +7,7 @@ $(LOCALBIN):
 VERSION ?= dev
 LDFLAGS = -ldflags "-X github.com/mozilla/markfluence/internal/buildinfo.Version=$(VERSION)"
 
-GOLANGCI_LINT_VERSION ?= v2.13.2
+GOLANGCI_LINT_VERSION ?= v2.12.2
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
 
 COMPLETIONS_DIR ?= completions
