@@ -7,12 +7,12 @@ $(LOCALBIN):
 VERSION ?= dev
 LDFLAGS = -ldflags "-X github.com/mozilla/markfluence/internal/buildinfo.Version=$(VERSION)"
 
-GOLANGCI_LINT_VERSION ?= v2.6.0
+GOLANGCI_LINT_VERSION ?= v2.13.2
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
 
 COMPLETIONS_DIR ?= completions
 
-.PHONY: help all build build-linux install completions lint vet fmt fmt-check test check regen-regressions
+.PHONY: help all build build-linux install completions lint vet fmt fmt-check test check regen-regressions clean
 
 help:  ## Show this help
 	@echo "Available rules:"
@@ -68,6 +68,9 @@ check:  ## Run every check CI runs, in CI's order -- the pre-flight before calli
 
 regen-regressions:  ## Regenerate the converter regression goldens
 	go test ./internal/convert -run TestRegression -update
+
+clean:  ## Remove build artifacts (bin/, dist/, completions/, ./markfluence)
+	rm -rf $(LOCALBIN) dist $(COMPLETIONS_DIR) markfluence
 
 # golangci-lint (version/path defined near the top so `lint` can depend on it).
 # Order-only dependency on $(LOCALBIN) so adding files to bin/ (e.g. `make
