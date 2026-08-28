@@ -15,7 +15,7 @@ func TestRootCommandWiring(t *testing.T) {
 	if rootCmd.Use != "markfluence" {
 		t.Errorf("rootCmd.Use = %q, want %q", rootCmd.Use, "markfluence")
 	}
-	for _, flag := range []string{"url", "debug", "no-color", "json"} {
+	for _, flag := range []string{"url", "debug", "no-color", "json", "env-file", "root"} {
 		if rootCmd.PersistentFlags().Lookup(flag) == nil {
 			t.Errorf("persistent flag --%s not registered", flag)
 		}
