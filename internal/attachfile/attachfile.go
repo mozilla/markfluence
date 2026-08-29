@@ -67,11 +67,19 @@ type Options struct {
 // so decoding by default would scatter a literally-named file into a/b.png. An
 // attachment with no recorded source keeps its stored name.
 //
-// This check is *lexical*. A source path may legitimately contain ".." -- an
-// image in a directory above its page is a supported layout -- so ".." cannot
-// simply be refused; the cleaned path is compared against root instead.
-// Escaping is an error rather than a silent clip, because the path comes from an
-// attachment comment, which anyone who can edit the page controls.
+// This check is *lexical*, and by the time a root-relative model records a
+// Source (025), the ".." this clamp refuses is never one markfluence itself
+// would produce: an image whose resolved path climbed above the documentation
+// root was refused as broken before it was ever recorded as an attachment, so
+// a legitimate Source is already root-relative with no leading "..". What
+// remains is a comment someone else wrote or mangled -- the attachment
+// comment is server data, editable by anyone who can edit the page, so this
+// guards against that rather than against a layout markfluence's own writer
+// produces. The cleaned path is still compared against root, not refused for
+// containing ".." outright, since a *stored* path may contain one for
+// reasons that have nothing to do with the model here (a hand-crafted
+// upload, an older markfluence's page-relative Source). Escaping is an error
+// rather than a silent clip either way.
 //
 // Being lexical, it cannot see symlinks: if a directory inside root is a link
 // pointing out of it, a path that looks contained resolves elsewhere on disk.

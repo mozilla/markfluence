@@ -901,6 +901,47 @@ func TestAttachmentCommentRecordsSource(t *testing.T) {
 	}
 }
 
+// TestSyncAttachmentsWritesATruncatedChecksum is #101's fix: the checksum
+// recorded in a fresh comment is 128 bits (32 hex characters), not the full
+// 256-bit digest -- the bigger, cheaper lever on the 255-character comment
+// ceiling, since the comment only needs to detect a byte change, not resist
+// an adversary.
+func TestSyncAttachmentsWritesATruncatedChecksum(t *testing.T) {
+	path, sum := writeTempImage(t)
+	c, s := newServer(t, resp{200, `{"results":[]}`}, resp{200, `{}`})
+	if _, err := c.SyncAttachments("1", []LocalAttachment{{Path: path, Filename: "x.png"}}); err != nil {
+		t.Fatal(err)
+	}
+	got := uploadParts(t, s)["comment"].value
+	if want := attachmentComment(sum[:checksumHexLen], ""); got != want {
+		t.Errorf("comment = %q, want %q", got, want)
+	}
+	n := len(strings.TrimPrefix(got, attachmentCommentPrefix+"sha256="))
+	if n != checksumHexLen {
+		t.Errorf("recorded checksum is %d hex characters, want %d", n, checksumHexLen)
+	}
+}
+
+// TestAttachmentCommentBudget pins the fixed overhead #101 measured: with the
+// checksum truncated to 32 hex characters, "markfluence: sha256=<32> path="
+// costs 58 of the 255 characters Confluence allows, leaving 197 for the path
+// itself -- up from 165 before the truncation.
+func TestAttachmentCommentBudget(t *testing.T) {
+	const overhead = len("markfluence: ") + len("sha256=") + checksumHexLen + len(" path=")
+	if overhead != 58 {
+		t.Fatalf("overhead = %d, want 58", overhead)
+	}
+	sum := strings.Repeat("a", checksumHexLen)
+	longestFittingPath := strings.Repeat("p", 255-overhead)
+	if got := attachmentComment(sum, longestFittingPath); len(got) != 255 {
+		t.Errorf("comment length = %d, want exactly 255 at the boundary", len(got))
+	}
+	tooLong := longestFittingPath + "x"
+	if got := attachmentComment(sum, tooLong); len(got) <= 255 {
+		t.Errorf("comment length = %d, want > 255 one character past the boundary", len(got))
+	}
+}
+
 func TestParseAttachmentComment(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -1006,7 +1047,7 @@ func TestSyncAttachmentsLabelsTextPartsUTF8(t *testing.T) {
 			t.Errorf("%s part Content-Type = %q, want a UTF-8 charset", name, got)
 		}
 	}
-	if want := attachmentComment(sum, source); parts["comment"].value != want {
+	if want := attachmentComment(sum[:checksumHexLen], source); parts["comment"].value != want {
 		t.Errorf("comment part = %q, want %q", parts["comment"].value, want)
 	}
 	// The name rides in Content-Disposition, which was never affected; check it
@@ -1035,7 +1076,7 @@ func TestSyncAttachmentsRestampsMangledSource(t *testing.T) {
 	if len(actions) != 1 || actions[0].Action != "updated" {
 		t.Fatalf("actions = %v, want [updated]", actions)
 	}
-	if got := uploadParts(t, s)["comment"].value; got != attachmentComment(sum, "assets/probe-café.png") {
+	if got := uploadParts(t, s)["comment"].value; got != attachmentComment(sum[:checksumHexLen], "assets/probe-café.png") {
 		t.Errorf("restamped comment = %q", got)
 	}
 }

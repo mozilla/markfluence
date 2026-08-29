@@ -638,7 +638,8 @@ Usage: markfluence attachment-upload PAGE FILE... [flags]
 Upload or replace attachments on a page, complementing the automatic sync that
 `create` and `update` perform for a page's images.
 
-Each file is attached under its base name. A file whose contents already match
+Each file is attached under its path relative to the documentation root (its
+base name, with no `markfluence.yaml` above it). A file whose contents already match
 what's on the page is skipped, using the same checksum bookkeeping
 `create`/`update` use, so uploading by hand and publishing agree on what's
 current. `--force` uploads anyway (bumping the attachment's version), which is
