@@ -24,9 +24,10 @@ TBD — published to a tap on the first release.
 ### Shell completions
 
 markfluence generates its own completion scripts for bash, zsh, fish, and
-PowerShell. The release archives ship them under `completions/`, and a Homebrew
-install puts them where each shell looks, so a `brew install` needs nothing
-further.
+PowerShell. The release archives ship the bash/zsh/fish scripts under
+`completions/`, and a Homebrew install puts them where each shell looks, so a
+`brew install` needs nothing further; PowerShell isn't packaged and is
+generated on demand instead (below).
 
 Otherwise, to load them into the current shell:
 
@@ -110,15 +111,15 @@ The scopes markfluence needs:
 
 | Used for | Commands | Scope |
 | --- | --- | --- |
-| Reading pages, and reading/writing page width | all but `schema` | `read:page:confluence` |
+| Reading pages, and reading/writing page width | `create`, `update`, `fix`, `info`, `read`, `export`, `find` | `read:page:confluence` |
 | Creating and updating pages, and setting page width | `create`, `update`, `fix` | `write:page:confluence` |
 | Resolving a space key to an id | `create`, `find`, `search` | `read:space:confluence` |
-| Looking up a folder (a folder can be a page's parent) | `create`, `children`, `find` | `read:folder:confluence` |
+| Looking up a folder (a folder can be a page's parent) | `create` | `read:folder:confluence` |
 | CQL queries | `find`, `search` | `search:confluence` |
 | Author names | `info` | `read:confluence-user` |
 | Uploading image attachments | `create`, `update`, `attachment-upload` | `write:confluence-file` |
 | Downloading attachments | `export`, `attachment-download` | `readonly:content.attachment:confluence` |
-| Listing attachments and child pages/folders | `children`, `export`, `read`, `attachment-list` | `read:confluence-content.summary` |
+| Listing attachments and child pages/folders | `children`, `export`, `read`, `attachment-list`, `attachment-download` | `read:confluence-content.summary` |
 
 Copy-pasteable:
 
@@ -239,8 +240,8 @@ of clash name the page in the way, so you can go look at it:
 
 ```console
 $ markfluence create docs/runbook.md
-[docs/runbook.md] a page already exists at page_id 123 ("Deploy Runbook"): https://wiki.example.net/wiki/spaces/ENG/pages/123/Deploy+Runbook
-Aborting: 1 file(s) failed validation; nothing was created.
+  ✗ [docs/runbook.md] a page already exists at page_id 123 ("Deploy Runbook"): https://wiki.example.net/wiki/spaces/ENG/pages/123/Deploy+Runbook
+  ✗ Aborting: 1 file(s) failed validation; nothing was created.
 ```
 
 A file whose `page_id` doesn't resolve is also a failure, not a fresh page:
@@ -296,7 +297,7 @@ frontmatter line is present — otherwise the live page's width is left untouche
 `update` never writes back to the file.
 
 A `page_id` that no longer resolves fails that file with what to do about it
-(`page_id 999 not found (deleted, trashed, or wrong); correct it, or remove it and
+(`page_id 999 not found (deleted or wrong); correct it, or remove it and
 use create instead`), and one that isn't a numeric id at all is reported without
 asking Confluence. Since `update` writes nothing back, fixing the id is always
 safe: the file is exactly as you left it.
@@ -373,11 +374,12 @@ composes with shell redirection.
   markfluence emits round-trip faithfully, while editor-authored content degrades
   gracefully — any macro markfluence doesn't map (panels, expand, status, …) and
   column layouts pass through as raw storage tags, with a macro/cell body kept as
-  readable markdown, so they round-trip back through `create`/`update`. Some
-  transforms are lossy (e.g. `CAUTION`
-  alerts, internal links, original image paths, and table cell background colors
-  cannot be recovered), so this is
-  a reading aid, not a guaranteed source round-trip.
+  readable markdown, so they round-trip back through `create`/`update`. A page or
+  space link converts back to a markdown link; a mention, an attachment link, and
+  a blog-post link stay as raw storage, since a markdown link would republish to
+  something else or nothing at all. Some other transforms are lossy (e.g.
+  `CAUTION` alerts and table cell background colors cannot be recovered), so this
+  is a reading aid, not a guaranteed source round-trip.
 - `storage` — the page's raw storage-format XHTML, exactly as stored.
 
 ```sh
@@ -451,9 +453,9 @@ markfluence find "Deploy runbook" --json | jq -r '.results[] | select(.type=="pa
 
 ```
 TYPE    ID          SPACE          STATUS    TITLE           URL
-folder  2950660103  CLOUDSERVICES  current   Deploy runbook  https://org.atlassian.net/wiki/spaces/CLOUDSERVICES/folder/2950660103
-page    5144768     CEX            current   Deploy runbook  https://org.atlassian.net/wiki/spaces/CEX/pages/5144768/Deploy+runbook
 page    3277005     AVSE           archived  Deploy runbook  https://org.atlassian.net/wiki/spaces/AVSE/pages/3277005/Deploy+runbook
+page    5144768     CEX            current   Deploy runbook  https://org.atlassian.net/wiki/spaces/CEX/pages/5144768/Deploy+runbook
+folder  2950660103  CLOUDSERVICES  current   Deploy runbook  https://org.atlassian.net/wiki/spaces/CLOUDSERVICES/folder/2950660103
 ```
 
 The match is **exact and case-insensitive** — not a substring search. Results are
@@ -622,9 +624,9 @@ List a page's attachments.
 
 ```console
 $ markfluence attachment-list 1234567890
-NAME                            SIZE  VER  TYPE       SOURCE
-assets%2Fdiagram.png           24.1 KB   3  image/png  assets/diagram.png
-notes.pdf                       1.2 MB   1  application/pdf  -
+NAME                     SIZE  VER  TYPE             SOURCE
+assets%2Fdiagram.png  24.1 KB    3  image/png        assets/diagram.png
+notes.pdf              1.2 MB    1  application/pdf  -
 ```
 
 `NAME` is the name Confluence stores. For an image markfluence published that is
@@ -716,10 +718,12 @@ target (a single element for `info`/`read`); `summary` carries batch counts:
   "schema_version": 1,
   "markfluence_version": "1.4.0",
   "command": "update",
+  "roots": ["/repo/docs"],
   "results": [
     {
       "ok": true,
       "status": "published",
+      "dry_run": false,
       "file": "docs/foo.md",
       "page_id": "123",
       "title": "Foo",
@@ -752,6 +756,11 @@ Notes on the schema:
 - **Per-command stable.** Each command always emits the same keys in the same
   shapes (empty values are `null` or `[]`); the key *set* differs per command.
   `schema_version` is bumped on any breaking change.
+- **`roots`** lists every distinct [documentation root](#the-documentation-root)
+  the command resolved, sorted — `[]` for a command with no per-file root
+  concept (`find`, `search`, ...) or a pre-flight failure that never reached
+  root resolution. `schema` emits no envelope at all, so it has no `roots` key
+  to speak of.
 - **Status verbs** are per-command: `published`/`skipped` (`update`),
   `created`/`not_created` (`create`), `changed`/`consistent` (`fix`),
   `created`/`updated`/`skipped` (`attachment-upload`),
@@ -810,7 +819,7 @@ from it — without reading it out of this repository:
 
 ```console
 $ markfluence schema | jq -r '.properties.command.enum | join(" ")'
-info read update create fix attachment-list attachment-upload attachment-download export
+info read update create fix children find search attachment-list attachment-upload attachment-download export
 
 $ markfluence update docs/*.md --json > out.json
 $ markfluence schema > schema.json
