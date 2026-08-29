@@ -6,7 +6,6 @@ import (
 	"github.com/mozilla/markfluence/internal/client"
 )
 
-// managed builds an attachment carrying a recorded source path.
 func TestSelectAttachmentsAll(t *testing.T) {
 	all := []client.Attachment{{Title: "a.png"}, {Title: "b.png"}}
 	got, missing := selectAttachments(all, nil)
@@ -36,6 +35,3 @@ func TestSelectAttachmentsReportsMissing(t *testing.T) {
 		t.Errorf("missing = %v, want [nope.png]", missing)
 	}
 }
-
-// TestDestPathEscapeMessageNamesTheAttachment keeps the failure actionable: the
-// user needs to know which attachment was refused.

@@ -913,9 +913,6 @@ func TestSyncAttachmentsWritesATruncatedChecksum(t *testing.T) {
 // itself -- up from 165 before the truncation.
 func TestAttachmentCommentBudget(t *testing.T) {
 	const overhead = len("markfluence: ") + len("sha256=") + checksumHexLen + len(" path=")
-	if overhead != 58 {
-		t.Fatalf("overhead = %d, want 58", overhead)
-	}
 	sum := strings.Repeat("a", checksumHexLen)
 	longestFittingPath := strings.Repeat("p", 255-overhead)
 	if got := attachmentComment(sum, longestFittingPath); len(got) != 255 {

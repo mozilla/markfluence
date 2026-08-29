@@ -22,16 +22,18 @@ func TestRootCommandWiring(t *testing.T) {
 	}
 }
 
-func TestSubcommandsRegistered(t *testing.T) {
-	want := map[string]bool{
-		"update": false, "create": false, "fix": false, "info": false, "read": false, "schema": false,
-	}
+// TestSchemaCommandRegistered checks the one registration
+// TestCommandEnumMatchesRegisteredCommands can't: every other subcommand's
+// registration is implied by its presence in the schema's command enum (that
+// test's second loop), but "schema" is deliberately exempt from the enum, so
+// nothing else would catch its command being dropped entirely.
+func TestSchemaCommandRegistered(t *testing.T) {
 	for _, c := range rootCmd.Commands() {
-		delete(want, c.Name())
+		if c.Name() == "schema" {
+			return
+		}
 	}
-	for name := range want {
-		t.Errorf("subcommand %q not registered", name)
-	}
+	t.Error(`subcommand "schema" not registered`)
 }
 
 // completionOut collects the generated completion scripts; see

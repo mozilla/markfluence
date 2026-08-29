@@ -11,8 +11,10 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
-// run executes the command with a captured writer and returns what it printed.
-func runCmd(t *testing.T, args ...string) string {
+// runCmd executes the command with a captured writer and returns what it
+// printed and any error, so a caller expecting success can t.Fatal on err and
+// a caller expecting a usage error (TestRejectsArguments) can assert on it.
+func runCmd(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	var out bytes.Buffer
 	Cmd.SetOut(&out)
@@ -23,17 +25,25 @@ func runCmd(t *testing.T, args ...string) string {
 		Cmd.SetErr(nil)
 		Cmd.SetArgs(nil)
 	})
-	if err := Cmd.Execute(); err != nil {
+	err := Cmd.Execute()
+	return out.String(), err
+}
+
+// mustRun is runCmd for the common case: the command must succeed.
+func mustRun(t *testing.T, args ...string) string {
+	t.Helper()
+	out, err := runCmd(t, args...)
+	if err != nil {
 		t.Fatalf("schema %v: %v", args, err)
 	}
-	return out.String()
+	return out
 }
 
 // TestPrintsSchemaVerbatim pins the whole point of the command: a consumer can
 // diff or cache what it prints against the published file, so the bytes must
 // match the embedded schema exactly.
 func TestPrintsSchemaVerbatim(t *testing.T) {
-	got := runCmd(t)
+	got := mustRun(t)
 	if got != schemadoc.V1 {
 		t.Errorf("output is not the embedded schema verbatim (%d bytes vs %d)",
 			len(got), len(schemadoc.V1))
@@ -48,7 +58,7 @@ func TestPrintsSchemaVerbatim(t *testing.T) {
 // compiles, not merely valid JSON: a truncated or mangled embed would still
 // parse as an object.
 func TestOutputIsAUsableSchema(t *testing.T) {
-	out := runCmd(t)
+	out := mustRun(t)
 
 	var doc struct {
 		Schema string `json:"$schema"`
@@ -100,16 +110,7 @@ func TestEmbeddedSchemaDescribesEmittedVersion(t *testing.T) {
 
 // TestRejectsArguments guards the completion promise: the command takes none.
 func TestRejectsArguments(t *testing.T) {
-	var out bytes.Buffer
-	Cmd.SetOut(&out)
-	Cmd.SetErr(&out)
-	Cmd.SetArgs([]string{"v1"})
-	t.Cleanup(func() {
-		Cmd.SetOut(nil)
-		Cmd.SetErr(nil)
-		Cmd.SetArgs(nil)
-	})
-	if err := Cmd.Execute(); err == nil {
+	if _, err := runCmd(t, "v1"); err == nil {
 		t.Error("schema v1 should be a usage error")
 	}
 }
