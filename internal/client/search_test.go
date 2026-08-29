@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"strings"
@@ -24,7 +23,7 @@ type urlLog struct {
 func newSearchServer(t *testing.T, bodies ...string) (*ConfluenceClient, *urlLog) {
 	t.Helper()
 	s := &urlLog{bodies: bodies}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		s.urls = append(s.urls, r.URL.String())
 		if s.idx >= len(s.bodies) {
 			t.Errorf("unexpected extra request: %s", r.URL)
@@ -34,9 +33,8 @@ func newSearchServer(t *testing.T, bodies ...string) (*ConfluenceClient, *urlLog
 		body := s.bodies[s.idx]
 		s.idx++
 		_, _ = w.Write([]byte(body))
-	}))
-	t.Cleanup(srv.Close)
-	return New(Config{SiteURL: srv.URL, Username: "u", Token: "t"}), s
+	})
+	return c, s
 }
 
 // row builds a minimal folder search hit.
@@ -134,11 +132,9 @@ func TestSearchCQLIgnoresTotalSize(t *testing.T) {
 // TestSearchCQLBoundsARunawayCursor: a next link that never clears must fail
 // loudly rather than hang or return a plausible-looking prefix of the results.
 func TestSearchCQLBoundsARunawayCursor(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	c := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(page("/rest/api/search?next=true&cursor=loop", row("1"))))
-	}))
-	t.Cleanup(srv.Close)
-	c := New(Config{SiteURL: srv.URL, Username: "u", Token: "t"})
+	})
 
 	got, err := c.SearchCQL("type = folder")
 	if err == nil {
@@ -762,11 +758,9 @@ func TestSearchResultsCarriesTheQuery(t *testing.T) {
 // TestSearchResultsCarriesTheQueryOnFailure: it is wanted most when the search
 // did not work.
 func TestSearchResultsCarriesTheQueryOnFailure(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	c := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	t.Cleanup(srv.Close)
-	c := New(Config{SiteURL: srv.URL, Username: "u", Token: "t"})
+	})
 
 	got, err := c.SearchRawCQL(`type = space`, 10)
 	if err == nil {
