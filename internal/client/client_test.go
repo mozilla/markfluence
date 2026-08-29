@@ -499,29 +499,14 @@ func TestSyncAttachmentsCreatesWhenAbsent(t *testing.T) {
 	}
 }
 
-// A legacy comment still identifies an unchanged file, so a format change does
-// not force a re-upload of every attachment.
-func TestSyncAttachmentsSkipsWhenLegacyChecksumMatches(t *testing.T) {
-	path, sum := writeTempImage(t)
-	list := `{"results":[{"id":"a1","title":"x.png","metadata":{"comment":"` +
-		legacyChecksumPrefix + sum + `"}}]}`
-	c, s := newServer(t, resp{200, list})
-	actions, err := c.SyncAttachments("1", []LocalAttachment{{Path: path, Filename: "x.png"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(actions) != 1 || actions[0].Action != "skipped" {
-		t.Fatalf("actions = %v, want [skipped]", actions)
-	}
-	if !eqStrings(s.calls, []string{"GET"}) {
-		t.Errorf("calls = %v, want [GET] (no upload)", s.calls)
-	}
-}
-
+// TestSyncAttachmentsUpdatesWhenChecksumDiffers also covers an attachment
+// stamped by any format markfluence no longer writes: an unrecognized
+// comment parses as unmanaged (empty SHA256), which never equals a real
+// checksum, so it re-uploads once rather than being treated as unchanged.
 func TestSyncAttachmentsUpdatesWhenChecksumDiffers(t *testing.T) {
 	path, _ := writeTempImage(t)
 	list := `{"results":[{"id":"a1","title":"x.png","metadata":{"comment":"` +
-		legacyChecksumPrefix + `stale"}}]}`
+		attachmentComment("stale", "") + `"}}]}`
 	c, s := newServer(t, resp{200, list}, resp{200, `{}`})
 	actions, err := c.SyncAttachments("1", []LocalAttachment{{Path: path, Filename: "x.png"}})
 	if err != nil {
@@ -539,8 +524,8 @@ func TestPlanAttachmentsClassifiesWithoutUploading(t *testing.T) {
 	path, sum := writeTempImage(t)
 	// same.png matches (skip), stale.png differs (update), new.png is absent (create).
 	list := `{"results":[` +
-		`{"id":"a1","title":"same.png","metadata":{"comment":"` + legacyChecksumPrefix + sum + `"}},` +
-		`{"id":"a2","title":"stale.png","metadata":{"comment":"` + legacyChecksumPrefix + `stale"}}` +
+		`{"id":"a1","title":"same.png","metadata":{"comment":"` + attachmentComment(sum[:checksumHexLen], "") + `"}},` +
+		`{"id":"a2","title":"stale.png","metadata":{"comment":"` + attachmentComment("stale", "") + `"}}` +
 		`]}`
 	c, s := newServer(t, resp{200, list})
 	actions, err := c.PlanAttachments("1", []LocalAttachment{
@@ -955,8 +940,6 @@ func TestParseAttachmentComment(t *testing.T) {
 		// The path is written last and unquoted, so it may contain spaces.
 		{"source with spaces", "markfluence: sha256=abc123 path=my docs/a b.png",
 			AttachmentMeta{SHA256: "abc123", Source: "my docs/a b.png", Managed: true}},
-		{"legacy form", legacyChecksumPrefix + "abc123",
-			AttachmentMeta{SHA256: "abc123", Managed: true}},
 		{"hand-uploaded", "a note from a human", AttachmentMeta{}},
 		{"empty", "", AttachmentMeta{}},
 	}
@@ -1081,14 +1064,15 @@ func TestSyncAttachmentsRestampsMangledSource(t *testing.T) {
 	}
 }
 
-// TestSyncAttachmentsSkipsLegacyCommentWithNoSource pins the limit of that
-// restamping: a legacy comment records no path at all, which is not a
-// disagreement. Treating it as one would re-upload every attachment stamped by
-// an older markfluence -- the churn the checksum comparison exists to avoid.
-func TestSyncAttachmentsSkipsLegacyCommentWithNoSource(t *testing.T) {
+// TestSyncAttachmentsSkipsCommentWithNoSourceRecorded pins that a comment
+// recording no path at all -- attachmentComment omits "path=" when Source is
+// empty -- is not treated as a disagreement with the local attachment's own
+// (non-empty) Source. Only a *recorded* Source that disagrees is a mangled
+// comment worth repairing.
+func TestSyncAttachmentsSkipsCommentWithNoSourceRecorded(t *testing.T) {
 	path, sum := writeTempImage(t)
 	list := `{"results":[{"id":"a1","title":"x.png","metadata":{"comment":"` +
-		legacyChecksumPrefix + sum + `"}}]}`
+		attachmentComment(sum[:checksumHexLen], "") + `"}}]}`
 	c, s := newServer(t, resp{200, list})
 	actions, err := c.SyncAttachments("1", []LocalAttachment{
 		{Path: path, Filename: "x.png", Source: "assets/x.png"},
@@ -1104,12 +1088,10 @@ func TestSyncAttachmentsSkipsLegacyCommentWithNoSource(t *testing.T) {
 	}
 }
 
-// TestSyncAttachmentsSkipsWhenCurrentChecksumMatches is the new-format twin of the
-// legacy skip test.
 func TestSyncAttachmentsSkipsWhenCurrentChecksumMatches(t *testing.T) {
 	path, sum := writeTempImage(t)
 	list := `{"results":[{"id":"a1","title":"x.png","metadata":{"comment":"` +
-		attachmentComment(sum, "x.png") + `"}}]}`
+		attachmentComment(sum[:checksumHexLen], "x.png") + `"}}]}`
 	c, s := newServer(t, resp{200, list})
 	actions, err := c.SyncAttachments("1", []LocalAttachment{
 		{Path: path, Filename: "x.png", Source: "x.png"},

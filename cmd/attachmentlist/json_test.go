@@ -70,25 +70,6 @@ func TestBuildResultManaged(t *testing.T) {
 	}
 }
 
-// TestBuildResultLegacyManaged covers the attachment every page published
-// before the encoding change still carries: a legacy checksum comment, so it is
-// managed and has a checksum but no recorded source. It must not be reported as
-// hand-uploaded -- managed is what tells the two apart.
-func TestBuildResultLegacyManaged(t *testing.T) {
-	a := client.Attachment{ID: "att3", Title: "assets_x.png"}
-	a.Metadata.Comment = "mzcld:checksum: e733ac00"
-	res := buildResult(a)
-	if !res.Managed {
-		t.Error("managed = false, want true for a legacy comment")
-	}
-	if res.SHA256 == nil || *res.SHA256 != "e733ac00" {
-		t.Errorf("sha256 = %v, want e733ac00", res.SHA256)
-	}
-	if res.Source != nil {
-		t.Errorf("source = %v, want null", res.Source)
-	}
-}
-
 // TestBuildResultHandUploadedNullsMetadata is the signal attachment-list exists
 // to give: an attachment publishing will not touch.
 func TestBuildResultHandUploadedNullsMetadata(t *testing.T) {

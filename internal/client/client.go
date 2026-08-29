@@ -44,12 +44,13 @@ import (
 // the image's original location exactly instead of inferring it from the
 // attachment name.
 const (
-	// attachmentCommentPrefix marks an attachment as markfluence-managed.
+	// attachmentCommentPrefix marks an attachment as markfluence-managed. This
+	// is the only comment form markfluence writes or recognizes -- no older
+	// format is parsed. An attachment stamped by a markfluence predating a
+	// comment-format change (the Python tool's "mzcld:checksum:" prefix; this
+	// tool's own 64-hex checksum before it was truncated) reads as unmanaged
+	// and is re-uploaded once, the same as any other hand-uploaded file.
 	attachmentCommentPrefix = "markfluence: "
-	// legacyChecksumPrefix is the older checksum-only comment form. It is still
-	// parsed -- comparing the parsed checksum rather than the whole comment is
-	// what lets the format change without re-uploading every attachment.
-	legacyChecksumPrefix = "mzcld:checksum: "
 	// checksumHexLen truncates a file's SHA-256 hex digest to 128 bits before
 	// it goes into a comment. The comment only needs to detect that a file's
 	// bytes changed, not resist an adversary, so this is the bigger and
@@ -57,9 +58,7 @@ const (
 	// truncating it buys roughly twice what shortening the "markfluence: "
 	// prefix would (#101), and the prefix is worth keeping full-length: it is
 	// the ownership marker S5 rests on, readable by a human browsing a page's
-	// attachments in the Confluence UI. parseAttachmentComment doesn't care
-	// how long the hex run is, so a full 64-hex comment written by an older
-	// markfluence still parses -- only the write side changes.
+	// attachments in the Confluence UI.
 	checksumHexLen = 32
 )
 
@@ -374,13 +373,11 @@ func attachmentComment(sum, source string) string {
 	return c
 }
 
-// parseAttachmentComment reads both the current form ("markfluence: sha256=<hex>
-// path=<path>") and the legacy checksum-only form, so an attachment written by
-// an older markfluence is still recognized as unchanged.
+// parseAttachmentComment reads the one form markfluence writes:
+// "markfluence: sha256=<hex> path=<path>". Anything else -- a hand-uploaded
+// attachment, or one stamped by a markfluence predating this format -- comes
+// back unmanaged.
 func parseAttachmentComment(comment string) AttachmentMeta {
-	if sum, ok := strings.CutPrefix(comment, legacyChecksumPrefix); ok {
-		return AttachmentMeta{SHA256: strings.TrimSpace(sum), Managed: true}
-	}
 	rest, ok := strings.CutPrefix(comment, attachmentCommentPrefix)
 	if !ok {
 		return AttachmentMeta{}
@@ -1021,7 +1018,10 @@ func (c *ConfluenceClient) planAttachments(pageID string, attachments []LocalAtt
 		switch {
 		case !ok:
 			p.action = "created"
-		case truncatedChecksum(meta.SHA256) != sum:
+		case meta.SHA256 != sum:
+			// A stored checksum in a format markfluence no longer writes (a
+			// different length, or unmanaged entirely) never equals sum, so
+			// this also re-uploads once whatever predates the current format.
 			p.action = "updated"
 		case meta.Source != "" && meta.Source != att.Source:
 			// The bytes are unchanged but the recorded path is wrong, so re-upload
@@ -1029,13 +1029,10 @@ func (c *ConfluenceClient) planAttachments(pageID string, attachments []LocalAtt
 			// survive every later publish. The name is the encoding of the path, so
 			// the two move together: a disagreement under the same name means the
 			// stored comment does not say what we wrote. An empty Source is not a
-			// disagreement -- that is a legacy comment, and re-uploading every one
-			// of those is exactly the churn the checksum comparison avoids.
+			// disagreement -- a comment with no source recorded at all is a normal
+			// case (see attachmentComment), not something to treat as mangled.
 			p.action = "updated"
 		default:
-			// Compare the checksum, not the whole comment: an attachment stamped
-			// by an older markfluence is unchanged and must not be re-uploaded
-			// merely because the comment format has moved on.
 			p.action = "skipped"
 		}
 		plans = append(plans, p)
@@ -1188,19 +1185,6 @@ func fileChecksum(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-// truncatedChecksum matches a stored checksum's length to checksumHexLen
-// before comparison. A checksum stored by an older markfluence is the full
-// 64-hex digest; a current one is already checksumHexLen. Comparing without
-// this would report every legacy-stamped attachment as changed the moment the
-// comment format moved on, purely because the two strings have different
-// lengths, even though the bytes they were computed from agree exactly.
-func truncatedChecksum(stored string) string {
-	if len(stored) > checksumHexLen {
-		return stored[:checksumHexLen]
-	}
-	return stored
 }
 
 // --- content properties ------------------------------------------------------
