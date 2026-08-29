@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/clienttest"
 )
 
 // node is a fixture row: what the fake server returns for one child.
@@ -23,7 +23,7 @@ type node struct {
 func treeServer(t *testing.T, tree map[string][]node) (*client.ConfluenceClient, *int) {
 	t.Helper()
 	var calls int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 		// .../content/{id}/child/{kind}
@@ -50,9 +50,8 @@ func treeServer(t *testing.T, tree map[string][]node) (*client.ConfluenceClient,
 			})
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"results": rows})
-	}))
-	t.Cleanup(srv.Close)
-	return client.New(client.Config{SiteURL: srv.URL, Username: "u", Token: "t"}), &calls
+	})
+	return c, &calls
 }
 
 // fixture: root holds a folder and two pages, interleaved by position; the
