@@ -1,0 +1,5 @@
+{
+  "filename": "docs/link.md",
+  "root": "docs",
+  "files": ["docs/link.md", "outside/linked.md"]
+}

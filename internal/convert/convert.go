@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/mozilla/markfluence/internal/frontmatter"
+	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/project"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
@@ -56,10 +57,13 @@ func newMarkdown(r *storageRenderer) goldmark.Markdown {
 // and resolves image paths. root bounds which images and parent references may
 // be read (S1/S2) and is what an image's recorded Source is relative to; the
 // caller discovers it (per-file, via internal/project) rather than
-// MdToConfluence assuming the working directory. version is the build stamp
-// substituted for the <!-- markfluence-version --> token.
+// MdToConfluence assuming the working directory. index is the tree-wide
+// link/anchor index for root -- built once and shared across every file
+// converted under it (internal/linkindex.Build), not rebuilt here per
+// conversion. version is the build stamp substituted for the
+// <!-- markfluence-version --> token.
 func MdToConfluence(
-	md *frontmatter.MarkdownFile, root *project.Root, baseURL, spaceKey, version string,
+	md *frontmatter.MarkdownFile, root *project.Root, index *linkindex.Index, baseURL, spaceKey, version string,
 ) (*ConfluencePage, error) {
 	// Shield raw ac:/ri: storage tags so goldmark passes them through instead of
 	// escaping them; restore them after rendering.
@@ -69,10 +73,10 @@ func MdToConfluence(
 		baseDir:         dir,
 		root:            root,
 		currentBasename: filepath.Base(md.Filename),
+		currentDocKey:   docKeyFor(root, md.Filename),
 		baseURL:         baseURL,
 		spaceKey:        spaceKey,
-		anchorMap:       buildAnchorMap(dir),
-		pageMap:         buildPageMap(dir),
+		index:           index,
 	}
 	var buf bytes.Buffer
 	if err := newMarkdown(r).Convert([]byte(shielded), &buf); err != nil {
@@ -99,4 +103,22 @@ func MdToConfluence(
 		page.Warnings = []string{}
 	}
 	return page, nil
+}
+
+// docKeyFor resolves filename's own path to the key the link index would use
+// for it: relative to root, slash-separated. filename is always at or under
+// its own root by construction (root was discovered from this same file's
+// directory), so this cannot escape the way an arbitrary link destination
+// could; the fallback (filename's bare basename) only matters if filepath.Abs
+// or filepath.Rel itself fails, which needs an unreadable working directory.
+func docKeyFor(root *project.Root, filename string) string {
+	abs, err := filepath.Abs(filename)
+	if err != nil {
+		return filepath.Base(filename)
+	}
+	rel, err := filepath.Rel(root.Dir, abs)
+	if err != nil {
+		return filepath.Base(filename)
+	}
+	return filepath.ToSlash(rel)
 }

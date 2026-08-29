@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/project"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
@@ -28,11 +29,18 @@ type storageRenderer struct {
 	root *project.Root
 
 	// Link/anchor rewriting context, populated per conversion.
+	//
+	// currentBasename is the bare filename, used to build a same-page anchor's
+	// fake self-link; currentDocKey is the same file's root-relative path, used
+	// to look up its own anchors in index -- the two differ by more than a
+	// leading directory whenever the file isn't at the index's root.
 	currentBasename string
+	currentDocKey   string
 	baseURL         string
 	spaceKey        string
-	anchorMap       map[string]map[string]string // filename -> github slug -> confluence slug
-	pageMap         map[string]pageEntry         // filename -> page id + title
+	// index is the tree-wide link/anchor index, built once per root and shared
+	// across every file converted under it (internal/linkindex).
+	index *linkindex.Index
 
 	// Image side effects.
 	attachments []Attachment

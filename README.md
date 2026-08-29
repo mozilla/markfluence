@@ -1071,8 +1071,9 @@ non-ASCII heading anchor may arrive as `#caf%C3%A9-section`. Both are decoded
 before markfluence matches them against files and headings on disk, so either
 spelling resolves. A link it cannot resolve — a target with no `page_id`, or a
 file that isn't there — is left exactly as written and published as-is, which on
-Confluence is a dead relative link. There is no warning for this, so check the
-targets when a link matters.
+Confluence is a dead relative link. A `.md` link shaped like a same-tree
+reference gets a warning when this happens; a mention, an attachment link, or
+an external URL was never meant to resolve here and stays silent.
 
 **Comment directives:**
 - `<!-- confluence-toc -->` — replaced with Confluence table-of-contents macro.

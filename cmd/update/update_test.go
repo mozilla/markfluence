@@ -11,6 +11,7 @@ import (
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/project"
 )
@@ -147,7 +148,8 @@ func TestProcessFileRejectsNonNumericPageID(t *testing.T) {
 		t.Fatalf("writing fixture: %v", err)
 	}
 
-	r := processFile(path, client.New(client.Config{SiteURL: "https://wiki.example.net"}), project.NewCache(""))
+	c := client.New(client.Config{SiteURL: "https://wiki.example.net"})
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
 	if r.ok {
 		t.Fatal("a non-numeric page_id must fail the file")
 	}
@@ -177,7 +179,7 @@ func TestProcessFileReportsMissingPage(t *testing.T) {
 		t.Fatalf("writing fixture: %v", err)
 	}
 
-	r := processFile(path, client.New(client.Config{SiteURL: srv.URL}), project.NewCache(""))
+	r := processFile(path, client.New(client.Config{SiteURL: srv.URL}), project.NewCache(""), linkindex.NewCache())
 	if r.ok {
 		t.Fatal("a page_id that resolves to nothing must fail the file")
 	}
