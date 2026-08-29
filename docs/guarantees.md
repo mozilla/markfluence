@@ -154,8 +154,16 @@ being able to reconstruct a tree on export. `images.go` records an attachment's
 `Source` relative to the root rather than to the referencing page, so identity
 follows the asset alone (`_plans/026` commit 4).
 
-**L5** and **L6** are partial because both fail before they start for any layout
-with an asset above the page, which export refuses (see S1).
+**L5** and **L6** stay Partial, deferred to #59 (multi-page export), even
+though the mechanism that made them fail is already repaired: since
+`_plans/026` commit 4 records an attachment's `Source` relative to the root,
+`attachfile.Resolve`'s `dest + source` join for a layout with an asset above
+the page no longer escapes, and single-page export's round-trip already
+works. What's still missing is multi-page export itself (Use case 8) —
+provenance-based attachment placement, directory mirroring — which is what
+these guarantees' own wording actually describes (a whole tree, either
+roundtrip direction). Calling them Holds now would be declaring a win on
+half the guarantee.
 
 **L7** is why a markdown destination is percent-encoded on the way out: an
 unencoded space produces a file that no longer parses as a link.
