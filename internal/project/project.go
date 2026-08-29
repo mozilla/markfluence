@@ -65,18 +65,12 @@ func Discover(startDir string) (*Root, error) {
 
 	dir := abs
 	for {
-		candidate := filepath.Join(dir, Filename)
-		info, statErr := os.Stat(candidate)
-		switch {
-		case statErr == nil && !info.IsDir():
+		hit, candidate, err := probeMarker(dir)
+		if err != nil {
+			return nil, err
+		}
+		if hit {
 			return open(dir, candidate)
-		case statErr == nil:
-			// A directory happens to be named markfluence.yaml -- not a hit;
-			// keep walking as if nothing were there.
-		case errors.Is(statErr, fs.ErrNotExist), errors.Is(statErr, fs.ErrPermission):
-			// Not here, or we can't tell -- keep walking.
-		default:
-			return nil, statErr
 		}
 
 		parent := filepath.Dir(dir)
@@ -85,6 +79,28 @@ func Discover(startDir string) (*Root, error) {
 			return open(abs, "")
 		}
 		dir = parent
+	}
+}
+
+// probeMarker stats markfluence.yaml directly inside dir, reporting whether
+// it's a hit and, if so, its path. Factored out of Discover so Cache's own
+// walk (cache.go) can consult its cache at every level using the identical
+// per-directory check, rather than re-deriving it.
+func probeMarker(dir string) (hit bool, file string, err error) {
+	candidate := filepath.Join(dir, Filename)
+	info, statErr := os.Stat(candidate)
+	switch {
+	case statErr == nil && !info.IsDir():
+		return true, candidate, nil
+	case statErr == nil:
+		// A directory happens to be named markfluence.yaml -- not a hit; keep
+		// walking as if nothing were there.
+		return false, "", nil
+	case errors.Is(statErr, fs.ErrNotExist), errors.Is(statErr, fs.ErrPermission):
+		// Not here, or we can't tell -- keep walking.
+		return false, "", nil
+	default:
+		return false, "", statErr
 	}
 }
 

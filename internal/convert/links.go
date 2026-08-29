@@ -125,11 +125,8 @@ func (r *storageRenderer) resolveDocKey(dest string) string {
 	if err != nil {
 		return ""
 	}
-	rel, err := filepath.Rel(r.root.Dir, abs)
-	if err != nil {
-		return ""
-	}
-	return filepath.ToSlash(rel)
+	key, _ := rootRelativeKey(r.root, abs)
+	return key
 }
 
 // splitMarkdownAnchor splits "path.md#fragment" into its path and fragment,

@@ -228,8 +228,10 @@ func run(cmd *cobra.Command, args []string) error {
 	cloudID, _ := cmd.Flags().GetString("cloud-id")
 	envFile, _ := cmd.Flags().GetString("env-file")
 	rootOverride, _ := cmd.Flags().GetString("root")
+	roots := project.NewCache(rootOverride)
+	defer roots.Close()
 	c, err := client.Resolve(client.Options{
-		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile,
+		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile, Roots: roots,
 	})
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeConfig)
@@ -246,8 +248,6 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 	}
 	spaceCache := map[string]string{}
-	roots := project.NewCache(rootOverride)
-	defer roots.Close()
 	indexes := linkindex.NewCache()
 
 	// Phase 1: validate every file, create nothing.
@@ -366,14 +366,15 @@ func createAll(ordered []record, c *client.ConfluenceClient, doPersist bool) []*
 			continue
 		}
 		created[r.absPath] = pageID
-		if pageID != "" {
-			// Seed the shared link index immediately, using the identical key
-			// MdToConfluence would compute for this file -- so phase 3 sees
-			// this id regardless of link direction or a cycle among the files
-			// being created, and regardless of --no-persist (which skips the
-			// frontmatter write but not this).
-			r.index.SetPage(convert.DocKeyFor(r.root, r.filename), linkindex.PageEntry{PageID: pageID, Title: r.title})
-		}
+		// Seed the shared link index immediately, using the identical key
+		// MdToConfluence would compute for this file -- so phase 3 sees this id
+		// regardless of link direction or a cycle among the files being created,
+		// regardless of --no-persist (which skips the frontmatter write but not
+		// this), and regardless of --dry-run (whose pageID is empty, but the
+		// entry's mere presence in the index is what a link lookup checks, so a
+		// cross-link between two new files in the same batch still resolves in
+		// the preview instead of warning "not resolved").
+		r.index.SetPage(convert.DocKeyFor(r.root, r.filename), linkindex.PageEntry{PageID: pageID, Title: r.title})
 		pending[r.absPath] = pendingPublish{res: res, pageID: pageID, version: version}
 	}
 
@@ -437,7 +438,9 @@ func reserveOne(
 		content = frontmatter.UpdateField(content, "page_id", pageID, "")
 		content = frontmatter.UpdateField(content, "page_width", string(r.width), "")
 		if err := os.WriteFile(r.filename, []byte(content), 0o644); err != nil {
-			return res.fail(err, jsonout.CodeIO), "", 0, false
+			// The page above was already created; keep its id/url in the result or
+			// it becomes an orphan with no local trace at all.
+			return res.failKeepingPage(err, jsonout.CodeIO), "", 0, false
 		}
 		res.persisted = true
 	}
@@ -625,6 +628,15 @@ func resolveParent(
 		}
 
 		info, statErr := root.FS.Lstat(rel)
+		if statErr != nil && strings.Contains(statErr.Error(), "escapes from parent") {
+			// An escape only os.Root can see -- a symlinked intermediate
+			// directory -- reads as "not found" otherwise, the same trap
+			// internal/convert/images.go's rootRelative comment names; name it
+			// explicitly instead of sending the author looking for a typo.
+			return parentInfo{}, fmt.Errorf(
+				"parent %s resolves outside the documentation root (%s); a parent must be within it",
+				parentValue, root.Dir)
+		}
 		if statErr != nil || info.IsDir() {
 			return parentInfo{}, fmt.Errorf("parent file not found: %s", parentValue)
 		}

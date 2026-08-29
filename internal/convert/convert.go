@@ -121,9 +121,21 @@ func DocKeyFor(root *project.Root, filename string) string {
 	if err != nil {
 		return filepath.Base(filename)
 	}
-	rel, err := filepath.Rel(root.Dir, abs)
-	if err != nil {
+	key, ok := rootRelativeKey(root, abs)
+	if !ok {
 		return filepath.Base(filename)
 	}
-	return filepath.ToSlash(rel)
+	return key
+}
+
+// rootRelativeKey converts an already-absolute path into the root-relative,
+// slash-separated form the link index is keyed by -- the one step DocKeyFor
+// and (*storageRenderer).resolveDocKey (links.go) share; each computes abs
+// its own way and picks its own fallback on failure, but not this one.
+func rootRelativeKey(root *project.Root, abs string) (key string, ok bool) {
+	rel, err := filepath.Rel(root.Dir, abs)
+	if err != nil {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
 }

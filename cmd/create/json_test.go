@@ -66,6 +66,35 @@ type errString string
 
 func (e errString) Error() string { return string(e) }
 
+// TestFailNullsPageIDAndURL covers the ordinary failure path: fail() must
+// clear pageID/url even when the caller already set them (a failure after a
+// successful CreatePage), matching the schema's null-on-failure contract.
+func TestFailNullsPageIDAndURL(t *testing.T) {
+	r := &createResult{file: "a.md", pageID: "456", url: "https://x/456"}
+	r.fail(errString("boom"), jsonout.CodeConvert)
+	if r.pageID != "" || r.url != "" {
+		t.Errorf("fail() left pageID=%q url=%q, want both cleared", r.pageID, r.url)
+	}
+	if r.ok {
+		t.Error("fail() must leave ok false")
+	}
+}
+
+// TestFailKeepingPageLeavesPageIDAndURL covers the one exception: a page was
+// really created on the server and reservation still failed afterward
+// (persisting the frontmatter). The id must survive so the result can name
+// the orphaned page.
+func TestFailKeepingPageLeavesPageIDAndURL(t *testing.T) {
+	r := &createResult{file: "a.md", pageID: "456", url: "https://x/456"}
+	r.failKeepingPage(errString("disk full"), jsonout.CodeIO)
+	if r.pageID != "456" || r.url != "https://x/456" {
+		t.Errorf("failKeepingPage() cleared pageID=%q url=%q, want both kept", r.pageID, r.url)
+	}
+	if r.ok {
+		t.Error("failKeepingPage() must leave ok false")
+	}
+}
+
 func TestJSONResultCreated(t *testing.T) {
 	parent := "123"
 	parentType := "folder"

@@ -74,8 +74,10 @@ func run(cmd *cobra.Command, args []string) error {
 	cloudID, _ := cmd.Flags().GetString("cloud-id")
 	envFile, _ := cmd.Flags().GetString("env-file")
 	rootOverride, _ := cmd.Flags().GetString("root")
+	roots := project.NewCache(rootOverride)
+	defer roots.Close()
 	c, err := client.Resolve(client.Options{
-		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile,
+		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile, Roots: roots,
 	})
 	if err != nil {
 		if ui.IsJSON() {
@@ -89,9 +91,6 @@ func run(cmd *cobra.Command, args []string) error {
 	if dryRun {
 		ui.Warn("DRY RUN — no changes will be written.")
 	}
-
-	roots := project.NewCache(rootOverride)
-	defer roots.Close()
 	indexes := linkindex.NewCache()
 
 	failures := 0

@@ -116,6 +116,36 @@ func TestResolveParentEscapingRootIsHardError(t *testing.T) {
 	}
 }
 
+// TestResolveParentEscapeThroughSymlinkedDirectoryNamesTheEscape mirrors
+// internal/convert's TestRenderImageRefusesEscapeThroughSymlinkedDirectory: a
+// lexical containment check sees the parent as inside root, and only os.Root
+// -- which resolves the symlink -- refuses it. The message must name the
+// escape, not read as a plain "not found" the way any other Lstat error does;
+// an author chasing that message would go looking for a typo instead of
+// realizing the parent escapes the documentation root.
+func TestResolveParentEscapeThroughSymlinkedDirectoryNamesTheEscape(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation needs elevated privileges on Windows")
+	}
+	root := rootFor(t, t.TempDir())
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "parent.md"),
+		[]byte("---\npage_id: 1\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// "assets" looks like an ordinary subdirectory of root; it actually leads
+	// outside it.
+	if err := os.Symlink(outside, filepath.Join(root.Dir, "assets")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	_, err := resolveParent(filepath.Join(root.Dir, "a.md"),
+		map[string]string{"parent": "assets/parent.md"}, nil, nil, "", root)
+	if err == nil || !strings.Contains(err.Error(), "outside the documentation root") {
+		t.Errorf("err = %v, want a hard error naming the escape, not \"not found\"", err)
+	}
+}
+
 // TestResolveParentRefusesSymlinkedTarget mirrors the image leaf's refusal:
 // even a symlink resolving inside root is not a regular file.
 func TestResolveParentRefusesSymlinkedTarget(t *testing.T) {
