@@ -16,6 +16,7 @@ import (
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/project"
@@ -92,6 +93,9 @@ type record struct {
 	// names and recorded Source are relative to. Discovered from the file's own
 	// directory, cached across the batch by internal/project.Cache.
 	root *project.Root
+	// index is the tree-wide link/anchor index for root, shared by every file
+	// under the same root (internal/linkindex.Cache).
+	index *linkindex.Index
 }
 
 // failure is a phase-1 validation error against a file (or "(hierarchy)").
@@ -236,12 +240,13 @@ func run(cmd *cobra.Command, args []string) error {
 	spaceCache := map[string]string{}
 	roots := project.NewCache(rootOverride)
 	defer roots.Close()
+	indexes := linkindex.NewCache()
 
 	// Phase 1: validate every file, create nothing.
 	var records []record
 	var errs []failure
 	for _, filename := range args {
-		r, err := resolveFile(filename, c, inSetAbs, spaceCache, roots)
+		r, err := resolveFile(filename, c, inSetAbs, spaceCache, roots, indexes)
 		if err != nil {
 			errs = append(errs, newFailure(filename, err))
 			continue
@@ -336,7 +341,7 @@ func createInOrder(
 
 func resolveFile(
 	filename string, c *client.ConfluenceClient, inSetAbs map[string]bool, spaceCache map[string]string,
-	roots *project.Cache,
+	roots *project.Cache, indexes *linkindex.Cache,
 ) (record, error) {
 	mf, err := frontmatter.ParseFile(filename)
 	if err != nil {
@@ -396,7 +401,11 @@ func resolveFile(
 	if err != nil {
 		return record{}, fmt.Errorf("resolving the documentation root: %w", err)
 	}
-	return record{filename, abs, mf, title, spaceKey, spaceID, parent, width, root}, nil
+	index, err := indexes.Get(root)
+	if err != nil {
+		return record{}, fmt.Errorf("building the link index: %w", err)
+	}
+	return record{filename, abs, mf, title, spaceKey, spaceID, parent, width, root, index}, nil
 }
 
 func resolveParent(
@@ -547,7 +556,7 @@ func createOne(r record, parentID string, c *client.ConfluenceClient, persist bo
 
 	// SiteURL, not BaseURL: rewritten links are published into the page, so they
 	// must point at the site even when requests go through the gateway.
-	pageContent, err := convert.MdToConfluence(r.mdfile, r.root, c.SiteURL(), r.spaceKey, buildinfo.Stamp())
+	pageContent, err := convert.MdToConfluence(r.mdfile, r.root, r.index, c.SiteURL(), r.spaceKey, buildinfo.Stamp())
 	if err != nil {
 		return res.fail(err, jsonout.CodeConvert)
 	}

@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/project"
 )
 
@@ -26,4 +27,15 @@ func testRoot(t *testing.T, dir string) *project.Root {
 	}
 	t.Cleanup(func() { _ = root.FS.Close() })
 	return root
+}
+
+// testIndex builds the link index for root, for tests that call
+// MdToConfluence but don't exercise link resolution themselves.
+func testIndex(t *testing.T, root *project.Root) *linkindex.Index {
+	t.Helper()
+	idx, err := linkindex.Build(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return idx
 }

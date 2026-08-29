@@ -3,128 +3,13 @@ package convert
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
-	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/yuin/goldmark/ast"
 	gmhtml "github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/util"
 )
-
-// pageEntry is a sibling document's Confluence coordinates for link rewriting.
-type pageEntry struct {
-	pageID string
-	title  string
-}
-
-var (
-	// nonSlugRE strips everything except letters, digits, underscore, whitespace,
-	// and hyphens (Unicode-aware).
-	nonSlugRE       = regexp.MustCompile(`[^\p{L}\p{N}_\s-]`)
-	whitespaceRE    = regexp.MustCompile(`\s`)
-	whitespaceRunRE = regexp.MustCompile(`\s+`)
-)
-
-// githubSlug replicates GitHub's heading-anchor slugger: lowercase; strip all but
-// letters/digits/underscore/whitespace/hyphen; each whitespace char becomes one
-// hyphen; trim leading/trailing hyphens.
-func githubSlug(heading string) string {
-	s := strings.ToLower(heading)
-	s = nonSlugRE.ReplaceAllString(s, "")
-	s = whitespaceRE.ReplaceAllString(s, "-")
-	return strings.Trim(s, "-")
-}
-
-// confluenceSlug replicates Confluence's scheme: preserve case and punctuation,
-// collapsing runs of whitespace to single hyphens.
-func confluenceSlug(heading string) string {
-	return whitespaceRunRE.ReplaceAllString(strings.TrimSpace(heading), "-")
-}
-
-// extractHeadings returns the text of each ATX heading in a frontmatter-stripped
-// body, skipping fenced code blocks so "#" lines inside samples aren't headings.
-func extractHeadings(body string) []string {
-	var headings []string
-	inCode := false
-	for _, line := range strings.Split(body, "\n") {
-		if strings.HasPrefix(line, "```") {
-			inCode = !inCode
-			continue
-		}
-		if inCode {
-			continue
-		}
-		hashes := 0
-		for hashes < len(line) && line[hashes] == '#' {
-			hashes++
-		}
-		if hashes == 0 || hashes >= len(line) {
-			continue
-		}
-		rest := line[hashes:]
-		if strings.TrimLeft(rest, " \t") == rest { // no whitespace after the #s
-			continue
-		}
-		if text := strings.TrimSpace(rest); text != "" {
-			headings = append(headings, text)
-		}
-	}
-	return headings
-}
-
-// buildAnchorMap maps each *.md file in dir to its {githubSlug: confluenceSlug}.
-func buildAnchorMap(dir string) map[string]map[string]string {
-	out := map[string]map[string]string{}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return out
-	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
-		if err != nil {
-			continue
-		}
-		_, body := frontmatter.Extract(string(data))
-		anchors := map[string]string{}
-		for _, h := range extractHeadings(body) {
-			if gh := githubSlug(h); gh != "" {
-				anchors[gh] = confluenceSlug(h)
-			}
-		}
-		out[e.Name()] = anchors
-	}
-	return out
-}
-
-// buildPageMap maps each *.md file in dir with a usable page_id to its
-// Confluence coordinates.
-func buildPageMap(dir string) map[string]pageEntry {
-	out := map[string]pageEntry{}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return out
-	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
-		if err != nil {
-			continue
-		}
-		mf := frontmatter.Parse(e.Name(), string(data))
-		if id := mf.PageID(); id != "" {
-			out[e.Name()] = pageEntry{pageID: id, title: mf.Title()}
-		}
-	}
-	return out
-}
 
 // renderLink renders a link, rewriting same-page and cross-file anchors to
 // Confluence ids and sibling .md links to their published Confluence URLs. Links
@@ -162,7 +47,7 @@ func (r *storageRenderer) rewriteHref(href string) (string, bool) {
 	rewritten := false
 
 	if strings.HasPrefix(href, "#") {
-		if nf := r.anchorMap[r.currentBasename][decodeDestination(href[1:])]; nf != "" {
+		if nf, ok := r.index.Anchor(r.currentDocKey, decodeDestination(href[1:])); ok {
 			// Same-page anchors become fake cross-file links to the current
 			// file so the doc-link step can fully qualify them. The filename is
 			// encoded going in because what is being built here is a
@@ -172,7 +57,7 @@ func (r *storageRenderer) rewriteHref(href string) (string, bool) {
 			rewritten = true
 		}
 	} else if path, frag, ok := splitMarkdownAnchor(href); ok {
-		if nf := r.anchorMap[docKey(path)][decodeDestination(frag)]; nf != "" {
+		if nf, ok := r.index.Anchor(r.resolveDocKey(path), decodeDestination(frag)); ok {
 			// path keeps the spelling it was written with: it is a destination,
 			// and the doc-link step decodes it again for its own lookup.
 			href = path + "#" + escapeFragment(nf)
@@ -188,7 +73,11 @@ func (r *storageRenderer) rewriteHref(href string) (string, bool) {
 
 // rewriteDocLink rewrites a sibling .md href (with optional fragment) to its
 // Confluence URL. It returns ok=false for absolute URLs, non-.md hrefs, or files
-// not in the page map.
+// not in the link index -- the last one warns (minimal R1: every reference that
+// looks like it should resolve and doesn't is said out loud, via the same
+// r.warnings list images.go already populates on a broken reference). The first
+// two don't warn, because they were never meant to resolve here in the first
+// place -- a mention, an attachment link, or an external URL.
 func (r *storageRenderer) rewriteDocLink(href string) (string, bool) {
 	path, fragment := href, ""
 	if i := strings.Index(href, "#"); i >= 0 {
@@ -200,32 +89,47 @@ func (r *storageRenderer) rewriteDocLink(href string) (string, bool) {
 	if strings.Contains(path, "://") || strings.HasPrefix(path, "//") {
 		return "", false
 	}
-	entry, ok := r.pageMap[docKey(path)]
+	entry, ok := r.index.Page(r.resolveDocKey(path))
 	if !ok {
+		r.warnings = append(r.warnings, fmt.Sprintf("link not resolved: %s", href))
 		return "", false
 	}
 
 	var newHref string
 	if r.spaceKey != "" {
 		slug := ""
-		if entry.title != "" {
-			slug = url.QueryEscape(entry.title)
+		if entry.Title != "" {
+			slug = url.QueryEscape(entry.Title)
 		}
 		newHref = fmt.Sprintf("%s/wiki/spaces/%s/pages/%s/%s",
-			r.baseURL, r.spaceKey, entry.pageID, slug)
+			r.baseURL, r.spaceKey, entry.PageID, slug)
 	} else {
-		newHref = fmt.Sprintf("%s/wiki/pages/viewpage.action?pageId=%s", r.baseURL, entry.pageID)
+		newHref = fmt.Sprintf("%s/wiki/pages/viewpage.action?pageId=%s", r.baseURL, entry.PageID)
 	}
 	return newHref + fragment, true
 }
 
-// docKey turns a link destination into the key the page and anchor maps are
-// built with: the bare filename as it appears on disk. Both maps are keyed by
-// os.ReadDir's e.Name(), so the destination has to be decoded first -- a link
-// to "my doc.md" is spelled "my%20doc.md", and comparing that to the filename
-// silently misses, publishing a relative href that is a dead link on Confluence.
-func docKey(dest string) string {
-	return filepath.Base(decodeDestination(dest))
+// resolveDocKey resolves a link/anchor destination -- relative to r.baseDir,
+// the referencing file's own directory, same as an image src -- to the
+// root-relative, slash-separated path the link index is keyed by.
+//
+// An escaping destination (one that climbs above root) still returns its
+// computed string rather than refusing it: the index is built by walking
+// downward from root, so it can never contain an entry for a path outside it,
+// and an escaping key is therefore already guaranteed to miss. That is what
+// lets link resolution need no clamp at all (025's S2 discussion) where an
+// image leaf and a parent: read still need one -- both of those are reads,
+// and this is a lookup against data already collected inside root.
+func (r *storageRenderer) resolveDocKey(dest string) string {
+	abs, err := filepath.Abs(filepath.Join(r.baseDir, decodeDestination(dest)))
+	if err != nil {
+		return ""
+	}
+	rel, err := filepath.Rel(r.root.Dir, abs)
+	if err != nil {
+		return ""
+	}
+	return filepath.ToSlash(rel)
 }
 
 // splitMarkdownAnchor splits "path.md#fragment" into its path and fragment,

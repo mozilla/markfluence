@@ -47,7 +47,7 @@ A violation here does damage, rather than producing a wrong answer.
 | | label | guarantee | status |
 |---|---|---|---|
 | **S1** | `no-write-outside-root` | No file is written outside the root. | Holds |
-| **S2** | `no-read-outside-root` | No file is read outside the root. | **Aspirational** |
+| **S2** | `no-read-outside-root` | No file is read outside the root. | Partial |
 | **S3** | `no-overwrite-without-force` | No existing file is overwritten without `--force`. | Holds |
 | **S4** | `no-removal-as-side-effect` | Nothing is removed as a side effect. Removal is a command's stated purpose or it does not happen. | Vacuous |
 | **S5** | `remove-only-ours` | markfluence removes only what markfluence created. | Vacuous |
@@ -56,21 +56,24 @@ A violation here does damage, rather than producing a wrong answer.
 **S1** is enforced by `attachfile.Resolve`, which refuses a traversing path
 rather than clipping it.
 
-**S2** is enforced for images only, by `convert.withinRoot`. A frontmatter
-`parent:` path is joined and read unclamped, and link targets are safe only by
-accident: `docKey` is `filepath.Base`, so no destination can traverse. Anything
-that makes link resolution path-aware removes that accident and has to enforce
-S2 deliberately.
+**S2** now holds for two of the three reads `_plans/025` names, and the
+remaining one is why the status is Partial rather than Holds.
 
-`withinRoot` is also purely lexical, so a symlinked directory inside the tree
-passes it while reading from outside.
+The image leaf is enforced through `root.FS`, an `os.Root` scoped to the
+documentation root (`internal/convert/images.go`): a lexically escaping path is
+refused before ever asking it, and an escape only `os.Root` can see — a
+symlinked intermediate directory — is refused too, closing what `withinRoot`'s
+purely lexical comparison used to miss. The same leaf also refuses a symlink
+outright via `os.Lstat`, even one resolving inside the root.
 
-Under the model in `_plans/025`, S2 stops being a comparison. Link and anchor
-resolution becomes a lookup in an index built by walking *down* from the root, so
-nothing outside it can be in the index and no file outside it is ever opened —
-the guarantee holds by construction rather than by a check. What remains are
-actual reads: an image leaf, and a frontmatter `parent:` path. See
+Link and anchor resolution needs no clamp at all: `internal/linkindex.Build`
+walks *down* from the root once, so nothing outside it can be in the index and
+no file outside it is ever opened for this purpose — the guarantee holds by
+construction rather than by a check, exactly as `_plans/025` describes. See
 [Non-goals](#symlinks).
+
+What remains: a frontmatter `parent:` path is still joined and read unclamped.
+That is `_plans/026` commit 6.
 
 **S3** is enforced by `export`, which stats the destination and skips both the
 markdown and each attachment unless `--force`.
@@ -118,28 +121,35 @@ stated so a property test can generate trees and assert it.
 
 | | label | guarantee | status |
 |---|---|---|---|
-| **L1** | `resolve-what-was-named` | A reference resolves to the file it names, or to nothing. | **Aspirational** |
-| **L2** | `invocation-independent` | How a reference resolves, and what an attachment is named, depend only on the files on disk — not on the working directory, nor on which files were passed in the same command. | **Aspirational** |
-| **L3** | `identity-from-asset-location` | An attachment's identity depends only on the asset's location. | **Aspirational** |
+| **L1** | `resolve-what-was-named` | A reference resolves to the file it names, or to nothing. | Holds |
+| **L2** | `invocation-independent` | How a reference resolves, and what an attachment is named, depend only on the files on disk — not on the working directory, nor on which files were passed in the same command. | Holds |
+| **L3** | `identity-from-asset-location` | An attachment's identity depends only on the asset's location. | Holds |
 | **L4** | `publish-is-idempotent` | Publishing a file that has not changed makes no change in Confluence. | Holds |
 | **L5** | `roundtrip-from-confluence` | Exporting a page, then publishing it back unedited, makes no change to the page. | Partial |
 | **L6** | `roundtrip-from-disk` | Publishing a file, then exporting it, yields markdown that publishes to the same page. | Partial |
 | **L7** | `output-is-valid-markdown` | Anything markfluence writes to disk is markdown that renders. | Holds |
 | **L8** | `no-layout-inference` | Page identity and hierarchy are never inferred from disk layout. | Holds |
 
-**L1** is about correctness, not cardinality. A basename lookup does resolve to
-exactly one file — just not the one the reference named, which is how a link to
-`sub/dup.md` reaches `./dup.md`.
+**L1** is about correctness, not cardinality. A basename lookup used to
+resolve to exactly one file — just not the one the reference named, which was
+how a link to `sub/dup.md` reached `./dup.md`. `internal/linkindex` resolves by
+path instead, so a basename can no longer match the wrong file
+(`_plans/026` commit 5).
 
 **L2** is deliberately narrow. `--title` and `--page-width` change what gets
 published and are meant to, so the law constrains resolution and naming only.
 Within that scope it rules out a root derived from the working directory, and
 equally one derived from the *set* of arguments — the same file would otherwise
-be named differently depending on what else was in the batch.
+be named differently depending on what else was in the batch. `internal/project`
+finds the root by walking up from each file's own directory, independent of the
+working directory and of what else is in the same command (`_plans/026`
+commits 1–4).
 
 **L3** is what makes moving a page free. Moving an *asset* still changes its
 identity; buying that back would need content-addressed names, at the cost of
-being able to reconstruct a tree on export.
+being able to reconstruct a tree on export. `images.go` records an attachment's
+`Source` relative to the root rather than to the referencing page, so identity
+follows the asset alone (`_plans/026` commit 4).
 
 **L5** and **L6** are partial because both fail before they start for any layout
 with an asset above the page, which export refuses (see S1).
@@ -164,10 +174,13 @@ visibly forbids recording a checkout's disk layout on the shared server copy.
 
 | | label | guarantee | status |
 |---|---|---|---|
-| **C1** | `preview-compatible-resolution` | A reference resolves the way a Markdown preview resolves it, GitHub's included. | Partial |
+| **C1** | `preview-compatible-resolution` | A reference resolves the way a Markdown preview resolves it, GitHub's included. | Holds |
 
-Not an internal property: agreement with an external specification. It holds for
-images, which resolve page-relative, and fails for links, which do not.
+Not an internal property: agreement with an external specification. It always
+held for images, which resolve page-relative; links now resolve the same way
+(root-relative internally, but composed from the referencing page's own
+directory the same way a preview would) rather than by basename in one
+directory (`_plans/026` commit 5).
 
 Kept separate from L1 because this is the one that could in principle be traded
 away — markfluence could choose its own resolution rules and document them — and
@@ -181,12 +194,17 @@ nothing is computing a wrong answer.
 
 | | label | guarantee | status |
 |---|---|---|---|
-| **R1** | `report-unresolved-references` | Every reference markfluence could not resolve is reported. | **Aspirational** |
+| **R1** | `report-unresolved-references` | Every reference markfluence could not resolve is reported. | Partial |
 | **R2** | `report-unplaceable-attachments` | Every attachment markfluence could not place is reported. | Holds |
 
-**R1** is false by design and documented as such: the README says an unresolved
-link is "published as-is, which on Confluence is a dead relative link. There is
-no warning for this."
+**R1** was false by design and documented as such: the README said an
+unresolved link was "published as-is, which on Confluence is a dead relative
+link. There is no warning for this." A same-tree `.md` link that doesn't
+resolve now lands in the same `warnings` list an unresolved image already
+used (`_plans/026` commit 5) — Partial rather than Holds because that's a
+minimal warning reusing an existing mechanism, not the dedicated diagnostic
+(distinguishing *why* a reference failed, auditing a tree without publishing)
+`_plans/025` gestures at and leaves for later.
 
 ## Non-goals
 

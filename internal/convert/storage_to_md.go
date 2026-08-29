@@ -326,6 +326,13 @@ var alignSeparators = map[string]string{
 // attribute.
 var textAlignRE = regexp.MustCompile(`(?i)text-align\s*:\s*([a-z]+)`)
 
+// whitespaceRunRE collapses a run of whitespace to a single space in collapse
+// below. Not the same concern as linkindex's identically-shaped regexp (that
+// one collapses a run to a hyphen, for a Confluence anchor slug); duplicated
+// rather than imported, since sharing it would couple this file's general
+// text-collapsing to an unrelated package over one regexp literal.
+var whitespaceRunRE = regexp.MustCompile(`\s+`)
+
 // columnSeparators builds the delimiter row, recovering each column's alignment
 // from its cells.
 //

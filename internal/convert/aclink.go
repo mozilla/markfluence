@@ -14,6 +14,8 @@ package convert
 import (
 	"fmt"
 	"strings"
+
+	"github.com/mozilla/markfluence/internal/linkindex"
 )
 
 // PageLinkTarget identifies the page an <ac:link> points at. Confluence names it
@@ -104,10 +106,10 @@ func walkNodes(n *snode, fn func(*snode)) {
 // headingSlugs maps each heading's Confluence anchor to its GitHub one, which is
 // how a same-page <ac:link ac:anchor="..."> recovers a markdown fragment.
 //
-// The slug cannot be inverted -- confluenceSlug turns both a space and a hyphen
-// into "-", so "DOM-Security-Team" could have come from either -- but the
-// heading that produced it is in the document being converted, so the mapping is
-// exact rather than guessed.
+// The slug cannot be inverted -- linkindex.ConfluenceSlug turns both a space and
+// a hyphen into "-", so "DOM-Security-Team" could have come from either -- but
+// the heading that produced it is in the document being converted, so the
+// mapping is exact rather than guessed.
 func headingSlugs(root *snode) map[string]string {
 	out := map[string]string{}
 	walkNodes(root, func(n *snode) {
@@ -115,7 +117,7 @@ func headingSlugs(root *snode) map[string]string {
 			return
 		}
 		if text := strings.TrimSpace(collapse(textContent(n))); text != "" {
-			out[confluenceSlug(text)] = githubSlug(text)
+			out[linkindex.ConfluenceSlug(text)] = linkindex.GithubSlug(text)
 		}
 	})
 	return out

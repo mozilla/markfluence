@@ -16,6 +16,7 @@ import (
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/project"
@@ -91,11 +92,12 @@ func run(cmd *cobra.Command, args []string) error {
 
 	roots := project.NewCache(rootOverride)
 	defer roots.Close()
+	indexes := linkindex.NewCache()
 
 	failures := 0
 	results := make([]*updateResult, 0, len(args))
 	for _, filename := range args {
-		r := processFile(filename, c, roots)
+		r := processFile(filename, c, roots, indexes)
 		results = append(results, r)
 		if !ui.IsJSON() {
 			r.renderHuman()
@@ -132,7 +134,9 @@ func run(cmd *cobra.Command, args []string) error {
 
 // processFile publishes one file and returns a result describing the outcome. It
 // performs no output itself; the caller renders the result (human lines or JSON).
-func processFile(filename string, c *client.ConfluenceClient, roots *project.Cache) *updateResult {
+func processFile(
+	filename string, c *client.ConfluenceClient, roots *project.Cache, indexes *linkindex.Cache,
+) *updateResult {
 	r := &updateResult{file: filename, dryRun: dryRun}
 	mf, err := frontmatter.ParseFile(filename)
 	if err != nil {
@@ -193,10 +197,14 @@ func processFile(filename string, c *client.ConfluenceClient, roots *project.Cac
 	if err != nil {
 		return r.fail(fmt.Errorf("resolving the documentation root: %w", err), jsonout.CodeIO)
 	}
+	index, err := indexes.Get(root)
+	if err != nil {
+		return r.fail(fmt.Errorf("building the link index: %w", err), jsonout.CodeIO)
+	}
 
 	// SiteURL, not BaseURL: rewritten links are published into the page, so they
 	// must point at the site even when requests go through the gateway.
-	pageContent, err := convert.MdToConfluence(mf, root, c.SiteURL(), r.space, buildinfo.Stamp())
+	pageContent, err := convert.MdToConfluence(mf, root, index, c.SiteURL(), r.space, buildinfo.Stamp())
 	if err != nil {
 		return r.fail(err, jsonout.CodeConvert)
 	}

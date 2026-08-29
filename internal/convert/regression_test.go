@@ -13,6 +13,7 @@ import (
 
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/frontmatter"
+	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/project"
 )
 
@@ -94,9 +95,13 @@ func runCase(t *testing.T, caseDir string) []byte {
 		t.Fatalf("building root: %v", err)
 	}
 	t.Cleanup(func() { _ = root.FS.Close() })
+	index, err := linkindex.Build(root)
+	if err != nil {
+		t.Fatalf("building link index: %v", err)
+	}
 
 	// A fixed version stamp keeps goldens deterministic; no case uses the token.
-	page, err := convert.MdToConfluence(md, root, cfg.baseURL, cfg.spaceKey, "markfluence vtest")
+	page, err := convert.MdToConfluence(md, root, index, cfg.baseURL, cfg.spaceKey, "markfluence vtest")
 	if err != nil {
 		t.Fatalf("MdToConfluence: %v", err)
 	}
