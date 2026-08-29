@@ -428,16 +428,41 @@ func rowHasHeaderCell(tr *snode) bool {
 	return false
 }
 
-// cellTexts renders a row's cells to inline strings with pipes escaped.
+// cellTexts renders a row's cells to inline strings with pipes escaped,
+// prefixed with a bg: marker for a cell carrying a background color.
 func (r *mdRenderer) cellTexts(tr *snode) []string {
 	var cells []string
 	for _, c := range tr.kids {
 		if c.name == "th" || c.name == "td" {
 			text := strings.ReplaceAll(r.renderInlineChildren(c), "|", `\|`)
+			if marker := cellBGMarkerComment(c); marker != "" {
+				if text == "" {
+					text = marker
+				} else {
+					text = marker + " " + text
+				}
+			}
 			cells = append(cells, text)
 		}
 	}
 	return cells
+}
+
+// cellBGMarkerComment recovers a "<!-- bg:NAME -->" marker from a cell's
+// data-highlight-colour, the inverse of resolveCellBG. A hex outside the 21
+// swatches -- set directly in hand-edited storage, never by markfluence --
+// round-trips as the literal hex rather than a name.
+func cellBGMarkerComment(c *snode) string {
+	hex, ok := c.attrs["data-highlight-colour"]
+	if !ok || hex == "" {
+		return ""
+	}
+	hex = strings.ToLower(hex)
+	name, ok := cellBGNames[hex]
+	if !ok {
+		name = hex
+	}
+	return "<!-- bg:" + name + " -->"
 }
 
 // renderMacro renders an <ac:structured-macro>: the code/toc/callout macros

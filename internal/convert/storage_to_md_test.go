@@ -157,6 +157,42 @@ func TestRoundTripTableAlignment(t *testing.T) {
 	}
 }
 
+// TestRoundTripTableCellBG checks that a cell background marker survives
+// md -> storage -> md, including the swatch-name normalization (a #hex that
+// matches a named swatch comes back as the name) and the gray/grey collision
+// (both spellings resolve to the same hex, and grey wins on the way back).
+func TestRoundTripTableCellBG(t *testing.T) {
+	src := strings.Join([]string{
+		"| status | note |",
+		"| --- | --- |",
+		"| <!-- bg:light-red --> down | <!-- bg:#ffebe6 --> also down |",
+		"| <!-- bg:gray --> unknown |  |",
+	}, "\n") + "\n"
+	want := strings.Join([]string{
+		"| status | note |",
+		"| --- | --- |",
+		"| <!-- bg:light-red --> down | <!-- bg:light-red --> also down |",
+		"| <!-- bg:grey --> unknown |  |",
+	}, "\n") + "\n"
+
+	md := frontmatter.Parse("main.md", src)
+	root := testRoot(t, "")
+	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG", "vtest")
+	if err != nil {
+		t.Fatalf("MdToConfluence: %v", err)
+	}
+	if !strings.Contains(page.HTML, `data-highlight-colour="#ffebe6"`) {
+		t.Errorf("published storage missing data-highlight-colour:\n%s", page.HTML)
+	}
+	got, err := convert.StorageToMarkdown(page.HTML, convert.StorageOptions{})
+	if err != nil {
+		t.Fatalf("StorageToMarkdown: %v", err)
+	}
+	if got != want {
+		t.Errorf("round-trip mismatch\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
 // TestStorageToMarkdownStripsGeneratedIDs checks that the server-generated
 // ac:macro-id and ac:local-id attributes are dropped from passthrough output.
 func TestStorageToMarkdownStripsGeneratedIDs(t *testing.T) {
