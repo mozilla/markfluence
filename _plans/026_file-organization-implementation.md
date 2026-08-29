@@ -228,6 +228,19 @@ now resolved as "not found" rather than accidentally safe by basename
 flattening), plus Scenario E's two link cases asserting they land in
 `r.warnings`.
 
+**Landed.** Two new fixtures (`link-cross-directory`, `link-outside-root`) for
+Scenario A/F; Scenario E's warning showed up as a golden change on two
+*existing* fixtures (`doc-links-encoded`, `internal-doc-links`) that already
+had an unresolved link, rather than needing dedicated new ones. `docKey` is
+gone rather than moved — replaced by `resolveDocKey`, a method needing
+`baseDir`/`root` that a free function couldn't have. `githubSlug`/
+`confluenceSlug` moved into `linkindex` (exported: `aclink.go`'s reverse
+direction still needs them); a second, coincidentally-identical whitespace
+regexp in `storage_to_md.go` stayed local rather than reaching into
+`linkindex` for an unrelated concern. `docs/guarantees.md`: L1/C1 move to
+**Holds** here; L2/L3 *also* move to **Holds**, caught up from commit 4 where
+they should have been updated already rather than left for commit 9's sweep.
+
 ### 6. S2 completion: the `parent:` read
 
 `cmd/create.resolveParent` currently `os.Stat`s and reads a `parent:` `.md` path
