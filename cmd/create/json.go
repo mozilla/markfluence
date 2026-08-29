@@ -52,6 +52,21 @@ func (r *createResult) fail(err error, code jsonout.Code) *createResult {
 	r.status = statusFailed
 	r.errMsg = err.Error()
 	r.code = code
+	r.pageID = ""
+	r.url = ""
+	return r
+}
+
+// failKeepingPage is fail, except it leaves pageID/url alone. Use it only when a
+// page really was created on the server and reservation still failed afterward
+// (persisting the frontmatter) -- the id must stay visible in the result or the
+// page becomes untraceable, the same reasoning that makes pageIDFailure carry an
+// id forward on failure.
+func (r *createResult) failKeepingPage(err error, code jsonout.Code) *createResult {
+	r.ok = false
+	r.status = statusFailed
+	r.errMsg = err.Error()
+	r.code = code
 	return r
 }
 

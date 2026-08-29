@@ -32,6 +32,10 @@ type fakeConfluence struct {
 	// failCreateForTitle, when set, makes CreatePage fail for that one title --
 	// used to test a reserve failure cascading to a child.
 	failCreateForTitle string
+	// failUpdateForTitle, when set, makes UpdatePage fail for the page that was
+	// created under that title -- used to test a publish-phase failure after a
+	// successful reserve.
+	failUpdateForTitle string
 }
 
 type fakePage struct {
@@ -67,6 +71,12 @@ func (f *fakeConfluence) handle(w http.ResponseWriter, r *http.Request) {
 
 	case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/properties"):
 		_, _ = fmt.Fprint(w, `{"results":[]}`)
+
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/wiki/api/v2/pages/"):
+		// UpdatePage's updateLanded re-read after a failed PUT (client.go). Always
+		// answer not-found, so a forced failure in these tests is never mistaken
+		// for a write that actually landed.
+		w.WriteHeader(http.StatusNotFound)
 
 	case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/properties"):
 		w.WriteHeader(http.StatusOK)
@@ -119,6 +129,11 @@ func (f *fakeConfluence) updatePage(w http.ResponseWriter, r *http.Request) {
 	p, ok := f.pages[id]
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if f.failUpdateForTitle != "" && p.title == f.failUpdateForTitle {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = fmt.Fprint(w, `boom`)
 		return
 	}
 	p.title, p.body, p.version = body.Title, body.Body.Value, body.Version.Number
@@ -323,6 +338,100 @@ func TestCreateAllDryRunCreatesNothing(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "page_id") {
 		t.Error("dry-run must not write to the file")
+	}
+}
+
+// TestCreateAllPublishFailureNullsPageIDAndURL covers a publish-phase failure
+// after a successful reserve: the stub really was created on the server, but
+// the result must still report page_id/url as null on failure -- the same
+// contract abortedResult holds for every failure except a blocked page_id --
+// or a --json consumer sees a "failed" result that also names a page.
+func TestCreateAllPublishFailureNullsPageIDAndURL(t *testing.T) {
+	resetOpts(t)
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	aPath := write(t, dir, "a.md", "---\ntitle: A\n---\nbody\n")
+
+	c, fake := newFakeConfluence(t)
+	fake.failUpdateForTitle = "A"
+	ordered := buildRecords(t, c, []string{aPath})
+	results := createAll(ordered, c, true)
+
+	if results[0].ok {
+		t.Fatal("publish should have failed")
+	}
+	if results[0].pageID != "" {
+		t.Errorf("pageID = %q, want empty on a publish-phase failure", results[0].pageID)
+	}
+	if results[0].url != "" {
+		t.Errorf("url = %q, want empty on a publish-phase failure", results[0].url)
+	}
+	j := results[0].jsonResult()
+	if j.PageID != nil || j.URL != nil {
+		t.Errorf("json page_id=%v url=%v, want both null", j.PageID, j.URL)
+	}
+}
+
+// TestCreateAllDryRunCrossLinkResolves covers a batch of two new files linking
+// to each other under --dry-run: since neither has a real id yet, the shared
+// link index must still be seeded (with an empty id) so the preview resolves
+// the link exactly like a real run would, rather than warning it can't be
+// resolved.
+func TestCreateAllDryRunCrossLinkResolves(t *testing.T) {
+	resetOpts(t)
+	dryRunOpt = true
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	aPath := write(t, dir, "a.md", "---\ntitle: A\n---\n[to b](b.md)\n")
+	bPath := write(t, dir, "b.md", "---\ntitle: B\n---\n[to a](a.md)\n")
+
+	c, _ := newFakeConfluence(t)
+	ordered := buildRecords(t, c, []string{aPath, bPath})
+	results := createAll(ordered, c, true)
+
+	for _, res := range results {
+		if !res.ok {
+			t.Fatalf("file %s failed: %s", res.file, res.errMsg)
+		}
+		for _, w := range res.warnings {
+			t.Errorf("file %s: unexpected warning in dry-run preview: %s", res.file, w)
+		}
+	}
+}
+
+// TestReserveOneWriteFailureKeepsPageIDVisible covers the orphan case: the
+// stub is really created on the server, and only the frontmatter write-back
+// afterward fails. res must still carry the id/url -- via failKeepingPage --
+// or the page becomes untraceable, with nothing local pointing at it.
+func TestReserveOneWriteFailureKeepsPageIDVisible(t *testing.T) {
+	resetOpts(t)
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	aPath := write(t, dir, "a.md", "---\ntitle: A\n---\nbody\n")
+
+	c, fake := newFakeConfluence(t)
+	ordered := buildRecords(t, c, []string{aPath})
+	r := ordered[0]
+	// os.WriteFile refuses a directory, simulating the write-back failing
+	// after CreatePage has already succeeded against the fake server.
+	r.filename = dir
+
+	res, pageID, _, ok := reserveOne(r, "", c, true)
+	if ok {
+		t.Fatal("reserveOne should report failure when the write-back fails")
+	}
+	if pageID != "" {
+		t.Errorf("returned pageID = %q, want empty (nothing for phase 3 to publish)", pageID)
+	}
+	if res.ok {
+		t.Error("result should be failed")
+	}
+	if res.pageID == "" || res.url == "" {
+		t.Errorf("result pageID=%q url=%q, want both kept so the orphaned page stays traceable",
+			res.pageID, res.url)
+	}
+	if len(fake.pages) != 1 {
+		t.Fatalf("fake pages = %d, want exactly the one CreatePage created before the write failed", len(fake.pages))
 	}
 }
 

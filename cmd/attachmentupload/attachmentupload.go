@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/completion"
@@ -68,8 +69,10 @@ func run(cmd *cobra.Command, args []string) error {
 	cloudID, _ := cmd.Flags().GetString("cloud-id")
 	envFile, _ := cmd.Flags().GetString("env-file")
 	rootOverride, _ := cmd.Flags().GetString("root")
+	roots := project.NewCache(rootOverride)
+	defer roots.Close()
 	c, err := client.Resolve(client.Options{
-		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile,
+		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile, Roots: roots,
 	})
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeConfig)
@@ -80,8 +83,6 @@ func run(cmd *cobra.Command, args []string) error {
 		return fatalFail(err.Error(), jsonout.CodeValidation)
 	}
 
-	roots := project.NewCache(rootOverride)
-	defer roots.Close()
 	attachments, err := localAttachments(files, nameFlag, roots)
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeIO)
@@ -179,6 +180,12 @@ func localAttachments(files []string, name string, roots *project.Cache) ([]clie
 // cached across the batch -- and returns f's path relative to it, in slash
 // form. With no markfluence.yaml anywhere above f, the root falls back to f's
 // own directory, so this reduces to f's bare basename exactly as before.
+//
+// An explicit --root can name a directory that isn't an ancestor of f at all
+// (project.Resolve applies it uniformly, with no containment check of its
+// own), so rel can climb above root; refuse that the same way
+// internal/convert/images.go's rootRelative and create's resolveParent do,
+// rather than encoding a "../"-prefixed source into the attachment name.
 func rootRelativeSource(f string, roots *project.Cache) (string, error) {
 	abs, err := filepath.Abs(f)
 	if err != nil {
@@ -192,7 +199,11 @@ func rootRelativeSource(f string, roots *project.Cache) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.ToSlash(rel), nil
+	rel = filepath.ToSlash(rel)
+	if rel == ".." || strings.HasPrefix(rel, "../") {
+		return "", fmt.Errorf("%s resolves outside the documentation root (%s)", f, root.Dir)
+	}
+	return rel, nil
 }
 
 // report prints the per-file actions and returns the command's exit status.

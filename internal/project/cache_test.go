@@ -51,6 +51,77 @@ func TestCacheRootsReturnsDistinctSortedValues(t *testing.T) {
 	}
 }
 
+// TestCacheResolveBackfillsSharedRoot is the point of walkAndCache: two
+// directories under the same project root must share one *Root -- opened
+// once -- rather than each independently discovering (and os.OpenRoot-ing)
+// the identical root, which is the double-cost a per-startDir-only cache
+// still pays across a batch spanning many subdirectories of one project.
+func TestCacheResolveBackfillsSharedRoot(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, Filename), []byte("# marker\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	x := filepath.Join(root, "docs", "a")
+	y := filepath.Join(root, "docs", "b")
+	for _, d := range []string{x, y} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	c := NewCache("")
+	defer c.Close()
+	rx, err := c.Resolve(x)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ry, err := c.Resolve(y)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rx != ry {
+		t.Error("Resolve for two directories under the same project root returned distinct *Root values, want one shared")
+	}
+	if _, ok := c.byDir[filepath.Join(root, "docs")]; !ok {
+		t.Error("the shared ancestor 'docs', visited resolving x, should be backfilled into the cache")
+	}
+}
+
+// TestCacheResolveFallbackDoesNotContaminateAncestors guards the hazard
+// walkAndCache's backfill has to avoid: the no-project-file fallback binds a
+// Root to the directory Resolve was actually called with, not to any
+// ancestor visited along the way, so a second, unrelated directory sharing
+// that ancestor must fall back to *itself*, not inherit the first
+// directory's fallback root.
+func TestCacheResolveFallbackDoesNotContaminateAncestors(t *testing.T) {
+	base := t.TempDir()
+	x := filepath.Join(base, "a", "x")
+	y := filepath.Join(base, "a", "y")
+	for _, d := range []string{x, y} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	c := NewCache("")
+	defer c.Close()
+	rx, err := c.Resolve(x)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ry, err := c.Resolve(y)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rx.Dir != x {
+		t.Errorf("Resolve(x).Dir = %q, want %q (no project file, falls back to itself)", rx.Dir, x)
+	}
+	if ry.Dir != y {
+		t.Errorf("Resolve(y).Dir = %q, want %q -- got %q instead, contaminated by x's fallback",
+			ry.Dir, y, ry.Dir)
+	}
+}
+
 func TestCacheOverrideAppliesToEveryResolve(t *testing.T) {
 	override := t.TempDir()
 	base := t.TempDir()

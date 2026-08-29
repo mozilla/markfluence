@@ -24,8 +24,13 @@ func NewCache(override string) *Cache {
 }
 
 // Resolve returns the root for startDir, discovering (or applying the
-// override, via project.Resolve) only the first time a given directory is
-// seen.
+// override) only the first time a given directory is seen. With an override,
+// every startDir maps to the same *Root, opened once. With no override, the
+// walk up from startDir consults the cache at every level (walkAndCache) so a
+// batch spanning many subdirectories of one project pays for Discover's walk
+// -- and os.OpenRoot -- once for the whole subtree, not once per distinct
+// starting directory (the quadratic cost 025 measured, reintroduced at the
+// per-directory granularity a naive byDir[startDir] cache still leaves).
 func (c *Cache) Resolve(startDir string) (*Root, error) {
 	abs, err := filepath.Abs(startDir)
 	if err != nil {
@@ -34,12 +39,65 @@ func (c *Cache) Resolve(startDir string) (*Root, error) {
 	if root, ok := c.byDir[abs]; ok {
 		return root, nil
 	}
-	root, err := Resolve(c.override, abs)
-	if err != nil {
-		return nil, err
+	if c.override != "" {
+		root, err := FromPath(c.override)
+		if err != nil {
+			return nil, err
+		}
+		c.byDir[abs] = root
+		return root, nil
 	}
-	c.byDir[abs] = root
-	return root, nil
+	return c.walkAndCache(abs)
+}
+
+// walkAndCache walks upward from abs exactly like Discover, but checks the
+// cache at every level first: once the walk reaches a directory this Cache
+// has already resolved a root for, every directory visited since abs is
+// backfilled to that same *Root instead of opening a second os.Root for a
+// root a sibling subtree already found. The no-project-file fallback is
+// backfilled only to abs itself, never to an ancestor: that Root is bound to
+// abs specifically (Discover's own contract -- see TestDiscoverFallsBackToStartDir
+// and TestCacheRootsReturnsDistinctSortedValues), so caching it at an
+// ancestor would wrongly hand every unrelated directory above it the same
+// fallback root.
+func (c *Cache) walkAndCache(abs string) (*Root, error) {
+	var visited []string
+	dir := abs
+	for {
+		if root, ok := c.byDir[dir]; ok {
+			for _, d := range visited {
+				c.byDir[d] = root
+			}
+			return root, nil
+		}
+		visited = append(visited, dir)
+
+		hit, file, err := probeMarker(dir)
+		if err != nil {
+			return nil, err
+		}
+		if hit {
+			root, err := open(dir, file)
+			if err != nil {
+				return nil, err
+			}
+			for _, d := range visited {
+				c.byDir[d] = root
+			}
+			return root, nil
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			root, err := open(abs, "")
+			if err != nil {
+				return nil, err
+			}
+			c.byDir[abs] = root
+			return root, nil
+		}
+		dir = parent
+	}
 }
 
 // Roots returns every distinct root Dir this cache has resolved, sorted, for

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mozilla/markfluence/internal/project"
 )
 
 // clearConfluenceEnv unsets the CONFLUENCE_* vars for a test so .env / flags are
@@ -116,6 +118,33 @@ func TestResolveDefaultEnvFileFoundAtDiscoveredProjectRoot(t *testing.T) {
 	}
 	if c.BaseURL() != "https://wiki" {
 		t.Errorf("baseURL = %q, want https://wiki from the project root's .env", c.BaseURL())
+	}
+}
+
+// TestResolveRootsOverridesEnvDiscovery covers Options.Roots: when the caller
+// passes its own --root-backed project.Cache, .env is read from that root, not
+// from a plain upward walk from the working directory -- so a --root pointed
+// at a different project also redirects which .env create/update/
+// attachment-upload read, matching the flag's stated meaning of overriding
+// discovery for the whole invocation.
+func TestResolveRootsOverridesEnvDiscovery(t *testing.T) {
+	clearConfluenceEnv(t)
+	cwd := t.TempDir() // no .env here
+	override := t.TempDir()
+	if err := os.WriteFile(filepath.Join(override, ".env"),
+		[]byte("CONFLUENCE_URL=https://from-root\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(cwd)
+
+	roots := project.NewCache(override)
+	defer roots.Close()
+	c, err := Resolve(Options{Roots: roots})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if c.BaseURL() != "https://from-root" {
+		t.Errorf("baseURL = %q, want https://from-root from --root's .env", c.BaseURL())
 	}
 }
 

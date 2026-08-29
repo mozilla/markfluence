@@ -34,6 +34,14 @@ type Options struct {
 	// EnvFile is the --env-file value; empty means .env at the discovered
 	// project root (see loadEnvFile).
 	EnvFile string
+	// Roots, when set, is the caller's own per-file project.Cache -- built
+	// before Resolve is called, and passed back in so the .env lookup's
+	// directory resolution reuses it instead of a second, independent
+	// Discover/os.OpenRoot pass. The ordinary case is the two passes landing
+	// on the same root; sharing the cache is what makes that cost one
+	// discovery instead of two. Resolve does not close anything found this
+	// way -- the cache still owns it, for the caller's later per-file work.
+	Roots *project.Cache
 }
 
 // Resolve builds a client from the site URL, username, cloud ID, and token. Each
@@ -50,7 +58,7 @@ type Options struct {
 // as before, which is what an unscoped personal token and any Data Center site
 // need.
 func Resolve(opts Options) (*ConfluenceClient, error) {
-	env, err := loadEnvFile(opts.EnvFile)
+	env, err := loadEnvFile(opts.EnvFile, opts.Roots)
 	if err != nil {
 		return nil, err
 	}
@@ -110,17 +118,22 @@ func resolveValue(flagVal, envKey string, dotenv map[string]string) string {
 }
 
 // loadEnvFile resolves which .env to read and parses it. An explicit envFile
-// (from --env-file) must be readable, so a read failure is an error. With no
-// explicit path, .env is read from the discovered project root -- the
-// directory holding markfluence.yaml, found by walking up from the working
-// directory, or the working directory itself when there is none (today's
-// behavior). This is its own discovery pass, separate from the per-file root
-// the converter uses: it starts at the working directory rather than a
-// markdown file's directory, runs once before any file is touched, and
-// doesn't bound anything -- it only answers "where is .env." A missing .env,
-// wherever it lands, is fine and yields an empty map, matching prior
-// behavior.
-func loadEnvFile(envFile string) (map[string]string, error) {
+// (from --env-file) must be readable, so a read failure is an error, and it
+// overrides everything below absolutely -- including roots. With no explicit
+// path, .env is read from the project root -- the directory holding
+// markfluence.yaml, found by walking up from the working directory, or the
+// working directory itself when there is none. When roots is given (a
+// caller's own per-file project.Cache, built before Resolve is called), its
+// Resolve is used for that walk instead of a bare project.Discover call, so
+// a caller with its own --root override applies it here too, and doesn't pay
+// for a second discovery (and a second os.OpenRoot) of the identical root;
+// roots owns closing the handle, so none happens here. This is its own
+// discovery pass, separate from the per-file root the converter uses: it
+// starts at the working directory rather than a markdown file's directory,
+// runs once before any file is touched, and doesn't bound anything -- it
+// only answers "where is .env." A missing .env, wherever it lands, is fine
+// and yields an empty map, matching prior behavior.
+func loadEnvFile(envFile string, roots *project.Cache) (map[string]string, error) {
 	if envFile != "" {
 		env, err := loadDotenv(envFile)
 		if err != nil {
@@ -131,7 +144,11 @@ func loadEnvFile(envFile string) (map[string]string, error) {
 
 	dir := "."
 	if cwd, err := os.Getwd(); err == nil {
-		if root, err := project.Discover(cwd); err == nil {
+		if roots != nil {
+			if root, err := roots.Resolve(cwd); err == nil {
+				dir = root.Dir
+			}
+		} else if root, err := project.Discover(cwd); err == nil {
 			dir = root.Dir
 			_ = root.FS.Close()
 		}

@@ -108,6 +108,22 @@ func TestLocalAttachmentsSourceIsAlwaysTheDecodedName(t *testing.T) {
 	}
 }
 
+// TestLocalAttachmentsRejectsRootEscape covers --root naming a directory that
+// isn't an ancestor of the file at all: project.Resolve applies the override
+// uniformly with no containment check of its own, so rootRelativeSource must
+// refuse the resulting "../"-prefixed rel itself, the same way
+// internal/convert/images.go's rootRelative and create's resolveParent do,
+// rather than encoding it into the attachment name.
+func TestLocalAttachmentsRejectsRootEscape(t *testing.T) {
+	unrelatedRoot := t.TempDir()
+	fileDir := t.TempDir()
+	path := writeFile(t, fileDir, "x.png")
+
+	if _, err := localAttachments([]string{path}, "", project.NewCache(unrelatedRoot)); err == nil {
+		t.Error("want an error when --root does not contain the file")
+	}
+}
+
 func TestLocalAttachmentsRejectsMissingAndDirs(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := localAttachments([]string{filepath.Join(dir, "nope.png")}, "", project.NewCache("")); err == nil {
