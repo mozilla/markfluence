@@ -3,7 +3,6 @@ package client
 import (
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -21,7 +20,7 @@ type findServer struct {
 
 func newFindServer(t *testing.T, f *findServer) *ConfluenceClient {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		f.urls = append(f.urls, r.URL.String())
 		var body string
 		var status int
@@ -41,9 +40,7 @@ func newFindServer(t *testing.T, f *findServer) *ConfluenceClient {
 		}
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(body))
-	}))
-	t.Cleanup(srv.Close)
-	return New(Config{SiteURL: srv.URL, Username: "u", Token: "t"})
+	})
 }
 
 func v2Page(id, title, status, space string) string {

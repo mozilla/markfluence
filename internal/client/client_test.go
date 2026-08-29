@@ -59,10 +59,23 @@ type resp struct {
 	body   string
 }
 
+// newTestServer starts an httptest.Server running handler, registers its
+// shutdown as test cleanup, and returns a client pointed at it. It can't use
+// internal/clienttest: an internal (white-box) test file may not import a
+// package that itself imports the package under test, and clienttest imports
+// client. Every other package's tests should use internal/clienttest instead;
+// this copy exists only because internal/client's own tests can't.
+func newTestServer(t *testing.T, handler http.HandlerFunc) *ConfluenceClient {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	return New(Config{SiteURL: srv.URL, Username: "u", Token: "t"})
+}
+
 func newServer(t *testing.T, responses ...resp) (*ConfluenceClient, *scripted) {
 	t.Helper()
 	s := &scripted{responses: responses}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		s.calls = append(s.calls, r.Method)
 		body, _ := io.ReadAll(r.Body)
 		s.bodies = append(s.bodies, string(body))
@@ -76,9 +89,8 @@ func newServer(t *testing.T, responses ...resp) (*ConfluenceClient, *scripted) {
 		s.idx++
 		w.WriteHeader(out.status)
 		_, _ = w.Write([]byte(out.body))
-	}))
-	t.Cleanup(srv.Close)
-	return New(Config{SiteURL: srv.URL, Username: "u", Token: "t"}), s
+	})
+	return c, s
 }
 
 func eqStrings(a, b []string) bool {
@@ -167,11 +179,10 @@ func TestListContentPropertiesFollowsPagination(t *testing.T) {
 func countingServer(t *testing.T, handler func(w http.ResponseWriter, n int32)) (*ConfluenceClient, *int32) {
 	t.Helper()
 	var n int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	c := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		handler(w, atomic.AddInt32(&n, 1))
-	}))
-	t.Cleanup(srv.Close)
-	return New(Config{SiteURL: srv.URL, Username: "u", Token: "t"}), &n
+	})
+	return c, &n
 }
 
 func TestSendRetriesOn429ThenSucceeds(t *testing.T) {
@@ -458,14 +469,12 @@ func TestListChildNodesDecodesRows(t *testing.T) {
 // folders come from a separate v1 path, and missing it loses whole subtrees.
 func TestListChildFoldersHitsTheFolderPath(t *testing.T) {
 	var gotPath string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		_, _ = w.Write([]byte(`{"results":[{"id":"22","type":"folder","title":"Articles",` +
 			`"status":"current","extensions":{"position":666},` +
 			`"_links":{"webui":"/spaces/ENG/folder/22"}}]}`))
-	}))
-	t.Cleanup(srv.Close)
-	c := New(Config{SiteURL: srv.URL, Username: "u", Token: "t"})
+	})
 
 	got, err := c.ListChildFolders("1")
 	if err != nil {
@@ -1270,7 +1279,7 @@ func TestBackoffCapsAfterJitter(t *testing.T) {
 func updateServer(t *testing.T, putStatus int, getBody string) (*ConfluenceClient, *[]string) {
 	t.Helper()
 	var seen []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		seen = append(seen, r.Method)
 		if r.Method == http.MethodPut {
 			w.WriteHeader(putStatus)
@@ -1282,9 +1291,8 @@ func updateServer(t *testing.T, putStatus int, getBody string) (*ConfluenceClien
 			return
 		}
 		_, _ = w.Write([]byte(getBody))
-	}))
-	t.Cleanup(srv.Close)
-	return New(Config{SiteURL: srv.URL, Username: "u", Token: "t"}), &seen
+	})
+	return c, &seen
 }
 
 func livePage(version int, title, body string) string {
