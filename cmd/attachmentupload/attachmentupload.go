@@ -87,6 +87,9 @@ func run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeIO)
 	}
+	for _, dir := range roots.Roots() {
+		ui.Info("root: " + dir)
+	}
 
 	if dryRun && !ui.IsJSON() {
 		ui.Warn("DRY RUN — no changes will be written.")
@@ -94,9 +97,9 @@ func run(cmd *cobra.Command, args []string) error {
 
 	actions, err := plan(c, pageID, attachments)
 	if err != nil {
-		return operationalFail(pageID, err, jsonout.CodeFor(err))
+		return operationalFail(pageID, err, jsonout.CodeFor(err), roots)
 	}
-	return report(actions)
+	return report(actions, roots)
 }
 
 // plan performs the upload, or -- under --dry-run -- only the classification.
@@ -207,7 +210,7 @@ func rootRelativeSource(f string, roots *project.Cache) (string, error) {
 }
 
 // report prints the per-file actions and returns the command's exit status.
-func report(actions []client.SyncAction) error {
+func report(actions []client.SyncAction, roots *project.Cache) error {
 	if ui.IsJSON() {
 		results := make([]any, 0, len(actions))
 		skipped := 0
@@ -220,6 +223,7 @@ func report(actions []client.SyncAction) error {
 		env := jsonout.NewEnvelope(command, results, map[string]int{
 			"total": len(actions), "succeeded": len(actions), "failed": 0, "skipped": skipped,
 		})
+		env.Roots = roots.Roots()
 		return jsonout.Emit(os.Stdout, env)
 	}
 	for _, a := range actions {
@@ -246,9 +250,9 @@ func fatalFail(msg string, code jsonout.Code) error {
 
 // operationalFail reports a failure against the page: under --json a results[0]
 // entry {ok:false,error,code}, else a human error line, exiting 1.
-func operationalFail(pageID string, err error, code jsonout.Code) error {
+func operationalFail(pageID string, err error, code jsonout.Code, roots *project.Cache) error {
 	if ui.IsJSON() {
-		_ = jsonout.Emit(os.Stdout, failEnvelope(pageID, err, code))
+		_ = jsonout.Emit(os.Stdout, failEnvelope(pageID, err, code, roots))
 	} else {
 		ui.Error(err.Error())
 	}
@@ -258,9 +262,11 @@ func operationalFail(pageID string, err error, code jsonout.Code) error {
 // failEnvelope is the document operationalFail writes, split out so the schema
 // conformance test can validate the envelope this command really emits instead
 // of a hand-copied duplicate of it.
-func failEnvelope(pageID string, err error, code jsonout.Code) jsonout.Envelope {
-	return jsonout.NewEnvelope(command, []any{jsonout.NewSingleOpFailure(pageID, err, code)},
+func failEnvelope(pageID string, err error, code jsonout.Code, roots *project.Cache) jsonout.Envelope {
+	env := jsonout.NewEnvelope(command, []any{jsonout.NewSingleOpFailure(pageID, err, code)},
 		map[string]int{"total": 1, "succeeded": 0, "failed": 1, "skipped": 0})
+	env.Roots = roots.Roots()
+	return env
 }
 
 // decodeName is convert.AttachmentSource, wrapped so tests can assert the

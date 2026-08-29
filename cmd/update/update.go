@@ -115,6 +115,7 @@ func run(cmd *cobra.Command, args []string) error {
 			items[i] = r.jsonResult()
 		}
 		env := jsonout.NewEnvelope("update", items, summarize(results))
+		env.Roots = roots.Roots()
 		if err := jsonout.Emit(os.Stdout, env); err != nil {
 			return err
 		}

@@ -371,10 +371,19 @@ attributed the Partial status to a cause commit 4 had already fixed for
 single-page export) and got corrected alongside the status sweep, not just the
 statuses themselves.
 
+**Landed after commit 9: the `--json` `roots` field split off from commit 4.**
+Not a field on `createSummary`/`updateSummary` as originally sketched — a
+top-level `Envelope.Roots []string`, since a root isn't really per-result, it's
+per-invocation (every command shares the same field, defaulting to `[]`).
+`project.Cache.Roots()` gained the getter (deduped, sorted, never nil); `create`
+(both the success path and phase-1 `abort`), `update`, and `attachment-upload`
+set it from the batch's `*project.Cache`. `attachment-upload` had never gotten
+human-output root reporting either (only `create`/`update` had it from commit
+4) — added alongside the JSON field rather than left split again. Every other
+command keeps the schema's now-required `roots: []` via `NewEnvelope`'s
+default; no other command has a per-file root concept to report.
+
 **Not part of this plan, and still open:**
-- The `--json` `roots` field split off from commit 4 (schema + conformance +
-  `createSummary`/`updateSummary` changes) was never picked back up. Still
-  correct as reported in human output only.
 - Multi-page export (item 16) — tracked as #59, as decided before commit 1.
 - A dedicated `check` command for the full form of R1 — gestured at throughout,
   never scoped.

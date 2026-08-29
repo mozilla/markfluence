@@ -3,11 +3,15 @@ package create
 import (
 	"bytes"
 	"encoding/json"
+	"io"
+	"os"
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/project"
 	"github.com/mozilla/markfluence/internal/schematest"
+	"github.com/mozilla/markfluence/internal/ui"
 )
 
 func TestSchemaConformance(t *testing.T) {
@@ -231,5 +235,49 @@ func TestCreateSummaryAbortedJSON(t *testing.T) {
 	want := `{"total":3,"succeeded":0,"failed":1,"aborted":true}`
 	if string(b) != want {
 		t.Errorf("summary JSON = %s, want %s", b, want)
+	}
+}
+
+// TestAbortReportsRoots exercises abort() itself (not a hand-copied envelope),
+// confirming the top-level "roots" field carries what the batch actually
+// resolved rather than the empty default every other command leaves it at.
+func TestAbortReportsRoots(t *testing.T) {
+	ui.SetJSON(true)
+	t.Cleanup(func() { ui.SetJSON(false) })
+
+	dir := t.TempDir()
+	roots := project.NewCache("")
+	t.Cleanup(roots.Close)
+	if _, err := roots.Resolve(dir); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe: %v", err)
+	}
+	old := os.Stdout
+	os.Stdout = w
+	err = abort([]string{"bad.md"}, []failure{{filename: "bad.md", message: "no title given"}}, roots)
+	os.Stdout = old
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if !ui.IsSilent(err) || ui.ExitCode(err) != 1 {
+		t.Fatalf("abort: %v", err)
+	}
+	out, readErr := io.ReadAll(r)
+	if readErr != nil {
+		t.Fatalf("ReadAll: %v", readErr)
+	}
+
+	var env struct {
+		Roots []string `json:"roots"`
+	}
+	if err := json.Unmarshal(out, &env); err != nil {
+		t.Fatalf("Unmarshal: %v\noutput: %s", err, out)
+	}
+	if len(env.Roots) != 1 || env.Roots[0] != dir {
+		t.Errorf("roots = %v, want [%s]", env.Roots, dir)
 	}
 }

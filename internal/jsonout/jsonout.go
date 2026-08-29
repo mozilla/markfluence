@@ -42,8 +42,15 @@ type Envelope struct {
 	SchemaVersion      int    `json:"schema_version"`
 	MarkfluenceVersion string `json:"markfluence_version"`
 	Command            string `json:"command"`
-	Results            []any  `json:"results"`
-	Summary            any    `json:"summary"`
+	// Roots is every distinct documentation root the command resolved,
+	// sorted -- empty for a command with no per-file root concept (find,
+	// search, schema, ...), and for create/update/attachment-upload's
+	// pre-flight failure paths that never reached root resolution. Not
+	// omitted: every envelope carries this key, [] when there is nothing to
+	// report, the same convention Results already follows.
+	Roots   []string `json:"roots"`
+	Results []any    `json:"results"`
+	Summary any      `json:"summary"`
 }
 
 // ErrorObject is the stderr document for a fatal/pre-flight failure in --json
@@ -56,7 +63,10 @@ type ErrorObject struct {
 }
 
 // NewEnvelope builds an envelope for a command, stamping the schema and build
-// version. results is emitted as [] (never null) when empty.
+// version. results is emitted as [] (never null) when empty; so is Roots,
+// which callers with a root to report set afterward -- most commands have
+// none, so making it a constructor parameter would force all of them to pass
+// nil for a concept they don't have.
 func NewEnvelope(command string, results []any, summary any) Envelope {
 	if results == nil {
 		results = []any{}
@@ -65,6 +75,7 @@ func NewEnvelope(command string, results []any, summary any) Envelope {
 		SchemaVersion:      SchemaVersion,
 		MarkfluenceVersion: buildinfo.Version,
 		Command:            command,
+		Roots:              []string{},
 		Results:            results,
 		Summary:            summary,
 	}
