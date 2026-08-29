@@ -1,23 +1,16 @@
 package attachmentdownload
 
-import "github.com/mozilla/markfluence/internal/attachfile"
+import (
+	"github.com/mozilla/markfluence/internal/attachfile"
+	"github.com/mozilla/markfluence/internal/jsonout"
+)
 
-// jsonDownloadResult is attachment-download's --json result shape: one object
-// per attachment. dest_path is the local path written, which is the piece a
-// caller cannot derive itself -- it depends on the recorded source path, --flat,
-// and --dest. It is null only when resolving the path is what failed.
-type jsonDownloadResult struct {
-	OK       bool    `json:"ok"`
-	Status   string  `json:"status"`
-	DryRun   bool    `json:"dry_run"`
-	Filename string  `json:"filename"`
-	DestPath *string `json:"dest_path"`
-	Error    *string `json:"error"`
-	Code     *string `json:"code"`
-}
-
-func buildResult(r attachfile.Outcome) jsonDownloadResult {
-	res := jsonDownloadResult{
+// buildResult builds attachment-download's --json result for one attachment.
+// dest_path is the local path written, which is the piece a caller cannot
+// derive itself -- it depends on the recorded source path, --flat, and --dest.
+// It is null only when resolving the path is what failed.
+func buildResult(r attachfile.Outcome) jsonout.AttachmentActionResult {
+	res := jsonout.AttachmentActionResult{
 		OK:       r.Status != attachfile.StatusFailed,
 		Status:   r.Status,
 		DryRun:   dryRun,
