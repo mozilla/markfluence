@@ -31,6 +31,35 @@ func TestResolveParentNoneGiven(t *testing.T) {
 	}
 }
 
+// TestResolveParentIgnoresDirectoryNesting is guarantee L8 (no-layout-inference,
+// docs/guarantees.md): hierarchy is never inferred from disk layout. The
+// directory shape here is deliberately the one most tempting to "helpfully"
+// infer from -- a file named after its parent directory, one level down from a
+// same-named sibling file -- and it must still resolve to no parent at all
+// when nothing said so.
+func TestResolveParentIgnoresDirectoryNesting(t *testing.T) {
+	root := rootFor(t, t.TempDir())
+	if err := os.MkdirAll(filepath.Join(root.Dir, "section"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// "section.md" looks exactly like an index/parent for the "section/" the
+	// nested file lives under; neither has a parent: field.
+	if err := os.WriteFile(filepath.Join(root.Dir, "section.md"),
+		[]byte("---\npage_id: 100\ntitle: Section\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	nested := filepath.Join(root.Dir, "section", "page.md")
+
+	p, err := resolveParent(nested, map[string]string{}, nil, nil, "", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.kind != parentTop {
+		t.Errorf("kind = %q, want top: nesting under a directory matching a sibling file's "+
+			"name must not imply a parent", p.kind)
+	}
+}
+
 func TestResolveParentMdFileNotFound(t *testing.T) {
 	root := rootFor(t, t.TempDir())
 	_, err := resolveParent(filepath.Join(root.Dir, "a.md"),

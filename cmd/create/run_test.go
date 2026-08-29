@@ -459,3 +459,28 @@ func TestCreateAllStubIsEmptyThenPublished(t *testing.T) {
 		t.Errorf("published body missing content: %q", p.body)
 	}
 }
+
+// TestCreateBatchIgnoresDirectoryNesting is guarantee L8 (no-layout-inference,
+// docs/guarantees.md) at the batch level: a file nested several directories
+// deep, alongside files at shallower levels with names that could plausibly
+// read as its ancestors, must still be created as a top-level page unless a
+// parent: field or --parent said otherwise. Nothing about the tree shape may
+// contribute to the decision.
+func TestCreateBatchIgnoresDirectoryNesting(t *testing.T) {
+	resetOpts(t)
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+
+	shallow := write(t, dir, "docs.md", "---\ntitle: Docs\n---\nbody\n")
+	nested := write(t, dir, "docs/guide.md", "---\ntitle: Guide\n---\nbody\n")
+	deep := write(t, dir, "docs/guide/page.md", "---\ntitle: Page\n---\nbody\n")
+
+	c, _ := newFakeConfluence(t)
+	ordered := buildRecords(t, c, []string{shallow, nested, deep})
+	for _, r := range ordered {
+		if r.parent.kind != parentTop {
+			t.Errorf("file %s: parent kind = %q, want top -- its directory depth must not "+
+				"imply a parent relationship to the other files in this batch", r.filename, r.parent.kind)
+		}
+	}
+}
