@@ -138,6 +138,21 @@ func (c *ConfluenceClient) BaseURL() string { return c.baseURL }
 // whether requests are routed through the gateway.
 func (c *ConfluenceClient) SiteURL() string { return c.siteURL }
 
+// PageURL builds a page's human-facing URL from its own links, falling back to
+// the legacy ?pageId= form when Links.WebUI is empty (a page fetched by a route
+// that doesn't populate it). Always built off SiteURL, never BaseURL: a reader
+// must never see the gateway host.
+func (c *ConfluenceClient) PageURL(page *Page, pageID string) string {
+	if page.Links.WebUI == "" {
+		return fmt.Sprintf("%s/wiki/pages/viewpage.action?pageId=%s", c.SiteURL(), pageID)
+	}
+	base := page.Links.Base
+	if base == "" {
+		base = c.SiteURL() + "/wiki"
+	}
+	return base + page.Links.WebUI
+}
+
 // HTTPError is returned when the API responds with a >= 400 status.
 type HTTPError struct {
 	StatusCode int

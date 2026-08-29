@@ -344,6 +344,40 @@ func TestGetPagePropagatesError(t *testing.T) {
 	}
 }
 
+func TestPageURLUsesSiteNotGateway(t *testing.T) {
+	c := New(Config{SiteURL: "https://wiki.example.net", CloudID: "abc-123"})
+
+	tests := []struct {
+		name       string
+		base, webu string
+		want       string
+	}{
+		{
+			"no webui link falls back to the site",
+			"", "",
+			"https://wiki.example.net/wiki/pages/viewpage.action?pageId=42",
+		},
+		{
+			"webui with no base joins onto the site",
+			"", "/spaces/ENG/pages/42/Title",
+			"https://wiki.example.net/wiki/spaces/ENG/pages/42/Title",
+		},
+		{
+			"the API's own base is preferred when present",
+			"https://wiki.example.net/wiki", "/spaces/ENG/pages/42/Title",
+			"https://wiki.example.net/wiki/spaces/ENG/pages/42/Title",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			page := &Page{ID: "42", Links: Links{Base: tc.base, WebUI: tc.webu}}
+			if got := c.PageURL(page, "42"); got != tc.want {
+				t.Errorf("PageURL = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // --- folders -----------------------------------------------------------------
 
 func TestGetFolderOrNilReturnsFolder(t *testing.T) {

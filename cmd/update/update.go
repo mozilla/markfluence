@@ -176,7 +176,7 @@ func processFile(
 	}
 	r.title = title
 	r.versionPrev = page.Version.Number
-	r.url = pageURL(c, page, pageID)
+	r.url = c.PageURL(page, pageID)
 
 	if !force && page.Version.CreatedAt != "" {
 		if pageUpdated, err := time.Parse(time.RFC3339, page.Version.CreatedAt); err == nil {
@@ -244,7 +244,7 @@ func processFile(
 		return r.fail(err, jsonout.CodeFor(err))
 	}
 	r.versionNew = next
-	r.url = pageURL(c, result, pageID)
+	r.url = c.PageURL(result, pageID)
 
 	// Assert the page width (a separate content-property call) only when set;
 	// non-fatal (a failure is a warning, not an error).
@@ -325,15 +325,4 @@ func resolveWidth(cliPageWidth string, mf *frontmatter.MarkdownFile) (pagewidth.
 		return w, err == nil, err
 	}
 	return "", false, nil
-}
-
-func pageURL(c *client.ConfluenceClient, page *client.Page, pageID string) string {
-	if page.Links.WebUI == "" {
-		return fmt.Sprintf("%s/wiki/pages/viewpage.action?pageId=%s", c.SiteURL(), pageID)
-	}
-	base := page.Links.Base
-	if base == "" {
-		base = c.SiteURL() + "/wiki"
-	}
-	return base + page.Links.WebUI
 }
