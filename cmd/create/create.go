@@ -5,8 +5,10 @@
 // page converted and given real content (publish). Reserving every id before
 // converting anything is what makes link resolution stop depending on
 // creation order -- a link pointing "forward" in the batch resolves exactly
-// like one pointing "backward," and a cycle between two pages in the same
-// batch resolves too.
+// like one pointing "backward," and two pages that link to each other resolve
+// too. A parent cycle among the given files is a different graph -- the
+// reserve phase needs a real topological order for it and rejects the batch
+// outright when there isn't one.
 package create
 
 import (
@@ -48,8 +50,9 @@ var Cmd = &cobra.Command{
 		"All files are validated first; if any would fail, nothing is created.\n" +
 		"Otherwise a content-less stub is reserved for each, parents-first, before\n" +
 		"any of them is converted -- so a link between two files in the same batch\n" +
-		"resolves regardless of which direction it points, or whether they form a\n" +
-		"cycle. --title and --page-width override the frontmatter (--title requires\n" +
+		"resolves regardless of which direction it points, or whether the two link\n" +
+		"to each other. A parent cycle among the given files is rejected instead.\n" +
+		"--title and --page-width override the frontmatter (--title requires\n" +
 		"a single FILE). Unless --no-persist is given, each created page's\n" +
 		"title/space/parent/page_id/page_width are written back into the frontmatter.",
 	Args:              cobra.MinimumNArgs(1),
@@ -59,7 +62,7 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().StringVar(&spaceOpt, "space", "", "Target space key.")
-	Cmd.Flags().StringVar(&parentOpt, "parent", "", "Parent page id for the new page(s).")
+	Cmd.Flags().StringVar(&parentOpt, "parent", "", "Parent page or folder id for the new page(s).")
 	Cmd.Flags().StringVar(&titleOpt, "title", "",
 		"Override the page title (requires a single FILE).")
 	Cmd.Flags().StringVar(&pageWidthOpt, "page-width", "",
@@ -70,6 +73,10 @@ func init() {
 		"Do not write anything back into the frontmatter.")
 	Cmd.Flags().BoolVar(&dryRunOpt, "dry-run", false,
 		"Preview what would be created without writing to Confluence or files.")
+	// --persist exists only so wantPersist has a positive flag to combine with
+	// --no-persist; it says nothing --no-persist's absence doesn't already say,
+	// so it stays out of --help.
+	_ = Cmd.Flags().MarkHidden("persist")
 
 	completion.RegisterFlag(Cmd, "page-width", completion.Values(pagewidth.Vocabulary()...))
 }

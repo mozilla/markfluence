@@ -42,7 +42,7 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().StringVar(&spaceOpt, "space", "",
-		"Restrict the search to a space, by key.")
+		"Restrict the search to a space, by key (an unknown key is an error, not an empty result).")
 	completion.RegisterFlag(Cmd, "space", cobra.NoFileCompletions)
 }
 

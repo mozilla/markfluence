@@ -61,7 +61,7 @@ var Cmd = &cobra.Command{
 func init() {
 	Cmd.Flags().StringVar(&dest, "dest", ".", "Directory to write the export into.")
 	Cmd.Flags().StringVar(&fileFlag, "file", "",
-		"Name for the page file (default: a slug of the title).")
+		"Name for the page file (default: a slug of the title, or the page id if that slugs to nothing).")
 	Cmd.Flags().BoolVar(&allAttachments, "all-attachments", false,
 		"Export every attachment on the page, not just the referenced ones.")
 	Cmd.Flags().BoolVar(&skipAttachs, "skip-attachments", false,

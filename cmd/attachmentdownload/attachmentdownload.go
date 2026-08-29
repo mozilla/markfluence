@@ -41,6 +41,9 @@ var Cmd = &cobra.Command{
 		"downloaded tree matches what the page's markdown references and\n" +
 		"previews locally. An attachment without a recorded path is written\n" +
 		"under its stored name. --flat writes everything under stored names.\n\n" +
+		"A recorded path that would resolve outside --dest is refused for that\n" +
+		"attachment, since the path comes from an attachment comment anyone who\n" +
+		"can edit the page controls.\n\n" +
 		"A file that already exists is skipped unless --force.",
 	Args:              cobra.MinimumNArgs(1),
 	ValidArgsFunction: completion.PageThenNames,
