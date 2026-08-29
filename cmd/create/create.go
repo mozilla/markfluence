@@ -347,6 +347,20 @@ func resolveFile(
 	if err != nil {
 		return record{}, err
 	}
+
+	abs, err := filepath.Abs(filename)
+	if err != nil {
+		return record{}, err
+	}
+	root, err := roots.Resolve(filepath.Dir(abs))
+	if err != nil {
+		return record{}, fmt.Errorf("resolving the documentation root: %w", err)
+	}
+	index, err := indexes.Get(root)
+	if err != nil {
+		return record{}, fmt.Errorf("building the link index: %w", err)
+	}
+
 	title := resolveTitle(titleOpt, mf)
 	if title == "" {
 		return record{}, errors.New("no title given (pass --title or add a 'title:' frontmatter field)")
@@ -387,7 +401,7 @@ func resolveFile(
 		return record{}, fmt.Errorf("space %q not found", spaceKey)
 	}
 
-	parent, err := resolveParent(filename, mf.Frontmatter, inSetAbs, c, spaceID)
+	parent, err := resolveParent(filename, mf.Frontmatter, inSetAbs, c, spaceID, root)
 	if err != nil {
 		return record{}, err
 	}
@@ -396,20 +410,19 @@ func resolveFile(
 		return record{}, err
 	}
 
-	abs, _ := filepath.Abs(filename)
-	root, err := roots.Resolve(filepath.Dir(abs))
-	if err != nil {
-		return record{}, fmt.Errorf("resolving the documentation root: %w", err)
-	}
-	index, err := indexes.Get(root)
-	if err != nil {
-		return record{}, fmt.Errorf("building the link index: %w", err)
-	}
 	return record{filename, abs, mf, title, spaceKey, spaceID, parent, width, root, index}, nil
 }
 
+// resolveParent resolves a file's parent: reference. A ".md" reference is read
+// through root's os.Root -- root.FS -- rather than the bare filesystem: a
+// parent escaping root is a hard error (S2), not an unresolved-and-reported
+// case the way a link is, because a parent is load-bearing. Publishing under
+// the wrong parent -- or under none, silently -- is worse than not publishing
+// at all. A symlinked parent target is refused the same way a symlinked image
+// leaf is.
 func resolveParent(
 	filename string, fm map[string]string, inSetAbs map[string]bool, c *client.ConfluenceClient, spaceID string,
+	root *project.Root,
 ) (parentInfo, error) {
 	fmParent := fm["parent"]
 	fmParentSet := fmParent != "" && fmParent != "null"
@@ -426,19 +439,39 @@ func resolveParent(
 
 	if strings.HasSuffix(parentValue, ".md") {
 		parentPath := filepath.Join(filepath.Dir(filename), parentValue)
-		if info, err := os.Stat(parentPath); err != nil || info.IsDir() {
+		parentAbs, err := filepath.Abs(parentPath)
+		if err != nil {
+			return parentInfo{}, err
+		}
+		rel, err := filepath.Rel(root.Dir, parentAbs)
+		if err != nil {
+			return parentInfo{}, err
+		}
+		rel = filepath.ToSlash(rel)
+		if rel == ".." || strings.HasPrefix(rel, "../") {
+			return parentInfo{}, fmt.Errorf(
+				"parent %s resolves outside the documentation root (%s); a parent must be within it",
+				parentValue, root.Dir)
+		}
+
+		info, statErr := root.FS.Lstat(rel)
+		if statErr != nil || info.IsDir() {
 			return parentInfo{}, fmt.Errorf("parent file not found: %s", parentValue)
 		}
-		parentAbs, _ := filepath.Abs(parentPath)
+		if info.Mode()&os.ModeSymlink != 0 {
+			return parentInfo{}, fmt.Errorf("parent file is a symlink, not a regular file: %s", parentValue)
+		}
+
 		if inSetAbs[parentAbs] {
 			// An in-set parent is a page this run creates, so its kind is known
 			// without asking the server.
 			return parentInfo{kind: "inset", abs: parentAbs, parentType: "page", display: parentValue}, nil
 		}
-		pmf, err := frontmatter.ParseFile(parentPath)
+		data, err := root.FS.ReadFile(rel)
 		if err != nil {
 			return parentInfo{}, err
 		}
+		pmf := frontmatter.Parse(parentPath, string(data))
 		pID := pmf.PageID()
 		if pID == "" {
 			return parentInfo{}, fmt.Errorf("parent not yet published (no page_id): %s", parentValue)
