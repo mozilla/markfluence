@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/clienttest"
 	"github.com/mozilla/markfluence/internal/convert"
 )
 
@@ -19,7 +19,7 @@ import (
 func linkServer(t *testing.T, spaces map[string][]string) (*client.ConfluenceClient, *[]string) {
 	t.Helper()
 	var paths []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path+"?"+r.URL.RawQuery)
 		q := r.URL.Query()
 
@@ -46,9 +46,8 @@ func linkServer(t *testing.T, spaces map[string][]string) (*client.ConfluenceCli
 			})
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"results": rows})
-	}))
-	t.Cleanup(srv.Close)
-	return client.New(client.Config{SiteURL: srv.URL, Username: "u", Token: "t"}), &paths
+	})
+	return c, &paths
 }
 
 // pageWithBody is a fetched page carrying a storage body and a webui link, which

@@ -2,13 +2,13 @@ package attachfile
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/clienttest"
 )
 
 func managed(title, source string) client.Attachment {
@@ -119,11 +119,9 @@ func TestResolveEscapeMessageNamesTheAttachment(t *testing.T) {
 // testClient serves body for any request, standing in for Confluence.
 func testClient(t *testing.T, body string) *client.ConfluenceClient {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	return clienttest.New(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(body))
-	}))
-	t.Cleanup(srv.Close)
-	return client.New(client.Config{SiteURL: srv.URL, Username: "u", Token: "t"})
+	})
 }
 
 // withDownload returns an attachment carrying a download link, without which
