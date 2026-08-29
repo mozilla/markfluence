@@ -26,7 +26,7 @@ func TestResolveParentNoneGiven(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.kind != "top" {
+	if p.kind != parentTop {
 		t.Errorf("kind = %q, want top", p.kind)
 	}
 }
@@ -65,7 +65,7 @@ func TestResolveParentMdFileInSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.kind != "inset" || p.abs != parentPath {
+	if p.kind != parentInSet || p.abs != parentPath {
 		t.Errorf("p = %+v, want kind=inset abs=%q", p, parentPath)
 	}
 }
@@ -86,7 +86,7 @@ func TestResolveParentMdFilePublished(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.kind != "published" || p.id != "100" {
+	if p.kind != parentPublished || p.id != "100" {
 		t.Errorf("p = %+v, want kind=published id=100", p)
 	}
 }
