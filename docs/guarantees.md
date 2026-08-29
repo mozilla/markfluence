@@ -47,7 +47,7 @@ A violation here does damage, rather than producing a wrong answer.
 | | label | guarantee | status |
 |---|---|---|---|
 | **S1** | `no-write-outside-root` | No file is written outside the root. | Holds |
-| **S2** | `no-read-outside-root` | No file is read outside the root. | Partial |
+| **S2** | `no-read-outside-root` | No file is read outside the root. | Holds |
 | **S3** | `no-overwrite-without-force` | No existing file is overwritten without `--force`. | Holds |
 | **S4** | `no-removal-as-side-effect` | Nothing is removed as a side effect. Removal is a command's stated purpose or it does not happen. | Vacuous |
 | **S5** | `remove-only-ours` | markfluence removes only what markfluence created. | Vacuous |
@@ -56,8 +56,7 @@ A violation here does damage, rather than producing a wrong answer.
 **S1** is enforced by `attachfile.Resolve`, which refuses a traversing path
 rather than clipping it.
 
-**S2** now holds for two of the three reads `_plans/025` names, and the
-remaining one is why the status is Partial rather than Holds.
+**S2** now holds for all three reads `_plans/025` names.
 
 The image leaf is enforced through `root.FS`, an `os.Root` scoped to the
 documentation root (`internal/convert/images.go`): a lexically escaping path is
@@ -72,8 +71,12 @@ no file outside it is ever opened for this purpose — the guarantee holds by
 construction rather than by a check, exactly as `_plans/025` describes. See
 [Non-goals](#symlinks).
 
-What remains: a frontmatter `parent:` path is still joined and read unclamped.
-That is `_plans/026` commit 6.
+A frontmatter `parent:` path is read the same way the image leaf is
+(`cmd/create.resolveParent`, through `root.FS`), but the failure mode differs
+on purpose: an escaping or symlinked parent is a **hard error**, not an
+unresolved-and-reported case the way a link is. A parent is load-bearing —
+publishing under the wrong one, or silently under none, is worse than not
+publishing at all (`_plans/026` commit 6).
 
 **S3** is enforced by `export`, which stats the destination and skips both the
 markdown and each attachment unless `--force`.
