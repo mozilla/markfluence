@@ -132,24 +132,22 @@ readonly:content.attachment:confluence
 read:confluence-content.summary
 ```
 
-> [!IMPORTANT]
-> **The mixture of naming styles is correct, not a copy-paste error.** Atlassian
-> has two scope vocabularies — *classic* (`read:confluence-user`) and *granular*
-> (`read:page:confluence`) — and they are granted independently: holding one does
-> **not** imply the other. markfluence talks to both API versions, and each
-> version accepts only one vocabulary, so the list above is genuinely mixed. A
-> token granted the classic names alone fails with
-> `401 Unauthorized; scope does not match` on almost every command, which is what
-> makes this an easy list to get wrong. The measurements behind that are in
-> [docs/confluence/api.md](docs/confluence/api.md#scopes).
-
 > [!NOTE]
 > Scopes are fixed when a token is issued. A missing one needs a **new** token,
 > not an edit to the existing one.
 
-> [!NOTE]
-> Currently, markfluence doesn't support deleting anything, so it doesn't need
-> delete scopes. This might change in the future.
+**The mixture of naming styles is correct, not a copy-paste error.** Atlassian
+has two scope vocabularies — *classic* (`read:confluence-user`) and *granular*
+(`read:page:confluence`) — and they are granted independently: holding one does
+**not** imply the other. markfluence talks to both API versions, and each
+version accepts only one vocabulary, so the list above is genuinely mixed.
+
+A token granted the classic names alone fails with
+`401 Unauthorized; scope does not match` on almost every command, which is what
+makes this an easy list to get wrong. The measurements behind that are in
+[docs/confluence/api.md](docs/confluence/api.md#scopes).
+If you get a `401 Unauthorized; scope does not match` error, you need additional
+scopes.
 
 A **403** (rather than the 401 above) means the opposite problem: the token is
 scoped for the call, but the service account lacks Confluence permission on that
@@ -1133,21 +1131,31 @@ Storage markup shown inside a fenced code block stays literal (it isn't activate
 
 ## The documentation root
 
-Every markdown file has a **documentation root**: the directory holding
-`markfluence.yaml`, found by walking up from the file's own directory, or —
-with no `markfluence.yaml` anywhere above it — the file's own directory. It
-bounds which images and `parent:` references a file may read, and it's what
-an image's recorded attachment name and source are relative to (see
-[Images](#body) above). The root actually used is reported once per distinct
-value in a run. `--root PATH` overrides discovery for the whole invocation.
+**Do you need a `markfluence.yaml`?**
 
-`markfluence.yaml`'s existence is its whole meaning — nothing in it is read
-or parsed yet. Create it by hand:
+- If you export, edit, and publish files **one at a time**, no. Each file's
+  root defaults to its own directory, and that's already the directory you
+  want.
+- If you're working on a **directory tree** of files — pages that link to
+  each other, or that share an `assets/` directory — put a
+  `markfluence.yaml` at the root of that tree. Without one, each file's root
+  still defaults to its own directory, which means a page can't reach an
+  image or another page sitting *above* itself; a shared-assets layout like
+  the one in [Images](#body) above needs a declared root to work at all.
 
 ```yaml
 # Marks the root of a markfluence project. Image and link paths are recorded
 # relative to this directory. https://github.com/mozilla/markfluence
 ```
+
+The rest of this section is the precise version of the same idea. Every
+markdown file has a **documentation root**: the directory holding
+`markfluence.yaml`, found by walking up from the file's own directory, or —
+with no `markfluence.yaml` anywhere above it — the file's own directory. It
+bounds which images and `parent:` references a file may read, and it's what
+an image's recorded attachment name and source are relative to. The root
+actually used is reported once per distinct value in a run. `--root PATH`
+overrides discovery for the whole invocation.
 
 For the reasoning behind this model — why a bare marker file, what it fixes,
 what it costs — see [docs/root-model.md](docs/root-model.md) and
