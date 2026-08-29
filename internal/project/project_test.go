@@ -36,6 +36,35 @@ func TestDiscoverFindsProjectFile(t *testing.T) {
 	}
 }
 
+// TestDiscoverIndependentOfWorkingDirectory is guarantee L2
+// (invocation-independent, docs/guarantees.md): how a reference resolves must
+// depend only on the files on disk, not on the working directory the process
+// happens to be running from. Discover takes startDir as an argument rather
+// than consulting os.Getwd, so this pins that as a behavioral guarantee
+// against a future regression, not just an implementation detail nobody
+// checks.
+func TestDiscoverIndependentOfWorkingDirectory(t *testing.T) {
+	root := t.TempDir()
+	writeProjectFile(t, root)
+	sub := filepath.Join(root, "team", "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	elsewhere := t.TempDir() // a directory with no relation to root at all
+
+	t.Chdir(elsewhere)
+	got, err := Discover(sub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = got.FS.Close() }()
+
+	if got.Dir != root {
+		t.Errorf("Dir = %q, want %q -- resolving an absolute path must not be "+
+			"affected by the process's unrelated working directory", got.Dir, root)
+	}
+}
+
 func TestDiscoverNearestAncestorWins(t *testing.T) {
 	outer := t.TempDir()
 	writeProjectFile(t, outer)

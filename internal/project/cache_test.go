@@ -192,3 +192,66 @@ func TestCacheCloseIsSafeWithABackfilledSharedRoot(t *testing.T) {
 	}
 	c.Close() // must not panic despite closing the same *os.Root more than once
 }
+
+// TestCacheResolveIndependentOfBatchComposition is the other half of
+// guarantee L2 (invocation-independent, docs/guarantees.md): resolving one
+// file's root must not depend on which other files happen to be in the same
+// batch. A single Cache is shared across every file in a create/update
+// invocation, so its memoization must be purely an optimization -- it must
+// never change what a given directory resolves to depending on what else was
+// resolved through the same Cache, in either order.
+//
+// target and sibling deliberately belong to two different, unrelated
+// projects (each with its own marker file): a contamination bug that just
+// returns whatever the cache last resolved -- rather than what was actually
+// asked for -- would otherwise happen to produce the right answer whenever a
+// test's fixtures all shared one root, and pass by accident.
+func TestCacheResolveIndependentOfBatchComposition(t *testing.T) {
+	projectA := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectA, Filename), []byte("# marker\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(projectA, "docs")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	projectB := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectB, Filename), []byte("# marker\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sibling := filepath.Join(projectB, "docs")
+	if err := os.MkdirAll(sibling, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	alone := NewCache("")
+	defer alone.Close()
+	wantRoot, err := alone.Resolve(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wantRoot.Dir != projectA {
+		t.Fatalf("test fixture is wrong: target resolved to %q, want %q", wantRoot.Dir, projectA)
+	}
+
+	// A second, independent Cache resolves an unrelated sibling from a
+	// different project first, then the same target -- simulating a batch
+	// that also happened to include a file from "sibling". The order and the
+	// extra file must not change target's result.
+	withSibling := NewCache("")
+	defer withSibling.Close()
+	if _, err := withSibling.Resolve(sibling); err != nil {
+		t.Fatal(err)
+	}
+	got, err := withSibling.Resolve(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got.Dir != wantRoot.Dir || got.File != wantRoot.File {
+		t.Errorf("target resolved to Dir=%q File=%q alongside a sibling from a different project, "+
+			"want Dir=%q File=%q (its result when resolved alone) -- batch composition must not matter",
+			got.Dir, got.File, wantRoot.Dir, wantRoot.File)
+	}
+}
