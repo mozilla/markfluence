@@ -162,11 +162,31 @@ opened as an `os.Root`, still validated to exist and be a directory).
   referencing file (025 item 3) — this is the change that fixes Scenario C and,
   as a side effect, Scenario D for single-page export.
 - `cmd/create` and `cmd/update` discover a root per file, caching by resolved
-  `Dir` across a batch so files sharing a root don't re-walk. The root actually
-  used is reported once per distinct value (human output and `--json`).
+  `Dir` across a batch so files sharing a root don't re-walk (`internal/project.Cache`).
+  The root actually used is reported once per distinct value, in human output
+  (`ui.Info`). **Landed this way; split from the plan as written below.**
 - Regression suite: `test.input` gains an explicit root (default: the case's
   own directory, matching the no-config fallback); `images-shared-parent`'s
-  golden changes, since that's the case 025 names as "the whole point."
+  golden changes, since that's the case 025 names as "the whole point." Added
+  dedicated (non-golden) tests for the two symlink refusals (leaf, and an
+  escape through a symlinked intermediate directory) — a checked-in symlink
+  fixture is fragile across platforms, so these are built programmatically in
+  Go, the way `internal/attachfile` already tests its equivalent.
+
+**Split off rather than done here: the `--json` half of root reporting.**
+Adding `roots` to `--json` means a field on `createSummary`/`updateSummary`,
+new if/then branches in `schema/json-output/v1.json`, `internal/schematest`
+conformance updates, and likely touching existing literal-JSON assertions in
+`create_test.go`/`update_test.go` — separable, and not worth blocking the
+converter changes on. Follow-up commit, still under this item's number.
+
+**Caught by the regression suite, not by hand:** the first draft's boolean
+guards read `lstatErr == nil` as "Lstat succeeded," but it's also true when
+Lstat was never called at all (a lexically escaping path, where `info` and
+`lstatErr` both sit at their zero values) — `info.Mode()` on the nil `info`
+panicked. `images-broken`'s 8-`../`-deep case hit this on the first
+`go test` run. Fixed by gating every derived boolean on `insideRoot` as well,
+not just `lstatErr == nil`.
 
 ### 5. Root-relative link index
 
