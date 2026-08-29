@@ -1,5 +1,7 @@
 package convert
 
+import "github.com/mozilla/markfluence/internal/attachref"
+
 // ConfluencePage is the result of converting a markdown body to Confluence
 // storage format: the storage-format HTML plus the local images the body
 // references. Fields are ordered so the JSON encoding reads with sorted keys.
@@ -15,12 +17,5 @@ type ConfluencePage struct {
 }
 
 // Attachment is a local image the body references, to be uploaded to the page.
-// Path is absolute. Filename is the attachment name, a bijective encoding of
-// Source, so distinct images can never collide on one name. Source is the
-// normalized page-relative path the image was written as, recorded on the
-// attachment so a later read recovers it exactly rather than inferring it.
-type Attachment struct {
-	Filename string `json:"filename"`
-	Path     string `json:"path"`
-	Source   string `json:"source"`
-}
+// It's the same shape internal/client uploads from -- see attachref.LocalAttachment.
+type Attachment = attachref.LocalAttachment

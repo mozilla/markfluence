@@ -36,6 +36,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mozilla/markfluence/internal/attachref"
 )
 
 // An uploaded attachment carries markfluence bookkeeping in its comment: the
@@ -345,12 +347,9 @@ type Property struct {
 
 // LocalAttachment is a local image to sync to a page. Source is the markdown
 // image path it was written as, recorded in the attachment's comment; it may be
-// empty, in which case only a checksum is recorded.
-type LocalAttachment struct {
-	Path     string
-	Filename string
-	Source   string
-}
+// empty, in which case only a checksum is recorded. It's the same shape
+// internal/convert discovers images as -- see attachref.LocalAttachment.
+type LocalAttachment = attachref.LocalAttachment
 
 // AttachmentMeta is the markfluence bookkeeping parsed out of an attachment's
 // comment. A hand-uploaded attachment has none, leaving Managed false.

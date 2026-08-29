@@ -502,7 +502,7 @@ func publishOne(r record, res *createResult, pageID string, version int, c *clie
 	}
 	res.url = pageURL(c, result, pageID)
 
-	actions, err := c.SyncAttachments(pageID, toLocalAttachments(pageContent.Attachments))
+	actions, err := c.SyncAttachments(pageID, pageContent.Attachments)
 	if err != nil {
 		return res.fail(err, jsonout.CodeFor(err))
 	}
@@ -809,12 +809,4 @@ func pageURL(c *client.ConfluenceClient, page *client.Page, pageID string) strin
 		base = c.SiteURL() + "/wiki"
 	}
 	return base + page.Links.WebUI
-}
-
-func toLocalAttachments(atts []convert.Attachment) []client.LocalAttachment {
-	out := make([]client.LocalAttachment, len(atts))
-	for i, a := range atts {
-		out[i] = client.LocalAttachment{Path: a.Path, Filename: a.Filename, Source: a.Source}
-	}
-	return out
 }

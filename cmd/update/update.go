@@ -217,7 +217,7 @@ func processFile(
 	// no writes. The version bump and page URL are the same values a real run
 	// would produce, so the human output lines are identical.
 	if dryRun {
-		actions, err := c.PlanAttachments(pageID, toLocalAttachments(pageContent.Attachments))
+		actions, err := c.PlanAttachments(pageID, pageContent.Attachments)
 		if err != nil {
 			return r.fail(err, jsonout.CodeFor(err))
 		}
@@ -231,7 +231,7 @@ func processFile(
 		return r
 	}
 
-	actions, err := c.SyncAttachments(pageID, toLocalAttachments(pageContent.Attachments))
+	actions, err := c.SyncAttachments(pageID, pageContent.Attachments)
 	if err != nil {
 		return r.fail(err, jsonout.CodeFor(err))
 	}
@@ -336,12 +336,4 @@ func pageURL(c *client.ConfluenceClient, page *client.Page, pageID string) strin
 		base = c.SiteURL() + "/wiki"
 	}
 	return base + page.Links.WebUI
-}
-
-func toLocalAttachments(atts []convert.Attachment) []client.LocalAttachment {
-	out := make([]client.LocalAttachment, len(atts))
-	for i, a := range atts {
-		out[i] = client.LocalAttachment{Path: a.Path, Filename: a.Filename, Source: a.Source}
-	}
-	return out
 }
