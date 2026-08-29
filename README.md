@@ -65,7 +65,9 @@ markfluence reads a `.env` file automatically (no need to `source` it) from the
 [documentation root](#the-documentation-root) — the directory holding
 `markfluence.yaml`, found by walking up from the working directory, or the
 working directory itself with no `markfluence.yaml` above it — or from an
-explicit path via `--env-file PATH`.
+explicit path via `--env-file PATH`. For `create`, `update`, and
+`attachment-upload`, `--root PATH` redirects this too, the same as it does
+the per-file root those commands otherwise resolve independently.
 
 Copy `.env.example` to `.env` and fill in:
 
@@ -1149,7 +1151,9 @@ with no `markfluence.yaml` anywhere above it — the file's own directory. It
 bounds which images and `parent:` references a file may read, and it's what
 an image's recorded attachment name and source are relative to. The root
 actually used is reported once per distinct value in a run. `--root PATH`
-overrides discovery for the whole invocation.
+overrides discovery for the whole invocation — and, for `create`, `update`,
+and `attachment-upload`, also redirects where `.env` is read from (see
+[Configure](#configure)).
 
 For the reasoning behind this model — why a bare marker file, what it fixes,
 what it costs — see [docs/root-model.md](docs/root-model.md) and
