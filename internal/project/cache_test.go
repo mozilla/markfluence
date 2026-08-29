@@ -159,3 +159,36 @@ func TestCacheCloseClearsEntries(t *testing.T) {
 		t.Errorf("byDir has %d entries after Close, want 0", len(c.byDir))
 	}
 }
+
+// TestCacheCloseIsSafeWithABackfilledSharedRoot: walkAndCache's backfill can
+// point several byDir keys at the same *Root, so Close -- which iterates every
+// key and closes its Root unconditionally -- calls FS.Close() on that same
+// underlying handle more than once. os.Root.Close is safe to call repeatedly
+// (confirmed: it returns nil every time, not an error on the second call), so
+// this must not panic or fail.
+func TestCacheCloseIsSafeWithABackfilledSharedRoot(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, Filename), []byte("# marker\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	x := filepath.Join(root, "docs", "a")
+	y := filepath.Join(root, "docs", "b")
+	for _, d := range []string{x, y} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	c := NewCache("")
+	if _, err := c.Resolve(x); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Resolve(y); err != nil {
+		t.Fatal(err)
+	}
+	// x, y, and the backfilled "docs" ancestor all share one *Root.
+	if len(c.byDir) < 3 {
+		t.Fatalf("byDir has %d entries, want at least 3 (x, y, and the backfilled ancestor)", len(c.byDir))
+	}
+	c.Close() // must not panic despite closing the same *os.Root more than once
+}
