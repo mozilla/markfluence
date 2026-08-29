@@ -424,15 +424,16 @@
       }
     },
     "attachmentUploadResult": {
-      "description": "One uploaded file. status uses the same verbs as the attachments array on update/create.",
+      "description": "One uploaded file. status uses the same verbs as the attachments array on update/create. dest_path is always null: upload has no local destination to report, and only exists here so upload and download share one result shape.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["ok", "status", "dry_run", "filename", "error", "code"],
+      "required": ["ok", "status", "dry_run", "filename", "dest_path", "error", "code"],
       "properties": {
         "ok": { "type": "boolean" },
         "status": { "enum": ["created", "updated", "skipped", "failed"] },
         "dry_run": { "type": "boolean" },
         "filename": { "type": "string" },
+        "dest_path": { "const": null },
         "error": { "$ref": "#/$defs/stringOrNull" },
         "code": { "$ref": "#/$defs/codeOrNull" }
       }

@@ -31,6 +31,20 @@ type Attachment struct {
 	Filename string `json:"filename"`
 }
 
+// AttachmentActionResult is one file's outcome from attachment-upload or
+// attachment-download: what happened, whether it succeeded, and (download only)
+// where it landed on disk. DestPath is always nil for attachment-upload, which
+// has no local destination to report.
+type AttachmentActionResult struct {
+	OK       bool    `json:"ok"`
+	Status   string  `json:"status"`
+	DryRun   bool    `json:"dry_run"`
+	Filename string  `json:"filename"`
+	DestPath *string `json:"dest_path"`
+	Error    *string `json:"error"`
+	Code     *string `json:"code"`
+}
+
 // SingleOpFailure is the results[0] entry a single-target command emits when its
 // one operation against the page fails (not found, fetch error) --
 // #/$defs/singleOpFailure in the schema.

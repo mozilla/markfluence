@@ -63,6 +63,7 @@ func TestJSONUploadResultMarshal(t *testing.T) {
   "status": "created",
   "dry_run": false,
   "filename": "a.png",
+  "dest_path": null,
   "error": null,
   "code": null
 }`
