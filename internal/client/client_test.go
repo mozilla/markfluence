@@ -157,6 +157,26 @@ func TestSetContentPropertyRetriesOnceAndDetectsApplied(t *testing.T) {
 	}
 }
 
+// TestSetContentPropertyReturnsSecondErrorWhenBothAttemptsFail: lastErr must be
+// the retry's error, not the first attempt's -- the one a caller can still act
+// on, since the first is already stale by the time it's reported.
+func TestSetContentPropertyReturnsSecondErrorWhenBothAttemptsFail(t *testing.T) {
+	// Plain 500s with no Retry-After: neither is retried by send's own loop
+	// (retryableStatus requires 502/503/504, 429, or a Retry-After header), so
+	// exactly two requests happen -- SetContentProperty's own two attempts.
+	c, s := newServer(t, resp{500, `first`}, resp{500, `second`})
+	_, err := c.SetContentProperty("1", "k", "max")
+	if err == nil {
+		t.Fatal("want an error when both attempts fail")
+	}
+	if !strings.Contains(err.Error(), "second") {
+		t.Errorf("err = %v, want it to carry the second (retry) attempt's body", err)
+	}
+	if !eqStrings(s.calls, []string{"GET", "GET"}) {
+		t.Errorf("calls = %v, want two attempts", s.calls)
+	}
+}
+
 func TestListContentPropertiesFollowsPagination(t *testing.T) {
 	c, s := newServer(t,
 		resp{200, `{"results":[{"key":"a"}],"_links":{"next":"/wiki/api/v2/pages/1/properties?cursor=X"}}`},
@@ -248,6 +268,29 @@ func TestSendRetriesPostOn429(t *testing.T) {
 	}
 }
 
+// TestSendRetriesPostPreservesBody: a retried POST must resend the same body,
+// not an empty one from an already-drained reader. Every request body in this
+// client is built as a *bytes.Reader (doJSON) or *bytes.Buffer (uploadAttachment),
+// both of which net/http.NewRequest gives an automatic GetBody -- confirmed by
+// mutation testing to be what actually provides this guarantee; attempt's own
+// explicit rebuild is redundant for these two body types but is kept as an
+// explicit, visible contract rather than relying on that stdlib behavior.
+func TestSendRetriesPostPreservesBody(t *testing.T) {
+	c, s := newServer(t, resp{429, `{}`}, resp{200, `{"id":"9"}`})
+	if _, err := c.CreatePage("space1", "Title", "<p>hello</p>", ""); err != nil {
+		t.Fatalf("CreatePage after 429 retry: %v", err)
+	}
+	if len(s.bodies) != 2 {
+		t.Fatalf("got %d requests, want 2 (one retry)", len(s.bodies))
+	}
+	if s.bodies[0] == "" {
+		t.Fatal("first attempt sent an empty body")
+	}
+	if s.bodies[1] != s.bodies[0] {
+		t.Errorf("retried body = %q, want it identical to the first attempt's %q", s.bodies[1], s.bodies[0])
+	}
+}
+
 func TestSendExhaustsRetries(t *testing.T) {
 	c, n := countingServer(t, func(w http.ResponseWriter, _ int32) {
 		w.Header().Set("Retry-After", "0")
@@ -284,6 +327,37 @@ func TestParseRetryAfter(t *testing.T) {
 				t.Errorf("parseRetryAfter(%q) = %v, %v; want %v, %v", tc.in, d, ok, tc.want, tc.wantOK)
 			}
 		})
+	}
+}
+
+// TestParseRetryAfterFutureHTTPDate covers the d > 0 branch TestParseRetryAfter's
+// table can't: a past date is fixed and always exercises d <= 0 (retry now), so
+// the future-date case needs a value computed at test time.
+func TestParseRetryAfterFutureHTTPDate(t *testing.T) {
+	future := time.Now().Add(90 * time.Second).UTC().Format(http.TimeFormat)
+	d, ok := parseRetryAfter(future)
+	if !ok {
+		t.Fatalf("parseRetryAfter(%q) ok = false, want true", future)
+	}
+	// Allow slack for the time elapsed between formatting and parsing.
+	if d < 85*time.Second || d > 90*time.Second {
+		t.Errorf("parseRetryAfter(%q) = %v, want roughly 90s", future, d)
+	}
+}
+
+func TestIsIdempotent(t *testing.T) {
+	for method, want := range map[string]bool{
+		http.MethodGet:     true,
+		http.MethodHead:    true,
+		http.MethodPut:     true,
+		http.MethodDelete:  true,
+		http.MethodOptions: true,
+		http.MethodPost:    false,
+		http.MethodPatch:   false,
+	} {
+		if got := isIdempotent(method); got != want {
+			t.Errorf("isIdempotent(%s) = %v, want %v", method, got, want)
+		}
 	}
 }
 

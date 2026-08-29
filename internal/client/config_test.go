@@ -210,3 +210,18 @@ func TestResolveWithoutCloudIDKeepsSiteURL(t *testing.T) {
 		t.Errorf("BaseURL/SiteURL = %q/%q, want https://wiki for both", c.BaseURL(), c.SiteURL())
 	}
 }
+
+func TestSpaceKeyFromWebUI(t *testing.T) {
+	if got := SpaceKeyFromWebUI("/spaces/ENG/pages/123/Title"); got != "ENG" {
+		t.Errorf("space = %q, want ENG", got)
+	}
+	if got := SpaceKeyFromWebUI("/spaces/ENG/folder/123"); got != "ENG" {
+		t.Errorf("space (folder) = %q, want ENG", got)
+	}
+	if got := SpaceKeyFromWebUI("/wiki/pages/viewpage.action?pageId=123"); got != "" {
+		t.Errorf("space = %q, want empty for a webui link with no /spaces/ prefix", got)
+	}
+	if got := SpaceKeyFromWebUI(""); got != "" {
+		t.Errorf("space = %q, want empty for an empty webui", got)
+	}
+}
