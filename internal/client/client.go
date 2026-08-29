@@ -50,6 +50,17 @@ const (
 	// parsed -- comparing the parsed checksum rather than the whole comment is
 	// what lets the format change without re-uploading every attachment.
 	legacyChecksumPrefix = "mzcld:checksum: "
+	// checksumHexLen truncates a file's SHA-256 hex digest to 128 bits before
+	// it goes into a comment. The comment only needs to detect that a file's
+	// bytes changed, not resist an adversary, so this is the bigger and
+	// cheaper of the two levers on the 255-character comment ceiling --
+	// truncating it buys roughly twice what shortening the "markfluence: "
+	// prefix would (#101), and the prefix is worth keeping full-length: it is
+	// the ownership marker S5 rests on, readable by a human browsing a page's
+	// attachments in the Confluence UI. parseAttachmentComment doesn't care
+	// how long the hex run is, so a full 64-hex comment written by an older
+	// markfluence still parses -- only the write side changes.
+	checksumHexLen = 32
 )
 
 const (
@@ -993,6 +1004,7 @@ func (c *ConfluenceClient) planAttachments(pageID string, attachments []LocalAtt
 		if err != nil {
 			return nil, err
 		}
+		sum = sum[:checksumHexLen]
 		comment := attachmentComment(sum, att.Source)
 		contentType := mime.TypeByExtension(filepath.Ext(att.Filename))
 		if contentType == "" {
@@ -1009,7 +1021,7 @@ func (c *ConfluenceClient) planAttachments(pageID string, attachments []LocalAtt
 		switch {
 		case !ok:
 			p.action = "created"
-		case meta.SHA256 != sum:
+		case truncatedChecksum(meta.SHA256) != sum:
 			p.action = "updated"
 		case meta.Source != "" && meta.Source != att.Source:
 			// The bytes are unchanged but the recorded path is wrong, so re-upload
@@ -1176,6 +1188,19 @@ func fileChecksum(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// truncatedChecksum matches a stored checksum's length to checksumHexLen
+// before comparison. A checksum stored by an older markfluence is the full
+// 64-hex digest; a current one is already checksumHexLen. Comparing without
+// this would report every legacy-stamped attachment as changed the moment the
+// comment format moved on, purely because the two strings have different
+// lengths, even though the bytes they were computed from agree exactly.
+func truncatedChecksum(stored string) string {
+	if len(stored) > checksumHexLen {
+		return stored[:checksumHexLen]
+	}
+	return stored
 }
 
 // --- content properties ------------------------------------------------------

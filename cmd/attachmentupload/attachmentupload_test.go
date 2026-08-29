@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/project"
 )
 
 func writeFile(t *testing.T, dir, name string) string {
@@ -24,7 +25,7 @@ func TestLocalAttachmentsUsesBaseName(t *testing.T) {
 	dir := t.TempDir()
 	path := writeFile(t, dir, "docs/assets/x.png")
 
-	got, err := localAttachments([]string{path}, "")
+	got, err := localAttachments([]string{path}, "", project.NewCache(""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,6 +43,27 @@ func TestLocalAttachmentsUsesBaseName(t *testing.T) {
 	}
 }
 
+// TestLocalAttachmentsSourceIsRootRelative is the point of the change: under a
+// declared root spanning more than the file's own directory, the recorded
+// source keeps the subdirectory structure instead of flattening to a bare
+// basename -- matching what publishing a page that references the same file
+// would record (internal/convert/images.go).
+func TestLocalAttachmentsSourceIsRootRelative(t *testing.T) {
+	root := t.TempDir()
+	path := writeFile(t, root, "docs/assets/x.png")
+
+	got, err := localAttachments([]string{path}, "", project.NewCache(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "docs/assets/x.png"; got[0].Source != want {
+		t.Errorf("source = %q, want %q", got[0].Source, want)
+	}
+	if want := "docs%2Fassets%2Fx.png"; got[0].Filename != want {
+		t.Errorf("filename = %q, want %q", got[0].Filename, want)
+	}
+}
+
 // TestLocalAttachmentsNameEncodesPath is the point of --name taking a path: the
 // user writes a path and markfluence produces the attachment a publish of
 // ![](assets/x.png) would resolve to, without them typing an escape.
@@ -49,7 +71,7 @@ func TestLocalAttachmentsNameEncodesPath(t *testing.T) {
 	dir := t.TempDir()
 	path := writeFile(t, dir, "somewhere/else.png")
 
-	got, err := localAttachments([]string{path}, "assets/x.png")
+	got, err := localAttachments([]string{path}, "assets/x.png", project.NewCache(""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +92,7 @@ func TestLocalAttachmentsSourceIsAlwaysTheDecodedName(t *testing.T) {
 	path := writeFile(t, dir, "f.png")
 
 	for _, name := range []string{"", "assets/x.png", "./a/./b.png", "../shared/logo.png", "plain.png"} {
-		got, err := localAttachments([]string{path}, name)
+		got, err := localAttachments([]string{path}, name, project.NewCache(""))
 		if err != nil {
 			t.Fatalf("--name %q: %v", name, err)
 		}
@@ -88,10 +110,10 @@ func TestLocalAttachmentsSourceIsAlwaysTheDecodedName(t *testing.T) {
 
 func TestLocalAttachmentsRejectsMissingAndDirs(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := localAttachments([]string{filepath.Join(dir, "nope.png")}, ""); err == nil {
+	if _, err := localAttachments([]string{filepath.Join(dir, "nope.png")}, "", project.NewCache("")); err == nil {
 		t.Error("want an error for a missing file")
 	}
-	if _, err := localAttachments([]string{dir}, ""); err == nil {
+	if _, err := localAttachments([]string{dir}, "", project.NewCache("")); err == nil {
 		t.Error("want an error for a directory")
 	}
 }

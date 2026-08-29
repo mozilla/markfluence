@@ -12,6 +12,7 @@ import (
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pageref"
+	"github.com/mozilla/markfluence/internal/project"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -32,8 +33,9 @@ var Cmd = &cobra.Command{
 	Long: "Upload or replace attachments on a Confluence page.\n\n" +
 		"PAGE is a numeric page id, a Confluence page URL, or a markdown file\n" +
 		"whose frontmatter has a page_id.\n\n" +
-		"Each file is attached under its base name. A file whose contents\n" +
-		"already match the attachment on the page is skipped, using the same\n" +
+		"Each file is attached under its path relative to the documentation\n" +
+		"root (its base name, with no markfluence.yaml above it). A file whose\n" +
+		"contents already match the attachment on the page is skipped, using the same\n" +
 		"checksum bookkeeping create/update use, so uploading by hand and\n" +
 		"publishing agree on what is current; --force uploads anyway.\n\n" +
 		"--name sets the attachment name for a single file, and takes a path:\n" +
@@ -65,6 +67,7 @@ func run(cmd *cobra.Command, args []string) error {
 	username, _ := cmd.Flags().GetString("username")
 	cloudID, _ := cmd.Flags().GetString("cloud-id")
 	envFile, _ := cmd.Flags().GetString("env-file")
+	rootOverride, _ := cmd.Flags().GetString("root")
 	c, err := client.Resolve(client.Options{
 		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile,
 	})
@@ -77,7 +80,9 @@ func run(cmd *cobra.Command, args []string) error {
 		return fatalFail(err.Error(), jsonout.CodeValidation)
 	}
 
-	attachments, err := localAttachments(files, nameFlag)
+	roots := project.NewCache(rootOverride)
+	defer roots.Close()
+	attachments, err := localAttachments(files, nameFlag, roots)
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeIO)
 	}
@@ -131,12 +136,16 @@ func forced(actions []client.SyncAction) []client.SyncAction {
 // localAttachments resolves each file into an upload, checking readability up
 // front so a batch fails before it has half-uploaded.
 //
-// The attachment name is the file's base name, or the encoding of --name. The
-// recorded source is always the decode of the name, never the local path: if
-// the two disagreed, a later publish would upload a second attachment under the
-// name it computes while a download restored this one somewhere the markdown
-// never references.
-func localAttachments(files []string, name string) ([]client.LocalAttachment, error) {
+// The attachment name is the encoding of --name, or -- with no override -- the
+// file's source resolved root-relative (internal/project), the same way a
+// published image's Source is: a page-specific upload of sub/img.png (no
+// project file above it) still records "img.png," but a shared one under a
+// declared root records "sub/img.png," matching what publishing a page that
+// references the same file would record. The recorded source is always the
+// decode of the name, never the local path: if the two disagreed, a later
+// publish would upload a second attachment under the name it computes while a
+// download restored this one somewhere the markdown never references.
+func localAttachments(files []string, name string, roots *project.Cache) ([]client.LocalAttachment, error) {
 	out := make([]client.LocalAttachment, 0, len(files))
 	for _, f := range files {
 		info, err := os.Stat(f)
@@ -146,9 +155,12 @@ func localAttachments(files []string, name string) ([]client.LocalAttachment, er
 		if info.IsDir() {
 			return nil, fmt.Errorf("%s is a directory", f)
 		}
-		source := filepath.Base(f)
-		if name != "" {
-			source = name
+		source := name
+		if source == "" {
+			source, err = rootRelativeSource(f, roots)
+			if err != nil {
+				return nil, err
+			}
 		}
 		filename := convert.AttachmentFilename(source)
 		if filename == "" {
@@ -161,6 +173,26 @@ func localAttachments(files []string, name string) ([]client.LocalAttachment, er
 		out = append(out, client.LocalAttachment{Path: f, Filename: filename, Source: source})
 	}
 	return out, nil
+}
+
+// rootRelativeSource resolves f's root -- discovered from f's own directory,
+// cached across the batch -- and returns f's path relative to it, in slash
+// form. With no markfluence.yaml anywhere above f, the root falls back to f's
+// own directory, so this reduces to f's bare basename exactly as before.
+func rootRelativeSource(f string, roots *project.Cache) (string, error) {
+	abs, err := filepath.Abs(f)
+	if err != nil {
+		return "", err
+	}
+	root, err := roots.Resolve(filepath.Dir(abs))
+	if err != nil {
+		return "", fmt.Errorf("resolving the documentation root: %w", err)
+	}
+	rel, err := filepath.Rel(root.Dir, abs)
+	if err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(rel), nil
 }
 
 // report prints the per-file actions and returns the command's exit status.
