@@ -81,9 +81,19 @@ func init() {
 	completion.RegisterFlag(Cmd, "page-width", completion.Values(pagewidth.Vocabulary()...))
 }
 
-// parentInfo describes a resolved parent. kind is top|inset|published|external.
+// parentKind is which of the four ways a parent was resolved.
+type parentKind string
+
+const (
+	parentTop       parentKind = "top"       // no parent: a top-level page
+	parentInSet     parentKind = "inset"     // a .md parent in this same create batch, not yet published
+	parentPublished parentKind = "published" // a .md parent already published, resolved by its own page_id
+	parentExternal  parentKind = "external"  // a bare page/folder id, from --parent or frontmatter
+)
+
+// parentInfo describes a resolved parent.
 type parentInfo struct {
-	kind string
+	kind parentKind
 	id   string // page id (published/external)
 	abs  string // absolute path of an in-set parent
 	// parentType is what the parent *is* on the server: "page" or "folder". It
@@ -131,7 +141,6 @@ type failure struct {
 // leaving a consumer to parse them out of the message.
 type pageIDFailure struct {
 	pageID  string
-	title   string // the live page's title, when one exists
 	url     string // the live page's URL, when one exists
 	message string
 }
@@ -183,7 +192,6 @@ func pageIDFailureFor(c *client.ConfluenceClient, pageID string, page *client.Pa
 	url := pageURL(c, page, pageID)
 	return &pageIDFailure{
 		pageID: pageID,
-		title:  page.Title,
 		url:    url,
 		message: fmt.Sprintf("a page already exists at page_id %s (%q): %s",
 			pageID, page.Title, url),
@@ -279,7 +287,7 @@ func run(cmd *cobra.Command, args []string) error {
 			byAbs[r.absPath] = r
 		}
 		for _, r := range records {
-			if r.parent.kind == "inset" && byAbs[r.parent.abs].spaceID != r.spaceID {
+			if r.parent.kind == parentInSet && byAbs[r.parent.abs].spaceID != r.spaceID {
 				errs = append(errs, failure{filename: r.filename, message: "parent page is not in the target space"})
 			}
 		}
@@ -356,7 +364,7 @@ func createAll(ordered []record, c *client.ConfluenceClient, doPersist bool) []*
 
 	for _, r := range ordered {
 		parentID := r.parent.id
-		if r.parent.kind == "inset" {
+		if r.parent.kind == parentInSet {
 			parentID = created[r.parent.abs]
 			// In a dry-run nothing is created, so an in-set parent has no id
 			// yet; that is not a failure (the parent would have been created
@@ -615,7 +623,7 @@ func resolveParent(
 		parentValue = parentOpt
 	}
 	if parentValue == "" || parentValue == "null" {
-		return parentInfo{kind: "top"}, nil
+		return parentInfo{kind: parentTop}, nil
 	}
 
 	if strings.HasSuffix(parentValue, ".md") {
@@ -655,7 +663,7 @@ func resolveParent(
 		if inSetAbs[parentAbs] {
 			// An in-set parent is a page this run creates, so its kind is known
 			// without asking the server.
-			return parentInfo{kind: "inset", abs: parentAbs, parentType: "page", display: parentValue}, nil
+			return parentInfo{kind: parentInSet, abs: parentAbs, parentType: "page", display: parentValue}, nil
 		}
 		data, err := root.FS.ReadFile(rel)
 		if err != nil {
@@ -670,14 +678,14 @@ func resolveParent(
 		if err != nil {
 			return parentInfo{}, err
 		}
-		return parentInfo{kind: "published", id: pID, parentType: parentType, display: parentValue}, nil
+		return parentInfo{kind: parentPublished, id: pID, parentType: parentType, display: parentValue}, nil
 	}
 
 	parentType, err := checkParentInSpace(c, parentValue, spaceID)
 	if err != nil {
 		return parentInfo{}, err
 	}
-	return parentInfo{kind: "external", id: parentValue, parentType: parentType}, nil
+	return parentInfo{kind: parentExternal, id: parentValue, parentType: parentType}, nil
 }
 
 // checkParentInSpace verifies that parentID names something in spaceID that can
@@ -725,7 +733,7 @@ func topoSort(records []record, byAbs map[string]record) ([]record, error) {
 		indeg[r.absPath] = 0
 	}
 	for _, r := range records {
-		if r.parent.kind == "inset" {
+		if r.parent.kind == parentInSet {
 			children[r.parent.abs] = append(children[r.parent.abs], r.absPath)
 			indeg[r.absPath]++
 		}
@@ -760,7 +768,7 @@ func topoSort(records []record, byAbs map[string]record) ([]record, error) {
 
 // parentField builds the (value, comment) for the frontmatter parent line.
 func parentField(p parentInfo, parentID string) (value, comment string) {
-	if p.kind == "top" {
+	if p.kind == parentTop {
 		return "null", ""
 	}
 	return parentID, p.display

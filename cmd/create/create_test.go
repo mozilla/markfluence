@@ -36,8 +36,8 @@ func TestPageIDFailureFor(t *testing.T) {
 			t.Fatalf("error is %T, want *pageIDFailure", err)
 		}
 		wantURL := "https://wiki.example.net/wiki/spaces/ENG/pages/123/Deploy+Runbook"
-		if pf.pageID != "123" || pf.url != wantURL || pf.title != "Deploy Runbook" {
-			t.Errorf("fields = %+v, want id 123, title Deploy Runbook, url %s", pf, wantURL)
+		if pf.pageID != "123" || pf.url != wantURL {
+			t.Errorf("fields = %+v, want id 123, url %s", pf, wantURL)
 		}
 		// The URL is the point of the issue: it must be in the message a human
 		// reads, not only in the JSON fields.
@@ -54,7 +54,7 @@ func TestPageIDFailureFor(t *testing.T) {
 		if !errors.As(err, &pf) {
 			t.Fatalf("error is %T, want *pageIDFailure", err)
 		}
-		if pf.pageID != "999" || pf.url != "" || pf.title != "" {
+		if pf.pageID != "999" || pf.url != "" {
 			t.Errorf("fields = %+v, want id 999 and no page details", pf)
 		}
 		// Must say the id is bad and what to do -- not create a page silently.
