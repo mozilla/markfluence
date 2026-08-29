@@ -1047,12 +1047,6 @@ resolve to the same root-relative path. The encoding is reversible, so
 one. markfluence also records the source path in the attachment's comment, which
 it prefers over decoding the name.
 
-> [!NOTE]
-> Pages published before this encoding existed used `/` → `_`. Republishing such
-> a page uploads the image under its new name and updates the page to match, but
-> the old attachment stays behind, unreferenced — markfluence never deletes.
-> Remove those manually if the clutter bothers you.
-
 Extra properties ride in the title as JSON:
 
 ```markdown
@@ -1173,9 +1167,8 @@ identity is relative to the *root*, not the page, so moving both together
 changes the images' root-relative paths, and the next publish uploads them
 under new names, leaving the originals behind unreferenced (markfluence never
 deletes; [#99](https://github.com/mozilla/markfluence/issues/99) tracks a
-future `attachment-prune`). This is the opposite of pre-root-model behavior,
-where this was the free move and leaving images behind was the one that
-churned — if you're relying on the old muscle memory, this is where it bites.
+future `attachment-prune`). Moving just the page and leaving its images in a
+shared directory is the free move instead.
 
 **Renaming or moving a shared asset**, independent of any page, churns the
 same way: every page referencing it records a new attachment name on its next
