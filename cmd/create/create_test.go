@@ -9,7 +9,9 @@ import (
 
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/frontmatter"
+	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/pagewidth"
+	"github.com/mozilla/markfluence/internal/project"
 )
 
 // testClient is a client that talks to nothing: it exists so URL-building and the
@@ -318,4 +320,86 @@ func TestCheckTitleFreeSeesArchivedPages(t *testing.T) {
 			t.Errorf("checkTitleFree = %v, want nil", err)
 		}
 	})
+}
+
+// --- resolveFile's own validation branches ------------------------------------
+
+func TestResolveFileNoTitle(t *testing.T) {
+	dir := t.TempDir()
+	path := write(t, dir, "a.md", "no frontmatter here\n")
+	roots := project.NewCache("")
+	t.Cleanup(roots.Close)
+
+	_, err := resolveFile(path, testClient(), map[string]bool{}, map[string]string{}, roots, linkindex.NewCache())
+	if err == nil || !strings.Contains(err.Error(), "no title given") {
+		t.Errorf("err = %v, want a no-title error", err)
+	}
+}
+
+func TestResolveFileNoSpace(t *testing.T) {
+	dir := t.TempDir()
+	path := write(t, dir, "a.md", "---\ntitle: X\n---\nbody\n")
+	roots := project.NewCache("")
+	t.Cleanup(roots.Close)
+
+	_, err := resolveFile(path, testClient(), map[string]bool{}, map[string]string{}, roots, linkindex.NewCache())
+	if err == nil || !strings.Contains(err.Error(), "no space given") {
+		t.Errorf("err = %v, want a no-space error", err)
+	}
+}
+
+func TestResolveFileSpaceConflict(t *testing.T) {
+	dir := t.TempDir()
+	path := write(t, dir, "a.md", "---\ntitle: X\nspace: OPS\n---\nbody\n")
+	roots := project.NewCache("")
+	t.Cleanup(roots.Close)
+
+	spaceOpt = "ENG"
+	t.Cleanup(func() { spaceOpt = "" })
+
+	_, err := resolveFile(path, testClient(), map[string]bool{}, map[string]string{}, roots, linkindex.NewCache())
+	want := `--space "ENG" conflicts with frontmatter space "OPS"`
+	if err == nil || err.Error() != want {
+		t.Errorf("err = %v, want %q", err, want)
+	}
+}
+
+// --- topoSort ------------------------------------------------------------------
+
+// TestTopoSortDetectsCycle: two in-set files naming each other as parent form a
+// graph with no valid order at all, which must be rejected outright rather than
+// left to loop or silently drop one side.
+func TestTopoSortDetectsCycle(t *testing.T) {
+	a := record{filename: "a.md", absPath: "/docs/a.md", parent: parentInfo{kind: parentInSet, abs: "/docs/b.md"}}
+	b := record{filename: "b.md", absPath: "/docs/b.md", parent: parentInfo{kind: parentInSet, abs: "/docs/a.md"}}
+	byAbs := map[string]record{a.absPath: a, b.absPath: b}
+
+	_, err := topoSort([]record{a, b}, byAbs)
+	if err == nil || !strings.Contains(err.Error(), "parent cycle detected") {
+		t.Errorf("err = %v, want a parent-cycle error", err)
+	}
+}
+
+// TestTopoSortOrdersParentsBeforeChildren: fed in child-first input order, the
+// output must still place each in-set parent before the child that names it.
+func TestTopoSortOrdersParentsBeforeChildren(t *testing.T) {
+	grandchild := record{filename: "c.md", absPath: "/docs/c.md", parent: parentInfo{kind: parentInSet, abs: "/docs/b.md"}}
+	child := record{filename: "b.md", absPath: "/docs/b.md", parent: parentInfo{kind: parentInSet, abs: "/docs/a.md"}}
+	parent := record{filename: "a.md", absPath: "/docs/a.md"}
+	byAbs := map[string]record{
+		grandchild.absPath: grandchild, child.absPath: child, parent.absPath: parent,
+	}
+
+	// Deliberately out of order: grandchild, child, parent.
+	got, err := topoSort([]record{grandchild, child, parent}, byAbs)
+	if err != nil {
+		t.Fatalf("topoSort: %v", err)
+	}
+	pos := map[string]int{}
+	for i, r := range got {
+		pos[r.absPath] = i
+	}
+	if pos[parent.absPath] > pos[child.absPath] || pos[child.absPath] > pos[grandchild.absPath] {
+		t.Errorf("order = %v, want parent before child before grandchild", got)
+	}
 }
