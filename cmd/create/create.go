@@ -189,7 +189,7 @@ func pageIDFailureFor(c *client.ConfluenceClient, pageID string, page *client.Pa
 			message: pageref.NotFoundMessage(pageID, "remove it to create a new page, or correct it"),
 		}
 	}
-	url := pageURL(c, page, pageID)
+	url := c.PageURL(page, pageID)
 	return &pageIDFailure{
 		pageID: pageID,
 		url:    url,
@@ -226,10 +226,10 @@ func checkTitleFree(c *client.ConfluenceClient, title, spaceKey, spaceID string)
 		// page that is not there and concludes markfluence is wrong.
 		return fmt.Errorf("an archived page titled %q already exists in space %s and still holds "+
 			"that title; restore it, rename it, or pick another title: %s",
-			title, spaceKey, pageURL(c, &d, d.ID))
+			title, spaceKey, c.PageURL(&d, d.ID))
 	}
 	return fmt.Errorf("a page titled %q already exists in space %s: %s",
-		title, spaceKey, pageURL(c, &d, d.ID))
+		title, spaceKey, c.PageURL(&d, d.ID))
 }
 
 func run(cmd *cobra.Command, args []string) error {
@@ -443,7 +443,7 @@ func reserveOne(
 	}
 	pageID = result.ID
 	res.pageID = pageID
-	res.url = pageURL(c, result, pageID)
+	res.url = c.PageURL(result, pageID)
 
 	if persist {
 		parentValue, parentComment := parentField(r.parent, parentID)
@@ -500,7 +500,7 @@ func publishOne(r record, res *createResult, pageID string, version int, c *clie
 	if err != nil {
 		return res.fail(err, jsonout.CodeFor(err))
 	}
-	res.url = pageURL(c, result, pageID)
+	res.url = c.PageURL(result, pageID)
 
 	actions, err := c.SyncAttachments(pageID, pageContent.Attachments)
 	if err != nil {
@@ -798,15 +798,4 @@ func resolveWidth(cliPageWidth string, fm map[string]string) (pagewidth.Width, e
 		return pagewidth.Declared(map[string]string{"page_width": cliPageWidth})
 	}
 	return pagewidth.Declared(fm)
-}
-
-func pageURL(c *client.ConfluenceClient, page *client.Page, pageID string) string {
-	if page.Links.WebUI == "" {
-		return fmt.Sprintf("%s/wiki/pages/viewpage.action?pageId=%s", c.SiteURL(), pageID)
-	}
-	base := page.Links.Base
-	if base == "" {
-		base = c.SiteURL() + "/wiki"
-	}
-	return base + page.Links.WebUI
 }
