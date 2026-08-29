@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -355,6 +356,32 @@ func TestGetPagePropagatesError(t *testing.T) {
 	}
 }
 
+// TestGetPageOrNilReportsRejectedCredentialAsError is the integration notFound
+// exists for: a revoked token's 404 must not be swallowed as "page absent," or
+// every id looks not-found regardless of the real problem.
+func TestGetPageOrNilReportsRejectedCredentialAsError(t *testing.T) {
+	c, _ := newServer(t, resp{404, `{"title":"Not Found"}`})
+	p, err := c.GetPageOrNil("1")
+	if err == nil {
+		t.Fatal("GetPageOrNil: want an error for a rejected-credential 404, not nil/nil")
+	}
+	if p != nil {
+		t.Errorf("GetPageOrNil returned a page alongside the error: %+v", p)
+	}
+	var he *HTTPError
+	if !errors.As(err, &he) || !he.RejectedCredential() {
+		t.Errorf("err = %v, want an HTTPError whose RejectedCredential() is true", err)
+	}
+}
+
+func TestGetPageBodyOrNilReportsRejectedCredentialAsError(t *testing.T) {
+	c, _ := newServer(t, resp{404, `{"title":"Not Found"}`})
+	p, err := c.GetPageBodyOrNil("1")
+	if err == nil || p != nil {
+		t.Fatalf("GetPageBodyOrNil = %v, %v; want nil page and an error", p, err)
+	}
+}
+
 func TestPageURLUsesSiteNotGateway(t *testing.T) {
 	c := New(Config{SiteURL: "https://wiki.example.net", CloudID: "abc-123"})
 
@@ -419,6 +446,18 @@ func TestGetFolderOrNilReturnsNilOn404(t *testing.T) {
 	}
 	if f != nil {
 		t.Errorf("want nil folder, got %+v", f)
+	}
+}
+
+func TestGetFolderOrNilReportsRejectedCredentialAsError(t *testing.T) {
+	c, _ := newServer(t, resp{404, `{"title":"Not Found"}`})
+	f, err := c.GetFolderOrNil("9")
+	if err == nil || f != nil {
+		t.Fatalf("GetFolderOrNil = %v, %v; want nil folder and an error", f, err)
+	}
+	var he *HTTPError
+	if !errors.As(err, &he) || !he.RejectedCredential() {
+		t.Errorf("err = %v, want an HTTPError whose RejectedCredential() is true", err)
 	}
 }
 
@@ -749,6 +788,58 @@ func TestDownloadAttachmentDoesNotLeakCredentialsOnRedirect(t *testing.T) {
 	}
 	if mediaAuth != "" {
 		t.Errorf("Authorization leaked to the media host: %q", mediaAuth)
+	}
+}
+
+// --- user / page creation ------------------------------------------------------
+
+func TestGetUserReturnsDisplayName(t *testing.T) {
+	c, _ := newServer(t, resp{200, `{"displayName":"Ada Lovelace"}`})
+	if got := c.GetUser("abc123"); got != "Ada Lovelace" {
+		t.Errorf("GetUser = %q, want Ada Lovelace", got)
+	}
+}
+
+func TestGetUserEmptyAccountIDMakesNoRequest(t *testing.T) {
+	c, s := newServer(t)
+	if got := c.GetUser(""); got != "" {
+		t.Errorf("GetUser(\"\") = %q, want empty", got)
+	}
+	if len(s.calls) != 0 {
+		t.Errorf("calls = %v, want none for an empty account id", s.calls)
+	}
+}
+
+func TestGetUserReturnsEmptyOnFailure(t *testing.T) {
+	c, _ := newServer(t, resp{500, `boom`})
+	if got := c.GetUser("abc123"); got != "" {
+		t.Errorf("GetUser = %q, want empty on a failed lookup (best-effort)", got)
+	}
+}
+
+func TestCreatePageOmitsParentIDWhenEmpty(t *testing.T) {
+	c, s := newServer(t, resp{200, `{"id":"1"}`})
+	if _, err := c.CreatePage("space1", "Title", "<p>x</p>", ""); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(s.lastBody(), "parentId") {
+		t.Errorf("request body = %q, must not carry parentId for a top-level page", s.lastBody())
+	}
+}
+
+func TestCreatePageIncludesParentIDWhenSet(t *testing.T) {
+	c, s := newServer(t, resp{200, `{"id":"1"}`})
+	if _, err := c.CreatePage("space1", "Title", "<p>x</p>", "999"); err != nil {
+		t.Fatal(err)
+	}
+	var body struct {
+		ParentID string `json:"parentId"`
+	}
+	if err := json.Unmarshal([]byte(s.lastBody()), &body); err != nil {
+		t.Fatalf("unmarshaling request body: %v", err)
+	}
+	if body.ParentID != "999" {
+		t.Errorf("parentId = %q, want 999", body.ParentID)
 	}
 }
 
