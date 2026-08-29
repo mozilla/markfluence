@@ -157,6 +157,43 @@ func TestRetryLoggerReportsATransportFailure(t *testing.T) {
 	}
 }
 
+// TestSendExhaustsRetriesOnTransportFailure pins the attempt count for a
+// persistently unreachable server: maxRetries retries after the first attempt,
+// maxRetries+1 total, then give up -- not fewer (a regression that stopped
+// retrying transport failures early) and not more (a regression that ignored
+// the cap and retried forever).
+func TestSendExhaustsRetriesOnTransportFailure(t *testing.T) {
+	events := captureRetries(t)
+	c := New(Config{SiteURL: "http://127.0.0.1:1", Username: "u", Token: "t"})
+	if _, err := c.GetPage("1"); err == nil {
+		t.Fatal("GetPage: want a transport error")
+	}
+	if got := len(*events); got != maxRetries+1 {
+		t.Fatalf("got %d attempts, want %d (maxRetries+1)", got, maxRetries+1)
+	}
+	last := (*events)[len(*events)-1]
+	if last.Retrying {
+		t.Error("final attempt says Retrying, want false: retries are exhausted")
+	}
+}
+
+// TestSendTransportFailureOnNonIdempotentMethodDoesNotRetry: a POST that never
+// reached the server at all must not be retried, since retrying could mean
+// executing it twice if the first attempt actually landed.
+func TestSendTransportFailureOnNonIdempotentMethodDoesNotRetry(t *testing.T) {
+	events := captureRetries(t)
+	c := New(Config{SiteURL: "http://127.0.0.1:1", Username: "u", Token: "t"})
+	if _, err := c.CreatePage("space1", "Title", "<p>x</p>", ""); err == nil {
+		t.Fatal("CreatePage: want a transport error")
+	}
+	if got := len(*events); got != 1 {
+		t.Fatalf("got %d attempts, want exactly 1 (POST is not idempotent)", got)
+	}
+	if (*events)[0].Retrying {
+		t.Error("Retrying = true, want false for a non-idempotent method")
+	}
+}
+
 // TestSetRetryLoggerNilIsSafe: the logger is unset in every command's tests and
 // in library use.
 func TestSetRetryLoggerNilIsSafe(t *testing.T) {
