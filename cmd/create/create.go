@@ -285,7 +285,7 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(errs) > 0 {
-		return abort(args, errs)
+		return abort(args, errs, roots)
 	}
 
 	results := createAll(ordered, c, doPersist)
@@ -305,6 +305,7 @@ func run(cmd *cobra.Command, args []string) error {
 			items[i] = r.jsonResult()
 		}
 		env := jsonout.NewEnvelope("create", items, summarize(results))
+		env.Roots = roots.Roots()
 		if err := jsonout.Emit(os.Stdout, env); err != nil {
 			return err
 		}

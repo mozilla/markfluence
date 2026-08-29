@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/project"
 	"github.com/mozilla/markfluence/internal/ui"
 )
 
@@ -172,7 +173,7 @@ func summarize(results []*createResult) createSummary {
 // and the abort line; in JSON mode it emits an envelope with every input file
 // present (validation-failed ones "failed", the rest "not_created") and an
 // aborted summary. Either way it exits 1.
-func abort(args []string, errs []failure) error {
+func abort(args []string, errs []failure, roots *project.Cache) error {
 	if !ui.IsJSON() {
 		for _, e := range errs {
 			ui.Error(fmt.Sprintf("[%s] %s", e.filename, e.message))
@@ -212,6 +213,7 @@ func abort(args []string, errs []failure) error {
 
 	env := jsonout.NewEnvelope("create", items,
 		createSummary{Total: len(args), Succeeded: 0, Failed: failed, Aborted: true})
+	env.Roots = roots.Roots()
 	if err := jsonout.Emit(os.Stdout, env); err != nil {
 		return err
 	}

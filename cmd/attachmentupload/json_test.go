@@ -8,6 +8,7 @@ import (
 
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/project"
 	"github.com/mozilla/markfluence/internal/schematest"
 )
 
@@ -27,7 +28,7 @@ func TestSchemaConformance(t *testing.T) {
 
 	// Built by the command, not restated here: a renamed key or a changed summary
 	// in failEnvelope has to reach the schema through this test.
-	failEnv := failEnvelope("9", errors.New("page 9 not found"), jsonout.CodeNotFound)
+	failEnv := failEnvelope("9", errors.New("page 9 not found"), jsonout.CodeNotFound, project.NewCache(""))
 	buf.Reset()
 	if err := jsonout.Emit(&buf, failEnv); err != nil {
 		t.Fatalf("Emit: %v", err)

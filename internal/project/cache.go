@@ -105,7 +105,7 @@ func (c *Cache) walkAndCache(abs string) (*Root, error) {
 // commonly resolves the same root for every file in it.
 func (c *Cache) Roots() []string {
 	seen := map[string]bool{}
-	var out []string
+	out := []string{} // never nil: a caller may marshal this straight into --json
 	for _, root := range c.byDir {
 		if !seen[root.Dir] {
 			seen[root.Dir] = true
