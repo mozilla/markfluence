@@ -61,7 +61,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return fatalFail("no title given: TITLE must not be empty", jsonout.CodeValidation)
 	}
 
-	c, err := client.Resolve(client.Options{
+	c, err := client.Resolve(client.ResolveOptions{
 		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile,
 	})
 	if err != nil {

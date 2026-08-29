@@ -62,7 +62,7 @@ func run(cmd *cobra.Command, args []string) error {
 	username, _ := cmd.Flags().GetString("username")
 	cloudID, _ := cmd.Flags().GetString("cloud-id")
 	envFile, _ := cmd.Flags().GetString("env-file")
-	c, err := client.Resolve(client.Options{
+	c, err := client.Resolve(client.ResolveOptions{
 		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile,
 	})
 	if err != nil {

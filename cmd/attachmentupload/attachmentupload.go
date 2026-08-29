@@ -71,7 +71,7 @@ func run(cmd *cobra.Command, args []string) error {
 	rootOverride, _ := cmd.Flags().GetString("root")
 	roots := project.NewCache(rootOverride)
 	defer roots.Close()
-	c, err := client.Resolve(client.Options{
+	c, err := client.Resolve(client.ResolveOptions{
 		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile, Roots: roots,
 	})
 	if err != nil {

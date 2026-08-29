@@ -21,9 +21,9 @@ const (
 
 var spaceKeyRE = regexp.MustCompile(`^/spaces/([^/]+)/`)
 
-// Options carries the flag values Resolve needs, named so the two URL-ish fields
-// can't be transposed at a call site.
-type Options struct {
+// ResolveOptions carries the flag values Resolve needs, named so the two
+// URL-ish fields can't be transposed at a call site.
+type ResolveOptions struct {
 	// URL is the --url value (the Confluence site).
 	URL string
 	// Username is the --username value.
@@ -57,7 +57,7 @@ type Options struct {
 // The cloud ID is optional: without one, requests go to the site domain exactly
 // as before, which is what an unscoped personal token and any Data Center site
 // need.
-func Resolve(opts Options) (*ConfluenceClient, error) {
+func Resolve(opts ResolveOptions) (*ConfluenceClient, error) {
 	env, err := loadEnvFile(opts.EnvFile, opts.Roots)
 	if err != nil {
 		return nil, err

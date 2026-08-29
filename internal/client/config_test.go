@@ -30,7 +30,7 @@ func writeEnvFile(t *testing.T, body string) string {
 func TestResolveUsesExplicitEnvFile(t *testing.T) {
 	clearConfluenceEnv(t)
 	path := writeEnvFile(t, "CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n")
-	c, err := Resolve(Options{EnvFile: path})
+	c, err := Resolve(ResolveOptions{EnvFile: path})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestResolveUsesExplicitEnvFile(t *testing.T) {
 func TestResolveFlagOverridesEnvFile(t *testing.T) {
 	clearConfluenceEnv(t)
 	path := writeEnvFile(t, "CONFLUENCE_URL=https://from-file\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n")
-	c, err := Resolve(Options{URL: "https://from-flag", EnvFile: path})
+	c, err := Resolve(ResolveOptions{URL: "https://from-flag", EnvFile: path})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestResolveFlagOverridesEnvFile(t *testing.T) {
 func TestResolveMissingExplicitEnvFileErrors(t *testing.T) {
 	clearConfluenceEnv(t)
 	missing := filepath.Join(t.TempDir(), "nope.env")
-	if _, err := Resolve(Options{EnvFile: missing}); err == nil {
+	if _, err := Resolve(ResolveOptions{EnvFile: missing}); err == nil {
 		t.Fatal("Resolve: want error for a missing --env-file path")
 	}
 }
@@ -64,7 +64,7 @@ func TestResolveDefaultEnvFileMissingIsFine(t *testing.T) {
 	// No ./.env in this temp cwd, and no explicit env file: the missing default
 	// is tolerated, so we fail only on missing config values (not a read error).
 	t.Chdir(t.TempDir())
-	_, err := Resolve(Options{})
+	_, err := Resolve(ResolveOptions{})
 	if err == nil {
 		t.Fatal("want a missing-config error")
 	}
@@ -85,7 +85,7 @@ func TestResolveDefaultEnvFileFoundInCwdWithNoProjectFile(t *testing.T) {
 	// itself -- today's behavior, preserved.
 	t.Chdir(dir)
 
-	c, err := Resolve(Options{})
+	c, err := Resolve(ResolveOptions{})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestResolveDefaultEnvFileFoundAtDiscoveredProjectRoot(t *testing.T) {
 	// discovery finds by walking up.
 	t.Chdir(sub)
 
-	c, err := Resolve(Options{})
+	c, err := Resolve(ResolveOptions{})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestResolveDefaultEnvFileFoundAtDiscoveredProjectRoot(t *testing.T) {
 	}
 }
 
-// TestResolveRootsOverridesEnvDiscovery covers Options.Roots: when the caller
+// TestResolveRootsOverridesEnvDiscovery covers ResolveOptions.Roots: when the caller
 // passes its own --root-backed project.Cache, .env is read from that root, not
 // from a plain upward walk from the working directory -- so a --root pointed
 // at a different project also redirects which .env create/update/
@@ -139,7 +139,7 @@ func TestResolveRootsOverridesEnvDiscovery(t *testing.T) {
 
 	roots := project.NewCache(override)
 	defer roots.Close()
-	c, err := Resolve(Options{Roots: roots})
+	c, err := Resolve(ResolveOptions{Roots: roots})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestResolveCloudIDPrecedence(t *testing.T) {
 			"CONFLUENCE_CLOUD_ID=from-file\n")
 
 	// From .env: requests move to the gateway, the site is untouched.
-	c, err := Resolve(Options{EnvFile: path})
+	c, err := Resolve(ResolveOptions{EnvFile: path})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -168,10 +168,10 @@ func TestResolveCloudIDPrecedence(t *testing.T) {
 
 	// Env beats .env; flag beats env.
 	t.Setenv(cloudIDEnv, "from-env")
-	if c, _ := Resolve(Options{EnvFile: path}); c.BaseURL() != gatewayPrefix+"from-env" {
+	if c, _ := Resolve(ResolveOptions{EnvFile: path}); c.BaseURL() != gatewayPrefix+"from-env" {
 		t.Errorf("env should beat .env, got %q", c.BaseURL())
 	}
-	if c, _ := Resolve(Options{CloudID: "from-flag", EnvFile: path}); c.BaseURL() != gatewayPrefix+"from-flag" {
+	if c, _ := Resolve(ResolveOptions{CloudID: "from-flag", EnvFile: path}); c.BaseURL() != gatewayPrefix+"from-flag" {
 		t.Errorf("flag should win, got %q", c.BaseURL())
 	}
 }
@@ -187,7 +187,7 @@ func TestResolveRejectsURLishCloudID(t *testing.T) {
 		"ex/confluence/abc",
 		"abc/wiki",
 	} {
-		_, err := Resolve(Options{CloudID: bad, EnvFile: path})
+		_, err := Resolve(ResolveOptions{CloudID: bad, EnvFile: path})
 		if err == nil {
 			t.Errorf("Resolve(cloud ID %q): want an error", bad)
 			continue
@@ -201,7 +201,7 @@ func TestResolveRejectsURLishCloudID(t *testing.T) {
 func TestResolveWithoutCloudIDKeepsSiteURL(t *testing.T) {
 	clearConfluenceEnv(t)
 	path := writeEnvFile(t, "CONFLUENCE_URL=https://wiki/\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n")
-	c, err := Resolve(Options{EnvFile: path})
+	c, err := Resolve(ResolveOptions{EnvFile: path})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}

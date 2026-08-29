@@ -40,7 +40,7 @@ second starting point. In the bare case (`project.Discover(cwd)`) that walk
 is independent of anything else in the invocation. But `create`, `update`,
 and `attachment-upload` each already build a `project.Cache` for their own
 per-file root resolution, and hand that same cache to the client config
-resolver (`client.Options.Roots`) instead of leaving `.env` to make its own,
+resolver (`client.ResolveOptions.Roots`) instead of leaving `.env` to make its own,
 separate walk. Two consequences follow, for exactly those commands (one with
 no per-file root concept, like `read` or `search`, never builds a cache to
 share): `--root`'s override — which otherwise only redirects the per-file
