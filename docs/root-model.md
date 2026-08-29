@@ -26,17 +26,26 @@ intended, ordinary case. It only fragments per file when there's no project
 file at all, or when a batch happens to span more than one project (see
 below).
 
-**The `.env` lookup** is a separate, narrower pass: walk up from the
-**working directory** — not a file's directory — looking for
-`markfluence.yaml`; no hit means read `.env` from the working directory
-itself. It exists solely to answer "where is `.env`," runs once per
-invocation before any file is touched, and doesn't bound anything. It is not
-called "root" anywhere in the code and it is not reported. `--env-file`
-overrides it absolutely, unaffected by any of this.
+**The `.env` lookup** is a separate, narrower pass: it starts from the
+**working directory** — not a file's directory — and with no hit falls back
+to the working directory itself. It exists solely to answer "where is
+`.env`," runs once per invocation before any file is touched, and doesn't
+bound anything. It is not called "root" anywhere in the code and it is not
+reported. `--env-file` overrides it absolutely, unaffected by any of this.
 
-Both passes are one function, `internal/project.Discover(startDir)`, called
-with two different `startDir` values and two different "no hit" fallbacks.
-There is not a second algorithm — only a second starting point.
+Both passes walk up using the same primitive (`internal/project`'s
+per-directory marker check), called with two different starting points and
+two different "no hit" fallbacks. There is not a second algorithm — only a
+second starting point. In the bare case (`project.Discover(cwd)`) that walk
+is independent of anything else in the invocation. But `create`, `update`,
+and `attachment-upload` each already build a `project.Cache` for their own
+per-file root resolution, and hand that same cache to the client config
+resolver (`client.Options.Roots`) instead of leaving `.env` to make its own,
+separate walk. Two consequences follow, for exactly those commands (one with
+no per-file root concept, like `read` or `search`, never builds a cache to
+share): `--root`'s override — which otherwise only redirects the per-file
+root images/links/`parent:` resolve against — now redirects `.env` too, and
+the walk itself is paid for once, not twice.
 
 ## `markfluence.yaml`: the project file
 

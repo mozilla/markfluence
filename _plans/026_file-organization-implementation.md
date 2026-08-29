@@ -66,6 +66,21 @@ Both passes are one function, `project.Discover(startDir string)`, called with
 two different `startDir` values and two different "no hit" fallbacks (the
 file's directory vs. the working directory). There are not two algorithms.
 
+**Addendum, landed after commit 9 (not part of the original 9-commit
+sequence).** The independence stated above is about *starting point and
+fallback*, not about the two passes never sharing anything. `create`,
+`update`, and `attachment-upload` each build a `project.Cache` for their own
+per-file root resolution regardless, and now hand that same cache to
+`client.Resolve` (`Options.Roots`) instead of leaving the `.env` pass to make
+its own separate `project.Discover(cwd)` call. Two consequences, for exactly
+those commands: `--root` now redirects `.env` too (not just the per-file
+root), and the walk is paid for once instead of twice. `internal/project.Cache`
+also gained `walkAndCache`, backfilling every ancestor directory visited to a
+shared `*Root` rather than caching only the exact directory `Resolve` was
+called with — closing a residual quadratic-ish cost across a batch spanning
+many subdirectories of one project. Caught by a self-directed code-review
+pass, not planned when this section was written.
+
 **Multi-root batches are allowed.** Nested or sibling `markfluence.yaml` files
 mean two files in one invocation can discover different roots (nearest
 ancestor wins, the same rule `.editorconfig` uses). This is not special-cased:
