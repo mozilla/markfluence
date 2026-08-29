@@ -252,7 +252,13 @@ written back (and the file won't record its new `page_id`).
 
 A whole tree can be created in one pass: give each child a `parent:` that points at
 its parent's `.md` file, and `create` orders creation parents-first and fills in the
-real ids (see the `parent` field below).
+real ids (see the `parent` field below). Creation is three-phase — every file is
+validated (above), then a content-less stub is reserved for each, parents-first,
+before any of them is converted — so a link from one file in the batch to another
+resolves regardless of which direction it points, or whether the two link to each
+other. A run interrupted after this point leaves a permanent, empty page version
+behind rather than no page at all; every id is already persisted (unless
+`--no-persist`), so a plain `update` finishes the job.
 
 `--dry-run` validates every file (the same checks a real run makes, so it exits
 non-zero on the same failures) and previews what would be created — pages,
