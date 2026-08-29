@@ -39,44 +39,75 @@ func (r *storageRenderer) renderImage(
 	}
 	alt := nodeText(node, source)
 	attrs := r.parseImageTitle(string(n.Title), src)
-	// src is a URL; fsPath is the file it names. Everything touching the
-	// filesystem -- and the attachment name derived from it -- uses fsPath. The
-	// broken messages stay on src so they echo what the author wrote. Decoding
-	// before withinRoot is what keeps an encoded "..%2F" from slipping past it.
-	fsPath := decodeDestination(src)
 
-	switch {
-	case isRemoteURL(src):
+	// Remote and unsupported-extension images are decided on src/fsPath alone
+	// and never touch the filesystem -- checked and returned before any of the
+	// root/Lstat work below, so a remote URL costs no syscalls just because
+	// its "path" happens to parse.
+	if isRemoteURL(src) {
 		_, _ = w.WriteString(acImage(alt, attrs, "", src))
-
-	case !supportedImageExts[strings.ToLower(filepath.Ext(fsPath))]:
+		return ast.WalkSkipChildren, nil
+	}
+	// src is a URL; fsPath is the file it names. Everything touching the
+	// filesystem -- and the attachment name derived from it -- uses the path
+	// relative to root, not fsPath itself. The broken messages stay on src so
+	// they echo what the author wrote. Decoding before computing that relative
+	// path is what keeps an encoded "..%2F" from slipping past the root check.
+	fsPath := decodeDestination(src)
+	if !supportedImageExts[strings.ToLower(filepath.Ext(fsPath))] {
 		msg := fmt.Sprintf("IMAGE BROKEN: %s (unsupported type)", src)
 		r.broken = append(r.broken, msg)
 		_, _ = w.WriteString(html.EscapeString(msg))
+		return ast.WalkSkipChildren, nil
+	}
 
-	case !r.withinRoot(filepath.Join(r.baseDir, fsPath)):
+	rootRel, insideRoot := rootRelative(r.root.Dir, r.baseDir, fsPath)
+
+	var info os.FileInfo
+	var lstatErr error
+	if insideRoot {
+		info, lstatErr = r.root.FS.Lstat(rootRel)
+	}
+	// An escape only os.Root can see -- a symlinked intermediate directory --
+	// is folded into the same "outside" case as a lexically escaping path,
+	// wrapped the way internal/attachfile already wraps it: os.Root's bare
+	// error names neither the image nor the reason. Every other boolean below
+	// is guarded by insideRoot too, not just lstatErr == nil -- Lstat is never
+	// called at all when insideRoot is false, so lstatErr and info both sit at
+	// their zero values (nil), and "lstatErr == nil" alone would read as
+	// "Lstat succeeded" when it really means "Lstat was never asked."
+	escapesRoot := !insideRoot || (lstatErr != nil && strings.Contains(lstatErr.Error(), "escapes from parent"))
+	notFound := insideRoot && lstatErr != nil && !escapesRoot
+	isSymlink := insideRoot && lstatErr == nil && info.Mode()&os.ModeSymlink != 0
+	notRegular := insideRoot && lstatErr == nil && !isSymlink && !info.Mode().IsRegular()
+
+	switch {
+	case escapesRoot:
 		msg := fmt.Sprintf("IMAGE BROKEN: %s (outside the documentation root)", src)
 		r.broken = append(r.broken, msg)
 		_, _ = w.WriteString(html.EscapeString(msg))
 
-	case !isFile(filepath.Join(r.baseDir, fsPath)):
+	case notFound, notRegular:
+		// Not found, or something that was never a file to begin with (a
+		// directory, say) -- both read the same as "not found" always has.
 		msg := fmt.Sprintf("IMAGE BROKEN: %s (not found)", src)
 		r.broken = append(r.broken, msg)
 		_, _ = w.WriteString(html.EscapeString(msg))
 
+	case isSymlink:
+		msg := fmt.Sprintf("IMAGE BROKEN: %s (symlink, not a regular file)", src)
+		r.broken = append(r.broken, msg)
+		_, _ = w.WriteString(html.EscapeString(msg))
+
 	default:
-		filename := AttachmentFilename(fsPath)
+		filename := AttachmentFilename(rootRel)
 		if !r.seen[filename] {
 			if r.seen == nil {
 				r.seen = map[string]bool{}
 			}
 			r.seen[filename] = true
-			abs, err := filepath.Abs(filepath.Join(r.baseDir, fsPath))
-			if err != nil {
-				abs = filepath.Join(r.baseDir, fsPath)
-			}
 			r.attachments = append(r.attachments, Attachment{
-				Filename: filename, Path: abs, Source: normalizeSrc(fsPath),
+				Filename: filename, Path: filepath.Join(r.root.Dir, rootRel), Source: rootRel,
 			})
 		}
 		_, _ = w.WriteString(acImage(alt, attrs, filename, ""))
@@ -177,34 +208,30 @@ func isRemoteURL(src string) bool {
 		strings.HasPrefix(src, "//")
 }
 
-func isFile(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
-}
-
-// withinRoot reports whether an image path resolves inside the documentation
-// root. markfluence is meant to be run from the root of a documentation tree, so
-// an image above it -- "../../../secrets/x.png" -- is a mistake rather than a
-// shared asset, and is reported broken instead of published.
+// rootRelative resolves an image destination (fsPath, already decoded and
+// still relative to baseDir -- the referencing file's own directory) to a path
+// relative to root, in slash form for recording as an attachment Source and
+// for passing to root.FS. ok is false when the result climbs above root, which
+// the caller reports as broken rather than ever asking root.FS about it.
 //
-// A path at or below the root is fine, including one reached via ".." from a
-// page in a subdirectory: "../assets/logo.png" from docs/guide/foo.md is the
-// ordinary shared-assets layout. The check fails open when the root is unknown
-// or a path cannot be resolved -- it is an authoring guard, not a security
-// boundary.
-func (r *storageRenderer) withinRoot(p string) bool {
-	if r.root == "" {
-		return true
-	}
-	abs, err := filepath.Abs(p)
+// A path at or below root is fine, including one reached via ".." from a page
+// in a subdirectory: "../assets/logo.png" from docs/guide/foo.md is the
+// ordinary shared-assets layout, and resolves to "assets/logo.png" once
+// docs/guide's ".." cancels out -- not to something climbing past root itself.
+func rootRelative(root, baseDir, fsPath string) (rel string, ok bool) {
+	abs, err := filepath.Abs(filepath.Join(baseDir, fsPath))
 	if err != nil {
-		return true
+		return "", false
 	}
-	rel, err := filepath.Rel(r.root, abs)
+	r, err := filepath.Rel(root, abs)
 	if err != nil {
-		return true
+		return "", false
 	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	r = filepath.ToSlash(r)
+	if r == ".." || strings.HasPrefix(r, "../") {
+		return "", false
+	}
+	return r, true
 }
 
 func isDigits(s string) bool {

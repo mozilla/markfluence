@@ -15,7 +15,8 @@ func TestVersionTokenReplaced(t *testing.T) {
 		"# Title\n\n<!-- markfluence-version -->\n",
 	)
 	const stamp = "markfluence v1.2.3 2020-01-01T00:00:00Z"
-	page, err := convert.MdToConfluence(md, "https://wiki.example.net", "ENG", stamp)
+	root := testRoot(t, filepath.Dir(md.Filename))
+	page, err := convert.MdToConfluence(md, root, "https://wiki.example.net", "ENG", stamp)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/frontmatter"
+	"github.com/mozilla/markfluence/internal/project"
 )
 
 // update, when set (`go test ./internal/convert -run TestRegression -update`,
@@ -62,18 +63,40 @@ type caseConfig struct {
 	filename string
 	baseURL  string
 	spaceKey string
-	files    []string
+	// root is a path relative to caseDir naming the documentation root, e.g.
+	// "." for the case directory itself. Empty means unset -- the default
+	// (no project file) then applies: the root is the primary file's own
+	// directory, exactly as it would be for a real file with no
+	// markfluence.yaml above it.
+	root  string
+	files []string
 }
 
 // runCase resolves a case's config, runs the converter, and returns the golden bytes.
 func runCase(t *testing.T, caseDir string) []byte {
 	cfg := loadConfig(t, caseDir)
-	md, err := frontmatter.ParseFile(filepath.Join(caseDir, cfg.filename))
+	mdPath := filepath.Join(caseDir, cfg.filename)
+	md, err := frontmatter.ParseFile(mdPath)
 	if err != nil {
 		t.Fatalf("parsing primary file: %v", err)
 	}
+
+	rootDir := filepath.Dir(mdPath)
+	if cfg.root != "" {
+		rootDir = filepath.Join(caseDir, cfg.root)
+	}
+	rootDir, err = filepath.Abs(rootDir)
+	if err != nil {
+		t.Fatalf("resolving root: %v", err)
+	}
+	root, err := project.FromPath(rootDir)
+	if err != nil {
+		t.Fatalf("building root: %v", err)
+	}
+	t.Cleanup(func() { _ = root.FS.Close() })
+
 	// A fixed version stamp keeps goldens deterministic; no case uses the token.
-	page, err := convert.MdToConfluence(md, cfg.baseURL, cfg.spaceKey, "markfluence vtest")
+	page, err := convert.MdToConfluence(md, root, cfg.baseURL, cfg.spaceKey, "markfluence vtest")
 	if err != nil {
 		t.Fatalf("MdToConfluence: %v", err)
 	}
@@ -93,6 +116,7 @@ func loadConfig(t *testing.T, caseDir string) caseConfig {
 		}
 		mustUnmarshal(t, raw, "filename", &cfg.filename)
 		mustUnmarshal(t, raw, "base_url", &cfg.baseURL)
+		mustUnmarshal(t, raw, "root", &cfg.root)
 		if v, ok := raw["space_key"]; ok {
 			// Present but possibly JSON null (no resolvable space key).
 			var s *string

@@ -1,4 +1,5 @@
 {
   "filename": "sub/main.md",
+  "root": ".",
   "files": ["sub/main.md", "assets/logo.png"]
 }

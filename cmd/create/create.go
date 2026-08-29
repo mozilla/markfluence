@@ -18,6 +18,7 @@ import (
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
+	"github.com/mozilla/markfluence/internal/project"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -87,6 +88,10 @@ type record struct {
 	spaceID  string
 	parent   parentInfo
 	width    pagewidth.Width
+	// root bounds this file's image/parent reads and is what its attachments'
+	// names and recorded Source are relative to. Discovered from the file's own
+	// directory, cached across the batch by internal/project.Cache.
+	root *project.Root
 }
 
 // failure is a phase-1 validation error against a file (or "(hierarchy)").
@@ -210,6 +215,7 @@ func run(cmd *cobra.Command, args []string) error {
 	username, _ := cmd.Flags().GetString("username")
 	cloudID, _ := cmd.Flags().GetString("cloud-id")
 	envFile, _ := cmd.Flags().GetString("env-file")
+	rootOverride, _ := cmd.Flags().GetString("root")
 	c, err := client.Resolve(client.Options{
 		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile,
 	})
@@ -228,17 +234,22 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 	}
 	spaceCache := map[string]string{}
+	roots := project.NewCache(rootOverride)
+	defer roots.Close()
 
 	// Phase 1: validate every file, create nothing.
 	var records []record
 	var errs []failure
 	for _, filename := range args {
-		r, err := resolveFile(filename, c, inSetAbs, spaceCache)
+		r, err := resolveFile(filename, c, inSetAbs, spaceCache, roots)
 		if err != nil {
 			errs = append(errs, newFailure(filename, err))
 			continue
 		}
 		records = append(records, r)
+	}
+	for _, dir := range roots.Roots() {
+		ui.Info("root: " + dir)
 	}
 
 	var ordered []record
@@ -325,6 +336,7 @@ func createInOrder(
 
 func resolveFile(
 	filename string, c *client.ConfluenceClient, inSetAbs map[string]bool, spaceCache map[string]string,
+	roots *project.Cache,
 ) (record, error) {
 	mf, err := frontmatter.ParseFile(filename)
 	if err != nil {
@@ -380,7 +392,11 @@ func resolveFile(
 	}
 
 	abs, _ := filepath.Abs(filename)
-	return record{filename, abs, mf, title, spaceKey, spaceID, parent, width}, nil
+	root, err := roots.Resolve(filepath.Dir(abs))
+	if err != nil {
+		return record{}, fmt.Errorf("resolving the documentation root: %w", err)
+	}
+	return record{filename, abs, mf, title, spaceKey, spaceID, parent, width, root}, nil
 }
 
 func resolveParent(
@@ -531,7 +547,7 @@ func createOne(r record, parentID string, c *client.ConfluenceClient, persist bo
 
 	// SiteURL, not BaseURL: rewritten links are published into the page, so they
 	// must point at the site even when requests go through the gateway.
-	pageContent, err := convert.MdToConfluence(r.mdfile, c.SiteURL(), r.spaceKey, buildinfo.Stamp())
+	pageContent, err := convert.MdToConfluence(r.mdfile, r.root, c.SiteURL(), r.spaceKey, buildinfo.Stamp())
 	if err != nil {
 		return res.fail(err, jsonout.CodeConvert)
 	}

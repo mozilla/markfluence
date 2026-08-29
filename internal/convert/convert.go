@@ -7,11 +7,11 @@ package convert
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/mozilla/markfluence/internal/frontmatter"
+	"github.com/mozilla/markfluence/internal/project"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
@@ -53,20 +53,18 @@ func newMarkdown(r *storageRenderer) goldmark.Markdown {
 // MdToConfluence converts a markdown file's body to Confluence storage-format
 // HTML. baseURL and spaceKey build the Confluence URLs that internal document
 // links point at; md.Filename locates sibling files for link/anchor rewriting
-// and resolves image paths. version is the build stamp substituted for the
-// <!-- markfluence-version --> token.
-func MdToConfluence(md *frontmatter.MarkdownFile, baseURL, spaceKey, version string) (*ConfluencePage, error) {
+// and resolves image paths. root bounds which images and parent references may
+// be read (S1/S2) and is what an image's recorded Source is relative to; the
+// caller discovers it (per-file, via internal/project) rather than
+// MdToConfluence assuming the working directory. version is the build stamp
+// substituted for the <!-- markfluence-version --> token.
+func MdToConfluence(
+	md *frontmatter.MarkdownFile, root *project.Root, baseURL, spaceKey, version string,
+) (*ConfluencePage, error) {
 	// Shield raw ac:/ri: storage tags so goldmark passes them through instead of
 	// escaping them; restore them after rendering.
 	shielded, unshield := shieldStorage(md.Body)
 	dir := filepath.Dir(md.Filename)
-	// The documentation root is the working directory: markfluence is run from
-	// the root of a documentation tree. An unresolvable cwd disables the check
-	// rather than failing the conversion.
-	root, err := os.Getwd()
-	if err != nil {
-		root = ""
-	}
 	r := &storageRenderer{
 		baseDir:         dir,
 		root:            root,
