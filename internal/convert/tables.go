@@ -92,6 +92,21 @@ var (
 	cellBGHexRE = regexp.MustCompile(`^#[0-9a-f]{6}$`)
 )
 
+// cellBGNames is the reverse of cellBGSwatches, hex -> name, for reconstructing a
+// bg: marker on export/read. "grey" and "gray" (and their light- variants) share a
+// hex; the British spelling wins since that's what Confluence's own
+// data-highlight-colour and docs/confluence/storage-format.md use.
+var cellBGNames = func() map[string]string {
+	names := make(map[string]string, len(cellBGSwatches))
+	for name, hex := range cellBGSwatches {
+		if strings.Contains(name, "gray") {
+			continue
+		}
+		names[hex] = name
+	}
+	return names
+}()
+
 // tableCellBGTransformer implements the cell background color marker: an HTML
 // comment at the start of a table cell,
 //
