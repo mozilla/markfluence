@@ -172,6 +172,34 @@ func TestWriteSkipsExistingUnlessForce(t *testing.T) {
 	}
 }
 
+// TestWriteRemovesPartialFileOnDownloadFailure: Create makes (or truncates) the
+// destination before the download runs, so a failure partway through -- or
+// before a single byte is written, as here -- must not leave that file behind.
+// Left in place, the next run's own-existence check would see it and report a
+// skip, silently masking a download that never actually completed.
+func TestWriteRemovesPartialFileOnDownloadFailure(t *testing.T) {
+	root := t.TempDir()
+	c := clienttest.New(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	att := withDownload(client.Attachment{Title: "x.png"})
+
+	got := Write(c, att, Options{Root: root})
+	if got.Status != StatusFailed {
+		t.Fatalf("status = %q, want failed", got.Status)
+	}
+	if _, err := os.Stat(filepath.Join(root, "x.png")); !os.IsNotExist(err) {
+		t.Errorf("a failed download left a file behind (err=%v); a retry would see it and skip", err)
+	}
+
+	// The retry itself: without the fix, this would report skipped instead of
+	// trying again.
+	c2 := testClient(t, "BYTES")
+	if got := Write(c2, att, Options{Root: root}); got.Status != StatusDownloaded {
+		t.Errorf("retry status = %q, want downloaded (not skipped over the earlier failure)", got.Status)
+	}
+}
+
 func TestWriteDryRunCreatesNothing(t *testing.T) {
 	root := t.TempDir()
 	c := testClient(t, "BYTES")

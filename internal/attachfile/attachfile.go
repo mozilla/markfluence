@@ -192,6 +192,12 @@ func Write(c *client.ConfluenceClient, a client.Attachment, opts Options) Outcom
 	}
 	defer func() { _ = f.Close() }()
 	if err := c.DownloadAttachment(a, f); err != nil {
+		// Create truncated (or made) the file before the download failed, so it
+		// now exists with partial or no content. Left in place, the next run's
+		// os.Stat above would see it and report a skip -- "already there" --
+		// masking a download that never actually completed.
+		_ = f.Close()
+		_ = rootFS.Remove(rel)
 		res.Status, res.Err, res.Code = StatusFailed, err, jsonout.CodeFor(err)
 		return res
 	}
