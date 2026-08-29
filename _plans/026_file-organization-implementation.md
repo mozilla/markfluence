@@ -10,6 +10,11 @@ draw (two discovery passes, not one).
 
 All commits land on `file-org-fixing`, one PR at the end.
 
+**Status: all 9 commits landed.** Each section below is annotated with what
+actually happened where it differs from what was planned going in. What's
+still open, deliberately out of this plan's scope, is listed at the end of
+commit 9.
+
 ## Out of scope (deliberately)
 
 - **Multi-page export** (025 item 16, use case 8). Tracked separately as #59.
@@ -335,3 +340,26 @@ as they come up rather than waiting for commit 9 to invent them from scratch.
   early win on a guarantee whose scenario table names both roundtrip
   directions. R1 moved to **Partial** already, in commit 5 — this sweep just
   confirms nothing here regresses it back.
+
+**Landed.** New doc: `docs/root-model.md` (discovery, the project file, the CVE
+review restated for a reader who hasn't seen this plan, S1/S2, link
+resolution, multi-root batches). README: the two stale passages that predated
+this whole plan (`## Configure`'s ".env from the current directory" and
+`### Body`'s "run markfluence from the root of your documentation tree," plus
+its now-wrong `../assets/logo.png` → `..%2Fassets%2Flogo.png` encoding
+example) are corrected in place rather than left beside a new section that
+contradicted them; a new `## The documentation root` section holds the model
+summary and the four recipes, placed after `## Markdown page structure` per
+the plan, with a `## Configure` cross-reference for `.env`'s discovery.
+`docs/guarantees.md`'s L5/L6 prose was also stale in the same way (it
+attributed the Partial status to a cause commit 4 had already fixed for
+single-page export) and got corrected alongside the status sweep, not just the
+statuses themselves.
+
+**Not part of this plan, and still open:**
+- The `--json` `roots` field split off from commit 4 (schema + conformance +
+  `createSummary`/`updateSummary` changes) was never picked back up. Still
+  correct as reported in human output only.
+- Multi-page export (item 16) — tracked as #59, as decided before commit 1.
+- A dedicated `check` command for the full form of R1 — gestured at throughout,
+  never scoped.

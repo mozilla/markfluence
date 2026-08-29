@@ -61,8 +61,11 @@ resolved with the precedence **flag > environment variable > `.env` file**:
 | API token | *(none — never a flag)* | `CONFLUENCE_TOKEN` |
 | Cloud ID *(optional)* | `--cloud-id` | `CONFLUENCE_CLOUD_ID` |
 
-markfluence reads a `.env` file from the current directory automatically (no need
-to `source` it), or from an explicit path via `--env-file PATH`.
+markfluence reads a `.env` file automatically (no need to `source` it) from the
+[documentation root](#the-documentation-root) — the directory holding
+`markfluence.yaml`, found by walking up from the working directory, or the
+working directory itself with no `markfluence.yaml` above it — or from an
+explicit path via `--env-file PATH`.
 
 Copy `.env.example` to `.env` and fill in:
 
@@ -1008,10 +1011,14 @@ view the file on GitHub, so a page in a subdirectory can share an asset
 directory above it:
 
 ```
-docs/                      ← run markfluence from here
+docs/                      ← needs a markfluence.yaml here for this to work
   assets/logo.png
   guide/page.md            → ![logo](../assets/logo.png)
 ```
+
+That layout needs a [documentation root](#the-documentation-root) declared at
+`docs/` — without one, each page's root defaults to its own directory, and
+`guide/page.md` reaching above itself for `assets/` is out of bounds.
 
 > [!NOTE]
 > An image path is a URL, not a filename, so a space or other special character
@@ -1027,15 +1034,18 @@ docs/                      ← run markfluence from here
 > `markfluence read` and `markfluence export` write the encoded form, so a page
 > round-trips back to Markdown that still renders.
 
-**Run markfluence from the root of your documentation tree.** That root bounds
-which images may be published: an image resolving outside it (`../../secrets/x.png`)
-is reported as `IMAGE BROKEN: … (outside the documentation root)` rather than
-uploaded.
+Every image is bounded by the [documentation root](#the-documentation-root):
+one resolving outside it (`../../secrets/x.png`) is reported as
+`IMAGE BROKEN: … (outside the documentation root)` rather than uploaded, and a
+symlink is refused even when it resolves inside the root.
 
-Confluence attachment names cannot contain `/`, so the path is percent-encoded
-into the attachment name — `assets/logo.png` is attached as `assets%2Flogo.png`,
-and `../assets/logo.png` as `..%2Fassets%2Flogo.png`. The encoding is reversible,
-so `markfluence read` restores an image's original path instead of a flattened
+Confluence attachment names cannot contain `/`, so the path — relative to the
+root, not to the page — is percent-encoded into the attachment name:
+`assets/logo.png` referenced from a page at the root is attached as
+`assets%2Flogo.png`; the same file referenced as `../assets/logo.png` from a
+page one directory down is attached under the *same* name, since both
+resolve to the same root-relative path. The encoding is reversible, so
+`markfluence read` restores an image's original path instead of a flattened
 one. markfluence also records the source path in the attachment's comment, which
 it prefers over decoding the name.
 
@@ -1120,6 +1130,55 @@ Right column.
 ```
 
 Storage markup shown inside a fenced code block stays literal (it isn't activated).
+
+## The documentation root
+
+Every markdown file has a **documentation root**: the directory holding
+`markfluence.yaml`, found by walking up from the file's own directory, or —
+with no `markfluence.yaml` anywhere above it — the file's own directory. It
+bounds which images and `parent:` references a file may read, and it's what
+an image's recorded attachment name and source are relative to (see
+[Images](#body) above). The root actually used is reported once per distinct
+value in a run. `--root PATH` overrides discovery for the whole invocation.
+
+`markfluence.yaml`'s existence is its whole meaning — nothing in it is read
+or parsed yet. Create it by hand:
+
+```yaml
+# Marks the root of a markfluence project. Image and link paths are recorded
+# relative to this directory. https://github.com/mozilla/markfluence
+```
+
+For the reasoning behind this model — why a bare marker file, what it fixes,
+what it costs — see [docs/root-model.md](docs/root-model.md) and
+[_plans/025_file-organization.md](_plans/025_file-organization.md).
+
+### Common tasks
+
+**Moving or renaming a markdown file.** Just move it. Links to it resolve by
+where it actually is, via the root-relative link index — nothing elsewhere
+needs editing, and nothing needs republishing except the moved file itself
+(to pick up its own new links, if any changed).
+
+**Moving a page's own images along with it.** This churns: an attachment's
+identity is relative to the *root*, not the page, so moving both together
+changes the images' root-relative paths, and the next publish uploads them
+under new names, leaving the originals behind unreferenced (markfluence never
+deletes; [#99](https://github.com/mozilla/markfluence/issues/99) tracks a
+future `attachment-prune`). This is the opposite of pre-root-model behavior,
+where this was the free move and leaving images behind was the one that
+churned — if you're relying on the old muscle memory, this is where it bites.
+
+**Renaming or moving a shared asset**, independent of any page, churns the
+same way: every page referencing it records a new attachment name on its next
+publish. Identity follows the asset's location, not any particular page's
+(this is L3 in [docs/guarantees.md](docs/guarantees.md) — `identity-from-asset-location`).
+
+**Setting up a shared assets directory across many pages** needs a
+`markfluence.yaml` at the directory that should be the shared root. Without
+one, each page's root defaults to its own directory, and an asset above any
+one of them is `IMAGE BROKEN` — the layout in [Images](#body) above needs
+this to work at all.
 
 ## Development
 
