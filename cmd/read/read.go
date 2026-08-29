@@ -33,7 +33,7 @@ var Cmd = &cobra.Command{
 		"PAGE is a numeric page id, a Confluence page URL (the modern\n" +
 		"/wiki/.../pages/<id>/... form or a legacy ?pageId=<id> URL), or a\n" +
 		"markdown file whose frontmatter has a page_id.\n\n" +
-		"The default markdown output carries title/page_id/space/page_width\n" +
+		"The default markdown output carries title/space/parent/page_id/page_width\n" +
 		"frontmatter and is a best-effort inverse of what create/update publish.",
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,

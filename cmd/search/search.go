@@ -78,7 +78,8 @@ func init() {
 	Cmd.Flags().StringVar(&limitOpt, "limit", defaultLimit,
 		fmt.Sprintf("How many matches to show: a positive number, or %q.", limitAll))
 	Cmd.Flags().BoolVar(&cqlOpt, "cql", false,
-		"Treat QUERY as a raw CQL query instead of text to search for.")
+		"Treat QUERY as a raw CQL query instead of text to search for; "+
+			"cannot be combined with --space or an explicit --type (put those clauses in the query).")
 
 	completion.RegisterFlag(Cmd, "space", cobra.NoFileCompletions)
 	completion.RegisterFlag(Cmd, "type", completion.Values(
