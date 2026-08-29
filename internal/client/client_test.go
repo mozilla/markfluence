@@ -778,17 +778,17 @@ func TestResolve(t *testing.T) {
 	t.Setenv("CONFLUENCE_CLOUD_ID", "")
 
 	// All from .env.
-	c, err := Resolve(Options{})
+	c, err := Resolve(ResolveOptions{})
 	if err != nil || c.BaseURL() != "https://file.example.net" {
 		t.Fatalf("Resolve(.env) = %v, %v", c, err)
 	}
 
 	// Flag beats env beats .env for the URL.
 	t.Setenv("CONFLUENCE_URL", "https://env.example.net")
-	if c, _ := Resolve(Options{URL: "https://flag.example.net"}); c.BaseURL() != "https://flag.example.net" {
+	if c, _ := Resolve(ResolveOptions{URL: "https://flag.example.net"}); c.BaseURL() != "https://flag.example.net" {
 		t.Errorf("flag should win, got %q", c.BaseURL())
 	}
-	if c, _ := Resolve(Options{}); c.BaseURL() != "https://env.example.net" {
+	if c, _ := Resolve(ResolveOptions{}); c.BaseURL() != "https://env.example.net" {
 		t.Errorf("env should beat .env, got %q", c.BaseURL())
 	}
 
@@ -797,7 +797,7 @@ func TestResolve(t *testing.T) {
 	if err := os.WriteFile(".env", []byte("CONFLUENCE_URL=u\nCONFLUENCE_USERNAME=x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Resolve(Options{URL: "u", Username: "x"}); err == nil {
+	if _, err := Resolve(ResolveOptions{URL: "u", Username: "x"}); err == nil {
 		t.Error("Resolve with no token: want error")
 	}
 }

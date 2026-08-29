@@ -112,7 +112,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return fatalFail(err.Error(), jsonout.CodeValidation)
 	}
 
-	c, err := client.Resolve(client.Options{
+	c, err := client.Resolve(client.ResolveOptions{
 		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile,
 	})
 	if err != nil {
