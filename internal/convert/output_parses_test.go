@@ -143,13 +143,19 @@ func assertParsesCleanly(t *testing.T, source []byte) {
 		t.Fatalf("walking parsed AST: %v", err)
 	}
 
-	wantAtLeast := len(imageOrLinkRE.FindAllIndex(source, -1))
+	// prose excludes fenced code for every check below: example code inside
+	// one is free to contain bracket or table-separator-looking text (e.g. a
+	// snippet documenting markdown syntax) with no bearing on this guarantee,
+	// and counting it would be this test's own false positive, not a bug.
+	prose := fencedCodeRE.ReplaceAll(source, nil)
+
+	wantAtLeast := len(imageOrLinkRE.FindAllIndex(prose, -1))
 	if got := images + links; got < wantAtLeast {
 		t.Errorf("parsed %d image/link node(s), want at least %d matching the source's bracket syntax:\n%s",
 			got, wantAtLeast, source)
 	}
 
-	if tableSeparatorRE.Match(source) && tables == 0 {
+	if tableSeparatorRE.Match(prose) && tables == 0 {
 		t.Errorf("source has a table separator row but no Table node was parsed -- "+
 			"it degraded to plain text:\n%s", source)
 	}
@@ -159,10 +165,7 @@ func assertParsesCleanly(t *testing.T, source []byte) {
 	// that the output no longer looks like link/image syntax at all -- nothing
 	// would be left for imageOrLinkRE to flag as missing. Every "[" markfluence
 	// emits outside a code fence closes, so an unequal count means something (a
-	// link, an alt-text bracket) was truncated or malformed outright. Fenced
-	// code is excluded: example code inside one is free to contain an
-	// unbalanced bracket with no bearing on this guarantee.
-	prose := fencedCodeRE.ReplaceAll(source, nil)
+	// link, an alt-text bracket) was truncated or malformed outright.
 	if opens, closes := bytes.Count(prose, []byte("[")), bytes.Count(prose, []byte("]")); opens != closes {
 		t.Errorf("unbalanced brackets outside fenced code: %d '[' vs %d ']':\n%s", opens, closes, source)
 	}
