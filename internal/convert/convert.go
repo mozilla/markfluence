@@ -73,7 +73,7 @@ func MdToConfluence(
 		baseDir:         dir,
 		root:            root,
 		currentBasename: filepath.Base(md.Filename),
-		currentDocKey:   docKeyFor(root, md.Filename),
+		currentDocKey:   DocKeyFor(root, md.Filename),
 		baseURL:         baseURL,
 		spaceKey:        spaceKey,
 		index:           index,
@@ -105,13 +105,18 @@ func MdToConfluence(
 	return page, nil
 }
 
-// docKeyFor resolves filename's own path to the key the link index would use
+// DocKeyFor resolves filename's own path to the key the link index would use
 // for it: relative to root, slash-separated. filename is always at or under
 // its own root by construction (root was discovered from this same file's
 // directory), so this cannot escape the way an arbitrary link destination
 // could; the fallback (filename's bare basename) only matters if filepath.Abs
 // or filepath.Rel itself fails, which needs an unreadable working directory.
-func docKeyFor(root *project.Root, filename string) string {
+//
+// Exported so a caller seeding the link index directly -- create's reserve
+// phase, injecting an id that exists only in memory before publish -- computes
+// the identical key MdToConfluence would, rather than a second copy that could
+// silently drift from it.
+func DocKeyFor(root *project.Root, filename string) string {
 	abs, err := filepath.Abs(filename)
 	if err != nil {
 		return filepath.Base(filename)

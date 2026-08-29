@@ -1,6 +1,12 @@
 // Package create implements the `markfluence create` command: create new
-// Confluence pages from markdown files. Creation is two-phase: every file is
-// validated first, and only if all pass are the pages created (parents first).
+// Confluence pages from markdown files. Creation is three-phase: every file is
+// validated first (preflight); if all pass, a content-less stub is created
+// for each, parents first, capturing every id (reserve); only then is every
+// page converted and given real content (publish). Reserving every id before
+// converting anything is what makes link resolution stop depending on
+// creation order -- a link pointing "forward" in the batch resolves exactly
+// like one pointing "backward," and a cycle between two pages in the same
+// batch resolves too.
 package create
 
 import (
@@ -40,10 +46,12 @@ var Cmd = &cobra.Command{
 	Short: "Create new Confluence pages from markdown files",
 	Long: "Create new Confluence pages from markdown FILEs.\n\n" +
 		"All files are validated first; if any would fail, nothing is created.\n" +
-		"Otherwise pages are created parents-first. --title and --page-width override\n" +
-		"the frontmatter (--title requires a single FILE). Unless --no-persist is\n" +
-		"given, each created page's title/space/parent/page_id/page_width are written\n" +
-		"back into the frontmatter.",
+		"Otherwise a content-less stub is reserved for each, parents-first, before\n" +
+		"any of them is converted -- so a link between two files in the same batch\n" +
+		"resolves regardless of which direction it points, or whether they form a\n" +
+		"cycle. --title and --page-width override the frontmatter (--title requires\n" +
+		"a single FILE). Unless --no-persist is given, each created page's\n" +
+		"title/space/parent/page_id/page_width are written back into the frontmatter.",
 	Args:              cobra.MinimumNArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
 	RunE:              run,
@@ -280,18 +288,12 @@ func run(cmd *cobra.Command, args []string) error {
 		return abort(args, errs)
 	}
 
-	// Phase 2: create in topological order.
-	created := map[string]string{}
+	results := createAll(ordered, c, doPersist)
 	failures := 0
-	results := make([]*createResult, 0, len(ordered))
-	for _, r := range ordered {
-		res := createInOrder(r, created, c, doPersist)
-		if res.ok {
-			created[r.absPath] = res.pageID
-		} else {
+	for _, res := range results {
+		if !res.ok {
 			failures++
 		}
-		results = append(results, res)
 		if !ui.IsJSON() {
 			res.renderHuman()
 		}
@@ -319,24 +321,192 @@ func run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// createInOrder resolves the effective parent id for a record and creates it,
-// returning a result. A missing in-set parent (its creation failed earlier) is a
-// failed result rather than a create attempt.
-func createInOrder(
-	r record, created map[string]string, c *client.ConfluenceClient, doPersist bool,
-) *createResult {
-	parentID := r.parent.id
-	if r.parent.kind == "inset" {
-		parentID = created[r.parent.abs]
-		// In a dry-run nothing is created, so an in-set parent has no id yet;
-		// that is not a failure (the parent would have been created first). The
-		// relationship is still reported via parent_file.
-		if parentID == "" && !dryRunOpt {
-			res := newResult(r)
-			return res.fail(errors.New("parent page was not created; skipping"), jsonout.CodeValidation)
+// pendingPublish is what phase 3 needs for a record whose reservation
+// succeeded: the in-progress result to finish, and the stub's id/version.
+type pendingPublish struct {
+	res     *createResult
+	pageID  string
+	version int
+}
+
+// createAll runs phases 2 and 3 over ordered (already topologically sorted):
+// reserve a content-less stub for every file, then convert and publish every
+// one that reserved successfully. Splitting these into two full passes -- not
+// reserve-then-publish per file -- is the point: every id any file in the set
+// might link to already exists by the time phase 3 converts anything, so link
+// resolution stops depending on topological order the way it used to.
+//
+// Results come back in ordered's order, one per record, regardless of which
+// phase produced the final outcome -- a reserve failure and a publish failure
+// look the same to the caller.
+func createAll(ordered []record, c *client.ConfluenceClient, doPersist bool) []*createResult {
+	// Phase 2: reserve, in topological order (a page needs its parent's id at
+	// creation time).
+	created := map[string]string{} // absPath -> pageID, for resolving an in-set parent
+	pending := map[string]pendingPublish{}
+	final := map[string]*createResult{}
+
+	for _, r := range ordered {
+		parentID := r.parent.id
+		if r.parent.kind == "inset" {
+			parentID = created[r.parent.abs]
+			// In a dry-run nothing is created, so an in-set parent has no id
+			// yet; that is not a failure (the parent would have been created
+			// first). The relationship is still reported via parent_file.
+			if parentID == "" && !dryRunOpt {
+				res := newResult(r)
+				final[r.absPath] = res.fail(errors.New("parent page was not created; skipping"), jsonout.CodeValidation)
+				continue
+			}
+		}
+
+		res, pageID, version, ok := reserveOne(r, parentID, c, doPersist)
+		if !ok {
+			final[r.absPath] = res
+			continue
+		}
+		created[r.absPath] = pageID
+		if pageID != "" {
+			// Seed the shared link index immediately, using the identical key
+			// MdToConfluence would compute for this file -- so phase 3 sees
+			// this id regardless of link direction or a cycle among the files
+			// being created, and regardless of --no-persist (which skips the
+			// frontmatter write but not this).
+			r.index.SetPage(convert.DocKeyFor(r.root, r.filename), linkindex.PageEntry{PageID: pageID, Title: r.title})
+		}
+		pending[r.absPath] = pendingPublish{res: res, pageID: pageID, version: version}
+	}
+
+	// Phase 3: convert and publish every reserved page, now that every id any
+	// of them might link to already exists.
+	for _, r := range ordered {
+		p, ok := pending[r.absPath]
+		if !ok {
+			continue
+		}
+		final[r.absPath] = publishOne(r, p.res, p.pageID, p.version, c)
+	}
+
+	results := make([]*createResult, len(ordered))
+	for i, r := range ordered {
+		results[i] = final[r.absPath]
+	}
+	return results
+}
+
+// reserveOne creates a content-less stub for r (title and parent, no body) and
+// persists its frontmatter fields immediately unless persist is false -- so a
+// run interrupted after this point has already recorded a page_id a later
+// `update` can finish publishing against, rather than leaving the file
+// unpublished with no trace. Under --dry-run nothing is created; ok is still
+// true, since phase 3 has a preview to run even though there is no id.
+//
+// ok distinguishes "reservation failed outright" (the terminal result is res;
+// phase 3 must not run) from "proceed to phase 3" -- which is not the same as
+// res.ok, since res is not finished until publishOne finalizes it.
+func reserveOne(
+	r record, parentID string, c *client.ConfluenceClient, persist bool,
+) (res *createResult, pageID string, version int, ok bool) {
+	res = newResult(r)
+	res.parent = nullableStr(parentID)
+	// parent_type tracks parent: both null for a top-level page, and both null in
+	// a dry-run whose parent is an in-set page that has no id yet.
+	if parentID != "" {
+		res.parentType = nullableStr(r.parent.parentType)
+	}
+
+	if dryRunOpt {
+		res.persisted = persist
+		return res, "", 0, true
+	}
+
+	result, err := c.CreatePage(r.spaceID, r.title, "", parentID)
+	if err != nil {
+		return res.fail(err, jsonout.CodeFor(err)), "", 0, false
+	}
+	pageID = result.ID
+	res.pageID = pageID
+	res.url = pageURL(c, result, pageID)
+
+	if persist {
+		parentValue, parentComment := parentField(r.parent, parentID)
+		content := r.mdfile.Content
+		content = frontmatter.UpdateField(content, "title", r.title, "")
+		content = frontmatter.UpdateField(content, "space", r.spaceKey, "")
+		content = frontmatter.UpdateField(content, "parent", parentValue, parentComment)
+		content = frontmatter.UpdateField(content, "page_id", pageID, "")
+		content = frontmatter.UpdateField(content, "page_width", string(r.width), "")
+		if err := os.WriteFile(r.filename, []byte(content), 0o644); err != nil {
+			return res.fail(err, jsonout.CodeIO), "", 0, false
+		}
+		res.persisted = true
+	}
+
+	return res, pageID, result.Version.Number, true
+}
+
+// publishOne converts r's body -- now against a fully-seeded link index -- and
+// gives the page reserveOne created its real content: attachments and page
+// width. It always finalizes res.ok/res.status, on both success and failure;
+// a failure here leaves a permanent content-less stub behind, which
+// _plans/026 accepts as the cost of removing the ordering dependency (an
+// interrupted run leaves stubs where the old single-pass create left pages
+// missing entirely -- uglier, but every id is already persisted, so a plain
+// `markfluence update` finishes the job).
+func publishOne(r record, res *createResult, pageID string, version int, c *client.ConfluenceClient) *createResult {
+	// SiteURL, not BaseURL: rewritten links are published into the page, so they
+	// must point at the site even when requests go through the gateway.
+	pageContent, err := convert.MdToConfluence(r.mdfile, r.root, r.index, c.SiteURL(), r.spaceKey, buildinfo.Stamp())
+	if err != nil {
+		return res.fail(err, jsonout.CodeConvert)
+	}
+	res.broken = append(res.broken, pageContent.Broken...)
+	res.warnings = append(res.warnings, pageContent.Warnings...)
+
+	// --dry-run: preview without creating. The page has no id/URL (reserveOne
+	// never created one); every attachment would be a fresh upload, and a new
+	// page always has its width set.
+	if dryRunOpt {
+		for _, a := range pageContent.Attachments {
+			res.attachments = append(res.attachments, jsonout.Attachment{Action: "created", Filename: a.Filename})
+		}
+		res.width = &jsonout.PageWidth{Value: string(r.width), Default: false}
+		res.widthSet = true
+		res.ok = true
+		res.status = statusCreated
+		return res
+	}
+
+	result, err := c.UpdatePage(pageID, r.title, pageContent.HTML, version+1, "Initial publish via markfluence")
+	if err != nil {
+		return res.fail(err, jsonout.CodeFor(err))
+	}
+	res.url = pageURL(c, result, pageID)
+
+	actions, err := c.SyncAttachments(pageID, toLocalAttachments(pageContent.Attachments))
+	if err != nil {
+		return res.fail(err, jsonout.CodeFor(err))
+	}
+	for _, a := range actions {
+		res.attachments = append(res.attachments, jsonout.Attachment{Action: a.Action, Filename: a.Filename})
+	}
+
+	res.width = &jsonout.PageWidth{Value: string(r.width), Default: false}
+	if acts, err := pagewidth.Apply(c, pageID, r.width); err != nil {
+		res.width = nil
+		res.warnings = append(res.warnings, "could not set page width: "+err.Error())
+	} else {
+		for _, a := range acts {
+			if a.Action == "set" {
+				res.widthSet = true
+				break
+			}
 		}
 	}
-	return createOne(r, parentID, c, doPersist)
+
+	res.ok = true
+	res.status = statusCreated
+	return res
 }
 
 func resolveFile(
@@ -574,90 +744,6 @@ func parentField(p parentInfo, parentID string) (value, comment string) {
 		return "null", ""
 	}
 	return parentID, p.display
-}
-
-// createOne creates one page and returns a result. It performs no output; the
-// caller renders the result.
-func createOne(r record, parentID string, c *client.ConfluenceClient, persist bool) *createResult {
-	res := newResult(r)
-	res.parent = nullableStr(parentID)
-	// parent_type tracks parent: both null for a top-level page, and both null in
-	// a dry-run whose parent is an in-set page that has no id yet.
-	if parentID != "" {
-		res.parentType = nullableStr(r.parent.parentType)
-	}
-
-	// SiteURL, not BaseURL: rewritten links are published into the page, so they
-	// must point at the site even when requests go through the gateway.
-	pageContent, err := convert.MdToConfluence(r.mdfile, r.root, r.index, c.SiteURL(), r.spaceKey, buildinfo.Stamp())
-	if err != nil {
-		return res.fail(err, jsonout.CodeConvert)
-	}
-	res.broken = append(res.broken, pageContent.Broken...)
-	res.warnings = append(res.warnings, pageContent.Warnings...)
-
-	// --dry-run: preview without creating. The page has no id/URL yet (they stay
-	// null); every attachment would be a fresh upload, and a new page always has
-	// its width set. persisted reflects intent — dry_run signals nothing was
-	// actually written.
-	if dryRunOpt {
-		for _, a := range pageContent.Attachments {
-			res.attachments = append(res.attachments, jsonout.Attachment{Action: "created", Filename: a.Filename})
-		}
-		res.width = &jsonout.PageWidth{Value: string(r.width), Default: false}
-		res.widthSet = true
-		res.persisted = persist
-		res.ok = true
-		res.status = statusCreated
-		return res
-	}
-
-	result, err := c.CreatePage(r.spaceID, r.title, pageContent.HTML, parentID)
-	if err != nil {
-		return res.fail(err, jsonout.CodeFor(err))
-	}
-	newID := result.ID
-	res.pageID = newID
-	res.url = pageURL(c, result, newID)
-
-	actions, err := c.SyncAttachments(newID, toLocalAttachments(pageContent.Attachments))
-	if err != nil {
-		return res.fail(err, jsonout.CodeFor(err))
-	}
-	for _, a := range actions {
-		res.attachments = append(res.attachments, jsonout.Attachment{Action: a.Action, Filename: a.Filename})
-	}
-
-	res.width = &jsonout.PageWidth{Value: string(r.width), Default: false}
-	if acts, err := pagewidth.Apply(c, newID, r.width); err != nil {
-		res.width = nil
-		res.warnings = append(res.warnings, "could not set page width: "+err.Error())
-	} else {
-		for _, a := range acts {
-			if a.Action == "set" {
-				res.widthSet = true
-				break
-			}
-		}
-	}
-
-	if persist {
-		parentValue, parentComment := parentField(r.parent, parentID)
-		content := r.mdfile.Content
-		content = frontmatter.UpdateField(content, "title", r.title, "")
-		content = frontmatter.UpdateField(content, "space", r.spaceKey, "")
-		content = frontmatter.UpdateField(content, "parent", parentValue, parentComment)
-		content = frontmatter.UpdateField(content, "page_id", newID, "")
-		content = frontmatter.UpdateField(content, "page_width", string(r.width), "")
-		if err := os.WriteFile(r.filename, []byte(content), 0o644); err != nil {
-			return res.fail(err, jsonout.CodeIO)
-		}
-		res.persisted = true
-	}
-
-	res.ok = true
-	res.status = statusCreated
-	return res
 }
 
 // wantPersist resolves the --persist/--no-persist pair; --no-persist wins.
