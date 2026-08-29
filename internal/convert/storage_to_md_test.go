@@ -107,7 +107,7 @@ func TestRoundTripStableCallouts(t *testing.T) {
 	}, "\n") + "\n"
 
 	md := frontmatter.Parse("main.md", src)
-	page, err := convert.MdToConfluence(md, "https://wiki.example.net", "ENG", "vtest")
+	page, err := convert.MdToConfluence(md, testRoot(t, ""), "https://wiki.example.net", "ENG", "vtest")
 	if err != nil {
 		t.Fatalf("MdToConfluence: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestRoundTripTableAlignment(t *testing.T) {
 	}, "\n") + "\n"
 
 	md := frontmatter.Parse("main.md", src)
-	page, err := convert.MdToConfluence(md, "https://wiki.example.net", "ENG", "vtest")
+	page, err := convert.MdToConfluence(md, testRoot(t, ""), "https://wiki.example.net", "ENG", "vtest")
 	if err != nil {
 		t.Fatalf("MdToConfluence: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestRoundTripPassthrough(t *testing.T) {
 				t.Fatalf("reading golden: %v", err)
 			}
 			md := frontmatter.Parse("main.md", string(src))
-			page, err := convert.MdToConfluence(md, "https://wiki.example.net", "ENG", "vtest")
+			page, err := convert.MdToConfluence(md, testRoot(t, ""), "https://wiki.example.net", "ENG", "vtest")
 			if err != nil {
 				t.Fatalf("MdToConfluence: %v", err)
 			}

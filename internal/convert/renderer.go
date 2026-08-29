@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mozilla/markfluence/internal/project"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/renderer"
 	gmhtml "github.com/yuin/goldmark/renderer/html"
@@ -21,9 +22,10 @@ import (
 type storageRenderer struct {
 	baseDir string
 
-	// root bounds which images may be published: the documentation root, which
-	// markfluence is expected to be run from. Empty disables the check.
-	root string
+	// root bounds which images and parent references may be read (S1/S2): the
+	// documentation root, discovered per file rather than assumed to be the
+	// working directory. Every attachment's Source is recorded relative to it.
+	root *project.Root
 
 	// Link/anchor rewriting context, populated per conversion.
 	currentBasename string

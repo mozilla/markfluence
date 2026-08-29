@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
+	"github.com/mozilla/markfluence/internal/project"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -70,6 +72,7 @@ func run(cmd *cobra.Command, args []string) error {
 	username, _ := cmd.Flags().GetString("username")
 	cloudID, _ := cmd.Flags().GetString("cloud-id")
 	envFile, _ := cmd.Flags().GetString("env-file")
+	rootOverride, _ := cmd.Flags().GetString("root")
 	c, err := client.Resolve(client.Options{
 		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile,
 	})
@@ -86,10 +89,13 @@ func run(cmd *cobra.Command, args []string) error {
 		ui.Warn("DRY RUN — no changes will be written.")
 	}
 
+	roots := project.NewCache(rootOverride)
+	defer roots.Close()
+
 	failures := 0
 	results := make([]*updateResult, 0, len(args))
 	for _, filename := range args {
-		r := processFile(filename, c)
+		r := processFile(filename, c, roots)
 		results = append(results, r)
 		if !ui.IsJSON() {
 			r.renderHuman()
@@ -97,6 +103,9 @@ func run(cmd *cobra.Command, args []string) error {
 		if !r.ok {
 			failures++
 		}
+	}
+	for _, dir := range roots.Roots() {
+		ui.Info("root: " + dir)
 	}
 
 	if ui.IsJSON() {
@@ -123,7 +132,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 // processFile publishes one file and returns a result describing the outcome. It
 // performs no output itself; the caller renders the result (human lines or JSON).
-func processFile(filename string, c *client.ConfluenceClient) *updateResult {
+func processFile(filename string, c *client.ConfluenceClient, roots *project.Cache) *updateResult {
 	r := &updateResult{file: filename, dryRun: dryRun}
 	mf, err := frontmatter.ParseFile(filename)
 	if err != nil {
@@ -176,9 +185,18 @@ func processFile(filename string, c *client.ConfluenceClient) *updateResult {
 		}
 	}
 
+	abs, err := filepath.Abs(filename)
+	if err != nil {
+		return r.fail(err, jsonout.CodeIO)
+	}
+	root, err := roots.Resolve(filepath.Dir(abs))
+	if err != nil {
+		return r.fail(fmt.Errorf("resolving the documentation root: %w", err), jsonout.CodeIO)
+	}
+
 	// SiteURL, not BaseURL: rewritten links are published into the page, so they
 	// must point at the site even when requests go through the gateway.
-	pageContent, err := convert.MdToConfluence(mf, c.SiteURL(), r.space, buildinfo.Stamp())
+	pageContent, err := convert.MdToConfluence(mf, root, c.SiteURL(), r.space, buildinfo.Stamp())
 	if err != nil {
 		return r.fail(err, jsonout.CodeConvert)
 	}
