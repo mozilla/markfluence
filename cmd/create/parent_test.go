@@ -91,6 +91,56 @@ func TestResolveParentMdFilePublished(t *testing.T) {
 	}
 }
 
+// TestResolveParentExternalID is the plain "--parent 500" case: a bare id,
+// never a .md path, resolved straight through checkParentInSpace.
+func TestResolveParentExternalID(t *testing.T) {
+	root := rootFor(t, t.TempDir())
+	c := parentServer(t, map[string]string{"500": `{"id":"500","spaceId":"space1"}`}, nil)
+
+	parentOpt = "500"
+	t.Cleanup(func() { parentOpt = "" })
+
+	p, err := resolveParent(filepath.Join(root.Dir, "a.md"), map[string]string{}, nil, c, "space1", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.kind != parentExternal || p.id != "500" || p.parentType != "page" {
+		t.Errorf("p = %+v, want kind=external id=500 parentType=page", p)
+	}
+}
+
+// TestResolveParentExternalFolderID: --parent works identically for a folder,
+// which every v2 page route would 404 on -- the whole point of #68.
+func TestResolveParentExternalFolderID(t *testing.T) {
+	root := rootFor(t, t.TempDir())
+	c := parentServer(t, nil, map[string]string{"600": `{"id":"600","type":"folder","spaceId":"space1"}`})
+
+	parentOpt = "600"
+	t.Cleanup(func() { parentOpt = "" })
+
+	p, err := resolveParent(filepath.Join(root.Dir, "a.md"), map[string]string{}, nil, c, "space1", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.kind != parentExternal || p.id != "600" || p.parentType != "folder" {
+		t.Errorf("p = %+v, want kind=external id=600 parentType=folder", p)
+	}
+}
+
+// TestResolveParentBothSetIsAnError: --parent and a frontmatter parent can't
+// both name the parent, since one would silently win over the other.
+func TestResolveParentBothSetIsAnError(t *testing.T) {
+	root := rootFor(t, t.TempDir())
+	parentOpt = "500"
+	t.Cleanup(func() { parentOpt = "" })
+
+	_, err := resolveParent(filepath.Join(root.Dir, "a.md"),
+		map[string]string{"parent": "other.md"}, nil, nil, "", root)
+	if err == nil || !strings.Contains(err.Error(), "both --parent and a frontmatter 'parent' are set") {
+		t.Errorf("err = %v, want the both-set conflict error", err)
+	}
+}
+
 // TestResolveParentEscapingRootIsHardError is S2 for parent: -- a parent
 // outside the documentation root is refused outright, not left unresolved and
 // reported the way an escaping link is: a parent is load-bearing, and
