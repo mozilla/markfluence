@@ -1,14 +1,17 @@
 package update
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/clienttest"
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/linkindex"
@@ -128,14 +131,13 @@ func TestProcessFileRejectsNonNumericPageID(t *testing.T) {
 // TestProcessFileReportsMissingPage is the issue itself: a page_id the server
 // answers 404 for used to surface as "GET https://...: HTTP 404: {...}".
 func TestProcessFileReportsMissingPage(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/wiki/api/v2/pages/999" {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL)
 		}
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte(`{"errors":[{"status":404,"code":"NOT_FOUND"}]}`))
-	}))
-	defer srv.Close()
+	})
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "f.md")
@@ -143,7 +145,7 @@ func TestProcessFileReportsMissingPage(t *testing.T) {
 		t.Fatalf("writing fixture: %v", err)
 	}
 
-	r := processFile(path, client.New(client.Config{SiteURL: srv.URL}), project.NewCache(""), linkindex.NewCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
 	if r.ok {
 		t.Fatal("a page_id that resolves to nothing must fail the file")
 	}
@@ -153,12 +155,132 @@ func TestProcessFileReportsMissingPage(t *testing.T) {
 		t.Errorf("errMsg =\n %q\nwant\n %q", r.errMsg, want)
 	}
 	// The raw transport error must not leak: no method, URL, or response body.
-	for _, unwanted := range []string{"HTTP 404", "GET ", srv.URL, "errors"} {
+	for _, unwanted := range []string{"HTTP 404", "GET ", c.SiteURL(), "errors"} {
 		if strings.Contains(r.errMsg, unwanted) {
 			t.Errorf("errMsg = %q, should not contain %q", r.errMsg, unwanted)
 		}
 	}
 	if r.code != jsonout.CodeNotFound {
 		t.Errorf("code = %q, want %q", r.code, jsonout.CodeNotFound)
+	}
+}
+
+// pageWithVersion builds a minimal page fixture with a given version number and
+// createdAt, which is what processFile's mtime-skip check compares the file
+// against.
+func pageWithVersion(id string, versionNumber int, createdAt string) string {
+	return fmt.Sprintf(
+		`{"id":%q,"title":"Old Title","version":{"number":%d,"createdAt":%q},`+
+			`"_links":{"webui":"/spaces/ENG/pages/%s/Old+Title"}}`,
+		id, versionNumber, createdAt, id)
+}
+
+func writeUpdateFixture(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "f.md")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestProcessFilePublishesSuccessfully is the full happy path: the file's mtime
+// is "now" (just written), which is after the page's 2020 version, so this also
+// covers the file-newer-than-page half of the mtime check.
+func TestProcessFilePublishesSuccessfully(t *testing.T) {
+	var sawPut bool
+	var putVersion int
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			_, _ = w.Write([]byte(pageWithVersion("1", 3, "2020-01-01T00:00:00Z")))
+		case http.MethodPut:
+			sawPut = true
+			var body struct {
+				Version struct {
+					Number int `json:"number"`
+				} `json:"version"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			putVersion = body.Version.Number
+			_, _ = w.Write([]byte(pageWithVersion("1", body.Version.Number, "2026-01-01T00:00:00Z")))
+		default:
+			t.Errorf("unexpected method: %s", r.Method)
+		}
+	})
+
+	path := writeUpdateFixture(t, "---\npage_id: 1\n---\nHello.\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	if !r.ok || r.status != statusPublished {
+		t.Fatalf("result = %+v, want ok/published", r)
+	}
+	if !sawPut {
+		t.Fatal("want UpdatePage to have been called")
+	}
+	if putVersion != 4 {
+		t.Errorf("PUT carried version = %d, want 4 (previous 3 + 1)", putVersion)
+	}
+	if r.versionNew != 4 {
+		t.Errorf("r.versionNew = %d, want 4", r.versionNew)
+	}
+}
+
+// TestProcessFileSkipsWhenFileOlderThanPage is the mtime-skip guarantee itself:
+// a file not modified since the page's last version must not republish.
+func TestProcessFileSkipsWhenFileOlderThanPage(t *testing.T) {
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("unexpected %s request: a skip must not touch the page further", r.Method)
+		}
+		_, _ = w.Write([]byte(pageWithVersion("1", 3, "2099-01-01T00:00:00Z")))
+	})
+
+	path := writeUpdateFixture(t, "---\npage_id: 1\n---\nHello.\n")
+	past := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(path, past, past); err != nil {
+		t.Fatal(err)
+	}
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	if !r.ok || r.status != statusSkipped {
+		t.Fatalf("result = %+v, want ok/skipped", r)
+	}
+	if r.versionNew != 3 {
+		t.Errorf("r.versionNew = %d, want 3 (unchanged by a skip)", r.versionNew)
+	}
+}
+
+// TestProcessFileForceBypassesMtimeSkip: --force publishes even when the file
+// looks unchanged since the page's last version.
+func TestProcessFileForceBypassesMtimeSkip(t *testing.T) {
+	var sawPut bool
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			_, _ = w.Write([]byte(pageWithVersion("1", 3, "2099-01-01T00:00:00Z")))
+		case http.MethodPut:
+			sawPut = true
+			_, _ = w.Write([]byte(pageWithVersion("1", 4, "2099-01-01T00:00:00Z")))
+		default:
+			t.Errorf("unexpected method: %s", r.Method)
+		}
+	})
+
+	path := writeUpdateFixture(t, "---\npage_id: 1\n---\nHello.\n")
+	past := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(path, past, past); err != nil {
+		t.Fatal(err)
+	}
+
+	force = true
+	t.Cleanup(func() { force = false })
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	if !r.ok || r.status != statusPublished {
+		t.Fatalf("result = %+v, want ok/published: --force bypasses the mtime skip", r)
+	}
+	if !sawPut {
+		t.Fatal("want UpdatePage to have been called despite the old mtime")
 	}
 }
