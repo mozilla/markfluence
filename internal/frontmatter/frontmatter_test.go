@@ -186,7 +186,8 @@ func TestTitleKeepsLiteralNullButBlankIsEmpty(t *testing.T) {
 }
 
 func TestParseUnterminatedFrontmatter(t *testing.T) {
-	if _, err := frontmatter.Parse("d.md", "---\ntitle: T\nno closing delimiter\n"); err != frontmatter.ErrUnterminatedFrontmatter {
+	_, err := frontmatter.Parse("d.md", "---\ntitle: T\nno closing delimiter\n")
+	if err != frontmatter.ErrUnterminatedFrontmatter {
 		t.Errorf("err = %v, want ErrUnterminatedFrontmatter", err)
 	}
 }
