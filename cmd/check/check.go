@@ -46,8 +46,14 @@ var Cmd = &cobra.Command{
 		"references, and frontmatter sanity (parseable, page_width valid, page_id\n" +
 		"numeric when present). Each file is processed independently; the command\n" +
 		"exits non-zero if any file is broken or failed outright. Warnings alone do\n" +
-		"not fail: an unpublished sibling link (no page_id yet) is the normal state\n" +
-		"of a tree that hasn't been published, not a defect.",
+		"not fail.\n\n" +
+		"\"link not resolved: TARGET\" means TARGET is a sibling .md file that exists\n" +
+		"under the documentation root but has no page_id yet -- the normal state of\n" +
+		"a tree that hasn't been published, not a defect. A same-page anchor\n" +
+		"(#heading) hits the same warning when the current file itself has no\n" +
+		"page_id yet, which can read as though the file names itself as an\n" +
+		"unresolved target -- it doesn't; that's just this file, before its first\n" +
+		"publish.",
 	Args:              cobra.MinimumNArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
 	RunE:              run,
