@@ -20,7 +20,10 @@ import (
 )
 
 func TestResolveTitlePageID(t *testing.T) {
-	mf := frontmatter.Parse("f.md", "---\ntitle: FM Title\npage_id: 111\n---\nbody\n")
+	mf, err := frontmatter.Parse("f.md", "---\ntitle: FM Title\npage_id: 111\n---\nbody\n")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	tests := []struct {
 		name                  string
@@ -44,7 +47,10 @@ func TestResolveTitlePageID(t *testing.T) {
 }
 
 func TestResolveTitlePageIDEmptyWhenAbsent(t *testing.T) {
-	mf := frontmatter.Parse("f.md", "body only, no frontmatter\n")
+	mf, err := frontmatter.Parse("f.md", "body only, no frontmatter\n")
+	if err != nil {
+		t.Fatal(err)
+	}
 	title, pageID := resolveTitlePageID("", "", mf)
 	if title != "" || pageID != "" {
 		t.Errorf("resolveTitlePageID = %q/%q, want empty/empty", title, pageID)
@@ -52,9 +58,18 @@ func TestResolveTitlePageIDEmptyWhenAbsent(t *testing.T) {
 }
 
 func TestResolveWidth(t *testing.T) {
-	withFM := frontmatter.Parse("f.md", "---\ntitle: T\npage_width: wide\n---\nb\n")
-	noWidth := frontmatter.Parse("f.md", "---\ntitle: T\n---\nb\n")
-	noFM := frontmatter.Parse("f.md", "b\n")
+	withFM, err := frontmatter.Parse("f.md", "---\ntitle: T\npage_width: wide\n---\nb\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	noWidth, err := frontmatter.Parse("f.md", "---\ntitle: T\n---\nb\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	noFM, err := frontmatter.Parse("f.md", "b\n")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	t.Run("flag overrides frontmatter", func(t *testing.T) {
 		w, apply, err := resolveWidth("narrow", withFM)

@@ -94,14 +94,20 @@ func TestCheckPageIDLocalCases(t *testing.T) {
 }
 
 func TestResolveTitle(t *testing.T) {
-	mf := frontmatter.Parse("f.md", "---\ntitle: FM Title\n---\nb\n")
+	mf, err := frontmatter.Parse("f.md", "---\ntitle: FM Title\n---\nb\n")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got := resolveTitle("CLI Title", mf); got != "CLI Title" {
 		t.Errorf("flag override = %q, want CLI Title", got)
 	}
 	if got := resolveTitle("", mf); got != "FM Title" {
 		t.Errorf("frontmatter = %q, want FM Title", got)
 	}
-	empty := frontmatter.Parse("f.md", "body, no frontmatter\n")
+	empty, err := frontmatter.Parse("f.md", "body, no frontmatter\n")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got := resolveTitle("", empty); got != "" {
 		t.Errorf("absent = %q, want empty", got)
 	}

@@ -138,8 +138,11 @@ func TestUpdateFieldPreservesCommentsDropsBlanks(t *testing.T) {
 // --- MarkdownFile accessors --------------------------------------------------
 
 func TestMarkdownFileAccessors(t *testing.T) {
-	md := frontmatter.Parse("doc.md",
+	md, err := frontmatter.Parse("doc.md",
 		"---\ntitle: My Page\npage_id: 123\nspace: ENG\nparent: 456\n---\nbody\n")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if md.Title() != "My Page" || md.PageID() != "123" || md.Space() != "ENG" || md.Parent() != "456" {
 		t.Errorf("accessors = %q/%q/%q/%q", md.Title(), md.PageID(), md.Space(), md.Parent())
 	}
@@ -155,7 +158,10 @@ func TestCoordinateSentinelsAreUnset(t *testing.T) {
 		"---\ntitle: X\npage_id:\n---\nb\n",      // blank
 		"---\ntitle: X\npage_id: null\n---\nb\n", // literal null
 	} {
-		md := frontmatter.Parse("doc.md", doc)
+		md, err := frontmatter.Parse("doc.md", doc)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if md.PageID() != "" {
 			t.Errorf("PageID() = %q for %q, want empty", md.PageID(), doc)
 		}
@@ -163,10 +169,36 @@ func TestCoordinateSentinelsAreUnset(t *testing.T) {
 }
 
 func TestTitleKeepsLiteralNullButBlankIsEmpty(t *testing.T) {
-	if md := frontmatter.Parse("d.md", "---\ntitle: null\n---\nb\n"); md.Title() != "null" {
+	md, err := frontmatter.Parse("d.md", "---\ntitle: null\n---\nb\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if md.Title() != "null" {
 		t.Errorf("Title() = %q, want %q (a title is free text)", md.Title(), "null")
 	}
-	if md := frontmatter.Parse("d.md", "---\ntitle:\n---\nb\n"); md.Title() != "" {
+	md, err = frontmatter.Parse("d.md", "---\ntitle:\n---\nb\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if md.Title() != "" {
 		t.Errorf("Title() = %q, want empty for blank", md.Title())
+	}
+}
+
+func TestParseUnterminatedFrontmatter(t *testing.T) {
+	if _, err := frontmatter.Parse("d.md", "---\ntitle: T\nno closing delimiter\n"); err != frontmatter.ErrUnterminatedFrontmatter {
+		t.Errorf("err = %v, want ErrUnterminatedFrontmatter", err)
+	}
+}
+
+func TestParseUnterminatedFrontmatterNoFalsePositives(t *testing.T) {
+	for name, doc := range map[string]string{
+		"proper frontmatter":                         "---\ntitle: T\n---\nbody\n",
+		"no frontmatter":                             "just a document\nwith no frontmatter at all\n",
+		"--- in a fenced code block, not at the top": "intro\n\n```\n---\nnot frontmatter\n---\n```\n",
+	} {
+		if _, err := frontmatter.Parse("d.md", doc); err != nil {
+			t.Errorf("%s: err = %v, want nil", name, err)
+		}
 	}
 }

@@ -10,10 +10,13 @@ import (
 )
 
 func TestVersionTokenReplaced(t *testing.T) {
-	md := frontmatter.Parse(
+	md, err := frontmatter.Parse(
 		filepath.Join(t.TempDir(), "main.md"),
 		"# Title\n\n<!-- markfluence-version -->\n",
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	const stamp = "markfluence v1.2.3 2020-01-01T00:00:00Z"
 	root := testRoot(t, filepath.Dir(md.Filename))
 	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG", stamp)

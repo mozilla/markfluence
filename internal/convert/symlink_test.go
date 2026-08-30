@@ -38,7 +38,10 @@ func TestRenderImageRefusesSymlinkedLeaf(t *testing.T) {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 
-	md := frontmatter.Parse(filepath.Join(root, "main.md"), "![logo](logo.png)\n")
+	md, err := frontmatter.Parse(filepath.Join(root, "main.md"), "![logo](logo.png)\n")
+	if err != nil {
+		t.Fatal(err)
+	}
 	r, err := project.FromPath(root)
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +81,10 @@ func TestRenderImageRefusesEscapeThroughSymlinkedDirectory(t *testing.T) {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 
-	md := frontmatter.Parse(filepath.Join(root, "main.md"), "![logo](assets/logo.png)\n")
+	md, err := frontmatter.Parse(filepath.Join(root, "main.md"), "![logo](assets/logo.png)\n")
+	if err != nil {
+		t.Fatal(err)
+	}
 	r, err := project.FromPath(root)
 	if err != nil {
 		t.Fatal(err)

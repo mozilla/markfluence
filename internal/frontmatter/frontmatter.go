@@ -7,6 +7,7 @@
 package frontmatter
 
 import (
+	"errors"
 	"os"
 	"regexp"
 	"sort"
@@ -232,10 +233,22 @@ type MarkdownFile struct {
 	Body        string
 }
 
-// Parse builds a MarkdownFile from an in-memory content string tagged with filename.
-func Parse(filename, content string) *MarkdownFile {
+// ErrUnterminatedFrontmatter is returned by Parse/ParseFile when content opens
+// with a "---\n" delimiter that never closes. Extract is deliberately lenient
+// about this shape -- a regex miss just falls back to "no frontmatter, whole
+// file is body" -- which would otherwise hide a common paste mistake
+// completely, including from every command that calls Parse.
+var ErrUnterminatedFrontmatter = errors.New(
+	`unterminated frontmatter block: starts with "---" but has no closing "---" line`)
+
+// Parse builds a MarkdownFile from an in-memory content string tagged with
+// filename, or reports ErrUnterminatedFrontmatter.
+func Parse(filename, content string) (*MarkdownFile, error) {
+	if strings.HasPrefix(content, "---\n") && !frontmatterRE.MatchString(content) {
+		return nil, ErrUnterminatedFrontmatter
+	}
 	fm, body := Extract(content)
-	return &MarkdownFile{Filename: filename, Content: content, Frontmatter: fm, Body: body}
+	return &MarkdownFile{Filename: filename, Content: content, Frontmatter: fm, Body: body}, nil
 }
 
 // ParseFile reads filename from disk and parses it.
@@ -244,7 +257,7 @@ func ParseFile(filename string) (*MarkdownFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Parse(filename, string(data)), nil
+	return Parse(filename, string(data))
 }
 
 // coordinate reads a page-coordinate field, mapping the no-value sentinels to "".
