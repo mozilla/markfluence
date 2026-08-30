@@ -222,9 +222,11 @@ entirely or resolves outside the documentation root is Broken and replaces
 the published element, exactly as a broken image already does; one that
 exists but has no `page_id` yet, or whose `#fragment` matches no heading,
 warns instead of publishing silently. Every message carries the source line
-it came from. `check` adds the "auditing a tree without publishing" half —
-the same diagnostics without ever touching Confluence or the filesystem
-outside reading.
+it came from when one is findable — a link/image with no visible text at all
+has no `*ast.Text` to walk to, and reports the message unprefixed rather than
+a wrong line (`nodeLine`'s documented `ok=false` case). `check` adds the
+"auditing a tree without publishing" half — the same diagnostics without
+ever touching Confluence or the filesystem outside reading.
 
 R1 is scoped to the two reference kinds markfluence actually attempts to
 resolve: doc-links (`.md` siblings) and images. A relative link to a local

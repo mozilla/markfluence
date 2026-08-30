@@ -11,14 +11,14 @@ import (
 
 func TestSchemaConformance(t *testing.T) {
 	results := []*checkResult{
-		{file: "clean.md", ok: true, status: statusClean},
-		{file: "warn.md", ok: true, status: statusWarnings, warnings: []string{"link not resolved: draft.md"}},
+		{file: "clean.md", status: statusClean},
+		{file: "warn.md", status: statusWarnings, warnings: []string{"link not resolved: draft.md"}},
 		{
-			file: "broken.md", ok: false, status: statusBroken,
+			file: "broken.md", status: statusBroken,
 			broken: []string{"line 3: IMAGE BROKEN: x.png (not found)"},
 		},
 		{
-			file: "debug.md", ok: true, status: statusClean, hasDebug: true,
+			file: "debug.md", status: statusClean, hasDebug: true,
 			debugHTML:        "<p>hi</p>\n",
 			debugAttachments: []convert.Attachment{{Filename: "a.png", Path: "/tmp/a.png", Source: "a.png"}},
 		},
@@ -41,7 +41,7 @@ func TestSchemaConformance(t *testing.T) {
 // unlike failed, it has no separate operational error to report -- error and
 // code must stay null.
 func TestJSONResultBrokenHasNoErrorOrCode(t *testing.T) {
-	r := &checkResult{file: "b.md", ok: false, status: statusBroken, broken: []string{"IMAGE BROKEN: x.png (not found)"}}
+	r := &checkResult{file: "b.md", status: statusBroken, broken: []string{"IMAGE BROKEN: x.png (not found)"}}
 	res := r.jsonResult()
 	if res.Error != nil || res.Code != nil {
 		t.Errorf("broken result error/code = %v/%v, want nil/nil", res.Error, res.Code)
@@ -60,7 +60,7 @@ func TestJSONResultFailedHasErrorAndCode(t *testing.T) {
 }
 
 func TestJSONResultDebugNullWithoutShowHTML(t *testing.T) {
-	r := &checkResult{file: "c.md", ok: true, status: statusClean}
+	r := &checkResult{file: "c.md", status: statusClean}
 	if got := r.jsonResult().Debug; got != nil {
 		t.Errorf("debug = %+v, want nil when --show-html wasn't requested", got)
 	}
@@ -68,10 +68,10 @@ func TestJSONResultDebugNullWithoutShowHTML(t *testing.T) {
 
 func TestSummarize(t *testing.T) {
 	s := summarize([]*checkResult{
-		{ok: true, status: statusClean},
-		{ok: true, status: statusWarnings},
-		{ok: false, status: statusBroken},
-		{ok: false, status: statusFailed},
+		{status: statusClean},
+		{status: statusWarnings},
+		{status: statusBroken},
+		{status: statusFailed},
 	})
 	if s["total"] != 4 || s["succeeded"] != 2 || s["failed"] != 2 || s["clean"] != 1 || s["warnings"] != 1 {
 		t.Errorf("summary = %+v", s)

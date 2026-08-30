@@ -79,7 +79,7 @@ func (r *storageRenderer) rewriteHref(
 			// currentDocKey is the file being converted right now, so it
 			// unconditionally exists -- a miss here is always a genuine
 			// fragment that matches no heading, never a missing target.
-			r.warnings = append(r.warnings, prefix+fmt.Sprintf("anchor not found: %s", href))
+			r.warnAnchorNotFound(prefix, href)
 		}
 	} else if path, frag, ok := splitMarkdownAnchor(href); ok {
 		key, _ := r.resolveDocKey(path)
@@ -92,7 +92,7 @@ func (r *storageRenderer) rewriteHref(
 			// Only warn here when the target file itself exists: otherwise
 			// rewriteDocLink below reports the missing/escaping target once,
 			// as Broken, and a second "anchor not found" would be redundant.
-			r.warnings = append(r.warnings, prefix+fmt.Sprintf("anchor not found: %s", href))
+			r.warnAnchorNotFound(prefix, href)
 		}
 	}
 
@@ -134,13 +134,9 @@ func (r *storageRenderer) rewriteDocLink(href, prefix string) (newHref string, o
 	if !found {
 		switch {
 		case escapes:
-			msg := prefix + fmt.Sprintf("LINK BROKEN: %s (outside the documentation root)", href)
-			r.broken = append(r.broken, msg)
-			return "", false, msg
+			return "", false, r.reportLinkBroken(prefix, href, "outside the documentation root")
 		case !r.index.FileExists(key):
-			msg := prefix + fmt.Sprintf("LINK BROKEN: %s (not found)", href)
-			r.broken = append(r.broken, msg)
-			return "", false, msg
+			return "", false, r.reportLinkBroken(prefix, href, "not found")
 		default:
 			// The file exists but has no page_id yet -- the normal state of
 			// every page in a tree that hasn't been published, not an error.
@@ -161,6 +157,21 @@ func (r *storageRenderer) rewriteDocLink(href, prefix string) (newHref string, o
 		built = fmt.Sprintf("%s/wiki/pages/viewpage.action?pageId=%s", r.baseURL, entry.PageID)
 	}
 	return built + fragment, true, ""
+}
+
+// warnAnchorNotFound records an anchor-miss warning, the one message shared
+// by both branches in rewriteHref (same-page and cross-file).
+func (r *storageRenderer) warnAnchorNotFound(prefix, href string) {
+	r.warnings = append(r.warnings, prefix+fmt.Sprintf("anchor not found: %s", href))
+}
+
+// reportLinkBroken records a Broken doc-link message -- reason is "not
+// found" or "outside the documentation root", rewriteDocLink's two cases --
+// and returns it for the caller to use as brokenText.
+func (r *storageRenderer) reportLinkBroken(prefix, href, reason string) string {
+	msg := prefix + fmt.Sprintf("LINK BROKEN: %s (%s)", href, reason)
+	r.broken = append(r.broken, msg)
+	return msg
 }
 
 // resolveDocKey resolves a link/anchor destination -- relative to r.baseDir,

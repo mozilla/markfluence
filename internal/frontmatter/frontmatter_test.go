@@ -192,6 +192,19 @@ func TestParseUnterminatedFrontmatter(t *testing.T) {
 	}
 }
 
+// TestParseFlagsALeadingThematicBreakToo pins a known, accepted tradeoff
+// (see ErrUnterminatedFrontmatter's doc comment): a document opening with a
+// bare "---" horizontal rule and nothing that closes it is indistinguishable
+// from unterminated frontmatter using this lexical check, and is flagged the
+// same way rather than silently read as "no frontmatter". This is not a bug
+// to fix here -- it's what the shape of the check can and cannot tell apart.
+func TestParseFlagsALeadingThematicBreakToo(t *testing.T) {
+	_, err := frontmatter.Parse("d.md", "---\n\nSome body with no frontmatter at all.\n")
+	if err != frontmatter.ErrUnterminatedFrontmatter {
+		t.Errorf("err = %v, want ErrUnterminatedFrontmatter (a known false positive, not a regression)", err)
+	}
+}
+
 func TestParseUnterminatedFrontmatterNoFalsePositives(t *testing.T) {
 	for name, doc := range map[string]string{
 		"proper frontmatter":                         "---\ntitle: T\n---\nbody\n",

@@ -72,7 +72,7 @@ func run(cmd *cobra.Command, args []string) error {
 		if !ui.IsJSON() {
 			r.renderHuman()
 		}
-		if !r.ok {
+		if !r.ok() {
 			failures++
 		}
 	}
@@ -148,13 +148,10 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 
 	switch {
 	case len(r.broken) > 0:
-		r.ok = false
 		r.status = statusBroken
 	case len(r.warnings) > 0:
-		r.ok = true
 		r.status = statusWarnings
 	default:
-		r.ok = true
 		r.status = statusClean
 	}
 	return r

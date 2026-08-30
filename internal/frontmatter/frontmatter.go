@@ -29,7 +29,14 @@ var inlineCommentRE = regexp.MustCompile(`\s#`)
 // Full-line `#` comments are skipped; a trailing inline `#` comment is stripped
 // from each unquoted value; quoted values are read via ParseValue.
 func Extract(content string) (map[string]string, string) {
-	loc := frontmatterRE.FindStringSubmatchIndex(content)
+	return extractFrom(frontmatterRE.FindStringSubmatchIndex(content), content)
+}
+
+// extractFrom is Extract's body, taking an already-computed match location so
+// Parse can share the one frontmatterRE evaluation it also needs for
+// ErrUnterminatedFrontmatter, rather than running the same regex over content
+// a second time.
+func extractFrom(loc []int, content string) (map[string]string, string) {
 	if loc == nil {
 		return map[string]string{}, content
 	}
@@ -238,16 +245,24 @@ type MarkdownFile struct {
 // about this shape -- a regex miss just falls back to "no frontmatter, whole
 // file is body" -- which would otherwise hide a common paste mistake
 // completely, including from every command that calls Parse.
+//
+// This is a lexical check, not a parse: a document whose very first line is a
+// bare thematic break (a markdown horizontal rule, "---" with nothing after it
+// that closes with a second "---\n") is indistinguishable from unterminated
+// frontmatter and is flagged the same way. Accepted deliberately -- a document
+// opening cold with a horizontal rule and no heading is unusual, and detecting
+// the difference would need real parsing, not a shape this small.
 var ErrUnterminatedFrontmatter = errors.New(
 	`unterminated frontmatter block: starts with "---" but has no closing "---" line`)
 
 // Parse builds a MarkdownFile from an in-memory content string tagged with
 // filename, or reports ErrUnterminatedFrontmatter.
 func Parse(filename, content string) (*MarkdownFile, error) {
-	if strings.HasPrefix(content, "---\n") && !frontmatterRE.MatchString(content) {
+	loc := frontmatterRE.FindStringSubmatchIndex(content)
+	if loc == nil && strings.HasPrefix(content, "---\n") {
 		return nil, ErrUnterminatedFrontmatter
 	}
-	fm, body := Extract(content)
+	fm, body := extractFrom(loc, content)
 	return &MarkdownFile{Filename: filename, Content: content, Frontmatter: fm, Body: body}, nil
 }
 
