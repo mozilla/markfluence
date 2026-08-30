@@ -6,12 +6,13 @@ func TestGithubSlug(t *testing.T) {
 	cases := map[string]string{
 		"Hello World":        "hello-world",
 		"Hello, World!":      "hello-world",
-		"  Leading/trailing": "leadingtrailing",
-		" Hello ":            "hello",
-		"Café Menu":          "café-menu", // Unicode letters are preserved, not stripped
+		"  Leading/trailing": "--leadingtrailing", // leading whitespace is not trimmed
+		" Hello ":            "-hello-",           // nor is trailing
+		"Café Menu":          "café-menu",         // Unicode letters are preserved, not stripped
 		"under_score":        "under_score",
 		"":                   "",
-		"---":                "", // trims to nothing
+		"---":                "---",           // hyphens already in the heading are not trimmed either
+		"`--json` output":    "--json-output", // punctuation-derived hyphens survive too (#120)
 	}
 	for in, want := range cases {
 		if got := GithubSlug(in); got != want {
