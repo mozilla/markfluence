@@ -208,8 +208,12 @@ func TestStorageToMarkdownJoinsMultilineCells(t *testing.T) {
 		`<td><p>line one</p><p>line two</p></td>` +
 		`<td><p>mid-line<br/>break</p></td>` +
 		`<td><p>plain, no wrapper issue</p></td>` +
+		// An empty <p> is a deliberate blank line (Enter twice in the editor), not
+		// the absence of one, and must survive rather than being silently dropped.
+		`<td><p>line one</p><p></p><p>line three</p></td>` +
 		`</tr></tbody></table>`
-	want := "| line one<br>line two | mid-line<br>break | plain, no wrapper issue |\n| --- | --- | --- |\n"
+	want := "| line one<br>line two | mid-line<br>break | plain, no wrapper issue" +
+		" | line one<br><br>line three |\n| --- | --- | --- | --- |\n"
 
 	got, err := convert.StorageToMarkdown(in, convert.StorageOptions{})
 	if err != nil {
