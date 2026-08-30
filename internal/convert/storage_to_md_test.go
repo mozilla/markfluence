@@ -252,12 +252,21 @@ func TestStorageToMarkdownPassesThroughListsInCells(t *testing.T) {
 	// a list authored inside a cell in the browser; markfluence's own write
 	// side (a <ul> typed directly into a markdown cell) never adds the <p>,
 	// since goldmark's raw HTML passthrough carries it through unchanged.
+	// The third cell's link href carries a literal "|": code review on the
+	// original fix found that reusing cellTexts's blanket "|" -> "\|" escape
+	// (needed so literal pipe *text* doesn't get read as a column boundary in
+	// the single-line row a cell becomes) against serialize's raw-HTML output
+	// would corrupt the href with a backslash that has no meaning inside a
+	// quoted attribute -- a URL, unlike table text, has no escaping syntax at
+	// all, so this must come back byte-identical.
 	in := `<table><tbody><tr>` +
 		`<td><ul><li>one</li><li>two</li></ul></td>` +
 		`<td><ol><li><p>a</p></li><li><p>b</p></li></ol></td>` +
+		`<td><ul><li><a href="https://example.com/a|b">c</a></li></ul></td>` +
 		`</tr></tbody></table>`
-	want := "| <ul><li>one</li><li>two</li></ul> | <ol><li><p>a</p></li><li><p>b</p></li></ol> |\n" +
-		"| --- | --- |\n"
+	want := "| <ul><li>one</li><li>two</li></ul> | <ol><li><p>a</p></li><li><p>b</p></li></ol> |" +
+		` <ul><li><a href="https://example.com/a|b">c</a></li></ul> |` + "\n" +
+		"| --- | --- | --- |\n"
 
 	got, err := convert.StorageToMarkdown(in, convert.StorageOptions{})
 	if err != nil {

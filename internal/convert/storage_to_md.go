@@ -434,7 +434,7 @@ func (r *mdRenderer) cellTexts(tr *snode) []string {
 	var cells []string
 	for _, c := range tr.kids {
 		if c.name == "th" || c.name == "td" {
-			text := strings.ReplaceAll(r.renderCellLines(c), "|", `\|`)
+			text := r.renderCellLines(c)
 			if marker := cellBGMarkerComment(c); marker != "" {
 				if text == "" {
 					text = marker
@@ -465,12 +465,19 @@ func (r *mdRenderer) cellTexts(tr *snode) []string {
 func (r *mdRenderer) renderCellLines(c *snode) string {
 	var lines []string
 	var run []*snode
+	// escapeCellPipe protects a literal "|" in rendered text from being read as
+	// a column boundary in the single-line table row this becomes. It must
+	// never be applied to serialize's raw-HTML passthrough below: a "|" there
+	// can be inside a quoted attribute (a link's href, say), where a backslash
+	// has no escaping meaning at all and would corrupt the value verbatim
+	// on the next publish instead of protecting anything.
+	escapeCellPipe := func(s string) string { return strings.ReplaceAll(s, "|", `\|`) }
 	flush := func() {
 		if len(run) == 0 {
 			return
 		}
 		if s := r.renderInlineChildren(&snode{kids: run}); s != "" {
-			lines = append(lines, s)
+			lines = append(lines, escapeCellPipe(s))
 		}
 		run = nil
 	}
@@ -482,7 +489,7 @@ func (r *mdRenderer) renderCellLines(c *snode) string {
 			// editor), not the absence of one -- unlike an empty run, which is
 			// just the lack of any non-<p> content between two <p>s and
 			// contributes no line at all.
-			lines = append(lines, r.renderInlineChildren(k))
+			lines = append(lines, escapeCellPipe(r.renderInlineChildren(k)))
 		case "ul", "ol":
 			// A GFM table row is one physical line, so a real bulleted or
 			// numbered list -- which needs one line per item -- can't be
