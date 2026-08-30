@@ -21,7 +21,6 @@ const (
 // checkResult captures the outcome of validating one file.
 type checkResult struct {
 	file     string
-	ok       bool
 	status   string
 	broken   []string
 	warnings []string
@@ -37,11 +36,19 @@ type checkResult struct {
 // fail marks the result failed with an error and code, and returns it for a
 // tidy `return r.fail(...)`.
 func (r *checkResult) fail(err error, code jsonout.Code) *checkResult {
-	r.ok = false
 	r.status = statusFailed
 	r.errMsg = err.Error()
 	r.code = code
 	return r
+}
+
+// ok reports whether the result counts as a success. Computed from status
+// rather than stored alongside it, so there is exactly one thing four
+// different call sites (fail and the three switch branches in processFile)
+// have to get right, not two that could silently disagree -- a broken result
+// is ok:false too, but status is what a caller actually branches on.
+func (r *checkResult) ok() bool {
+	return r.status != statusBroken && r.status != statusFailed
 }
 
 // renderHuman prints one file's diagnostics: a [file]-prefixed line per
@@ -151,7 +158,7 @@ type jsonCheckDebug struct {
 
 func (r *checkResult) jsonResult() jsonCheckResult {
 	res := jsonCheckResult{
-		OK:       r.ok,
+		OK:       r.ok(),
 		Status:   r.status,
 		File:     r.file,
 		Broken:   nonNilStrings(r.broken),
@@ -176,7 +183,7 @@ func summarize(results []*checkResult) map[string]int {
 	s := map[string]int{"total": len(results), "succeeded": 0, "failed": 0, "clean": 0, "warnings": 0}
 	for _, r := range results {
 		switch {
-		case !r.ok:
+		case !r.ok():
 			s["failed"]++
 		case r.status == statusWarnings:
 			s["succeeded"]++
