@@ -1,0 +1,4 @@
+<p>Editor-split bold text and link: <strong>some text </strong><a href="https://example.com"><strong>x</strong></a>.</p>
+<p>Editor-split italic link then text: <a href="https://example.com"><em>x</em></a><em> more text</em>.</p>
+<p>Adjacent same-tag runs with no link nearby: <strong>a</strong><strong>b</strong>.</p>
+<p>A link only partly bold does not merge: <strong>a </strong><a href="https://example.com">b<strong>c</strong></a>.</p>
