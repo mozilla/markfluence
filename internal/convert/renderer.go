@@ -47,6 +47,14 @@ type storageRenderer struct {
 	broken      []string
 	warnings    []string
 	seen        map[string]bool
+
+	// linkBrokenText is the literal replacement text for the *ast.Link
+	// currently being rendered, set on entering when its target is Broken and
+	// cleared (empty) otherwise; renderLink's matching leaving call reads it
+	// once to decide whether a closing "</a>" is due. Per-node transient
+	// state, the same shape as seen above -- safe because goldmark never
+	// renders two Link nodes concurrently (markdown has no nested links).
+	linkBrokenText string
 }
 
 // RegisterFuncs registers the node handlers this renderer overrides.
