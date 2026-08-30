@@ -369,6 +369,16 @@ positive there would be worse than a miss. A **Broken** result fails
 text); a **Warning** alone does not — an unpublished sibling link is the
 normal state of a tree that hasn't been created yet, not a defect.
 
+`link not resolved: TARGET` — the most common warning — means `TARGET` is a
+sibling `.md` file that exists under the documentation root but has no
+`page_id` yet. A same-page anchor (`#heading`) hits this same warning when
+the *current* file itself has no `page_id` yet, since it's internally
+treated as a link to itself — which can read as though the file names
+itself as missing; it doesn't, that's just this file before its first
+publish (see [Links to sibling `.md` files](#body)). Other message shapes:
+[`IMAGE BROKEN`/`LINK BROKEN`](#body), and `anchor not found: TARGET` for a
+`#fragment` that matches no heading.
+
 ```console
 $ markfluence check docs/*.md
   ✗ [docs/broken-links.md] line 12: LINK BROKEN: typo-target.md (not found)
@@ -1185,7 +1195,11 @@ Whether an unresolved link is reported — and how badly — depends on why:
   way a broken image already is.
 * A target that **exists but has no `page_id` yet** — the normal state of
   every page in a tree that hasn't been published — is a Warning
-  (`link not resolved: …`); the href still renders exactly as written.
+  (`link not resolved: …`); the href still renders exactly as written. A
+  **same-page anchor** (`#heading`) is internally treated as a link to the
+  *current* file, so it hits this exact warning too when the current file
+  itself has no `page_id` yet — which reads as though the file names itself
+  as missing; it doesn't, that's just this file before its first publish.
 * A `#fragment` that **matches no heading** on an otherwise-resolvable target
   is also a Warning (`anchor not found: …`); the link still works, it just
   lands at the top of the page instead of the named heading.
