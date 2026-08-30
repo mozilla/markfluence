@@ -533,11 +533,13 @@ var formatMarks = map[string]bool{
 // split around a link. ADF (Confluence's native document model) carries marks
 // per text run rather than as nested elements, so "**text [link](url)**" --
 // which markfluence always writes nested, as one <strong> wrapping both the
-// text and the <a> -- comes back from a page that has since been edited and
+// text and the link -- comes back from a page that has since been edited and
 // saved in Confluence's editor as two adjacent runs sharing the mark instead:
 // <strong>text </strong><a href="url"><strong>link</strong></a>. Verified
 // 2026-08-30 via a direct atlas_doc_format PUT of the unmodified ADF markfluence
-// itself had published, which is what the editor does on any save. Rendered as
+// itself had published, which is what the editor does on any save; the same PUT
+// with the link's href pointing at another Confluence page produces the
+// identical split with <ac:link> in place of <a> (see isLinkNode). Rendered as
 // two independent nodes that becomes "**text **[**link**](url)": the closing
 // ** is preceded by a space, so CommonMark's flanking rule refuses to treat it
 // as emphasis at all -- the markdown comes back not merely unstyled but
@@ -545,6 +547,11 @@ var formatMarks = map[string]bool{
 // rendering, the only shape markdown can actually express, by hoisting the
 // mark to wrap the whole run including the link and dropping the now-redundant
 // inner one.
+//
+// Merging two adjacent same-tag mark elements outright (mergeMarkRun's first
+// case, needed nowhere else) is what lets a third run on either side of the
+// link fold into an already-repaired node; it is not itself a repair, since
+// "<strong>a</strong><strong>b</strong>" is valid nested markdown either way.
 func coalesceSplitMarks(kids []*snode) []*snode {
 	out := make([]*snode, 0, len(kids))
 	for _, k := range kids {
@@ -559,26 +566,93 @@ func coalesceSplitMarks(kids []*snode) []*snode {
 	return out
 }
 
+// isLinkNode reports whether n is a link element coalesceSplitMarks may hoist
+// a mark across: a markdown link, or the editor's own internal <ac:link> (used
+// for a page, space, or user link -- see aclink.go).
+func isLinkNode(n *snode) bool {
+	return n.name == "a" || n.name == "ac:link"
+}
+
+// linkTextBody returns the node whose children hold a link's visible text --
+// the <a> itself, or an <ac:link>'s <ac:link-body> -- or nil if it has neither.
+// An <ac:link>'s other body spelling, ac:plain-text-link-body, holds CDATA and
+// so can never carry a mark element to unwrap.
+func linkTextBody(n *snode) *snode {
+	if n.name == "a" {
+		return n
+	}
+	return findChild(n, "ac:link-body")
+}
+
+// withLinkTextBody returns a copy of link node n with body's children replaced
+// by kids -- unwrapping a mark mergeMarkRun is hoisting out of it. body is
+// n itself for an <a>, or its <ac:link-body> child for an <ac:link>, whose
+// other children (ri:page, ac:anchor, ...) must survive untouched.
+func withLinkTextBody(n, body *snode, kids []*snode) *snode {
+	if n.name == "a" {
+		return &snode{name: "a", attrs: n.attrs, kids: kids}
+	}
+	newKids := make([]*snode, len(n.kids))
+	for i, k := range n.kids {
+		if k == body {
+			k = &snode{name: k.name, attrs: k.attrs, kids: kids}
+		}
+		newKids[i] = k
+	}
+	return &snode{name: n.name, attrs: n.attrs, kids: newKids}
+}
+
 // mergeMarkRun merges two adjacent inline nodes when they carry the same
-// formatting mark: either both are the same mark element, or one is a mark
-// and the other is a link whose entire content is that same mark (the split
+// formatting mark: either both are the same mark element, or one is a mark and
+// the other is a link whose entire visible text is that same mark (the split
 // coalesceSplitMarks exists to repair). Returns nil when they don't combine.
 func mergeMarkRun(prev, cur *snode) *snode {
 	switch {
 	case prev.name == cur.name && formatMarks[prev.name]:
-		return &snode{name: prev.name, attrs: prev.attrs, kids: concatKids(prev.kids, cur.kids)}
-	case formatMarks[prev.name] && cur.name == "a":
-		if inner, ok := unwrapSoleMark(cur, prev.name); ok {
-			link := &snode{name: "a", attrs: cur.attrs, kids: inner}
+		return &snode{name: prev.name, attrs: mergeAttrs(prev.attrs, cur.attrs), kids: concatKids(prev.kids, cur.kids)}
+	case formatMarks[prev.name] && isLinkNode(cur):
+		if link := hoistMarkIntoLink(cur, prev.name); link != nil {
 			return &snode{name: prev.name, attrs: prev.attrs, kids: concatKids(prev.kids, []*snode{link})}
 		}
-	case prev.name == "a" && formatMarks[cur.name]:
-		if inner, ok := unwrapSoleMark(prev, cur.name); ok {
-			link := &snode{name: "a", attrs: prev.attrs, kids: inner}
+	case isLinkNode(prev) && formatMarks[cur.name]:
+		if link := hoistMarkIntoLink(prev, cur.name); link != nil {
 			return &snode{name: cur.name, attrs: cur.attrs, kids: concatKids([]*snode{link}, cur.kids)}
 		}
 	}
 	return nil
+}
+
+// mergeAttrs unions two attribute maps; a key present in both keeps a's value,
+// so merging n adjacent same-tag runs left to right is order-independent.
+// nil-safe in both directions, since most snodes carry no attrs at all.
+func mergeAttrs(a, b map[string]string) map[string]string {
+	if len(b) == 0 {
+		return a
+	}
+	out := make(map[string]string, len(a)+len(b))
+	for k, v := range b {
+		out[k] = v
+	}
+	for k, v := range a {
+		out[k] = v
+	}
+	return out
+}
+
+// hoistMarkIntoLink strips a redundant mark wrapping the entirety of link's
+// visible text, returning the link with that text unwrapped, or nil if the
+// link has no text body or is not entirely marked (a link only partly marked
+// is left alone: there's nothing correct to hoist).
+func hoistMarkIntoLink(link *snode, mark string) *snode {
+	body := linkTextBody(link)
+	if body == nil {
+		return nil
+	}
+	inner, ok := unwrapSoleMark(body, mark)
+	if !ok {
+		return nil
+	}
+	return withLinkTextBody(link, body, inner)
 }
 
 // unwrapSoleMark reports whether n's entire content is a single child element

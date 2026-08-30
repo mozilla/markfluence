@@ -76,6 +76,31 @@ func TestACLinkResolvedPage(t *testing.T) {
 	}
 }
 
+// TestACLinkCoalescesSplitBoldMark covers the same editor-induced mark split
+// coalesceSplitMarks repairs for <a> (storage_to_md_test.go), but for an
+// internal <ac:link>: bold text followed by a bold internal page link comes
+// back from Confluence's editor as two adjacent runs sharing the mark instead
+// of one nested element -- <strong>text </strong><ac:link>...<ac:link-body>
+// <strong>y</strong></ac:link-body></ac:link> -- because the link's visible
+// text lives inside ac:link-body, one level deeper than <a>'s. Verified live
+// 2026-08-30 the same way as the <a> case: a direct atlas_doc_format PUT with
+// the link mark's href pointing at another Confluence page.
+func TestACLinkCoalescesSplitBoldMark(t *testing.T) {
+	storage := `<p><strong>some text </strong><ac:link><ri:page ri:content-title="IT 2026 Roadmap" />` +
+		`<ac:link-body><strong>y</strong></ac:link-body></ac:link></p>`
+	want := "**some text [y](" + pageURL + ")**"
+
+	got, err := convert.StorageToMarkdown(storage, convert.StorageOptions{
+		PageLinks: map[convert.PageLinkTarget]string{{Title: "IT 2026 Roadmap"}: pageURL},
+	})
+	if err != nil {
+		t.Fatalf("StorageToMarkdown: %v", err)
+	}
+	if strings.TrimSpace(got) != want {
+		t.Errorf("got %q, want %q", strings.TrimSpace(got), want)
+	}
+}
+
 // TestACLinkUnresolvedPageIsPassedThrough is the fallback that keeps a failed or
 // skipped lookup from silently deleting a link. A markdown link with no
 // destination would be worse than the storage, which still works.
