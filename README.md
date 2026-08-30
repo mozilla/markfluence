@@ -201,6 +201,12 @@ markfluence children --help
 markfluence export --help
 ```
 
+Validating markdown locally (no network, no credentials):
+
+```sh
+markfluence check --help
+```
+
 Manipulating Confluence page attachments:
 
 ```sh
@@ -336,6 +342,47 @@ only when a field actually changed. `--dry-run` reports the changes without writ
 ```sh
 markfluence fix docs/*.md
 markfluence fix docs/foo.md --dry-run
+```
+
+### `check`
+
+```
+Usage: markfluence check FILE... [flags]
+```
+
+Validate one or more Markdown files against the converter and frontmatter
+rules — offline: no network access, no credentials, and no writes to
+Confluence or to disk. This is the primitive a CI job, a pre-commit hook, or
+an agent editing docs wants: validate every change instantly, with no risk of
+publishing anything. Each file is processed independently; the command exits
+non-zero if any file is broken or fails outright.
+
+It reports the same `Broken`/`Warnings` a real `update`/`create` would
+produce — a missing or escaping image/link, an unpublished sibling link, a
+`#fragment` matching no heading — each prefixed with the source line it came
+from, plus three frontmatter checks: an unparseable/unterminated frontmatter
+block, an invalid `page_width`, and a present-but-non-numeric `page_id`.
+Deliberately not checked: whether `page_id`/`space`/`parent` are set at all —
+`check` can't know whether you're about to `create` or `update`, and a false
+positive there would be worse than a miss. A **Broken** result fails
+(`update`/`create` would publish literal `LINK BROKEN: …`/`IMAGE BROKEN: …`
+text); a **Warning** alone does not — an unpublished sibling link is the
+normal state of a tree that hasn't been created yet, not a defect.
+
+```console
+$ markfluence check docs/*.md
+  ✗ [docs/broken-links.md] line 12: LINK BROKEN: typo-target.md (not found)
+    [docs/guide.md] clean
+  ✗ 1 of 2 file(s) failed.
+```
+
+`--show-html` additionally prints the converted storage HTML (indented by
+nesting depth) and the attachment list, for debugging what a file would
+actually publish without publishing it:
+
+```sh
+markfluence check docs/*.md
+markfluence check --show-html docs/one-page.md
 ```
 
 ### `info`
@@ -763,15 +810,25 @@ Notes on the schema:
   to speak of.
 - **Status verbs** are per-command: `published`/`skipped` (`update`),
   `created`/`not_created` (`create`), `changed`/`consistent` (`fix`),
+  `clean`/`warnings`/`broken` (`check`),
   `created`/`updated`/`skipped` (`attachment-upload`),
   `downloaded`/`skipped` (`attachment-download`), plus `failed`. `info`, `read`,
   and `attachment-list` results carry data only (no status verb).
 - **One result per target**, and the target is per-command: the page for
-  `info`/`read`/`export` (always one), the file for `update`/`create`/`fix`, and
-  the attachment for the three `attachment-*` commands — so
+  `info`/`read`/`export` (always one), the file for `update`/`create`/`fix`/`check`,
+  and the attachment for the three `attachment-*` commands — so
   `.results[] | .filename` works and `summary.total` is the attachment count.
   `export` nests the files it wrote in an `attachments` array on its page
   result, the way `update`/`create` do.
+- **`check`'s `broken` status is `ok: false` with no `error`/`code`** — unlike
+  every other failure, its `broken`/`warnings` arrays already say everything
+  there is to say, so there's no separate operational error to attach. Only
+  its `failed` status (a file that never reached the converter at all) sets
+  them, the same as every other command's failure. `check --show-html` adds a
+  `debug: { html, attachments } | null` field, populated only for a file that
+  reached the converter; `html` stays exactly what the converter produced
+  (unindented), since it's meant to match what `update`/`create` would
+  literally publish.
 - **Compound values are objects**, never display strings — `version`,
   `page_width`, and the `created`/`updated` author stamps on `info`.
 - **`create`'s two-phase abort** (a validation failure means nothing is created)
