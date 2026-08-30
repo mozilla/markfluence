@@ -106,7 +106,10 @@ func TestRoundTripStableCallouts(t *testing.T) {
 		"```",
 	}, "\n") + "\n"
 
-	md := frontmatter.Parse("main.md", src)
+	md, err := frontmatter.Parse("main.md", src)
+	if err != nil {
+		t.Fatal(err)
+	}
 	root := testRoot(t, "")
 	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG", "vtest")
 	if err != nil {
@@ -137,7 +140,10 @@ func TestRoundTripTableAlignment(t *testing.T) {
 		"| a | b | c | d |",
 	}, "\n") + "\n"
 
-	md := frontmatter.Parse("main.md", src)
+	md, err := frontmatter.Parse("main.md", src)
+	if err != nil {
+		t.Fatal(err)
+	}
 	root := testRoot(t, "")
 	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG", "vtest")
 	if err != nil {
@@ -175,7 +181,10 @@ func TestRoundTripTableCellBG(t *testing.T) {
 		"| <!-- bg:grey --> unknown |  |",
 	}, "\n") + "\n"
 
-	md := frontmatter.Parse("main.md", src)
+	md, err := frontmatter.Parse("main.md", src)
+	if err != nil {
+		t.Fatal(err)
+	}
 	root := testRoot(t, "")
 	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG", "vtest")
 	if err != nil {
@@ -225,7 +234,10 @@ func TestStorageToMarkdownJoinsMultilineCells(t *testing.T) {
 
 	// The <br> form must itself be stable: publishing it back and exporting
 	// again should reproduce the same markdown (L6, roundtrip-from-disk).
-	md := frontmatter.Parse("main.md", got)
+	md, err := frontmatter.Parse("main.md", got)
+	if err != nil {
+		t.Fatal(err)
+	}
 	root := testRoot(t, "")
 	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG", "vtest")
 	if err != nil {
@@ -278,7 +290,10 @@ func TestStorageToMarkdownPassesThroughListsInCells(t *testing.T) {
 
 	// The passthrough form must itself be stable end to end: publishing the
 	// exported markdown must reproduce the exact storage read in above.
-	md := frontmatter.Parse("main.md", got)
+	md, err := frontmatter.Parse("main.md", got)
+	if err != nil {
+		t.Fatal(err)
+	}
 	root := testRoot(t, "")
 	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG", "vtest")
 	if err != nil {
@@ -365,7 +380,10 @@ func TestRoundTripPassthrough(t *testing.T) {
 			if err != nil {
 				t.Fatalf("reading golden: %v", err)
 			}
-			md := frontmatter.Parse("main.md", string(src))
+			md, err := frontmatter.Parse("main.md", string(src))
+			if err != nil {
+				t.Fatal(err)
+			}
 			root := testRoot(t, "")
 			page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG", "vtest")
 			if err != nil {

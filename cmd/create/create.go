@@ -669,7 +669,10 @@ func resolveParent(
 		if err != nil {
 			return parentInfo{}, err
 		}
-		pmf := frontmatter.Parse(parentPath, string(data))
+		pmf, err := frontmatter.Parse(parentPath, string(data))
+		if err != nil {
+			return parentInfo{}, fmt.Errorf("parent %s: %w", parentValue, err)
+		}
 		pID := pmf.PageID()
 		if pID == "" {
 			return parentInfo{}, fmt.Errorf("parent not yet published (no page_id): %s", parentValue)

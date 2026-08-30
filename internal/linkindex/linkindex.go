@@ -65,7 +65,13 @@ func Build(root *project.Root) (*Index, error) {
 		if err != nil {
 			return nil
 		}
-		mf := frontmatter.Parse(path, string(data))
+		mf, err := frontmatter.Parse(path, string(data))
+		if err != nil {
+			// A malformed sibling is skipped exactly like an unreadable one --
+			// one broken file elsewhere in the tree must not block checking or
+			// converting an unrelated one.
+			return nil
+		}
 		if id := mf.PageID(); id != "" {
 			idx.pages[path] = PageEntry{PageID: id, Title: mf.Title()}
 		}
