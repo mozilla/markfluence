@@ -9,7 +9,7 @@
   "properties": {
     "schema_version": { "const": 1 },
     "markfluence_version": { "type": "string" },
-    "command": { "enum": ["info", "read", "update", "create", "fix", "children", "find", "search", "attachment-list", "attachment-upload", "attachment-download", "export"] },
+    "command": { "enum": ["info", "read", "update", "create", "fix", "check", "children", "find", "search", "attachment-list", "attachment-upload", "attachment-download", "export"] },
     "roots": { "type": "array", "items": { "type": "string" }, "description": "Every distinct documentation root the command resolved, sorted. Empty for a command with no per-file root concept, and for a pre-flight failure that never reached root resolution." },
     "results": { "type": "array" },
     "summary": { "type": "object" }
@@ -57,6 +57,15 @@
         "properties": {
           "results": { "items": { "$ref": "#/$defs/fixResult" } },
           "summary": { "$ref": "#/$defs/fixSummary" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "command": { "const": "check" } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "results": { "items": { "$ref": "#/$defs/checkResult" } },
+          "summary": { "$ref": "#/$defs/checkSummary" }
         }
       }
     },
@@ -423,6 +432,46 @@
         "code": { "$ref": "#/$defs/codeOrNull" }
       }
     },
+    "checkResult": {
+      "description": "One checked file. broken/warnings are always [] (never null), matching ConfluencePage's own convention. status=broken means broken is non-empty (frontmatter or converter); status=failed means the file never reached a clean answer at all (unreadable, unterminated frontmatter, bad page_width, non-numeric page_id) -- code is VALIDATION in that case. debug is non-null only when --show-html was passed and the file reached the converter (never on a failed file).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "status", "file", "broken", "warnings", "debug", "error", "code"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "status": { "enum": ["clean", "warnings", "broken", "failed"] },
+        "file": { "type": "string" },
+        "broken": { "type": "array", "items": { "type": "string" } },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "debug": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["html", "attachments"],
+              "properties": {
+                "html": { "type": "string" },
+                "attachments": { "type": "array", "items": { "$ref": "#/$defs/checkAttachment" } }
+              }
+            }
+          ]
+        },
+        "error": { "$ref": "#/$defs/stringOrNull" },
+        "code": { "$ref": "#/$defs/codeOrNull" }
+      }
+    },
+    "checkAttachment": {
+      "description": "ConfluencePage.Attachments verbatim: a local image check's --show-html surfaces, not an upload outcome (contrast update/create's attachments array, which reports an action).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filename", "path", "source"],
+      "properties": {
+        "filename": { "type": "string" },
+        "path": { "type": "string" },
+        "source": { "type": "string" }
+      }
+    },
     "attachmentUploadResult": {
       "description": "One uploaded file. status uses the same verbs as the attachments array on update/create. dest_path is always null: upload has no local destination to report, and only exists here so upload and download share one result shape.",
       "type": "object",
@@ -564,6 +613,19 @@
         "failed": { "type": "integer" },
         "changed": { "type": "integer" },
         "consistent": { "type": "integer" }
+      }
+    },
+    "checkSummary": {
+      "description": "clean/warnings count files on the ok:true side (clean has neither broken nor warnings; warnings has only warnings); failed already covers both the broken and failed statuses on the ok:false side, the same granularity fixSummary uses.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "succeeded", "failed", "clean", "warnings"],
+      "properties": {
+        "total": { "type": "integer" },
+        "succeeded": { "type": "integer" },
+        "failed": { "type": "integer" },
+        "clean": { "type": "integer" },
+        "warnings": { "type": "integer" }
       }
     },
     "errorObject": {
