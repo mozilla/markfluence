@@ -70,6 +70,11 @@ func (r *storageRenderer) rewriteHref(href string) (newHref string, rewritten bo
 			// doc-link step cannot resolve it (a file with no page_id yet).
 			href = encodeDestination(r.currentBasename) + "#" + escapeFragment(nf)
 			rewritten = true
+		} else {
+			// currentDocKey is the file being converted right now, so it
+			// unconditionally exists -- a miss here is always a genuine
+			// fragment that matches no heading, never a missing target.
+			r.warnings = append(r.warnings, fmt.Sprintf("anchor not found: %s", href))
 		}
 	} else if path, frag, ok := splitMarkdownAnchor(href); ok {
 		key, _ := r.resolveDocKey(path)
@@ -78,6 +83,11 @@ func (r *storageRenderer) rewriteHref(href string) (newHref string, rewritten bo
 			// and the doc-link step decodes it again for its own lookup.
 			href = path + "#" + escapeFragment(nf)
 			rewritten = true
+		} else if r.index.FileExists(key) {
+			// Only warn here when the target file itself exists: otherwise
+			// rewriteDocLink below reports the missing/escaping target once,
+			// as Broken, and a second "anchor not found" would be redundant.
+			r.warnings = append(r.warnings, fmt.Sprintf("anchor not found: %s", href))
 		}
 	}
 

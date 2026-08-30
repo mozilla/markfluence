@@ -1,0 +1,9 @@
+{
+  "attachments": [],
+  "broken": [],
+  "html": "<h1>Anchor Not Found</h1>\n<p>A same-page anchor that matches no heading is a Warning; the href renders exactly as written since nothing was resolved:</p>\n<p><a href=\"#no-such-heading\">bad same-page anchor</a></p>\n<p>A cross-file anchor that matches no heading on an otherwise-resolvable sibling warns the same way -- distinct from the sibling not existing at all, which rewriteDocLink already reports separately:</p>\n<p><a href=\"https://wiki.example.net/wiki/spaces/ENG/pages/9002/Sibling#no-such-heading\">bad cross-file anchor</a></p>\n<h2>Real Section</h2>\n<p>The only real heading in this document.</p>\n",
+  "warnings": [
+    "anchor not found: #no-such-heading",
+    "anchor not found: sibling.md#no-such-heading"
+  ]
+}
