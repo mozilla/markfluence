@@ -35,8 +35,9 @@ Both halves at once -- encoded filename and encoded fragment:
 
 [both encoded](my%20sibling.md#caf%C3%A9-section)
 
-A sibling that is not in this set is left exactly as written, still encoded,
-because nothing was resolved and nothing should be rewritten:
+A sibling that is not in this set is Broken; the reported message still
+echoes the destination as written, encoding and all, rather than a resolved
+answer:
 
 [unknown](nosuch%20file.md)
 

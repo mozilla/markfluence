@@ -1,8 +1,8 @@
 {
   "attachments": [],
-  "broken": [],
-  "html": "<h1>Internal Doc Links</h1>\n<p>A link to a sibling doc is rewritten to its Confluence URL: <a href=\"https://wiki.example.net/wiki/spaces/ENG/pages/4242/The+Sibling+Page\">the sibling page</a>.</p>\n<p>A link to a doc that isn't in this set is left untouched: <a href=\"unknown.md\">unknown</a>.</p>\n<p>An absolute URL is never rewritten: <a href=\"https://example.net/page.md\">external</a>.</p>\n",
-  "warnings": [
-    "link not resolved: unknown.md"
-  ]
+  "broken": [
+    "LINK BROKEN: unknown.md (not found)"
+  ],
+  "html": "<h1>Internal Doc Links</h1>\n<p>A link to a sibling doc is rewritten to its Confluence URL: <a href=\"https://wiki.example.net/wiki/spaces/ENG/pages/4242/The+Sibling+Page\">the sibling page</a>.</p>\n<p>A link to a doc that doesn't exist at all is Broken: LINK BROKEN: unknown.md (not found).</p>\n<p>An absolute URL is never rewritten: <a href=\"https://example.net/page.md\">external</a>.</p>\n",
+  "warnings": []
 }
