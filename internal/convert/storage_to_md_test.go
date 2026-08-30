@@ -193,6 +193,49 @@ func TestRoundTripTableCellBG(t *testing.T) {
 	}
 }
 
+// TestStorageToMarkdownJoinsMultilineCells checks that a cell holding more
+// than one line survives export. Confluence's editor writes one <p> per line
+// -- Enter inside a cell starts a new <p>, it does not insert a <br> -- and
+// rendering each independently the way ordinary block content is loses every
+// line break, running the lines together with no separator. A real newline
+// can't stand in for it (a GFM table row is one physical line), so the fix
+// joins with a literal "<br>" instead; the same substitution also catches a
+// bare mid-line <br> (Shift+Enter, no surrounding <p> split), which otherwise
+// renders as the two-trailing-spaces hard break valid in ordinary block
+// content but not inside a single table row.
+func TestStorageToMarkdownJoinsMultilineCells(t *testing.T) {
+	in := `<table><tbody><tr>` +
+		`<td><p>line one</p><p>line two</p></td>` +
+		`<td><p>mid-line<br/>break</p></td>` +
+		`<td><p>plain, no wrapper issue</p></td>` +
+		`</tr></tbody></table>`
+	want := "| line one<br>line two | mid-line<br>break | plain, no wrapper issue |\n| --- | --- | --- |\n"
+
+	got, err := convert.StorageToMarkdown(in, convert.StorageOptions{})
+	if err != nil {
+		t.Fatalf("StorageToMarkdown: %v", err)
+	}
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+
+	// The <br> form must itself be stable: publishing it back and exporting
+	// again should reproduce the same markdown (L6, roundtrip-from-disk).
+	md := frontmatter.Parse("main.md", got)
+	root := testRoot(t, "")
+	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG", "vtest")
+	if err != nil {
+		t.Fatalf("MdToConfluence: %v", err)
+	}
+	back, err := convert.StorageToMarkdown(page.HTML, convert.StorageOptions{})
+	if err != nil {
+		t.Fatalf("StorageToMarkdown: %v", err)
+	}
+	if back != got {
+		t.Errorf("round-trip unstable\n--- first ---\n%s--- second ---\n%s", got, back)
+	}
+}
+
 // TestStorageToMarkdownStripsGeneratedIDs checks that the server-generated
 // ac:macro-id and ac:local-id attributes are dropped from passthrough output.
 func TestStorageToMarkdownStripsGeneratedIDs(t *testing.T) {
