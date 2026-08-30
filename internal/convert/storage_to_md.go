@@ -475,15 +475,27 @@ func (r *mdRenderer) renderCellLines(c *snode) string {
 		run = nil
 	}
 	for _, k := range c.kids {
-		if k.name != "p" {
+		switch k.name {
+		case "p":
+			flush()
+			// An empty <p> is a deliberate blank line (Enter twice in the
+			// editor), not the absence of one -- unlike an empty run, which is
+			// just the lack of any non-<p> content between two <p>s and
+			// contributes no line at all.
+			lines = append(lines, r.renderInlineChildren(k))
+		case "ul", "ol":
+			// A GFM table row is one physical line, so a real bulleted or
+			// numbered list -- which needs one line per item -- can't be
+			// expressed as markdown list syntax inside a cell at all.
+			// Passthrough as the raw tags, which markfluence's own write side
+			// already accepts typed directly into a cell (goldmark's raw HTML
+			// passes through unchanged), keeps it exact instead of running
+			// every item together the way rendering it as inline content would.
+			flush()
+			lines = append(lines, serialize(k))
+		default:
 			run = append(run, k)
-			continue
 		}
-		flush()
-		// An empty <p> is a deliberate blank line (Enter twice in the editor),
-		// not the absence of one -- unlike an empty run, which is just the lack
-		// of any non-<p> content between two <p>s and contributes no line at all.
-		lines = append(lines, r.renderInlineChildren(k))
 	}
 	flush()
 	return strings.ReplaceAll(strings.Join(lines, "<br>"), "  \n", "<br>")

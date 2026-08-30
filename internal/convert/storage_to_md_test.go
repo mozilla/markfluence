@@ -240,6 +240,46 @@ func TestStorageToMarkdownJoinsMultilineCells(t *testing.T) {
 	}
 }
 
+// TestStorageToMarkdownPassesThroughListsInCells checks that a <ul>/<ol>
+// found directly in a table cell round-trips as raw HTML rather than being
+// rendered as inline content -- a GFM table row is exactly one physical line,
+// so a real list (one line per item) can't be expressed as markdown list
+// syntax inside a cell at all, and rendering it the way ordinary inline
+// content is ran every item together with no separator: "<ul><li>one</li>
+// <li>two</li></ul>" became "onetwo".
+func TestStorageToMarkdownPassesThroughListsInCells(t *testing.T) {
+	// The <li><p>...</p></li> form is what Confluence's own editor writes for
+	// a list authored inside a cell in the browser; markfluence's own write
+	// side (a <ul> typed directly into a markdown cell) never adds the <p>,
+	// since goldmark's raw HTML passthrough carries it through unchanged.
+	in := `<table><tbody><tr>` +
+		`<td><ul><li>one</li><li>two</li></ul></td>` +
+		`<td><ol><li><p>a</p></li><li><p>b</p></li></ol></td>` +
+		`</tr></tbody></table>`
+	want := "| <ul><li>one</li><li>two</li></ul> | <ol><li><p>a</p></li><li><p>b</p></li></ol> |\n" +
+		"| --- | --- |\n"
+
+	got, err := convert.StorageToMarkdown(in, convert.StorageOptions{})
+	if err != nil {
+		t.Fatalf("StorageToMarkdown: %v", err)
+	}
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+
+	// The passthrough form must itself be stable end to end: publishing the
+	// exported markdown must reproduce the exact storage read in above.
+	md := frontmatter.Parse("main.md", got)
+	root := testRoot(t, "")
+	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG", "vtest")
+	if err != nil {
+		t.Fatalf("MdToConfluence: %v", err)
+	}
+	if !strings.Contains(page.HTML, `<ul><li>one</li><li>two</li></ul>`) {
+		t.Errorf("published storage lost the list:\n%s", page.HTML)
+	}
+}
+
 // TestStorageToMarkdownStripsGeneratedIDs checks that the server-generated
 // ac:macro-id and ac:local-id attributes are dropped from passthrough output.
 func TestStorageToMarkdownStripsGeneratedIDs(t *testing.T) {

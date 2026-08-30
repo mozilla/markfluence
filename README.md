@@ -1014,6 +1014,20 @@ Confluence's own editor represents a multi-line cell as separate paragraphs
 rather than `<br>`; `read`/`export` converts that back to the `<br>` form
 shown above, which is what publishes back to the same paragraphs.
 
+**Lists in table cells** use HTML list tags — `<ul>`, `<ol>`, and `<li>` —
+directly in the cell, the same way `<br>` is used for a plain line break.
+Markdown's own list syntax needs each item on its own line, which a table row
+can't do, so it isn't an option here.
+
+```markdown
+| Field  | Values                                |
+| ------ | ------------------------------------- |
+| Status | <ul><li>open</li><li>closed</li></ul> |
+```
+
+`read`/`export` recovers the same tags rather than converting them to
+anything else.
+
 **GitHub alerts** — `> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`,
 `[!CAUTION]` — become info/tip/note/warning panels.
 [GFM alerts](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts)
