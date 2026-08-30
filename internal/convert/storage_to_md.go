@@ -480,9 +480,10 @@ func (r *mdRenderer) renderCellLines(c *snode) string {
 			continue
 		}
 		flush()
-		if s := r.renderInlineChildren(k); s != "" {
-			lines = append(lines, s)
-		}
+		// An empty <p> is a deliberate blank line (Enter twice in the editor),
+		// not the absence of one -- unlike an empty run, which is just the lack
+		// of any non-<p> content between two <p>s and contributes no line at all.
+		lines = append(lines, r.renderInlineChildren(k))
 	}
 	flush()
 	return strings.ReplaceAll(strings.Join(lines, "<br>"), "  \n", "<br>")
