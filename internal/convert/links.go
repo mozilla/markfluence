@@ -93,13 +93,15 @@ func (r *storageRenderer) rewriteHref(href string) (newHref string, rewritten bo
 
 // rewriteDocLink rewrites a sibling .md href (with optional fragment) to its
 // Confluence URL. ok=false with brokenText=="" means an absolute URL, a
-// non-.md href, or a target with no page_id yet -- none of these are errors;
-// the last one warns (minimal R1: reported, not silently dead) via the same
-// r.warnings list images.go already populates on a broken reference. A
-// non-empty brokenText means the target is Broken -- missing entirely, or
-// resolving outside the documentation root -- and the caller must render
-// that text in place of any link element, the way images.go already does
-// for a missing image.
+// non-.md href, or a target that exists but has no page_id yet -- none of
+// these are errors; the last one warns (minimal R1: reported, not silently
+// dead) via the same r.warnings list images.go already populates on a broken
+// reference. A non-empty brokenText means the target is Broken -- missing
+// entirely, or resolving outside the documentation root -- and the caller
+// must render that text in place of any link element, the way images.go
+// already does for a missing image. FileExists is what tells "missing
+// entirely" apart from "not published yet": both look identical to
+// index.Page (a miss), but only the first is a defect.
 func (r *storageRenderer) rewriteDocLink(href string) (newHref string, ok bool, brokenText string) {
 	path, fragment := href, ""
 	if i := strings.Index(href, "#"); i >= 0 {
@@ -114,13 +116,21 @@ func (r *storageRenderer) rewriteDocLink(href string) (newHref string, ok bool, 
 	key, escapes := r.resolveDocKey(path)
 	entry, found := r.index.Page(key)
 	if !found {
-		if escapes {
+		switch {
+		case escapes:
 			msg := fmt.Sprintf("LINK BROKEN: %s (outside the documentation root)", href)
 			r.broken = append(r.broken, msg)
 			return "", false, msg
+		case !r.index.FileExists(key):
+			msg := fmt.Sprintf("LINK BROKEN: %s (not found)", href)
+			r.broken = append(r.broken, msg)
+			return "", false, msg
+		default:
+			// The file exists but has no page_id yet -- the normal state of
+			// every page in a tree that hasn't been published, not an error.
+			r.warnings = append(r.warnings, fmt.Sprintf("link not resolved: %s", href))
+			return "", false, ""
 		}
-		r.warnings = append(r.warnings, fmt.Sprintf("link not resolved: %s", href))
-		return "", false, ""
 	}
 
 	var built string
