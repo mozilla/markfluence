@@ -97,6 +97,18 @@ func (idx *Index) Page(path string) (PageEntry, bool) {
 	return e, ok
 }
 
+// FileExists reports whether path (root-relative, slash-separated) is a
+// walked `.md` file under the index's root, regardless of whether it has a
+// page_id yet. It answers "does this file exist at all" independent of
+// Page's "is this file published" -- Build records an anchors entry (even an
+// empty one) for every walked file, unlike pages, which only gets one when
+// the file has a page_id, so this reuses that map rather than adding new
+// bookkeeping.
+func (idx *Index) FileExists(path string) bool {
+	_, ok := idx.anchors[path]
+	return ok
+}
+
 // Anchor returns the Confluence-side slug matching a GitHub-style slug on the
 // page at path, and whether it exists.
 func (idx *Index) Anchor(path, githubSlug string) (string, bool) {

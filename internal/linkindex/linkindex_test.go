@@ -88,6 +88,30 @@ func TestBuildSkipsPageWithNoPageID(t *testing.T) {
 	}
 }
 
+// TestFileExistsIndependentOfPageID is FileExists's whole point: "exists" and
+// "published" are genuinely distinct questions, and a page_id-less file must
+// answer true to the first while still answering false to Page.
+func TestFileExistsIndependentOfPageID(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "published.md"), "---\npage_id: 1\n---\nbody\n")
+	write(t, filepath.Join(root, "draft.md"), "---\ntitle: Draft\n---\nbody\n")
+
+	idx, err := Build(rootAt(t, root))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !idx.FileExists("published.md") {
+		t.Error(`FileExists("published.md") = false, want true`)
+	}
+	if !idx.FileExists("draft.md") {
+		t.Error(`FileExists("draft.md") = false, want true (a page_id-less file still exists)`)
+	}
+	if idx.FileExists("nope.md") {
+		t.Error(`FileExists("nope.md") = true, want false`)
+	}
+}
+
 // TestBuildDoesNotDescendSymlinkedDirectory is the non-goal: a symlinked
 // directory inside root must not be walked into, even though its target
 // (here, outside root) holds a page_id-bearing file that would otherwise be
