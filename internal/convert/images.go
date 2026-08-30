@@ -37,8 +37,9 @@ func (r *storageRenderer) renderImage(
 	if src == "" {
 		return ast.WalkSkipChildren, nil
 	}
+	prefix := r.linePrefix(node, source)
 	alt := nodeText(node, source)
-	attrs := r.parseImageTitle(string(n.Title), src)
+	attrs := r.parseImageTitle(prefix, string(n.Title), src)
 
 	// Remote and unsupported-extension images are decided on src/fsPath alone
 	// and never touch the filesystem -- checked and returned before any of the
@@ -55,7 +56,7 @@ func (r *storageRenderer) renderImage(
 	// path is what keeps an encoded "..%2F" from slipping past the root check.
 	fsPath := decodeDestination(src)
 	if !supportedImageExts[strings.ToLower(filepath.Ext(fsPath))] {
-		msg := fmt.Sprintf("IMAGE BROKEN: %s (unsupported type)", src)
+		msg := prefix + fmt.Sprintf("IMAGE BROKEN: %s (unsupported type)", src)
 		r.broken = append(r.broken, msg)
 		_, _ = w.WriteString(html.EscapeString(msg))
 		return ast.WalkSkipChildren, nil
@@ -83,19 +84,19 @@ func (r *storageRenderer) renderImage(
 
 	switch {
 	case escapesRoot:
-		msg := fmt.Sprintf("IMAGE BROKEN: %s (outside the documentation root)", src)
+		msg := prefix + fmt.Sprintf("IMAGE BROKEN: %s (outside the documentation root)", src)
 		r.broken = append(r.broken, msg)
 		_, _ = w.WriteString(html.EscapeString(msg))
 
 	case notFound, notRegular:
 		// Not found, or something that was never a file to begin with (a
 		// directory, say) -- both read the same as "not found" always has.
-		msg := fmt.Sprintf("IMAGE BROKEN: %s (not found)", src)
+		msg := prefix + fmt.Sprintf("IMAGE BROKEN: %s (not found)", src)
 		r.broken = append(r.broken, msg)
 		_, _ = w.WriteString(html.EscapeString(msg))
 
 	case isSymlink:
-		msg := fmt.Sprintf("IMAGE BROKEN: %s (symlink, not a regular file)", src)
+		msg := prefix + fmt.Sprintf("IMAGE BROKEN: %s (symlink, not a regular file)", src)
 		r.broken = append(r.broken, msg)
 		_, _ = w.WriteString(html.EscapeString(msg))
 
@@ -117,8 +118,9 @@ func (r *storageRenderer) renderImage(
 
 // parseImageTitle turns a markdown image title into extra <ac:image> attributes.
 // A JSON object supplies title/width/height/align; anything else becomes a plain
-// tooltip (title). Invalid width/height/align values are dropped with a warning.
-func (r *storageRenderer) parseImageTitle(titleRaw, src string) map[string]string {
+// tooltip (title). Invalid width/height/align values are dropped with a warning,
+// prefixed with linePrefix's line (computed by the caller, which holds the node).
+func (r *storageRenderer) parseImageTitle(prefix, titleRaw, src string) map[string]string {
 	if titleRaw == "" {
 		return nil
 	}
@@ -144,7 +146,7 @@ func (r *storageRenderer) parseImageTitle(titleRaw, src string) map[string]strin
 			attrs[dim] = s
 		} else {
 			r.warnings = append(r.warnings,
-				fmt.Sprintf("%s: ignoring %s=%s (must be a number)", src, dim, pyRepr(v)))
+				prefix+fmt.Sprintf("%s: ignoring %s=%s (must be a number)", src, dim, pyRepr(v)))
 		}
 	}
 	if v, ok := data["align"]; ok {
@@ -153,7 +155,7 @@ func (r *storageRenderer) parseImageTitle(titleRaw, src string) map[string]strin
 				attrs["align"] = s
 			} else {
 				r.warnings = append(r.warnings,
-					fmt.Sprintf("%s: ignoring align=%s (must be left, center, or right)", src, pyRepr(v)))
+					prefix+fmt.Sprintf("%s: ignoring align=%s (must be left, center, or right)", src, pyRepr(v)))
 			}
 		}
 	}

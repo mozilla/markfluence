@@ -55,6 +55,50 @@ type storageRenderer struct {
 	// state, the same shape as seen above -- safe because goldmark never
 	// renders two Link nodes concurrently (markdown has no nested links).
 	linkBrokenText string
+
+	// lineOffset is the number of lines the frontmatter block consumed in the
+	// original file, added to every line nodeLine reports: goldmark parses
+	// md.Body, which Extract already stripped of that block, so every
+	// position it sees is relative to the body, not the file a reader would
+	// open and count lines in.
+	lineOffset int
+}
+
+// nodeLine returns the 1-indexed source line n starts on -- in the original
+// file, frontmatter included via lineOffset -- and whether one could be
+// found. Neither *ast.Link nor *ast.Image carries its own position --
+// goldmark's parser never calls SetLines on either -- so this walks to the
+// first descendant *ast.Text, which does, via the same Segment nodeText
+// already reads. ok is false for a node with no text descendant at all (e.g.
+// an empty link), in which case a caller must not report a line at all
+// rather than a wrong one.
+func (r *storageRenderer) nodeLine(n ast.Node, source []byte) (line int, ok bool) {
+	offset := -1
+	_ = ast.Walk(n, func(c ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering || offset >= 0 {
+			return ast.WalkContinue, nil
+		}
+		if t, isText := c.(*ast.Text); isText {
+			offset = t.Segment.Start
+			return ast.WalkStop, nil
+		}
+		return ast.WalkContinue, nil
+	})
+	if offset < 0 {
+		return 0, false
+	}
+	return r.lineOffset + 1 + bytes.Count(source[:offset], []byte("\n")), true
+}
+
+// linePrefix returns "line %d: " for a node whose source line nodeLine can
+// find, or "" otherwise -- callers prepend the result to a diagnostic
+// message unconditionally, so a message that can't be located reads exactly
+// as it did before this existed.
+func (r *storageRenderer) linePrefix(n ast.Node, source []byte) string {
+	if line, ok := r.nodeLine(n, source); ok {
+		return fmt.Sprintf("line %d: ", line)
+	}
+	return ""
 }
 
 // RegisterFuncs registers the node handlers this renderer overrides.

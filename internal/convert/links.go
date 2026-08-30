@@ -20,7 +20,7 @@ import (
 // text, matching images.go's precedent for a missing image: this is a defect
 // shipped to readers, not just a diagnostic.
 func (r *storageRenderer) renderLink(
-	w util.BufWriter, _ []byte, node ast.Node, entering bool,
+	w util.BufWriter, source []byte, node ast.Node, entering bool,
 ) (ast.WalkStatus, error) {
 	n := node.(*ast.Link)
 	if !entering {
@@ -32,7 +32,7 @@ func (r *storageRenderer) renderLink(
 		_, _ = w.WriteString("</a>")
 		return ast.WalkContinue, nil
 	}
-	href, rewritten, brokenText := r.rewriteHref(string(n.Destination))
+	href, rewritten, brokenText := r.rewriteHref(string(n.Destination), node, source)
 	r.linkBrokenText = brokenText
 	if brokenText != "" {
 		_, _ = w.WriteString(html.EscapeString(brokenText))
@@ -59,8 +59,13 @@ func (r *storageRenderer) renderLink(
 // rewritten href is already fully composed and escaped, so it must be written
 // verbatim rather than re-escaped) -- or, when the link resolves to a Broken
 // target, the literal replacement text to render instead of any <a> element,
-// in which case href/rewritten are meaningless and must not be used.
-func (r *storageRenderer) rewriteHref(href string) (newHref string, rewritten bool, brokenText string) {
+// in which case href/rewritten are meaningless and must not be used. node and
+// source are the link node being rendered and the document's raw bytes,
+// passed through only to prefix a reported line number onto any message.
+func (r *storageRenderer) rewriteHref(
+	href string, node ast.Node, source []byte,
+) (newHref string, rewritten bool, brokenText string) {
+	prefix := r.linePrefix(node, source)
 	if strings.HasPrefix(href, "#") {
 		if nf, ok := r.index.Anchor(r.currentDocKey, decodeDestination(href[1:])); ok {
 			// Same-page anchors become fake cross-file links to the current
@@ -74,7 +79,7 @@ func (r *storageRenderer) rewriteHref(href string) (newHref string, rewritten bo
 			// currentDocKey is the file being converted right now, so it
 			// unconditionally exists -- a miss here is always a genuine
 			// fragment that matches no heading, never a missing target.
-			r.warnings = append(r.warnings, fmt.Sprintf("anchor not found: %s", href))
+			r.warnings = append(r.warnings, prefix+fmt.Sprintf("anchor not found: %s", href))
 		}
 	} else if path, frag, ok := splitMarkdownAnchor(href); ok {
 		key, _ := r.resolveDocKey(path)
@@ -87,11 +92,11 @@ func (r *storageRenderer) rewriteHref(href string) (newHref string, rewritten bo
 			// Only warn here when the target file itself exists: otherwise
 			// rewriteDocLink below reports the missing/escaping target once,
 			// as Broken, and a second "anchor not found" would be redundant.
-			r.warnings = append(r.warnings, fmt.Sprintf("anchor not found: %s", href))
+			r.warnings = append(r.warnings, prefix+fmt.Sprintf("anchor not found: %s", href))
 		}
 	}
 
-	newHref, ok, brokenText := r.rewriteDocLink(href)
+	newHref, ok, brokenText := r.rewriteDocLink(href, prefix)
 	if brokenText != "" {
 		return "", false, brokenText
 	}
@@ -111,8 +116,9 @@ func (r *storageRenderer) rewriteHref(href string) (newHref string, rewritten bo
 // must render that text in place of any link element, the way images.go
 // already does for a missing image. FileExists is what tells "missing
 // entirely" apart from "not published yet": both look identical to
-// index.Page (a miss), but only the first is a defect.
-func (r *storageRenderer) rewriteDocLink(href string) (newHref string, ok bool, brokenText string) {
+// index.Page (a miss), but only the first is a defect. prefix is rewriteHref's
+// already-computed line prefix, threaded through rather than recomputed.
+func (r *storageRenderer) rewriteDocLink(href, prefix string) (newHref string, ok bool, brokenText string) {
 	path, fragment := href, ""
 	if i := strings.Index(href, "#"); i >= 0 {
 		path, fragment = href[:i], href[i:]
@@ -128,17 +134,17 @@ func (r *storageRenderer) rewriteDocLink(href string) (newHref string, ok bool, 
 	if !found {
 		switch {
 		case escapes:
-			msg := fmt.Sprintf("LINK BROKEN: %s (outside the documentation root)", href)
+			msg := prefix + fmt.Sprintf("LINK BROKEN: %s (outside the documentation root)", href)
 			r.broken = append(r.broken, msg)
 			return "", false, msg
 		case !r.index.FileExists(key):
-			msg := fmt.Sprintf("LINK BROKEN: %s (not found)", href)
+			msg := prefix + fmt.Sprintf("LINK BROKEN: %s (not found)", href)
 			r.broken = append(r.broken, msg)
 			return "", false, msg
 		default:
 			// The file exists but has no page_id yet -- the normal state of
 			// every page in a tree that hasn't been published, not an error.
-			r.warnings = append(r.warnings, fmt.Sprintf("link not resolved: %s", href))
+			r.warnings = append(r.warnings, prefix+fmt.Sprintf("link not resolved: %s", href))
 			return "", false, ""
 		}
 	}
