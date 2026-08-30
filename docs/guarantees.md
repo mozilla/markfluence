@@ -205,17 +205,35 @@ nothing is computing a wrong answer.
 
 | | label | guarantee | status |
 |---|---|---|---|
-| **R1** | `report-unresolved-references` | Every reference markfluence could not resolve is reported. | Partial |
+| **R1** | `report-unresolved-references` | Every reference markfluence could not resolve is reported. | Holds |
 | **R2** | `report-unplaceable-attachments` | Every attachment markfluence could not place is reported. | Holds |
 
 **R1** was false by design and documented as such: the README said an
 unresolved link was "published as-is, which on Confluence is a dead relative
 link. There is no warning for this." A same-tree `.md` link that doesn't
-resolve now lands in the same `warnings` list an unresolved image already
-used (`_plans/026` commit 5) — Partial rather than Holds because that's a
-minimal warning reusing an existing mechanism, not the dedicated diagnostic
-(distinguishing *why* a reference failed, auditing a tree without publishing)
-`_plans/025` gestures at and leaves for later.
+resolve first landed in the same `warnings` list an unresolved image already
+used (`_plans/026` commit 5) — Partial rather than Holds, because that was a
+minimal warning reusing an existing mechanism rather than the dedicated
+diagnostic (distinguishing *why* a reference failed, auditing a tree without
+publishing) `_plans/025` gestured at and left for later.
+
+That dedicated diagnostic now exists (#42): a doc-link target that's missing
+entirely or resolves outside the documentation root is Broken and replaces
+the published element, exactly as a broken image already does; one that
+exists but has no `page_id` yet, or whose `#fragment` matches no heading,
+warns instead of publishing silently. Every message carries the source line
+it came from. `check` adds the "auditing a tree without publishing" half —
+the same diagnostics without ever touching Confluence or the filesystem
+outside reading.
+
+R1 is scoped to the two reference kinds markfluence actually attempts to
+resolve: doc-links (`.md` siblings) and images. A relative link to a local
+non-`.md`, non-image file (e.g. a PDF) gets no existence check at all,
+before or after #42 — `rewriteDocLink` only ever attempts resolution for
+hrefs ending in `.md`, so that case is never a resolution attempt in the
+first place, by design, since only images are uploaded and a relative href
+to anything else would be dead regardless. That sits outside R1's claim
+rather than inside it unmet, so it does not block Holds.
 
 ## Non-goals
 
