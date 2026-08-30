@@ -10,6 +10,7 @@ import (
 	"github.com/mozilla/markfluence/cmd/attachmentdownload"
 	"github.com/mozilla/markfluence/cmd/attachmentlist"
 	"github.com/mozilla/markfluence/cmd/attachmentupload"
+	"github.com/mozilla/markfluence/cmd/check"
 	"github.com/mozilla/markfluence/cmd/children"
 	"github.com/mozilla/markfluence/cmd/create"
 	"github.com/mozilla/markfluence/cmd/export"
@@ -153,6 +154,7 @@ func init() {
 	rootCmd.AddCommand(update.Cmd)
 	rootCmd.AddCommand(create.Cmd)
 	rootCmd.AddCommand(fix.Cmd)
+	rootCmd.AddCommand(check.Cmd)
 	rootCmd.AddCommand(info.Cmd)
 	rootCmd.AddCommand(read.Cmd)
 	rootCmd.AddCommand(children.Cmd)
