@@ -1000,6 +1000,20 @@ Details:
 - An unknown color name is dropped with a warning and the cell publishes
   uncolored.
 
+**Multi-line table cells** use a literal `<br>` to break a cell onto more than
+one line. A real newline can't be used instead, since a GFM table row has to
+stay on one physical line.
+
+```markdown
+| Field | Notes                      |
+| ----- | -------------------------- |
+| Key   | Type: string<br>JQL: "Key" |
+```
+
+Confluence's own editor represents a multi-line cell as separate paragraphs
+rather than `<br>`; `read`/`export` converts that back to the `<br>` form
+shown above, which is what publishes back to the same paragraphs.
+
 **GitHub alerts** — `> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`,
 `[!CAUTION]` — become info/tip/note/warning panels.
 [GFM alerts](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts)
