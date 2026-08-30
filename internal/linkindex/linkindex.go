@@ -136,14 +136,18 @@ var (
 	whitespaceRunRE = regexp.MustCompile(`\s+`)
 )
 
-// GithubSlug replicates GitHub's heading-anchor slugger: lowercase; strip all
-// but letters/digits/underscore/whitespace/hyphen; each whitespace char
-// becomes one hyphen; trim leading/trailing hyphens.
+// GithubSlug replicates GitHub's heading-anchor slugger (github-slugger, the
+// package GitHub itself extracted from its rendering pipeline): lowercase;
+// strip all but letters/digits/underscore/whitespace/hyphen; each whitespace
+// char becomes one hyphen. Nothing is trimmed -- a leading/trailing hyphen
+// survives whether it came from stripped punctuation ("`--json` output"
+// becomes "--json-output", not "json-output") or from literal leading/
+// trailing whitespace in the heading text, matching the reference
+// implementation, which calls no trim at all.
 func GithubSlug(heading string) string {
 	s := strings.ToLower(heading)
 	s = nonSlugRE.ReplaceAllString(s, "")
-	s = whitespaceRE.ReplaceAllString(s, "-")
-	return strings.Trim(s, "-")
+	return whitespaceRE.ReplaceAllString(s, "-")
 }
 
 // ConfluenceSlug replicates Confluence's scheme: preserve case and
