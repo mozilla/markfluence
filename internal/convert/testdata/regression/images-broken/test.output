@@ -1,10 +1,10 @@
 {
   "attachments": [],
   "broken": [
-    "IMAGE BROKEN: assets/missing.png (not found)",
-    "IMAGE BROKEN: notes.pdf (unsupported type)",
-    "IMAGE BROKEN: ../../../../../../../../etc/passwd.png (outside the documentation root)"
+    "line 5: IMAGE BROKEN: assets/missing.png (not found)",
+    "line 9: IMAGE BROKEN: notes.pdf (unsupported type)",
+    "line 13: IMAGE BROKEN: ../../../../../../../../etc/passwd.png (outside the documentation root)"
   ],
-  "html": "<h1>Broken Images</h1>\n<p>A reference to a file that isn't there:</p>\n<p>IMAGE BROKEN: assets/missing.png (not found)</p>\n<p>A reference to a file with an unsupported extension:</p>\n<p>IMAGE BROKEN: notes.pdf (unsupported type)</p>\n<p>A reference to a file above the documentation root:</p>\n<p>IMAGE BROKEN: ../../../../../../../../etc/passwd.png (outside the documentation root)</p>\n",
+  "html": "<h1>Broken Images</h1>\n<p>A reference to a file that isn't there:</p>\n<p>line 5: IMAGE BROKEN: assets/missing.png (not found)</p>\n<p>A reference to a file with an unsupported extension:</p>\n<p>line 9: IMAGE BROKEN: notes.pdf (unsupported type)</p>\n<p>A reference to a file above the documentation root:</p>\n<p>line 13: IMAGE BROKEN: ../../../../../../../../etc/passwd.png (outside the documentation root)</p>\n",
   "warnings": []
 }

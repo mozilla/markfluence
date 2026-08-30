@@ -1040,8 +1040,8 @@ Example:
 ```
 
 **Images** — `![alt](./path.png)` uploads a local file as an attachment (or
-references a remote URL); a missing/unsupported image becomes `IMAGE BROKEN: …`
-text.
+references a remote URL); a missing/unsupported image becomes
+`line N: IMAGE BROKEN: …` text (`N` is the line it's on in the file).
 
 Image paths resolve relative to the Markdown file, the same way they do when you
 view the file on GitHub, so a page in a subdirectory can share an asset
@@ -1073,8 +1073,8 @@ That layout needs a [documentation root](#the-documentation-root) declared at
 
 Every image is bounded by the [documentation root](#the-documentation-root):
 one resolving outside it (`../../secrets/x.png`) is reported as
-`IMAGE BROKEN: … (outside the documentation root)` rather than uploaded, and a
-symlink is refused even when it resolves inside the root.
+`line N: IMAGE BROKEN: … (outside the documentation root)` rather than
+uploaded, and a symlink is refused even when it resolves inside the root.
 
 Confluence attachment names cannot contain `/`, so the path — relative to the
 root, not to the page — is percent-encoded into the attachment name:
@@ -1117,11 +1117,24 @@ space is written `[see](my%20doc.md)` (or `[see](<my doc.md>)`), and a bare
 `[see](my doc.md)` is not a link at all. The same applies to the fragment, so a
 non-ASCII heading anchor may arrive as `#caf%C3%A9-section`. Both are decoded
 before markfluence matches them against files and headings on disk, so either
-spelling resolves. A link it cannot resolve — a target with no `page_id`, or a
-file that isn't there — is left exactly as written and published as-is, which on
-Confluence is a dead relative link. A `.md` link shaped like a same-tree
-reference gets a warning when this happens; a mention, an attachment link, or
-an external URL was never meant to resolve here and stays silent.
+spelling resolves.
+
+Whether an unresolved link is reported — and how badly — depends on why:
+
+* A target that **doesn't exist at all**, or **resolves outside the
+  documentation root**, is Broken: the whole link element is replaced with
+  literal `line N: LINK BROKEN: … (not found)` or
+  `line N: LINK BROKEN: … (outside the documentation root)` text, the same
+  way a broken image already is.
+* A target that **exists but has no `page_id` yet** — the normal state of
+  every page in a tree that hasn't been published — is a Warning
+  (`link not resolved: …`); the href still renders exactly as written.
+* A `#fragment` that **matches no heading** on an otherwise-resolvable target
+  is also a Warning (`anchor not found: …`); the link still works, it just
+  lands at the top of the page instead of the named heading.
+
+A mention, an attachment link, or an external URL was never meant to resolve
+here and stays silent either way.
 
 **Comment directives:**
 - `<!-- confluence-toc -->` — replaced with Confluence table-of-contents macro.

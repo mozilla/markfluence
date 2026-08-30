@@ -1,8 +1,8 @@
 {
   "attachments": [],
   "broken": [
-    "LINK BROKEN: ../outside/linked.md (outside the documentation root)"
+    "line 3: LINK BROKEN: ../outside/linked.md (outside the documentation root)"
   ],
-  "html": "<h1>Escaping Link</h1>\n<p>A LINK BROKEN: ../outside/linked.md (outside the documentation root) is Broken: it publishes as literal &quot;LINK BROKEN: ... (outside the documentation root)&quot; text in place of the link element and its visible text, because the target sits above root, so the link index never walked it. The query side tells this apart from a genuine &quot;not found&quot; via a lexical escape check (025's Scenario F); the index itself still needs no clamp, since a path outside root is simply never in the index in the first place.</p>\n",
+  "html": "<h1>Escaping Link</h1>\n<p>A line 3: LINK BROKEN: ../outside/linked.md (outside the documentation root) is Broken: it publishes as literal &quot;LINK BROKEN: ... (outside the documentation root)&quot; text in place of the link element and its visible text, because the target sits above root, so the link index never walked it. The query side tells this apart from a genuine &quot;not found&quot; via a lexical escape check (025's Scenario F); the index itself still needs no clamp, since a path outside root is simply never in the index in the first place.</p>\n",
   "warnings": []
 }

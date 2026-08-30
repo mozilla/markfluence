@@ -158,7 +158,7 @@ func (t tableCellBGTransformer) warn(cell ast.Node, source []byte, value, proble
 		label = string(runes[:40]) + "..."
 	}
 	t.r.warnings = append(t.r.warnings,
-		fmt.Sprintf("table cell %q: ignoring bg:%s (%s)", label, value, problem))
+		t.r.linePrefix(cell, source)+fmt.Sprintf("table cell %q: ignoring bg:%s (%s)", label, value, problem))
 }
 
 // cellBGMarker reports whether an inline node is a background marker comment,

@@ -3,6 +3,6 @@
   "broken": [],
   "html": "<h1>Link Not Yet Published</h1>\n<p>A link to a sibling that exists on disk but has no <code>page_id</code> yet is a Warning, not Broken -- the normal state of every page in a tree that hasn't been published, not a defect. The href renders exactly as written, unlike a genuinely missing or escaping target:</p>\n<p><a href=\"draft.md\">the draft</a></p>\n",
   "warnings": [
-    "link not resolved: draft.md"
+    "line 8: link not resolved: draft.md"
   ]
 }

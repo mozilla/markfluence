@@ -77,6 +77,12 @@ func MdToConfluence(
 		baseURL:         baseURL,
 		spaceKey:        spaceKey,
 		index:           index,
+		// goldmark parses md.Body, not md.Content -- every position it
+		// reports is relative to the file with its frontmatter block already
+		// stripped. lineOffset is that block's own line count, added back so
+		// a reported line matches what a reader sees opening the file, not
+		// what the parser sees after Extract already removed the header.
+		lineOffset: strings.Count(md.Content[:len(md.Content)-len(md.Body)], "\n"),
 	}
 	var buf bytes.Buffer
 	if err := newMarkdown(r).Convert([]byte(shielded), &buf); err != nil {
