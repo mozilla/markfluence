@@ -210,6 +210,54 @@ func TestStorageToMarkdownStripsGeneratedIDs(t *testing.T) {
 	}
 }
 
+// TestStorageToMarkdownCoalescesSplitMarks checks the repair for a bold (or
+// italic) span that Confluence's own editor splits around a link: saving a page
+// through the editor stores marks per text run rather than as nested elements,
+// so "<strong>text <a>link</a></strong>" -- which is all MdToConfluence ever
+// writes -- can come back as two adjacent runs sharing the mark instead,
+// "<strong>text </strong><a><strong>link</strong></a>". Rendered independently
+// that produces "**text **[**link**](url)", whose closing ** is preceded by a
+// space and so does not open emphasis at all under CommonMark's flanking rule --
+// verified live on 2026-08-30 by PUTting a page's own unmodified
+// atlas_doc_format back at it, which is what the editor does on every save.
+func TestStorageToMarkdownCoalescesSplitMarks(t *testing.T) {
+	tests := map[string]struct {
+		in, want string
+	}{
+		"bold text then bold link": {
+			in:   `<p><strong>some text </strong><a href="https://example.com"><strong>x</strong></a></p>`,
+			want: "**some text [x](https://example.com)**\n",
+		},
+		"bold link then bold text": {
+			in:   `<p><a href="https://example.com"><strong>x</strong></a><strong> more text</strong></p>`,
+			want: "**[x](https://example.com) more text**\n",
+		},
+		"italic text then italic link": {
+			in:   `<p><em>x </em><a href="https://example.com"><em>y</em></a></p>`,
+			want: "*x [y](https://example.com)*\n",
+		},
+		"adjacent same-mark runs with no link still merge": {
+			in:   `<p><strong>a</strong><strong>b</strong></p>`,
+			want: "**ab**\n",
+		},
+		"link only partly bold does not merge": {
+			in:   `<p><strong>a </strong><a href="https://example.com">b<strong>c</strong></a></p>`,
+			want: "**a**[b**c**](https://example.com)\n",
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := convert.StorageToMarkdown(tc.in, convert.StorageOptions{})
+			if err != nil {
+				t.Fatalf("StorageToMarkdown: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestRoundTripPassthrough verifies that the raw-storage passthrough cases
 // (column layouts and unknown macros) survive markdown -> storage -> markdown
 // unchanged -- the whole point of emitting them in a form MdToConfluence

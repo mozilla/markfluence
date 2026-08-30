@@ -515,10 +515,87 @@ func (r *mdRenderer) renderCallout(n *snode, macro string) string {
 // renderInlineChildren renders a node's children as a single inline string.
 func (r *mdRenderer) renderInlineChildren(n *snode) string {
 	var b strings.Builder
-	for _, k := range n.kids {
+	for _, k := range coalesceSplitMarks(n.kids) {
 		b.WriteString(r.renderInline(k))
 	}
 	return strings.TrimSpace(b.String())
+}
+
+// formatMarks are the inline formatting tags coalesceSplitMarks may hoist
+// across a link boundary.
+var formatMarks = map[string]bool{
+	"strong": true, "b": true,
+	"em": true, "i": true,
+	"del": true, "s": true, "strike": true,
+}
+
+// coalesceSplitMarks merges a formatting run that Confluence's own editor can
+// split around a link. ADF (Confluence's native document model) carries marks
+// per text run rather than as nested elements, so "**text [link](url)**" --
+// which markfluence always writes nested, as one <strong> wrapping both the
+// text and the <a> -- comes back from a page that has since been edited and
+// saved in Confluence's editor as two adjacent runs sharing the mark instead:
+// <strong>text </strong><a href="url"><strong>link</strong></a>. Verified
+// 2026-08-30 via a direct atlas_doc_format PUT of the unmodified ADF markfluence
+// itself had published, which is what the editor does on any save. Rendered as
+// two independent nodes that becomes "**text **[**link**](url)": the closing
+// ** is preceded by a space, so CommonMark's flanking rule refuses to treat it
+// as emphasis at all -- the markdown comes back not merely unstyled but
+// literally reading "**text **". This restores the nested form before
+// rendering, the only shape markdown can actually express, by hoisting the
+// mark to wrap the whole run including the link and dropping the now-redundant
+// inner one.
+func coalesceSplitMarks(kids []*snode) []*snode {
+	out := make([]*snode, 0, len(kids))
+	for _, k := range kids {
+		if len(out) > 0 {
+			if merged := mergeMarkRun(out[len(out)-1], k); merged != nil {
+				out[len(out)-1] = merged
+				continue
+			}
+		}
+		out = append(out, k)
+	}
+	return out
+}
+
+// mergeMarkRun merges two adjacent inline nodes when they carry the same
+// formatting mark: either both are the same mark element, or one is a mark
+// and the other is a link whose entire content is that same mark (the split
+// coalesceSplitMarks exists to repair). Returns nil when they don't combine.
+func mergeMarkRun(prev, cur *snode) *snode {
+	switch {
+	case prev.name == cur.name && formatMarks[prev.name]:
+		return &snode{name: prev.name, attrs: prev.attrs, kids: concatKids(prev.kids, cur.kids)}
+	case formatMarks[prev.name] && cur.name == "a":
+		if inner, ok := unwrapSoleMark(cur, prev.name); ok {
+			link := &snode{name: "a", attrs: cur.attrs, kids: inner}
+			return &snode{name: prev.name, attrs: prev.attrs, kids: concatKids(prev.kids, []*snode{link})}
+		}
+	case prev.name == "a" && formatMarks[cur.name]:
+		if inner, ok := unwrapSoleMark(prev, cur.name); ok {
+			link := &snode{name: "a", attrs: prev.attrs, kids: inner}
+			return &snode{name: cur.name, attrs: cur.attrs, kids: concatKids([]*snode{link}, cur.kids)}
+		}
+	}
+	return nil
+}
+
+// unwrapSoleMark reports whether n's entire content is a single child element
+// carrying the given mark, returning that child's own children -- the link's
+// content with the redundant inner mark stripped.
+func unwrapSoleMark(n *snode, mark string) ([]*snode, bool) {
+	if len(n.kids) != 1 || n.kids[0].name != mark {
+		return nil, false
+	}
+	return n.kids[0].kids, true
+}
+
+// concatKids returns a with b appended, without aliasing either's backing array.
+func concatKids(a, b []*snode) []*snode {
+	out := make([]*snode, 0, len(a)+len(b))
+	out = append(out, a...)
+	return append(out, b...)
 }
 
 // renderInline renders one inline node.
