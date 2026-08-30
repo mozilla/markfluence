@@ -434,7 +434,7 @@ func (r *mdRenderer) cellTexts(tr *snode) []string {
 	var cells []string
 	for _, c := range tr.kids {
 		if c.name == "th" || c.name == "td" {
-			text := strings.ReplaceAll(r.renderInlineChildren(c), "|", `\|`)
+			text := strings.ReplaceAll(r.renderCellLines(c), "|", `\|`)
 			if marker := cellBGMarkerComment(c); marker != "" {
 				if text == "" {
 					text = marker
@@ -446,6 +446,46 @@ func (r *mdRenderer) cellTexts(tr *snode) []string {
 		}
 	}
 	return cells
+}
+
+// renderCellLines renders a table cell's content as a single physical line.
+// Confluence writes one <p> per line when a cell holds more than one --
+// hitting Enter inside a cell in the editor starts a new <p>, not a <br> -- and
+// rendering each independently through renderInlineChildren the way ordinary
+// block content is loses the line break entirely, running every line together
+// with no separator at all. A real newline can't take its place: a GFM table
+// row is exactly one physical line, so a second one would either break the
+// table or silently end it early. Joining with a literal "<br>" instead
+// preserves the break -- GFM table cells honor inline HTML -- without ending
+// the row. The trailing replace catches the same problem one level down: a
+// break *inside* one line (Shift+Enter in the editor, a bare <br> with no
+// surrounding <p> split) renders through the ordinary "br" case as the
+// two-trailing-spaces-then-newline form valid in block content, which is
+// exactly as unsafe inside a single table row.
+func (r *mdRenderer) renderCellLines(c *snode) string {
+	var lines []string
+	var run []*snode
+	flush := func() {
+		if len(run) == 0 {
+			return
+		}
+		if s := r.renderInlineChildren(&snode{kids: run}); s != "" {
+			lines = append(lines, s)
+		}
+		run = nil
+	}
+	for _, k := range c.kids {
+		if k.name != "p" {
+			run = append(run, k)
+			continue
+		}
+		flush()
+		if s := r.renderInlineChildren(k); s != "" {
+			lines = append(lines, s)
+		}
+	}
+	flush()
+	return strings.ReplaceAll(strings.Join(lines, "<br>"), "  \n", "<br>")
 }
 
 // cellBGMarkerComment recovers a "<!-- bg:NAME -->" marker from a cell's
