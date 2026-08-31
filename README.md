@@ -511,7 +511,7 @@ page  2097185  What is Africa Mradi?
 
 **Depth 1 is the space's top level**, which is usually just its homepage — hence
 the reminder, which human output prints only when `--depth` was left at its
-default. `--depth all` walks the whole space, at a pair of requests per page and
+default, and prints to stderr so the table can still be piped. `--depth all` walks the whole space, at a pair of requests per page and
 folder in it.
 
 A space's top level is its root **pages**: a folder created with no parent lands
