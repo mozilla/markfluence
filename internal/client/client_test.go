@@ -606,6 +606,44 @@ func TestListChildFoldersHitsTheFolderPath(t *testing.T) {
 	}
 }
 
+// TestListSpaceRootPagesAsksForRootsOnly pins the three things the route needs
+// to be right: the page-typed path (plain /content also answers with blogposts),
+// depth=root (without it the route lists every page in the space), and a key
+// path-escaped, since a personal space key starts with a "~".
+func TestListSpaceRootPagesAsksForRootsOnly(t *testing.T) {
+	var gotPath, gotDepth string
+	c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotDepth = r.URL.EscapedPath(), r.URL.Query().Get("depth")
+		_, _ = w.Write([]byte(`{"results":[{"id":"11","type":"page","title":"Things",` +
+			`"status":"current","extensions":{"position":117908152},` +
+			`"_links":{"webui":"/spaces/~abc/overview"}}]}`))
+	})
+
+	got, err := c.ListSpaceRootPages("~abc")
+	if err != nil {
+		t.Fatalf("ListSpaceRootPages: %v", err)
+	}
+	if want := "/wiki/rest/api/space/~abc/content/page"; gotPath != want {
+		t.Errorf("path = %q, want %q", gotPath, want)
+	}
+	if gotDepth != "root" {
+		t.Errorf("depth = %q, want root", gotDepth)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len = %d, want 1", len(got))
+	}
+	// The rows are ChildNode-shaped, which is what lets a space seed the same
+	// walk a page does. A homepage's webui is /spaces/{key}/overview rather than
+	// /pages/..., and the space key still has to come out of it.
+	n := got[0]
+	if n.Status != "current" || n.Extensions.Position != 117908152 {
+		t.Errorf("status/position = %q/%d, want current/117908152", n.Status, n.Extensions.Position)
+	}
+	if SpaceKeyFromWebUI(n.Links.WebUI) != "~abc" {
+		t.Errorf("space from webui = %q, want ~abc", SpaceKeyFromWebUI(n.Links.WebUI))
+	}
+}
+
 func TestResolveSpaceID(t *testing.T) {
 	c, _ := newServer(t, resp{200, `{"results":[{"id":"123"}]}`})
 	if id, err := c.ResolveSpaceID("ENG"); err != nil || id != "123" {
