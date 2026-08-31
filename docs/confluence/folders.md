@@ -144,11 +144,23 @@ absence cannot terminate a loop.
 
 [ccli]: https://github.com/pchuri/confluence-cli
 
+## Verified 2026-08-31
+
+### A folder cannot be created at a space root
+
+What a folder created directly at the top of a space reports was an open
+question here until it turned out there is no such folder.
+`POST /wiki/api/v2/folders` with a `spaceId` and **no `parentId`** returns 200
+having created the folder **under the space homepage**: `parentId` is the
+homepage's id and `parentType` is `"page"`. There is also no route that would
+list a root-level folder if one existed; both halves are recorded, with the
+requests, in [spaces.md](spaces.md).
+
+So enumerating what is at the top of a space means enumerating its root
+*pages*. Folders turn up as soon as the walk descends into them.
+
 ## Unverified
 
-- **A folder at a space root.** Every folder observed had a parent — a page in one
-  case, a folder in another. What `parentType` reports for a folder created
-  directly at the top of a space was not observed.
 - **How deep nesting may go**, and whether Confluence enforces a limit. Two levels
   were verified; nothing suggests two is special.
 - **Data Center.** Asserted to have no folder content type. Not tested — no DC
