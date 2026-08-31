@@ -20,6 +20,9 @@ func TestSchemaConformance(t *testing.T) {
 		// A row with no webui: space and url are both null, which the schema has
 		// to allow.
 		{ID: "33", Type: "page", Title: "Linkless", Status: "current", ParentID: "22", Depth: 2},
+		// A space's root page: no parent node at all, so parent_id is null too.
+		{ID: "44", Type: "page", Title: "Home", Status: "current", Depth: 1,
+			Space: "ENG", URL: "https://wiki.example.net/wiki/spaces/ENG/overview"},
 	}
 	results := make([]any, 0, len(nodes))
 	for _, n := range nodes {
@@ -87,5 +90,15 @@ func TestBuildResultNullsWithoutWebUI(t *testing.T) {
 	}
 	if res.URL != nil {
 		t.Errorf("url = %v, want null", *res.URL)
+	}
+}
+
+// TestBuildResultNullsParentAtASpaceRoot: WalkSpace reports "" for a root page's
+// parent, and "" must reach --json as null rather than as an empty string that
+// reads like an id.
+func TestBuildResultNullsParentAtASpaceRoot(t *testing.T) {
+	res := buildResult(pagetree.Node{ID: "11", Type: "page", Title: "Home", Depth: 1})
+	if res.ParentID != nil {
+		t.Errorf("parent_id = %q, want null", *res.ParentID)
 	}
 }

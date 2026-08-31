@@ -26,6 +26,9 @@ func testCmd(t *testing.T, url string) *cobra.Command {
 	c.Flags().String("username", "u", "")
 	c.Flags().String("cloud-id", "", "")
 	c.Flags().String("env-file", "", "")
+	// run reads --depth's *value* from the package-level flag var, but asks the
+	// command whether it was set at all, so the flag has to exist here too.
+	c.Flags().String("depth", "1", "")
 	return c
 }
 
@@ -66,6 +69,42 @@ func childServer(t *testing.T) string {
 		}
 	})
 	return c.SiteURL()
+}
+
+// spaceServer answers the space-id resolve, the space root-page collection, and
+// the child routes under the one root it reports. spaceID "" makes the key
+// unknown.
+func spaceServer(t *testing.T, spaceID string) string {
+	t.Helper()
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/wiki/api/v2/spaces":
+			if spaceID == "" {
+				_, _ = w.Write([]byte(`{"results":[]}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"results":[{"id":"` + spaceID + `"}]}`))
+		case r.URL.Path == "/wiki/rest/api/space/ENG/content/page":
+			_, _ = w.Write([]byte(`{"results":[{"id":"1","type":"page","title":"Home",` +
+				`"status":"current","extensions":{"position":0},` +
+				`"_links":{"webui":"/spaces/ENG/overview"}}]}`))
+		case strings.HasPrefix(r.URL.Path, "/wiki/rest/api/content/1/child/page"):
+			_, _ = w.Write([]byte(`{"results":[{"id":"2","type":"page","title":"Child",` +
+				`"status":"current","extensions":{"position":0},"_links":{"webui":"/spaces/ENG/pages/2/Child"}}]}`))
+		case strings.HasPrefix(r.URL.Path, "/wiki/rest/api/content/"):
+			_, _ = w.Write([]byte(`{"results":[]}`))
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	})
+	return c.SiteURL()
+}
+
+// withSpace sets --space for one test, restoring the package-level flag after.
+func withSpace(t *testing.T, key string) {
+	t.Helper()
+	spaceOpt = key
+	t.Cleanup(func() { spaceOpt = "" })
 }
 
 // TestParseDepth covers the flag's whole vocabulary. 0 is the interesting case:
@@ -195,5 +234,120 @@ func TestRunJSONOutput(t *testing.T) {
 	}
 	if env.Command != "children" || len(env.Results) != 1 || env.Results[0].ID != "2" {
 		t.Errorf("envelope = %+v, want command=children with one result id=2", env)
+	}
+}
+
+// TestCheckTarget is the exactly-one-of rule. Both spellings name the root of the
+// walk, so neither "both" nor "neither" has an answer.
+func TestCheckTarget(t *testing.T) {
+	if err := checkTarget([]string{"1"}, ""); err != nil {
+		t.Errorf("PAGE alone: %v", err)
+	}
+	if err := checkTarget(nil, "ENG"); err != nil {
+		t.Errorf("--space alone: %v", err)
+	}
+	err := checkTarget(nil, "")
+	if err == nil || !strings.Contains(err.Error(), "--space") {
+		t.Errorf("neither = %v, want an error naming --space", err)
+	}
+	err = checkTarget([]string{"1"}, "ENG")
+	if err == nil || !strings.Contains(err.Error(), "cannot be combined") {
+		t.Errorf("both = %v, want a refusal", err)
+	}
+}
+
+// TestRunNoTargetIsAUsageError: the check happens before credentials are
+// resolved, so it fails the same way with no server to talk to.
+func TestRunNoTargetIsAUsageError(t *testing.T) {
+	_, err := captureStdout(t, func() error {
+		return run(testCmd(t, "https://wiki.example.net"), nil)
+	})
+	if !ui.IsSilent(err) || ui.ExitCode(err) != 2 {
+		t.Fatalf("run: %v, want a silent exit-2 usage error for no PAGE and no --space", err)
+	}
+}
+
+func TestRunListsASpace(t *testing.T) {
+	withSpace(t, "ENG")
+	url := spaceServer(t, "77")
+	out, err := captureStdout(t, func() error { return run(testCmd(t, url), nil) })
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	// Depth 1 is the space's root pages, so the homepage is a row and its child
+	// is not.
+	if !strings.Contains(out, "Home") {
+		t.Errorf("output = %q, want the space's root page listed", out)
+	}
+	if strings.Contains(out, "Child") {
+		t.Errorf("output = %q, want nothing below the root at --depth 1", out)
+	}
+}
+
+// TestRunSpaceHintsAtDepth: one row is what a space's top level usually is, and
+// reading it as the whole space is the trap the hint exists for.
+func TestRunSpaceHintsAtDepth(t *testing.T) {
+	withSpace(t, "ENG")
+	url := spaceServer(t, "77")
+
+	out, err := captureStdout(t, func() error { return run(testCmd(t, url), nil) })
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !strings.Contains(out, "--depth all") {
+		t.Errorf("output = %q, want a hint naming --depth all", out)
+	}
+
+	// Not when the caller already said how deep to go: they know the flag.
+	cmd := testCmd(t, url)
+	if err := cmd.Flags().Set("depth", "1"); err != nil {
+		t.Fatal(err)
+	}
+	out, err = captureStdout(t, func() error { return run(cmd, nil) })
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if strings.Contains(out, "--depth all") {
+		t.Errorf("output = %q, want no hint once --depth was given", out)
+	}
+}
+
+// TestRunSpaceJSONHasNoHint: the hint is prose for a human, and a stray line in
+// stdout would make the envelope unparseable.
+func TestRunSpaceJSONHasNoHint(t *testing.T) {
+	ui.SetJSON(true)
+	t.Cleanup(func() { ui.SetJSON(false) })
+	withSpace(t, "ENG")
+
+	out, err := captureStdout(t, func() error { return run(testCmd(t, spaceServer(t, "77")), nil) })
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	var env struct {
+		Results []struct {
+			ID       string  `json:"id"`
+			ParentID *string `json:"parent_id"`
+			Depth    int     `json:"depth"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	if len(env.Results) != 1 || env.Results[0].ID != "1" {
+		t.Fatalf("results = %+v, want the one root page", env.Results)
+	}
+	// A root page hangs off no node, and the space is not one.
+	if env.Results[0].ParentID != nil {
+		t.Errorf("parent_id = %q, want null", *env.Results[0].ParentID)
+	}
+}
+
+// TestRunUnknownSpaceIsAUsageError: an unknown key is a typo, not a failed walk,
+// and it must not be confused with the 404 a rejected credential produces.
+func TestRunUnknownSpaceIsAUsageError(t *testing.T) {
+	withSpace(t, "ENG")
+	_, err := captureStdout(t, func() error { return run(testCmd(t, spaceServer(t, "")), nil) })
+	if !ui.IsSilent(err) || ui.ExitCode(err) != 2 {
+		t.Fatalf("run: %v, want a silent exit-2 usage error for an unknown space key", err)
 	}
 }
