@@ -83,10 +83,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return fatalFail(err.Error(), jsonout.CodeConfig)
 	}
 
-	var (
-		id    string
-		nodes []pagetree.Node
-	)
+	var nodes []pagetree.Node
 	if spaceOpt != "" {
 		// The key is resolved rather than handed straight to the walk, even
 		// though the route it feeds takes a key: an unknown key is the user's
@@ -94,18 +91,17 @@ func run(cmd *cobra.Command, args []string) error {
 		// 404 -- which is also what a rejected credential looks like.
 		spaceID, err := c.ResolveSpaceID(spaceOpt)
 		if err != nil {
-			return operationalFail(spaceOpt, err, jsonout.CodeFor(err))
+			return spaceFail(err, jsonout.CodeFor(err))
 		}
 		if spaceID == "" {
 			return fatalFail(fmt.Sprintf("space %q not found", spaceOpt), jsonout.CodeValidation)
 		}
-		id = spaceOpt
 		nodes, err = pagetree.WalkSpace(c, spaceOpt, depth)
 		if err != nil {
-			return operationalFail(id, err, jsonout.CodeFor(err))
+			return spaceFail(err, jsonout.CodeFor(err))
 		}
 	} else {
-		id, err = pageref.Resolve(args[0])
+		id, err := pageref.Resolve(args[0])
 		if err != nil {
 			return fatalFail(err.Error(), jsonout.CodeValidation)
 		}
@@ -132,10 +128,10 @@ func run(cmd *cobra.Command, args []string) error {
 	fmt.Println(tree(nodes))
 	if spaceOpt != "" && !cmd.Flags().Changed("depth") {
 		// A space's top level is usually one row -- its homepage -- which reads
-		// like the whole answer. Human output only: a --json consumer is not
-		// reading prose, and the row it would explain is already in the array.
-		fmt.Println()
-		ui.Info("Showing the space's top level. Use --depth 2, or --depth all for the whole tree.")
+		// like the whole answer. On stderr, so it explains the table without
+		// joining it; a --json consumer never sees it at all, and the row it
+		// would explain is already in the array.
+		ui.Hint("Showing the space's top level. Use --depth 2, or --depth all for the whole tree.")
 	}
 	return nil
 }
@@ -187,6 +183,22 @@ func fatalFail(msg string, code jsonout.Code) error {
 func operationalFail(id string, err error, code jsonout.Code) error {
 	if ui.IsJSON() {
 		_ = jsonout.Emit(os.Stdout, failEnvelope(id, err, code))
+	} else {
+		ui.Error(err.Error())
+	}
+	return ui.SilentExit(1)
+}
+
+// spaceFail reports a --space walk failing, exiting 1.
+//
+// An error object on stderr rather than the results[0] failure operationalFail
+// writes, for the reason find and search do the same: that shape names the page
+// it was asked about, and a space walk was asked about no page. Putting the
+// space key in its page_id would hand a --json consumer an id that resolves to
+// nothing.
+func spaceFail(err error, code jsonout.Code) error {
+	if ui.IsJSON() {
+		_ = jsonout.EmitError(os.Stderr, command, err.Error(), code)
 	} else {
 		ui.Error(err.Error())
 	}

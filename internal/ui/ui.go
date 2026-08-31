@@ -122,6 +122,18 @@ func Info(msg string) {
 	fmt.Println("    " + msg)
 }
 
+// Hint prints an advisory line to stderr, set off by a blank line. No-op in JSON
+// mode.
+//
+// Unlike Info it never touches stdout: a hint is addressed to whoever is reading
+// the output, and stdout may be a table on its way into awk.
+func Hint(msg string) {
+	if jsonMode {
+		return
+	}
+	fmt.Fprintln(os.Stderr, "\n    "+msg)
+}
+
 // Dim prints a dimmed line. No-op in JSON mode.
 func Dim(msg string) {
 	if jsonMode {
