@@ -127,6 +127,12 @@ per node. Tempting, and rejected twice over:
 
 ## Unverified
 
+- **Which scope the v1 root-pages route needs.** Everything above was measured
+  with an unscoped personal token against the site domain. `children --space`
+  also resolves the key through `GET /wiki/api/v2/spaces`, which
+  [api.md](api.md#scopes) already ties to `read:space:confluence`; what the v1
+  `/space/{key}/content/page` collection wants under a scoped token through the
+  gateway was not tested.
 - **Data Center.** All of the above is Cloud. The v1 space content route exists
   there too, but nothing here was tested against a DC instance.
 - **Whether the UI can place a folder at a space root** even though the API's
