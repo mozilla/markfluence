@@ -113,7 +113,7 @@ The scopes markfluence needs:
 | --- | --- | --- |
 | Reading pages, and reading/writing page width | `create`, `update`, `fix`, `info`, `read`, `export`, `find` | `read:page:confluence` |
 | Creating and updating pages, and setting page width | `create`, `update`, `fix` | `write:page:confluence` |
-| Resolving a space key to an id | `create`, `find`, `search` | `read:space:confluence` |
+| Resolving a space key to an id | `create`, `find`, `search`, `children --space` | `read:space:confluence` |
 | Looking up a folder (a folder can be a page's parent) | `create` | `read:folder:confluence` |
 | CQL queries | `find`, `search` | `search:confluence` |
 | Author names | `info` | `read:confluence-user` |
@@ -449,12 +449,13 @@ markfluence read "https://org.atlassian.net/wiki/spaces/ENG/pages/1234567890/Tit
 ### `children`
 
 ```
-Usage: markfluence children PAGE [flags]
+Usage: markfluence children [PAGE] [flags]
 ```
 
 List the pages and folders under a page or folder. `PAGE` is a numeric id, a
 Confluence page **or folder** URL, or a markdown file whose frontmatter has a
-`page_id`.
+`page_id`. Pass `--space KEY` instead of a `PAGE` to list a whole space; exactly
+one of the two is required.
 
 ```sh
 markfluence children 1234567890                  # direct children
@@ -463,6 +464,9 @@ markfluence children 1234567890 --depth all
 markfluence children "https://org.atlassian.net/wiki/spaces/ENG/folder/1234567890"
 markfluence children docs/index.md               # children of the page index.md publishes to
 markfluence children 1234567890 --json | jq -r '.results[] | select(.type=="page") | .id'
+markfluence children --space ENG                 # the space's top level
+markfluence children --space ENG --depth all     # every page and folder in the space
+markfluence children --space ENG --depth all --json | jq -r '.results[].title'
 ```
 
 ```
@@ -490,6 +494,35 @@ default of `1` is what keeps the casual case cheap.
 Trashed pages and folders are not listed. Finding nothing is a success, not a
 failure: the command prints `No children.` and exits 0, so `--json` reporting an
 empty `results` array is how a script tests for an empty subtree.
+
+#### `--space`
+
+`--space` takes a space **key** (not a URL, and not a name), and lists that space
+instead of a page:
+
+```sh
+$ markfluence children --space AIM
+TYPE  ID       TITLE
+page  2097154  Africa Innovation Mradi Home
+page  2097185  What is Africa Mradi?
+
+    Showing the space's top level. Use --depth 2, or --depth all for the whole tree.
+```
+
+**Depth 1 is the space's top level**, which is usually just its homepage — hence
+the reminder, which human output prints only when `--depth` was left at its
+default. `--depth all` walks the whole space, at a pair of requests per page and
+folder in it.
+
+A space's top level is its root **pages**: a folder created with no parent lands
+under the homepage rather than at the root, so there is no such thing as a
+root-level folder to miss ([docs/confluence/spaces.md](docs/confluence/spaces.md)).
+More than one root page is normal, though — a page published with `parent: null`
+is one — so this is not the same as listing the homepage's children.
+
+In `--json`, a row at the space root reports `"parent_id": null`, since it hangs
+off no node and the space is not one. An unknown key is a usage error (exit 2),
+not an empty result, exactly as it is for `find` and `search`.
 
 ### `find`
 
