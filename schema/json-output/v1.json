@@ -162,7 +162,7 @@
       "oneOf": [{ "$ref": "#/$defs/code" }, { "type": "null" }]
     },
     "childrenResult": {
-      "description": "One page or folder under the requested node. The results array is flat and in walk order (depth-first, siblings in the order Confluence displays them); parent_id and depth carry the hierarchy. space and url are both derived from the row's webui link, so a row missing one is missing both.",
+      "description": "One page or folder under the requested node, or under the requested space's root. The results array is flat and in walk order (depth-first, siblings in the order Confluence displays them); parent_id and depth carry the hierarchy. parent_id is null for a page at the root of a space, which hangs off no node -- under --space, that is every depth-1 row. space and url are both derived from the row's webui link, so a row missing one is missing both.",
       "type": "object",
       "additionalProperties": false,
       "required": ["ok", "id", "type", "title", "status", "parent_id", "depth", "space", "url"],
@@ -172,7 +172,7 @@
         "type": { "enum": ["page", "folder"] },
         "title": { "type": "string" },
         "status": { "type": "string" },
-        "parent_id": { "type": "string" },
+        "parent_id": { "$ref": "#/$defs/stringOrNull" },
         "depth": { "type": "integer", "minimum": 1 },
         "space": { "$ref": "#/$defs/stringOrNull" },
         "url": { "$ref": "#/$defs/stringOrNull" }

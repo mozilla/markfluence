@@ -23,21 +23,28 @@ const command = "children"
 // depthAll is the --depth value meaning "however deep it goes".
 const depthAll = "all"
 
-var depthOpt string
+var (
+	depthOpt string
+	spaceOpt string
+)
 
 // Cmd is the children command.
 var Cmd = &cobra.Command{
-	Use:   command + " PAGE",
-	Short: "List the pages and folders under a Confluence page or folder",
+	Use:   command + " [PAGE]",
+	Short: "List the pages and folders under a Confluence page, folder, or space",
 	Long: "List the pages and folders under a Confluence page or folder.\n\n" +
 		"PAGE is a numeric id, a Confluence page or folder URL, or a markdown\n" +
 		"file whose frontmatter has a page_id.\n\n" +
+		"Pass --space KEY instead of a PAGE to list a whole space. Depth 1 is\n" +
+		"then the space's top level, which is usually just its homepage, so\n" +
+		"--depth 2 or --depth all is what shows the tree. Walking a space costs\n" +
+		"one pair of requests per page and folder in it.\n\n" +
 		"Folders are listed alongside pages, with a TYPE column, because a\n" +
 		"folder can hold the only pages in a subtree -- listing pages alone\n" +
 		"would show nothing for a folder that contains folders.\n\n" +
 		"A folder counts as a level: at the default --depth 1 a child folder\n" +
 		"appears as a row, and --depth 2 shows what is inside it.",
-	Args:              cobra.ExactArgs(1),
+	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
 	RunE:              run,
 }
@@ -45,7 +52,12 @@ var Cmd = &cobra.Command{
 func init() {
 	Cmd.Flags().StringVar(&depthOpt, "depth", "1",
 		`How deep to recurse: a positive number, or "all".`)
+	Cmd.Flags().StringVar(&spaceOpt, "space", "",
+		"List a whole space, by key, instead of a PAGE.")
 	completion.RegisterFlag(Cmd, "depth", completion.Values("1", "2", "3", depthAll))
+	// A space key lives on the server, and completion runs on every keystroke,
+	// so it completes to nothing rather than stalling the shell.
+	completion.RegisterFlag(Cmd, "space", cobra.NoFileCompletions)
 }
 
 func run(cmd *cobra.Command, args []string) error {
@@ -54,8 +66,11 @@ func run(cmd *cobra.Command, args []string) error {
 	cloudID, _ := cmd.Flags().GetString("cloud-id")
 	envFile, _ := cmd.Flags().GetString("env-file")
 
-	// Before the credential check: a bad --depth is a usage error and does not
-	// need a server to be recognized.
+	// Before the credential check: neither of these needs a server to be
+	// recognized as a usage error.
+	if err := checkTarget(args, spaceOpt); err != nil {
+		return fatalFail(err.Error(), jsonout.CodeValidation)
+	}
 	depth, err := parseDepth(depthOpt)
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeValidation)
@@ -68,14 +83,36 @@ func run(cmd *cobra.Command, args []string) error {
 		return fatalFail(err.Error(), jsonout.CodeConfig)
 	}
 
-	id, err := pageref.Resolve(args[0])
-	if err != nil {
-		return fatalFail(err.Error(), jsonout.CodeValidation)
-	}
-
-	nodes, err := pagetree.Walk(c, id, depth)
-	if err != nil {
-		return operationalFail(id, err, jsonout.CodeFor(err))
+	var (
+		id    string
+		nodes []pagetree.Node
+	)
+	if spaceOpt != "" {
+		// The key is resolved rather than handed straight to the walk, even
+		// though the route it feeds takes a key: an unknown key is the user's
+		// typo and deserves to be named as one, and the v1 route reports it as a
+		// 404 -- which is also what a rejected credential looks like.
+		spaceID, err := c.ResolveSpaceID(spaceOpt)
+		if err != nil {
+			return operationalFail(spaceOpt, err, jsonout.CodeFor(err))
+		}
+		if spaceID == "" {
+			return fatalFail(fmt.Sprintf("space %q not found", spaceOpt), jsonout.CodeValidation)
+		}
+		id = spaceOpt
+		nodes, err = pagetree.WalkSpace(c, spaceOpt, depth)
+		if err != nil {
+			return operationalFail(id, err, jsonout.CodeFor(err))
+		}
+	} else {
+		id, err = pageref.Resolve(args[0])
+		if err != nil {
+			return fatalFail(err.Error(), jsonout.CodeValidation)
+		}
+		nodes, err = pagetree.Walk(c, id, depth)
+		if err != nil {
+			return operationalFail(id, err, jsonout.CodeFor(err))
+		}
 	}
 
 	if ui.IsJSON() {
@@ -93,6 +130,28 @@ func run(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 	fmt.Println(tree(nodes))
+	if spaceOpt != "" && !cmd.Flags().Changed("depth") {
+		// A space's top level is usually one row -- its homepage -- which reads
+		// like the whole answer. Human output only: a --json consumer is not
+		// reading prose, and the row it would explain is already in the array.
+		fmt.Println()
+		ui.Info("Showing the space's top level. Use --depth 2, or --depth all for the whole tree.")
+	}
+	return nil
+}
+
+// checkTarget requires exactly one of PAGE and --space.
+//
+// They are alternatives rather than a filter and a target: --space names the
+// root, so combining them would mean two roots, and neither of them means
+// nothing to walk.
+func checkTarget(args []string, space string) error {
+	switch {
+	case len(args) == 0 && space == "":
+		return fmt.Errorf("no page given: pass a PAGE, or --space KEY to list a whole space")
+	case len(args) > 0 && space != "":
+		return fmt.Errorf("PAGE and --space cannot be combined: --space lists a whole space")
+	}
 	return nil
 }
 

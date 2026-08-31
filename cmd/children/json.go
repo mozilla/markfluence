@@ -20,7 +20,7 @@ type jsonChildResult struct {
 	Type     string  `json:"type"`
 	Title    string  `json:"title"`
 	Status   string  `json:"status"`
-	ParentID string  `json:"parent_id"`
+	ParentID *string `json:"parent_id"`
 	Depth    int     `json:"depth"`
 	Space    *string `json:"space"`
 	URL      *string `json:"url"`
@@ -33,7 +33,7 @@ func buildResult(n pagetree.Node) jsonChildResult {
 		Type:     n.Type,
 		Title:    n.Title,
 		Status:   n.Status,
-		ParentID: n.ParentID,
+		ParentID: nullable(n.ParentID),
 		Depth:    n.Depth,
 		Space:    nullable(n.Space),
 		URL:      nullable(n.URL),
@@ -41,7 +41,8 @@ func buildResult(n pagetree.Node) jsonChildResult {
 }
 
 // nullable maps an empty string to a JSON null, else a pointer to the value.
-// space and url are both derived from webui, so a row without one has neither.
+// space and url are both derived from webui, so a row without one has neither;
+// parent_id is null for a page at the root of a space, which hangs off no node.
 func nullable(s string) *string {
 	if s == "" {
 		return nil
