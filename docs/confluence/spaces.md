@@ -34,6 +34,21 @@ a space key with no follow-up request. Note the homepage's `webui` is
 `blogpost` collection. `children` wants the page tree, so the type belongs in
 the path.
 
+It pages by the `start`/`limit` offset scheme, which is worth stating because
+picking the wrong one of the three schemes in [api.md](api.md) truncates or
+loops silently. Against `AIM`'s two root pages:
+
+| request | result |
+|---|---|
+| `?depth=root&limit=1&start=0` | `Africa Innovation Mradi Home` |
+| `?depth=root&limit=1&start=1` | `What is Africa Mradi?` |
+| `?depth=root&limit=1&start=2` | no rows |
+
+So `start` is honoured and a past-the-end page is empty, which is exactly what
+`listV1` needs: a short page ends the loop. (Had the route ignored `start` the
+way `/rest/api/search` does, `listV1` would have re-read the first page
+forever.)
+
 ### A space can have more than one root page
 
 | space | `depth=root` pages |

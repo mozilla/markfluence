@@ -10,6 +10,7 @@ import (
 
 	"github.com/mozilla/markfluence/internal/clienttest"
 	"github.com/mozilla/markfluence/internal/pagetree"
+	"github.com/mozilla/markfluence/internal/schematest"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -43,6 +44,27 @@ func captureStdout(t *testing.T, fn func() error) (string, error) {
 	os.Stdout = w
 	runErr := fn()
 	os.Stdout = old
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out), runErr
+}
+
+// captureStderr runs fn with os.Stderr redirected, returning what it printed.
+func captureStderr(t *testing.T, fn func() error) (string, error) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stderr
+	os.Stderr = w
+	runErr := fn()
+	os.Stderr = old
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -290,12 +312,12 @@ func TestRunSpaceHintsAtDepth(t *testing.T) {
 	withSpace(t, "ENG")
 	url := spaceServer(t, "77")
 
-	out, err := captureStdout(t, func() error { return run(testCmd(t, url), nil) })
+	errOut, err := captureStderr(t, func() error { return run(testCmd(t, url), nil) })
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if !strings.Contains(out, "--depth all") {
-		t.Errorf("output = %q, want a hint naming --depth all", out)
+	if !strings.Contains(errOut, "--depth all") {
+		t.Errorf("stderr = %q, want a hint naming --depth all", errOut)
 	}
 
 	// Not when the caller already said how deep to go: they know the flag.
@@ -303,12 +325,27 @@ func TestRunSpaceHintsAtDepth(t *testing.T) {
 	if err := cmd.Flags().Set("depth", "1"); err != nil {
 		t.Fatal(err)
 	}
-	out, err = captureStdout(t, func() error { return run(cmd, nil) })
+	errOut, err = captureStderr(t, func() error { return run(cmd, nil) })
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if strings.Contains(out, "--depth all") {
-		t.Errorf("output = %q, want no hint once --depth was given", out)
+	if strings.Contains(errOut, "--depth all") {
+		t.Errorf("stderr = %q, want no hint once --depth was given", errOut)
+	}
+}
+
+// TestRunSpaceHintStaysOffStdout is what keeps the table pipeable: the hint
+// explains the listing, so it must not become a row of it.
+func TestRunSpaceHintStaysOffStdout(t *testing.T) {
+	withSpace(t, "ENG")
+	out, err := captureStdout(t, func() error { return run(testCmd(t, spaceServer(t, "77")), nil) })
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	for i, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		if strings.Contains(line, "--depth") || strings.TrimSpace(line) == "" {
+			t.Errorf("stdout line %d = %q, want only table rows", i, line)
+		}
 	}
 }
 
@@ -350,4 +387,42 @@ func TestRunUnknownSpaceIsAUsageError(t *testing.T) {
 	if !ui.IsSilent(err) || ui.ExitCode(err) != 2 {
 		t.Fatalf("run: %v, want a silent exit-2 usage error for an unknown space key", err)
 	}
+}
+
+// TestRunSpaceFailureIsAnErrorObject: a walk that fails partway names no page,
+// so it must not be reported as a results[0] failure whose page_id would be the
+// space key -- an id that resolves to nothing.
+func TestRunSpaceFailureIsAnErrorObject(t *testing.T) {
+	ui.SetJSON(true)
+	t.Cleanup(func() { ui.SetJSON(false) })
+	withSpace(t, "ENG")
+
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/wiki/api/v2/spaces" {
+			_, _ = w.Write([]byte(`{"results":[{"id":"77"}]}`))
+			return
+		}
+		// A 500 with no Retry-After is not retried, so this fails once.
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	var out, errOut string
+	var runErr error
+	out, _ = captureStdout(t, func() error {
+		errOut, runErr = captureStderr(t, func() error { return run(testCmd(t, c.SiteURL()), nil) })
+		return nil
+	})
+	if !ui.IsSilent(runErr) || ui.ExitCode(runErr) != 1 {
+		t.Fatalf("run: %v, want a silent exit-1 operational failure", runErr)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("stdout = %q, want nothing -- there is no envelope to emit", out)
+	}
+	if !strings.Contains(errOut, `"command": "children"`) {
+		t.Fatalf("stderr = %q, want a children error object", errOut)
+	}
+	if strings.Contains(errOut, "page_id") {
+		t.Errorf("stderr = %q, must not report a page_id for a space walk", errOut)
+	}
+	schematest.ValidateError(t, []byte(errOut))
 }

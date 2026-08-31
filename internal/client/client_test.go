@@ -13,6 +13,7 @@ import (
 	"net/textproto"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -641,6 +642,40 @@ func TestListSpaceRootPagesAsksForRootsOnly(t *testing.T) {
 	}
 	if SpaceKeyFromWebUI(n.Links.WebUI) != "~abc" {
 		t.Errorf("space from webui = %q, want ~abc", SpaceKeyFromWebUI(n.Links.WebUI))
+	}
+}
+
+// TestListSpaceRootPagesPagesByOffset: the route honours start/limit, which is
+// the scheme listV1 uses and the one that has to be right -- a route that
+// ignored start (as /rest/api/search does) would hand listV1 the same page
+// forever rather than truncating. Measured against a real space in
+// docs/confluence/spaces.md.
+func TestListSpaceRootPagesPagesByOffset(t *testing.T) {
+	var starts []string
+	c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		starts = append(starts, r.URL.Query().Get("start"))
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		// A full page the first time, so the loop has to ask again; nothing the
+		// second, which is the only thing that ends it.
+		rows := make([]string, 0, limit)
+		if r.URL.Query().Get("start") == "0" {
+			for i := range limit {
+				rows = append(rows, fmt.Sprintf(`{"id":"%d","type":"page","title":"Root %d"}`, i, i))
+			}
+		}
+		_, _ = w.Write([]byte(`{"results":[` + strings.Join(rows, ",") + `]}`))
+	})
+
+	got, err := c.ListSpaceRootPages("ENG")
+	if err != nil {
+		t.Fatalf("ListSpaceRootPages: %v", err)
+	}
+	if len(got) != v1PageSize {
+		t.Errorf("len = %d, want %d (one full page, then an empty one)", len(got), v1PageSize)
+	}
+	want := []string{"0", strconv.Itoa(v1PageSize)}
+	if !eqStrings(starts, want) {
+		t.Errorf("start values = %v, want %v", starts, want)
 	}
 }
 
