@@ -85,6 +85,38 @@ func TestRunWarnings(t *testing.T) {
 	}
 }
 
+func TestRunSamePageAnchorUnpublishedWarnsDistinctly(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "draft.md"), "# Draft\n\n[back to top](#draft)\n")
+
+	out, err := captureOutput(t, func() error { return run(testCmd(t, ""), []string{filepath.Join(dir, "draft.md")}) })
+	if err != nil {
+		t.Fatalf("run: %v (warnings alone must not fail)", err)
+	}
+	if !strings.Contains(out, "same-page anchor not resolved: #draft") {
+		t.Errorf("output = %q, want the same-page-anchor warning", out)
+	}
+	if strings.Contains(out, "link not resolved") {
+		t.Errorf("output = %q, must not read as an unresolved cross-file link to itself", out)
+	}
+}
+
+func TestRunSelfReferenceWithBadFragmentDoesNotClaimAnchorResolved(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "draft.md"), "# Draft\n\n[bad self ref](draft.md#does-not-exist)\n")
+
+	out, err := captureOutput(t, func() error { return run(testCmd(t, ""), []string{filepath.Join(dir, "draft.md")}) })
+	if err != nil {
+		t.Fatalf("run: %v (warnings alone must not fail)", err)
+	}
+	if !strings.Contains(out, "anchor not found: draft.md#does-not-exist") {
+		t.Errorf("output = %q, want the anchor-not-found warning", out)
+	}
+	if strings.Contains(out, "same-page anchor not resolved") {
+		t.Errorf("output = %q, must not claim the anchor resolved when it didn't", out)
+	}
+}
+
 func TestRunBroken(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "main.md"), "# Main\n\n![missing](nope.png)\n")

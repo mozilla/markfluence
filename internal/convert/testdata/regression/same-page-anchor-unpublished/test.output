@@ -1,0 +1,10 @@
+{
+  "attachments": [],
+  "broken": [],
+  "html": "<h1>Same Page Anchor Unpublished</h1>\n<p>This file has no <code>page_id</code> yet, so a same-page anchor resolves to a real heading but can't be turned into an absolute URL -- a Warning distinct from the &quot;link not resolved&quot; one a genuinely unpublished sibling produces (#118), since the target here is this file itself.</p>\n<p>Jump to <a href=\"main.md#Getting-Started\">Getting Started</a>.</p>\n<p>A self-reference whose fragment matches no heading at all is a different case -- it must not claim the anchor resolved, since it didn't: <a href=\"main.md#does-not-exist\">bad self anchor</a>.</p>\n<h2>Getting Started</h2>\n<p>Some getting-started content.</p>\n",
+  "warnings": [
+    "line 8: same-page anchor not resolved: #getting-started",
+    "line 12: anchor not found: main.md#does-not-exist",
+    "line 12: link not resolved: main.md#does-not-exist"
+  ]
+}

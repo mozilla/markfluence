@@ -66,6 +66,7 @@ func (r *storageRenderer) rewriteHref(
 	href string, node ast.Node, source []byte,
 ) (newHref string, rewritten bool, brokenText string) {
 	prefix := r.linePrefix(node, source)
+	original := href // as authored, before any same-page/anchor rewrite -- see rewriteDocLink's self-reference case.
 	if strings.HasPrefix(href, "#") {
 		if nf, ok := r.index.Anchor(r.currentDocKey, decodeDestination(href[1:])); ok {
 			// Same-page anchors become fake cross-file links to the current
@@ -96,7 +97,7 @@ func (r *storageRenderer) rewriteHref(
 		}
 	}
 
-	newHref, ok, brokenText := r.rewriteDocLink(href, prefix)
+	newHref, ok, brokenText := r.rewriteDocLink(href, original, rewritten, prefix)
 	if brokenText != "" {
 		return "", false, brokenText
 	}
@@ -118,7 +119,20 @@ func (r *storageRenderer) rewriteHref(
 // entirely" apart from "not published yet": both look identical to
 // index.Page (a miss), but only the first is a defect. prefix is rewriteHref's
 // already-computed line prefix, threaded through rather than recomputed.
-func (r *storageRenderer) rewriteDocLink(href, prefix string) (newHref string, ok bool, brokenText string) {
+// original is href as the author wrote it, before rewriteHref's same-page
+// anchor branch turned it into a fake cross-file link to the current file --
+// needed only to word the self-reference case of the "not published yet"
+// warning below without naming this file as if it were some other target.
+// anchorResolved is rewriteHref's rewritten flag: whether the fragment was
+// actually matched to a heading before this call, which is what tells a
+// genuine same-page anchor (fully resolved, just pending this page's own
+// publish) apart from a self-referencing href whose fragment never matched
+// anything -- that one already got its own "anchor not found" warning
+// upstream, and must fall through to the generic message below rather than
+// claim a resolution that didn't happen.
+func (r *storageRenderer) rewriteDocLink(
+	href, original string, anchorResolved bool, prefix string,
+) (newHref string, ok bool, brokenText string) {
 	path, fragment := href, ""
 	if i := strings.Index(href, "#"); i >= 0 {
 		path, fragment = href[:i], href[i:]
@@ -137,6 +151,17 @@ func (r *storageRenderer) rewriteDocLink(href, prefix string) (newHref string, o
 			return "", false, r.reportLinkBroken(prefix, href, "outside the documentation root")
 		case !r.index.FileExists(key):
 			return "", false, r.reportLinkBroken(prefix, href, "not found")
+		case key == r.currentDocKey && anchorResolved:
+			// The target is this file itself -- a same-page anchor (or an
+			// explicit self-referencing "thisfile.md#frag") that resolved to a
+			// real heading but can't be fully qualified until this page has
+			// its own page_id. "link not resolved: thisfile.md#Frag" would
+			// read as if some other file were the broken reference; it isn't.
+			// A self-reference whose fragment never matched anything falls
+			// through to the default case instead: anchorResolved is false, and
+			// "anchor not found" already covered it upstream.
+			r.warnings = append(r.warnings, prefix+fmt.Sprintf("same-page anchor not resolved: %s", original))
+			return "", false, ""
 		default:
 			// The file exists but has no page_id yet -- the normal state of
 			// every page in a tree that hasn't been published, not an error.
