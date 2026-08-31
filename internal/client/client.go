@@ -744,6 +744,25 @@ func (c *ConfluenceClient) ListChildFolders(id string) ([]ChildNode, error) {
 	return listV1[ChildNode](c, "/wiki/rest/api/content/"+id+"/child/folder", nil)
 }
 
+// ListSpaceRootPages lists the pages at the root of a space, named by key.
+//
+// This is not a homepage lookup by another way round: a space can hold several
+// root pages -- one space in the survey behind docs/confluence/spaces.md has the
+// homepage plus a second root, and `create` with a null parent produces exactly
+// that -- so starting a walk from the space's homepageId would silently drop a
+// root page and its whole subtree.
+//
+// The type is in the path (/content/page) because /content also answers with a
+// blogpost collection, and the page tree is what a child listing is about.
+// Archived pages are absent without a status filter, matching the v1 child
+// routes. There is deliberately no root-folder companion to this call: a folder
+// created with no parent lands under the homepage rather than at the root, so
+// there is nothing for one to find (docs/confluence/spaces.md).
+func (c *ConfluenceClient) ListSpaceRootPages(spaceKey string) ([]ChildNode, error) {
+	return listV1[ChildNode](c, "/wiki/rest/api/space/"+url.PathEscape(spaceKey)+"/content/page",
+		url.Values{"depth": {"root"}})
+}
+
 // GetPageBodyOrNil fetches a page including its storage-format body, returning
 // nil (no error) on HTTP 404. The plain GetPage/GetPageOrNil stay bodyless so
 // metadata-only callers don't pay to transfer the body.

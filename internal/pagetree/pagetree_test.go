@@ -26,6 +26,16 @@ func treeServer(t *testing.T, tree map[string][]node) (*client.ConfluenceClient,
 	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+		// .../space/{key}/content/page?depth=root -- the WalkSpace seed. Keyed
+		// in the fixture as "space:{key}", so one fixture describes both the
+		// roots and everything under them.
+		if len(parts) >= 4 && parts[len(parts)-4] == "space" {
+			if got := r.URL.Query().Get("depth"); got != "root" {
+				t.Errorf("space content depth = %q, want root", got)
+			}
+			writeRows(w, tree["space:"+parts[len(parts)-3]], "page")
+			return
+		}
 		// .../content/{id}/child/{kind}
 		if len(parts) < 6 {
 			t.Errorf("unexpected path: %s", r.URL.Path)
@@ -33,25 +43,29 @@ func treeServer(t *testing.T, tree map[string][]node) (*client.ConfluenceClient,
 			return
 		}
 		parentID, want := parts[len(parts)-3], parts[len(parts)-1]
-
-		rows := make([]map[string]any, 0)
-		for _, n := range tree[parentID] {
-			if n.kind != want {
-				continue
-			}
-			slug := "pages"
-			if n.kind == "folder" {
-				slug = "folder"
-			}
-			rows = append(rows, map[string]any{
-				"id": n.id, "type": n.kind, "title": n.title, "status": "current",
-				"extensions": map[string]any{"position": n.position},
-				"_links":     map[string]any{"webui": fmt.Sprintf("/spaces/ENG/%s/%s", slug, n.id)},
-			})
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"results": rows})
+		writeRows(w, tree[parentID], want)
 	})
 	return c, &calls
+}
+
+// writeRows answers a v1 collection with the fixture nodes of one kind.
+func writeRows(w http.ResponseWriter, nodes []node, kind string) {
+	rows := make([]map[string]any, 0)
+	for _, n := range nodes {
+		if n.kind != kind {
+			continue
+		}
+		slug := "pages"
+		if n.kind == "folder" {
+			slug = "folder"
+		}
+		rows = append(rows, map[string]any{
+			"id": n.id, "type": n.kind, "title": n.title, "status": "current",
+			"extensions": map[string]any{"position": n.position},
+			"_links":     map[string]any{"webui": fmt.Sprintf("/spaces/ENG/%s/%s", slug, n.id)},
+		})
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"results": rows})
 }
 
 // fixture: root holds a folder and two pages, interleaved by position; the
@@ -191,5 +205,99 @@ func TestWalkSurvivesACycle(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Title != "A" {
 		t.Errorf("got %v, want just A", titles(got))
+	}
+}
+
+// spaceFixture is the AIM shape: two root pages, the second of them out of
+// position order, with a folder under the first holding the only page in its
+// subtree.
+func spaceFixture() map[string][]node {
+	return map[string][]node{
+		"space:ENG": {
+			{"r2", "page", "Second root", 900},
+			{"r1", "page", "Home", 100},
+		},
+		"r1": {{"f1", "folder", "Articles", 10}},
+		"f1": {{"p1", "page", "Inside Articles", 10}},
+	}
+}
+
+// TestWalkSpaceListsEveryRoot is the finding the whole feature rests on: a space
+// can have more than one root page, so a walk seeded from its homepage alone
+// would silently drop a root and everything under it.
+func TestWalkSpaceListsEveryRoot(t *testing.T) {
+	c, _ := treeServer(t, spaceFixture())
+	got, err := WalkSpace(c, "ENG", 1)
+	if err != nil {
+		t.Fatalf("WalkSpace: %v", err)
+	}
+	want := []string{"p:Home@1", "p:Second root@1"}
+	if fmt.Sprint(titles(got)) != fmt.Sprint(want) {
+		t.Errorf("got %v, want %v (both roots, in position order)", titles(got), want)
+	}
+}
+
+// TestWalkSpaceRootHasNoParent is what --json reports as parent_id: null. A root
+// page hangs off no node, and the space is not one.
+func TestWalkSpaceRootHasNoParent(t *testing.T) {
+	c, _ := treeServer(t, spaceFixture())
+	got, err := WalkSpace(c, "ENG", 2)
+	if err != nil {
+		t.Fatalf("WalkSpace: %v", err)
+	}
+	for _, n := range got {
+		wantParent := ""
+		if n.Depth > 1 {
+			wantParent = "r1"
+		}
+		if n.ParentID != wantParent {
+			t.Errorf("%s (depth %d) ParentID = %q, want %q", n.Title, n.Depth, n.ParentID, wantParent)
+		}
+	}
+}
+
+// TestWalkSpaceDescendsFolders pins that a space seed reaches the same places a
+// page seed does: the folder counts as a level, and the walk goes into it rather
+// than stopping at the row.
+func TestWalkSpaceDescendsFolders(t *testing.T) {
+	c, _ := treeServer(t, spaceFixture())
+	got, err := WalkSpace(c, "ENG", AllDepths)
+	if err != nil {
+		t.Fatalf("WalkSpace: %v", err)
+	}
+	want := []string{"p:Home@1", "f:Articles@2", "p:Inside Articles@3", "p:Second root@1"}
+	if fmt.Sprint(titles(got)) != fmt.Sprint(want) {
+		t.Errorf("got %v, want %v", titles(got), want)
+	}
+}
+
+// TestWalkSpaceHonoursDepth checks the bound is applied from the roots, and that
+// a level nobody asked for costs no requests.
+func TestWalkSpaceHonoursDepth(t *testing.T) {
+	c, calls := treeServer(t, spaceFixture())
+	got, err := WalkSpace(c, "ENG", 1)
+	if err != nil {
+		t.Fatalf("WalkSpace: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %v, want the two roots only", titles(got))
+	}
+	// One request for the roots, and nothing below them.
+	if *calls != 1 {
+		t.Errorf("calls = %d, want 1 (no requests below the depth limit)", *calls)
+	}
+}
+
+// TestWalkSpaceEmptyIsNotAnError: a space with no root pages is empty, not
+// broken. It should not happen -- every space has a homepage -- but a walk that
+// errored on it would turn a permissions oddity into a failure.
+func TestWalkSpaceEmptyIsNotAnError(t *testing.T) {
+	c, _ := treeServer(t, map[string][]node{})
+	got, err := WalkSpace(c, "ENG", AllDepths)
+	if err != nil {
+		t.Fatalf("an empty space must not be an error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("got %d nodes, want none", len(got))
 	}
 }

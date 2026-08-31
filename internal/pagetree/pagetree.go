@@ -22,7 +22,8 @@ type Node struct {
 	Title  string
 	Status string
 	// ParentID is the node this one hangs off, which for a top-level result is
-	// the id the walk started from.
+	// the id the walk started from — or "" for a page at the root of a space,
+	// which hangs off no node at all.
 	ParentID string
 	// Depth is 1 for a direct child, 2 for its child, and so on.
 	Depth int
@@ -39,48 +40,92 @@ type Node struct {
 // folders are reported rather than silently traversed — the caller can see there
 // is more below and ask for it.
 func Walk(c *client.ConfluenceClient, rootID string, maxDepth int) ([]Node, error) {
-	// Confluence trees should not contain cycles, but an unbounded walk has no
-	// other backstop if one ever appears, and the set costs nothing.
-	visited := map[string]bool{rootID: true}
-	var out []Node
-
-	var walk func(parentID string, depth int) error
-	walk = func(parentID string, depth int) error {
-		if maxDepth != AllDepths && depth > maxDepth {
-			return nil
-		}
-		children, err := siblings(c, parentID)
-		if err != nil {
-			return err
-		}
-		for _, ch := range children {
-			if visited[ch.ID] {
-				continue
-			}
-			visited[ch.ID] = true
-			out = append(out, Node{
-				ID:       ch.ID,
-				Type:     ch.Type,
-				Title:    ch.Title,
-				Status:   ch.Status,
-				ParentID: parentID,
-				Depth:    depth,
-				Space:    client.SpaceKeyFromWebUI(ch.Links.WebUI),
-				URL:      nodeURL(c, ch.Links.WebUI),
-			})
-			// Depth-first, so a node's subtree is printed under it rather than
-			// after all of its siblings.
-			if err := walk(ch.ID, depth+1); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	if err := walk(rootID, 1); err != nil {
+	w := &walker{c: c, maxDepth: maxDepth, visited: map[string]bool{rootID: true}}
+	if err := w.descend(rootID, 1); err != nil {
 		return nil, err
 	}
-	return out, nil
+	return w.out, nil
+}
+
+// WalkSpace returns every page and folder in a space, named by key, in the same
+// order and shape Walk returns them.
+//
+// Depth 1 is the space's *root pages* — normally just the homepage, sometimes
+// more (docs/confluence/spaces.md) — so their children are depth 2. A root page
+// has no parent node, and reports ParentID "" to say so.
+//
+// The space is the level above them rather than a node of its own: a space is not
+// a page, so it cannot be a row, and every root page really does sit at the top
+// of the tree a reader sees in Confluence.
+func WalkSpace(c *client.ConfluenceClient, spaceKey string, maxDepth int) ([]Node, error) {
+	roots, err := c.ListSpaceRootPages(spaceKey)
+	if err != nil {
+		return nil, err
+	}
+	// Sorted for the same reason siblings are: two root pages come back in
+	// whatever order the collection route chose, and position is the order
+	// Confluence shows them in.
+	byPosition(roots)
+
+	w := &walker{c: c, maxDepth: maxDepth, visited: map[string]bool{}}
+	if err := w.emit(roots, "", 1); err != nil {
+		return nil, err
+	}
+	return w.out, nil
+}
+
+// walker carries the state one traversal accumulates, so Walk and WalkSpace can
+// differ only in what they seed it with. Both go through emit, which is what
+// keeps "a folder counts as a level" and the visited guard in one copy.
+type walker struct {
+	c        *client.ConfluenceClient
+	maxDepth int
+	visited  map[string]bool
+	out      []Node
+}
+
+// descend lists what is directly under parentID and emits it at depth.
+//
+// The bound is checked here as well as in emit, and not redundantly: this one
+// saves the request pair a level nobody asked for would have cost, where emit's
+// decides what is reported.
+func (w *walker) descend(parentID string, depth int) error {
+	if w.maxDepth != AllDepths && depth > w.maxDepth {
+		return nil
+	}
+	children, err := siblings(w.c, parentID)
+	if err != nil {
+		return err
+	}
+	return w.emit(children, parentID, depth)
+}
+
+// emit records each node at depth and recurses into it, depth-first, so a node's
+// subtree is printed under it rather than after all of its siblings.
+func (w *walker) emit(nodes []client.ChildNode, parentID string, depth int) error {
+	if w.maxDepth != AllDepths && depth > w.maxDepth {
+		return nil
+	}
+	for _, ch := range nodes {
+		if w.visited[ch.ID] {
+			continue
+		}
+		w.visited[ch.ID] = true
+		w.out = append(w.out, Node{
+			ID:       ch.ID,
+			Type:     ch.Type,
+			Title:    ch.Title,
+			Status:   ch.Status,
+			ParentID: parentID,
+			Depth:    depth,
+			Space:    client.SpaceKeyFromWebUI(ch.Links.WebUI),
+			URL:      nodeURL(w.c, ch.Links.WebUI),
+		})
+		if err := w.descend(ch.ID, depth+1); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // nodeURL builds the link a reader follows. A v1 child row carries webui but no
@@ -110,10 +155,15 @@ func siblings(c *client.ConfluenceClient, id string) ([]client.ChildNode, error)
 	all := make([]client.ChildNode, 0, len(pages)+len(folders))
 	all = append(all, pages...)
 	all = append(all, folders...)
-	// Stable, so two rows sharing a position keep pages-before-folders rather
-	// than reordering between runs.
-	sort.SliceStable(all, func(i, j int) bool {
-		return all[i].Extensions.Position < all[j].Extensions.Position
-	})
+	byPosition(all)
 	return all, nil
+}
+
+// byPosition orders nodes the way Confluence displays them. Stable, so two rows
+// sharing a position keep the order they arrived in — pages before folders for a
+// merged sibling listing — rather than reordering between runs.
+func byPosition(nodes []client.ChildNode) {
+	sort.SliceStable(nodes, func(i, j int) bool {
+		return nodes[i].Extensions.Position < nodes[j].Extensions.Position
+	})
 }
