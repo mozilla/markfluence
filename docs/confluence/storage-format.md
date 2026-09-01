@@ -167,9 +167,139 @@ one set by hand and shows as the selected swatch. Read off an editor-authored pa
 2026-08-04; the picker is seven hue columns by three shades, with the grey
 column running white / light grey / grey. **Transcribed.**
 
-## Callout macros
+## Callout macros and ADF panels
 
-GitHub alert types map many-to-one onto Confluence's macros, so the mapping is
-lossy in one direction: `CAUTION` folds into `warning` and cannot be recovered,
-`note` came from `IMPORTANT`, and `info` came from `NOTE`. `calloutMacroInverse`
-in `storage_to_md.go` is the canonical inverse. **Transcribed.**
+A callout has **two** storage spellings, and the vocabularies they use collide.
+Read this section before touching `callouts.go` or `calloutMacroInverse`.
+
+### The four macros are four of five ADF panel types
+
+**Verified 2026-09-01.** Each macro published as storage, read back as
+`atlas_doc_format`:
+
+| macro published | ADF `panelType` | colour |
+|---|---|---|
+| `info` | `info` | blue |
+| `tip` | `success` | green |
+| `note` | `warning` | yellow |
+| `warning` | `error` | red |
+
+### Trap: `note` and `warning` mean different colours in each vocabulary
+
+The macro names and the ADF panel types overlap on three strings and agree on
+exactly one:
+
+| string | as `ac:name` on a macro | as an ADF `panelType` |
+|---|---|---|
+| `info` | blue | blue — *the only agreement* |
+| `note` | **yellow** | **purple** |
+| `warning` | **red** | **yellow** |
+| `tip` | green | not a panel type |
+| `success` | not a macro | green |
+| `error` | not a macro | red |
+
+So "the Note panel" is ambiguous on its own. The `note` *macro* is yellow. The
+purple thing the editor calls a Note is `panelType: note`, which has no macro
+at all. A map keyed by panel type must never be keyed by macro name or the
+other way round.
+
+### Purple is the only panel that is not a macro
+
+**Verified 2026-09-01.** PUTting all five panel types as ADF — which is what
+the editor does on any save — and reading the storage back gave four
+`ac:structured-macro`s and one `ac:adf-extension`:
+
+```xml
+<ac:adf-extension>
+  <ac:adf-node type="panel">
+    <ac:adf-attribute key="panel-type">note</ac:adf-attribute>
+    <ac:adf-attribute key="local-id">54e36e4937ac</ac:adf-attribute>
+    <ac:adf-content>…the content…</ac:adf-content>
+  </ac:adf-node>
+  <ac:adf-fallback>
+    <div class="panel …"><div class="panelContent" …>…the same content…</div></div>
+  </ac:adf-fallback>
+</ac:adf-extension>
+```
+
+`ac:adf-extension` is what Confluence falls back to when a construct has no
+storage element of its own. It is the only shape a callout takes that is not a
+macro, and it only ever appears for a purple panel a human inserted.
+
+### Trap: `ac:adf-fallback` looks like content and is not
+
+The extension carries the same content **twice**: once as the authoritative
+`ac:adf-node`, once as a pre-rendered `ac:adf-fallback`. Anything walking the
+tree generically renders both. This is exactly the bug that produced #125 —
+every purple panel exported twice.
+
+**`ac:adf-fallback` is a cache of a derived rendering, not a source of truth.**
+**Verified 2026-09-01:**
+
+- A bare extension with **no** fallback is accepted on a storage PUT, reads
+  back as a real ADF `panel` node, and stores byte-identical.
+- Confluence does **not** regenerate a stored fallback — the page above still
+  had none on a later read.
+- `body-format=export_view` on that fallback-less page returns the styled div
+  in full: `#EAE6FF` background, `#998DD9` border, complete body.
+  `body-format=view` likewise. PDF/Word export is built from `export_view`, so
+  the one consumer the stored fallback plausibly served is served without it.
+
+So markfluence neither preserves nor synthesizes a fallback. Preserving one is
+worse than dropping it: it goes stale the moment the body is edited, and a page
+that renders new text while a fallback consumer sees old text is a silent
+divergence.
+
+### `ac:structured-macro` is canonical, not legacy
+
+**Verified 2026-09-01.** Publishing `<ac:adf-extension>` with `panel-type`
+`info`/`success`/`warning`/`error` is also accepted, is stored **verbatim**
+(not normalized on write), and produces ADF byte-identical to what the macros
+produce. But serializing that ADF back to storage yields the *macro*. Since an
+editor save is exactly that round trip, the four panel types with macros always
+come back as macros.
+
+Confluence's own serializer picks the macro. "Legacy" is the wrong word for it:
+publish the macro, and let the extension be what it is — the spelling for a
+construct with no macro.
+
+### Trap: a macro `title` parameter does not survive an editor save
+
+**Verified 2026-09-01.** ADF's `panel` node has no title attribute, only
+`panelType`. Publishing `<ac:parameter ac:name="title">Heads up</ac:parameter>`
+renders a header at first, but the ADF Confluence derives from it is:
+
+```json
+{"type":"panel","attrs":{"panelType":"info"},"content":[
+  {"type":"paragraph","content":[{"text":"Heads up","marks":[{"type":"strong"}]}]},
+  {"type":"paragraph","content":[{"text":"titled info body"}]}]}
+```
+
+and the storage after that save has **no `title` parameter** — the title has
+become a bold first paragraph of the body.
+
+This is why markfluence does not publish an alert's name as a title, though
+`kovetskiy/mark` does: mark is publish-only and never reads a page back, so it
+never meets the consequence. For a tool with an export direction the title
+compounds — publish `title="Note"`, the editor demotes it to `**Note**` in the
+body, export reads that as body text, the next publish sets the title *and*
+keeps the bold line, and the next save makes two of them.
+
+### The colour-faithful map
+
+GitHub renders NOTE blue, TIP green, IMPORTANT **purple**, WARNING orange,
+CAUTION red
+([changelog](https://github.blog/changelog/2023-12-14-new-markdown-extension-alerts-provide-distinctive-styling-for-significant-content/)).
+Because purple is reachable, markfluence can match all five:
+
+| alert | GitHub | publishes as | ADF panel |
+|---|---|---|---|
+| NOTE | blue | `<ac:structured-macro ac:name="info">` | `info` |
+| TIP | green | `<ac:structured-macro ac:name="tip">` | `success` |
+| IMPORTANT | purple | `<ac:adf-extension>` `panel-type=note` | `note` |
+| WARNING | orange | `<ac:structured-macro ac:name="note">` | `warning` |
+| CAUTION | red | `<ac:structured-macro ac:name="warning">` | `error` |
+
+The map is bijective, so **nothing is unrecoverable** — `CAUTION` used to fold
+into `warning` and could not be read back. `calloutTargets` in `callouts.go`
+and `calloutMacroInverse` in `storage_to_md.go` are the two halves.
