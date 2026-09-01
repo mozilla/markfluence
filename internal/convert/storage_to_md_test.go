@@ -560,3 +560,95 @@ func TestStorageToMarkdownStillAutoClosesVoidElements(t *testing.T) {
 		}
 	}
 }
+
+// TestStorageToMarkdownRendersADFExtensionOnce is #125: an <ac:adf-extension>
+// carries its content twice -- once as the authoritative ac:adf-node, once as a
+// pre-rendered ac:adf-fallback -- and the transparent-wrapper default rendered
+// both, so every editor-authored purple Note panel exported doubled.
+//
+// Counting occurrences rather than matching a golden, because a golden
+// regenerated against the bug looks perfectly plausible.
+func TestStorageToMarkdownRendersADFExtensionOnce(t *testing.T) {
+	const storage = `<ac:adf-extension><ac:adf-node type="panel">` +
+		`<ac:adf-attribute key="panel-type">note</ac:adf-attribute>` +
+		`<ac:adf-content><p>UNIQUEBODY</p></ac:adf-content></ac:adf-node>` +
+		`<ac:adf-fallback><div class="panel"><div class="panelContent">` +
+		`<p>UNIQUEBODY</p></div></div></ac:adf-fallback></ac:adf-extension>`
+
+	md, err := convert.StorageToMarkdown(storage, convert.StorageOptions{})
+	if err != nil {
+		t.Fatalf("StorageToMarkdown: %v", err)
+	}
+	if got := strings.Count(md, "UNIQUEBODY"); got != 1 {
+		t.Errorf("body appears %d times, want 1:\n%s", got, md)
+	}
+	if strings.Contains(md, "adf-fallback") {
+		t.Errorf("fallback survived:\n%s", md)
+	}
+	if strings.Contains(md, "panelContent") {
+		t.Errorf("fallback rendering survived:\n%s", md)
+	}
+}
+
+// TestStorageToMarkdownADFPassthroughDoesNotMutate: adfPassthrough copies rather
+// than editing the parsed tree, which matters because headingSlugs has already
+// walked it and a document may hold more than one extension. Two identical
+// extensions must render identically.
+func TestStorageToMarkdownADFPassthroughDoesNotMutate(t *testing.T) {
+	const one = `<ac:adf-extension><ac:adf-node type="panel">` +
+		`<ac:adf-attribute key="panel-type">note</ac:adf-attribute>` +
+		`<ac:adf-attribute key="local-id">abc123</ac:adf-attribute>` +
+		`<ac:adf-content><p>same</p></ac:adf-content></ac:adf-node>` +
+		`<ac:adf-fallback><div><p>same</p></div></ac:adf-fallback></ac:adf-extension>`
+
+	md, err := convert.StorageToMarkdown(one+one, convert.StorageOptions{})
+	if err != nil {
+		t.Fatalf("StorageToMarkdown: %v", err)
+	}
+	if got := strings.Count(md, `<ac:adf-node type="panel">`); got != 2 {
+		t.Errorf("rendered %d nodes, want 2:\n%s", got, md)
+	}
+	if strings.Contains(md, "local-id") {
+		t.Errorf("server-generated local-id survived:\n%s", md)
+	}
+	if got := strings.Count(md, "panel-type"); got != 2 {
+		t.Errorf("panel-type kept %d times, want 2:\n%s", got, md)
+	}
+}
+
+// TestStorageToMarkdownKeepsAFallbackThatIsTheOnlyCopy: the fallback is dropped
+// because the node holds the same content. With no node there is nothing else,
+// so dropping it would silently delete the content on export -- and then, on the
+// next update, from the page.
+func TestStorageToMarkdownKeepsAFallbackThatIsTheOnlyCopy(t *testing.T) {
+	const storage = `<ac:adf-extension><ac:adf-fallback>` +
+		`<div class="panel"><p>ONLYCOPY</p></div></ac:adf-fallback></ac:adf-extension>`
+
+	md, err := convert.StorageToMarkdown(storage, convert.StorageOptions{})
+	if err != nil {
+		t.Fatalf("StorageToMarkdown: %v", err)
+	}
+	if !strings.Contains(md, "ONLYCOPY") {
+		t.Errorf("content deleted:\n%s", md)
+	}
+}
+
+// TestStorageToMarkdownRendersAnInlineADFExtensionOnce covers the other switch:
+// inlineString's default is renderInlineChildren, which duplicated an inline
+// extension exactly the way the block default did.
+func TestStorageToMarkdownRendersAnInlineADFExtensionOnce(t *testing.T) {
+	const storage = `<p>before <ac:adf-extension><ac:adf-node type="thing">` +
+		`<ac:adf-content>INLINEBODY</ac:adf-content></ac:adf-node>` +
+		`<ac:adf-fallback>INLINEBODY</ac:adf-fallback></ac:adf-extension> after</p>`
+
+	md, err := convert.StorageToMarkdown(storage, convert.StorageOptions{})
+	if err != nil {
+		t.Fatalf("StorageToMarkdown: %v", err)
+	}
+	if got := strings.Count(md, "INLINEBODY"); got != 1 {
+		t.Errorf("body appears %d times, want 1:\n%s", got, md)
+	}
+	if strings.Count(md, "\n") > 1 {
+		t.Errorf("inline extension broke out of its paragraph:\n%s", md)
+	}
+}

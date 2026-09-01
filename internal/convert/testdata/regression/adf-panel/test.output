@@ -1,0 +1,6 @@
+{
+  "attachments": [],
+  "broken": [],
+  "html": "<h1>ADF Extension Passthrough</h1>\n<p>An ADF extension exported from a page republishes unchanged, with its body converted back from markdown:</p>\n<ac:adf-extension>\n<ac:adf-node type=\"expand\">\n<ac:adf-attribute key=\"title\">Details</ac:adf-attribute>\n<ac:adf-content>\n<p>Hidden <strong>body</strong> with a <a href=\"https://example.net\">link</a>.</p>\n<ul>\n<li>one</li>\n<li>two</li>\n</ul>\n</ac:adf-content>\n</ac:adf-node>\n</ac:adf-extension>\n<p>No <code>ac:adf-fallback</code> is written back: Confluence regenerates the rendering it held.</p>\n",
+  "warnings": []
+}

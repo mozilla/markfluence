@@ -214,6 +214,8 @@ func (r *mdRenderer) renderBlock(n *snode, listIndent string) string {
 		return r.renderTable(n)
 	case "ac:structured-macro":
 		return r.renderMacro(n, true)
+	case "ac:adf-extension":
+		return r.renderRawBlock(adfPassthrough(n))
 	case "ac:image", "ac:link", "a", "strong", "b", "em", "i", "code", "del", "s", "strike", "br":
 		// An inline element sitting at block level (Confluence often emits a bare
 		// <ac:image> not wrapped in <p>) is rendered as its own paragraph.
@@ -758,6 +760,10 @@ func (r *mdRenderer) renderInline(n *snode) string {
 		// An inline macro (e.g. status/emoticon) stays raw on one line so it does
 		// not break out of its paragraph.
 		return r.renderMacro(n, false)
+	case "ac:adf-extension":
+		// Likewise for an inline ADF extension, whose transparent-wrapper default
+		// would otherwise render the node and the fallback one after the other.
+		return serialize(adfPassthrough(n))
 	default:
 		return r.renderInlineChildren(n)
 	}
@@ -937,7 +943,7 @@ func (r *mdRenderer) renderRawBlock(n *snode) string {
 	closeTag := "</" + n.name + ">"
 
 	// Content container: raw tags around a markdown body.
-	if n.name == "ac:rich-text-body" || n.name == "ac:layout-cell" {
+	if isContentContainer(n.name) {
 		if md := strings.Join(r.blockStrings(n.kids, ""), "\n\n"); md != "" {
 			return open + "\n\n" + md + "\n\n" + closeTag
 		}
@@ -954,13 +960,68 @@ func (r *mdRenderer) renderRawBlock(n *snode) string {
 		if k.name == "" {
 			continue // drop inter-tag whitespace
 		}
-		if k.name == "ac:rich-text-body" || k.name == "ac:layout-cell" || hasElementChild(k) {
+		if isContentContainer(k.name) || hasElementChild(k) {
 			parts = append(parts, r.renderRawBlock(k))
 		} else {
 			parts = append(parts, serialize(k))
 		}
 	}
 	return open + "\n" + strings.Join(parts, "\n") + "\n" + closeTag
+}
+
+// isContentContainer reports whether an element holds block content that should
+// be converted to markdown rather than serialized raw, so a passed-through
+// wrapper keeps an editable body.
+func isContentContainer(name string) bool {
+	switch name {
+	case "ac:rich-text-body", "ac:layout-cell", "ac:adf-content":
+		return true
+	}
+	return false
+}
+
+// adfPassthrough returns the <ac:adf-extension> to render: a copy carrying the
+// ac:adf-node alone.
+//
+// An extension holds its content twice -- once as the authoritative node, once
+// as an ac:adf-fallback holding a pre-rendered <div>. Rendering both is what
+// made a purple Note panel export twice (#125). The fallback is a cache of a
+// derived rendering rather than a source of truth: Confluence accepts an
+// extension without one, never stores one back, and regenerates the styled div
+// for export_view on demand (docs/confluence/storage-format.md). The node's
+// server-generated local-id goes for the same reason droppedAttrs exists.
+//
+// An extension with no ac:adf-node is returned unchanged: the fallback is then
+// the only copy of the content there is, and dropping it would delete it.
+func adfPassthrough(n *snode) *snode {
+	node := findChild(n, "ac:adf-node")
+	if node == nil {
+		return n
+	}
+	out := &snode{name: n.name, attrs: n.attrs, text: n.text}
+	for _, k := range n.kids {
+		if k.name == "ac:adf-fallback" {
+			continue
+		}
+		if k == node {
+			k = withoutADFAttr(node, "local-id")
+		}
+		out.kids = append(out.kids, k)
+	}
+	return out
+}
+
+// withoutADFAttr copies an ac:adf-node without one of its <ac:adf-attribute>
+// children.
+func withoutADFAttr(node *snode, key string) *snode {
+	out := &snode{name: node.name, attrs: node.attrs, text: node.text}
+	for _, k := range node.kids {
+		if k.name == "ac:adf-attribute" && k.attrs["key"] == key {
+			continue
+		}
+		out.kids = append(out.kids, k)
+	}
+	return out
 }
 
 // hasElementChild reports whether n has any element (non-text) child.
