@@ -1,20 +1,12 @@
-An editor-authored purple Note panel renders once, from its node:
+A purple panel is IMPORTANT, read from its node -- its fallback holds the same content and must not render too:
 
-<ac:adf-extension>
-<ac:adf-node type="panel">
-<ac:adf-attribute key="panel-type">note</ac:adf-attribute>
-<ac:adf-content>
+> [!IMPORTANT]
+> **Notes / open questions**
+>
+> - An *emphasised* item with `code`.
+> - A second item.
 
-**Notes / open questions**
-
-- An *emphasised* item with `code`.
-- A second item.
-
-</ac:adf-content>
-</ac:adf-node>
-</ac:adf-extension>
-
-An extension of some other type passes through the same way:
+An extension of some other type has no markdown spelling, so it passes through -- node only:
 
 <ac:adf-extension>
 <ac:adf-node type="expand">
