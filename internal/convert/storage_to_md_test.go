@@ -370,11 +370,15 @@ func TestStorageToMarkdownCoalescesSplitMarks(t *testing.T) {
 }
 
 // TestRoundTripPassthrough verifies that the raw-storage passthrough cases
-// (column layouts and unknown macros) survive markdown -> storage -> markdown
-// unchanged -- the whole point of emitting them in a form MdToConfluence
-// re-publishes verbatim.
+// (column layouts, unknown macros, ADF extensions) survive markdown -> storage
+// -> markdown unchanged -- the whole point of emitting them in a form
+// MdToConfluence re-publishes verbatim.
+//
+// The list is hardcoded rather than every storage2md case, because only these
+// are passthrough: a case whose output is ordinary markdown is covered by its
+// own golden.
 func TestRoundTripPassthrough(t *testing.T) {
-	for _, name := range []string{"layout", "unknown-macros", "excerpt", "aclink"} {
+	for _, name := range []string{"layout", "unknown-macros", "excerpt", "aclink", "adf-panel"} {
 		t.Run(name, func(t *testing.T) {
 			src, err := os.ReadFile(filepath.Join(storage2mdDir, name, "output.md"))
 			if err != nil {
