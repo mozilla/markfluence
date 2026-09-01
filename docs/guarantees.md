@@ -154,12 +154,25 @@ being able to reconstruct a tree on export. `images.go` records an attachment's
 `Source` relative to the root rather than to the referencing page, so identity
 follows the asset alone (`_plans/026` commit 4).
 
-**L5** and **L6** stay Partial, deferred to #59 (multi-page export), even
-though the mechanism that made them fail is already repaired: since
-`_plans/026` commit 4 records an attachment's `Source` relative to the root,
+**L5** and **L6** stay Partial, deferred to #59 (multi-page export). Two
+separate things kept them there, and both are now repaired. Since `_plans/026`
+commit 4 records an attachment's `Source` relative to the root,
 `attachfile.Resolve`'s `dest + source` join for a layout with an asset above
-the page no longer escapes, and single-page export's round-trip already
-works. What's still missing is multi-page export itself (Use case 8) —
+the page no longer escapes. And `_plans/030` fixed a straightforward L5
+counterexample this file previously asserted did not exist: an
+`<ac:adf-extension>` — the storage form of the editor's purple Note panel —
+fell through `storage_to_md.go`'s transparent-wrapper default, so `export`
+wrote its content twice and republishing that deleted the panel and left two
+copies of its prose in the body (#125). It was measured, not hypothetical:
+`check --show-html` on a real export reported zero `adf-extension` and two
+copies of each panel's text.
+
+The lesson is worth keeping. The claim that single-page round-trip "already
+works" survived here because nothing tests it — the table below says Laws are
+verified by property tests, and L5 has none. Until it does, treat its status as
+an assertion about known constructs rather than a property.
+
+What's still missing is multi-page export itself (Use case 8) —
 provenance-based attachment placement, directory mirroring — which is what
 these guarantees' own wording actually describes (a whole tree, either
 roundtrip direction). Calling them Holds now would be declaring a win on

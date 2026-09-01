@@ -434,9 +434,9 @@ composes with shell redirection.
   readable markdown, so they round-trip back through `create`/`update`. A page or
   space link converts back to a markdown link; a mention, an attachment link, and
   a blog-post link stay as raw storage, since a markdown link would republish to
-  something else or nothing at all. Some other transforms are lossy (e.g.
-  `CAUTION` alerts and table cell background colors cannot be recovered), so this
-  is a reading aid, not a guaranteed source round-trip.
+  something else or nothing at all. Some other transforms are lossy (e.g. a table
+  cell background color outside the named swatches comes back as a literal hex),
+  so this is a reading aid, not a guaranteed source round-trip.
 - `storage` — the page's raw storage-format XHTML, exactly as stored.
 
 ```sh
@@ -1129,7 +1129,17 @@ can't do, so it isn't an option here.
 anything else.
 
 **GitHub alerts** — `> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`,
-`[!CAUTION]` — become info/tip/note/warning panels.
+`[!CAUTION]` — become Confluence panels in the colour GitHub draws them in:
+
+| alert | colour | published as |
+|---|---|---|
+| `NOTE` | blue | `info` macro |
+| `TIP` | green | `tip` macro |
+| `IMPORTANT` | purple | ADF panel (no macro exists for purple) |
+| `WARNING` | orange | `note` macro |
+| `CAUTION` | red | `warning` macro |
+
+The mapping is one-to-one, so `read`/`export` recover the original alert.
 [GFM alerts](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts)
 
 Example:
