@@ -167,15 +167,36 @@ func (r *storageRenderer) renderCodeBlock(
 }
 
 // renderBlockquote renders a blockquote. When the callout transformer has tagged
-// it, it becomes an info/tip/note/warning macro; otherwise a plain <blockquote>.
+// it with an alert type, it becomes that alert's calloutTargets construct -- a
+// callout macro, or an ADF extension for the purple panel that has no macro.
+// Otherwise a plain <blockquote>.
 func (r *storageRenderer) renderBlockquote(
 	w util.BufWriter, _ []byte, node ast.Node, entering bool,
 ) (ast.WalkStatus, error) {
-	if macro, ok := node.AttributeString(calloutAttr); ok {
-		if entering {
-			_, _ = fmt.Fprintf(w, `<ac:structured-macro ac:name="%s" ac:schema-version="1"><ac:rich-text-body>`, macro)
-		} else {
-			_, _ = w.WriteString(`</ac:rich-text-body></ac:structured-macro>`)
+	if attr, ok := node.AttributeString(calloutAttr); ok {
+		alert, _ := attr.(string) // set by calloutTransformer, always a string
+		target := calloutTargets[alert]
+		switch {
+		case target.panelType != "":
+			// A purple panel has no macro, so it is written the way Confluence
+			// itself writes one: an ADF extension. No ac:adf-fallback -- it is a
+			// cache Confluence regenerates on demand, and one written here would
+			// go stale the moment the body changed.
+			if entering {
+				_, _ = fmt.Fprintf(w,
+					`<ac:adf-extension><ac:adf-node type="panel">`+
+						`<ac:adf-attribute key="panel-type">%s</ac:adf-attribute><ac:adf-content>`,
+					target.panelType)
+			} else {
+				_, _ = w.WriteString(`</ac:adf-content></ac:adf-node></ac:adf-extension>`)
+			}
+		default:
+			if entering {
+				_, _ = fmt.Fprintf(w,
+					`<ac:structured-macro ac:name="%s" ac:schema-version="1"><ac:rich-text-body>`, target.macro)
+			} else {
+				_, _ = w.WriteString(`</ac:rich-text-body></ac:structured-macro>`)
+			}
 		}
 		return ast.WalkContinue, nil
 	}

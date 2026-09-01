@@ -594,9 +594,12 @@ func TestStorageToMarkdownRendersADFExtensionOnce(t *testing.T) {
 // than editing the parsed tree, which matters because headingSlugs has already
 // walked it and a document may hold more than one extension. Two identical
 // extensions must render identically.
+//
+// Uses a non-panel extension deliberately: a purple panel converts to an alert,
+// so it would not exercise the passthrough path at all.
 func TestStorageToMarkdownADFPassthroughDoesNotMutate(t *testing.T) {
-	const one = `<ac:adf-extension><ac:adf-node type="panel">` +
-		`<ac:adf-attribute key="panel-type">note</ac:adf-attribute>` +
+	const one = `<ac:adf-extension><ac:adf-node type="expand">` +
+		`<ac:adf-attribute key="title">Details</ac:adf-attribute>` +
 		`<ac:adf-attribute key="local-id">abc123</ac:adf-attribute>` +
 		`<ac:adf-content><p>same</p></ac:adf-content></ac:adf-node>` +
 		`<ac:adf-fallback><div><p>same</p></div></ac:adf-fallback></ac:adf-extension>`
@@ -605,14 +608,14 @@ func TestStorageToMarkdownADFPassthroughDoesNotMutate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StorageToMarkdown: %v", err)
 	}
-	if got := strings.Count(md, `<ac:adf-node type="panel">`); got != 2 {
+	if got := strings.Count(md, `<ac:adf-node type="expand">`); got != 2 {
 		t.Errorf("rendered %d nodes, want 2:\n%s", got, md)
 	}
 	if strings.Contains(md, "local-id") {
 		t.Errorf("server-generated local-id survived:\n%s", md)
 	}
-	if got := strings.Count(md, "panel-type"); got != 2 {
-		t.Errorf("panel-type kept %d times, want 2:\n%s", got, md)
+	if got := strings.Count(md, `key="title"`); got != 2 {
+		t.Errorf("adf-attribute kept %d times, want 2:\n%s", got, md)
 	}
 }
 
@@ -650,5 +653,90 @@ func TestStorageToMarkdownRendersAnInlineADFExtensionOnce(t *testing.T) {
 	}
 	if strings.Count(md, "\n") > 1 {
 		t.Errorf("inline extension broke out of its paragraph:\n%s", md)
+	}
+}
+
+// publishAlert converts a one-alert document and returns the storage it
+// publishes.
+func publishAlert(t *testing.T, alert string) string {
+	t.Helper()
+	md, err := frontmatter.Parse("main.md", "> [!"+alert+"]\n> The body.\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := testRoot(t, "")
+	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG", "vtest")
+	if err != nil {
+		t.Fatalf("MdToConfluence: %v", err)
+	}
+	return page.HTML
+}
+
+// TestCalloutsRoundTrip is the property the colour-faithful map buys: every
+// GitHub alert publishes to a distinct Confluence construct and reads back as
+// the same alert. The map used to be many-to-one -- WARNING and CAUTION both
+// became the "warning" macro -- so CAUTION could not survive this at all.
+//
+// It also catches the failure mode a two-sided change invites: edit
+// calloutTargets without editing calloutMacroInverse, or the reverse, and every
+// golden still regenerates cleanly while alerts silently change colour.
+func TestCalloutsRoundTrip(t *testing.T) {
+	for _, alert := range []string{"NOTE", "TIP", "IMPORTANT", "WARNING", "CAUTION"} {
+		t.Run(alert, func(t *testing.T) {
+			storage := publishAlert(t, alert)
+			back, err := convert.StorageToMarkdown(storage, convert.StorageOptions{})
+			if err != nil {
+				t.Fatalf("StorageToMarkdown: %v", err)
+			}
+			want := "> [!" + alert + "]\n> The body.\n"
+			if back != want {
+				t.Errorf("round trip\n got: %q\nwant: %q\nvia storage: %s", back, want, storage)
+			}
+		})
+	}
+}
+
+// TestCalloutTargetsAreDistinct pins the bijection itself. Two alerts sharing a
+// target is exactly what made CAUTION unrecoverable, and it is an easy thing to
+// reintroduce while editing the table.
+func TestCalloutTargetsAreDistinct(t *testing.T) {
+	seen := map[string]string{}
+	for _, alert := range []string{"NOTE", "TIP", "IMPORTANT", "WARNING", "CAUTION"} {
+		storage := publishAlert(t, alert)
+		if prev, dup := seen[storage]; dup {
+			t.Errorf("%s and %s publish identically: %s", prev, alert, storage)
+		}
+		seen[storage] = alert
+	}
+}
+
+// TestCalloutVocabulariesDisagree guards the trap recorded in
+// docs/confluence/storage-format.md: a macro name and an ADF panel type are
+// different vocabularies that share strings. "note" as a macro is yellow
+// (WARNING); "note" as a panel type is purple (IMPORTANT). Anything that merges
+// the two lookups repaints panels.
+func TestCalloutVocabulariesDisagree(t *testing.T) {
+	read := func(storage string) string {
+		t.Helper()
+		md, err := convert.StorageToMarkdown(storage, convert.StorageOptions{})
+		if err != nil {
+			t.Fatalf("StorageToMarkdown: %v", err)
+		}
+		return md
+	}
+	macroNote := read(`<ac:structured-macro ac:name="note" ac:schema-version="1">` +
+		`<ac:rich-text-body><p>body</p></ac:rich-text-body></ac:structured-macro>`)
+	panelNote := read(`<ac:adf-extension><ac:adf-node type="panel">` +
+		`<ac:adf-attribute key="panel-type">note</ac:adf-attribute>` +
+		`<ac:adf-content><p>body</p></ac:adf-content></ac:adf-node></ac:adf-extension>`)
+
+	if !strings.Contains(macroNote, "[!WARNING]") {
+		t.Errorf(`the "note" macro is yellow and must read back as WARNING, got: %s`, macroNote)
+	}
+	if !strings.Contains(panelNote, "[!IMPORTANT]") {
+		t.Errorf(`the "note" panel type is purple and must read back as IMPORTANT, got: %s`, panelNote)
+	}
+	if macroNote == panelNote {
+		t.Errorf("the two vocabularies' \"note\" must not converge: %s", macroNote)
 	}
 }

@@ -25,15 +25,41 @@ import (
 	"strings"
 )
 
-// calloutMacroInverse maps a Confluence callout macro back to a GitHub alert type.
-// The forward map (calloutMacro) is many-to-one, so this is the canonical inverse:
-// CAUTION is unrecoverable (it folded into "warning"), and "note" came from
-// IMPORTANT while "info" came from NOTE.
+// calloutMacroInverse maps a Confluence callout macro back to a GitHub alert
+// type. calloutTargets is bijective, so this is a true inverse and nothing is
+// unrecoverable -- CAUTION used to fold into "warning" and could not be read
+// back at all.
+//
+// The fifth alert, IMPORTANT, has no entry because it has no macro: it is
+// purple, which exists only as an ADF panel. adfPanelAlert covers it.
+//
+// Do not key this by an ADF panel type. The two vocabularies collide: the
+// macro "note" is yellow where the panel type "note" is purple, and the macro
+// "warning" is red where the panel type "warning" is yellow
+// (docs/confluence/storage-format.md).
 var calloutMacroInverse = map[string]string{
 	"info":    "NOTE",
 	"tip":     "TIP",
-	"note":    "IMPORTANT",
-	"warning": "WARNING",
+	"note":    "WARNING",
+	"warning": "CAUTION",
+}
+
+// adfPanelAlert reports the GitHub alert an <ac:adf-extension> carries, or ""
+// when it is not one markdown can spell.
+//
+// Only the purple panel qualifies, and only because MdToConfluence publishes
+// IMPORTANT as one -- recovering it is what keeps that round trip whole. The
+// four other panel types are not written as extensions by anything: Confluence
+// serializes them as macros, so a branch for them would be unreachable.
+func adfPanelAlert(n *snode) string {
+	node := findChild(n, "ac:adf-node")
+	if node == nil || node.attrs["type"] != "panel" {
+		return ""
+	}
+	if adfAttr(node, "panel-type") != "note" {
+		return ""
+	}
+	return "IMPORTANT"
 }
 
 // StorageToMarkdown converts a Confluence storage-format body to Markdown.
@@ -215,6 +241,9 @@ func (r *mdRenderer) renderBlock(n *snode, listIndent string) string {
 	case "ac:structured-macro":
 		return r.renderMacro(n, true)
 	case "ac:adf-extension":
+		if alert := adfPanelAlert(n); alert != "" {
+			return r.renderCallout(findChild(n, "ac:adf-node"), alert)
+		}
 		return r.renderRawBlock(adfPassthrough(n))
 	case "ac:image", "ac:link", "a", "strong", "b", "em", "i", "code", "del", "s", "strike", "br":
 		// An inline element sitting at block level (Confluence often emits a bare
@@ -539,7 +568,7 @@ func (r *mdRenderer) renderMacro(n *snode, block bool) string {
 	case name == "toc":
 		return tocToken
 	case calloutMacroInverse[name] != "":
-		return r.renderCallout(n, name)
+		return r.renderCallout(n, calloutMacroInverse[name])
 	case block:
 		return r.renderRawBlock(n)
 	default:
@@ -561,10 +590,17 @@ func renderCodeMacro(n *snode) string {
 	return "```" + lang + "\n" + code + "\n```"
 }
 
-// renderCallout renders a callout macro as a GitHub alert blockquote.
-func (r *mdRenderer) renderCallout(n *snode, macro string) string {
-	content := "[!" + calloutMacroInverse[macro] + "]"
-	if body := findChild(n, "ac:rich-text-body"); body != nil {
+// renderCallout renders a callout as a GitHub alert blockquote. n is the macro
+// or the ac:adf-node, whose bodies are spelled ac:rich-text-body and
+// ac:adf-content respectively -- one code path, so the two spellings of the
+// same callout cannot produce different markdown.
+func (r *mdRenderer) renderCallout(n *snode, alert string) string {
+	content := "[!" + alert + "]"
+	body := findChild(n, "ac:rich-text-body")
+	if body == nil {
+		body = findChild(n, "ac:adf-content")
+	}
+	if body != nil {
 		if inner := strings.Join(r.blockStrings(body.kids, ""), "\n\n"); inner != "" {
 			content += "\n" + inner
 		}
@@ -1022,6 +1058,16 @@ func withoutADFAttr(node *snode, key string) *snode {
 		out.kids = append(out.kids, k)
 	}
 	return out
+}
+
+// adfAttr returns the text of an ac:adf-node's <ac:adf-attribute key="..."> child.
+func adfAttr(node *snode, key string) string {
+	for _, k := range node.kids {
+		if k.name == "ac:adf-attribute" && k.attrs["key"] == key {
+			return textContent(k)
+		}
+	}
+	return ""
 }
 
 // hasElementChild reports whether n has any element (non-text) child.
