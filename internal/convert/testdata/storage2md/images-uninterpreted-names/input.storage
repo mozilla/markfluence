@@ -1,0 +1,6 @@
+<p><ac:image ac:alt="spaced"><ri:attachment ri:filename="my image.png" /></ac:image></p>
+<p><ac:image ac:alt="accented"><ri:attachment ri:filename="café.png" /></ac:image></p>
+<p><ac:image ac:alt="literal percent"><ri:attachment ri:filename="100%25.png" /></ac:image></p>
+<p><ac:image ac:alt="parenthesized"><ri:attachment ri:filename="shot (1).png" /></ac:image></p>
+<p><ac:image ac:alt="looks encoded"><ri:attachment ri:filename="assets%2Fplain.png" /></ac:image></p>
+<p><ac:image ac:alt="remote" ><ri:url ri:value="https://cdn.example.net/my%20image.png" /></ac:image></p>

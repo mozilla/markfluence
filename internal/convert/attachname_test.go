@@ -75,30 +75,3 @@ func TestAttachmentFilenameNormalizes(t *testing.T) {
 		}
 	}
 }
-
-// TestAttachmentSourceRefusesAbsolute covers names markfluence never produces:
-// a hand-uploaded attachment must not be able to steer a reader at an absolute
-// path (which is what #37's export would then write to).
-func TestAttachmentSourceRefusesAbsolute(t *testing.T) {
-	for _, name := range []string{"%2Fetc%2Fpasswd.png", "%2F.png", ""} {
-		if got, ok := AttachmentSource(name); ok {
-			t.Errorf("AttachmentSource(%q) = %q, true; want refusal", name, got)
-		}
-	}
-}
-
-// TestAttachmentSourceDecodesForeignNames documents best-effort behavior for
-// attachments markfluence did not upload: they decode like any other name, since
-// there is no way to tell them apart.
-func TestAttachmentSourceDecodesForeignNames(t *testing.T) {
-	for _, c := range []struct{ name, want string }{
-		{"hand-uploaded.png", "hand-uploaded.png"},
-		{"screenshot 2026.png", "screenshot 2026.png"},
-		{"..%2Fup.png", "../up.png"},
-	} {
-		got, ok := AttachmentSource(c.name)
-		if !ok || got != c.want {
-			t.Errorf("AttachmentSource(%q) = %q, %v; want %q, true", c.name, got, ok, c.want)
-		}
-	}
-}

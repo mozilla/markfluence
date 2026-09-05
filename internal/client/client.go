@@ -1059,11 +1059,18 @@ func (c *ConfluenceClient) planAttachments(pageID string, attachments []LocalAtt
 		case meta.Source != "" && meta.Source != att.Source:
 			// The bytes are unchanged but the recorded path is wrong, so re-upload
 			// to restamp the comment -- otherwise a path mangled in transit would
-			// survive every later publish. The name is the encoding of the path, so
-			// the two move together: a disagreement under the same name means the
-			// stored comment does not say what we wrote. An empty Source is not a
-			// disagreement -- a comment with no source recorded at all is a normal
-			// case (see attachmentComment), not something to treat as mangled.
+			// survive every later publish.
+			//
+			// This is also how an asset that moved repairs itself. The name is the
+			// base name (convert.AttachmentFilename), so moving a file within the
+			// tree keeps its name and changes only its recorded path: one restamp,
+			// no second attachment, nothing orphaned. Under the encoded-path names
+			// this branch could not see such a move at all, because the name moved
+			// with the path and the old attachment was simply abandoned.
+			//
+			// An empty Source is not a disagreement -- a comment with no source
+			// recorded at all is a normal case (see attachmentComment), not
+			// something to treat as mangled.
 			p.action = "updated"
 		default:
 			p.action = "skipped"

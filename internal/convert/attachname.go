@@ -36,11 +36,6 @@ import (
 	"strings"
 )
 
-const (
-	pctEscape = "%25" // a literal "%" in the source path
-	pctSlash  = "%2F" // a "/" path separator
-)
-
 // AttachmentFilename derives the Confluence attachment name for a markdown image
 // src: the base name of the file, and nothing else. The src is normalized first
 // so that "a/./x.png" and "a/x.png" agree, and so a name is never derived from a
@@ -57,27 +52,6 @@ func AttachmentFilename(src string) string {
 		return ""
 	}
 	return path.Base(rel)
-}
-
-// AttachmentSource inverts AttachmentFilename, recovering the source path an
-// attachment was published from. It reports false when the name could not have
-// come from markfluence -- currently when it decodes to an empty or absolute
-// path, which AttachmentFilename never produces -- so callers fall back to
-// treating the attachment name as the path.
-//
-// A name markfluence did not create is decoded on a best-effort basis: there is
-// no way to tell a hand-uploaded "a%2Fb.png" from one we published.
-func AttachmentSource(filename string) (string, bool) {
-	// Decode "%2F" first and "%25" last. Replacing "%2F" only ever removes text
-	// and cannot spell a new "%25", while "%25" must be replaced last precisely
-	// so its output is not rescanned -- that is how a literal "%2F" in the source
-	// path (encoded "%252F") round-trips instead of collapsing to a separator.
-	s := strings.ReplaceAll(filename, pctSlash, "/")
-	s = strings.ReplaceAll(s, pctEscape, "%")
-	if s == "" || path.IsAbs(s) {
-		return "", false
-	}
-	return s, true
 }
 
 // normalizeSrc reduces a markdown image src to a clean relative path: "./a/x.png"
