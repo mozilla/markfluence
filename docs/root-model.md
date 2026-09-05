@@ -111,9 +111,10 @@ control, a generated snapshot).
 
 ## Attachment identity
 
-An image's recorded `Source` — what its Confluence attachment name encodes,
-and what `read`/`export` use to put it back where it came from — is relative
-to the root, not to the page that references it (`_plans/026` commit 4). Two
+An image's recorded `Source` — what `read`/`export` use to put it back where it
+came from, and the only record of its path there is — is relative to the root,
+not to the page that references it (`_plans/026` commit 4). The attachment
+*name* is the file's base name and carries none of this (`_plans/029`). Two
 pages at different depths referencing the same file now record the same
 source and get the same attachment; before, each recorded the reference as
 written, and the same file had two identities in Confluence. This is L3
