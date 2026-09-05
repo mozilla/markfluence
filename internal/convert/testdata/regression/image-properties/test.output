@@ -1,13 +1,13 @@
 {
   "attachments": [
     {
-      "filename": "assets%2Fshot.png",
+      "filename": "shot.png",
       "path": "<ROOT>/assets/shot.png",
       "source": "assets/shot.png"
     }
   ],
   "broken": [],
-  "html": "<h1>Image Properties</h1>\n<p>A JSON title sets title/width/height/align attributes:</p>\n<p><ac:image ac:alt=\"sized shot\" ac:title=\"A Tooltip\" ac:width=\"300\" ac:height=\"150\" ac:align=\"center\"><ri:attachment ri:filename=\"assets%2Fshot.png\" /></ac:image></p>\n<p>A plain-string title becomes a tooltip (<code>ac:title</code>):</p>\n<p><ac:image ac:alt=\"tooltip shot\" ac:title=\"Just a tooltip\"><ri:attachment ri:filename=\"assets%2Fshot.png\" /></ac:image></p>\n<p>Invalid width/align values are dropped with warnings:</p>\n<p><ac:image ac:alt=\"bad props\"><ri:attachment ri:filename=\"assets%2Fshot.png\" /></ac:image></p>\n",
+  "html": "<h1>Image Properties</h1>\n<p>A JSON title sets title/width/height/align attributes:</p>\n<p><ac:image ac:alt=\"sized shot\" ac:title=\"A Tooltip\" ac:width=\"300\" ac:height=\"150\" ac:align=\"center\"><ri:attachment ri:filename=\"shot.png\" /></ac:image></p>\n<p>A plain-string title becomes a tooltip (<code>ac:title</code>):</p>\n<p><ac:image ac:alt=\"tooltip shot\" ac:title=\"Just a tooltip\"><ri:attachment ri:filename=\"shot.png\" /></ac:image></p>\n<p>Invalid width/align values are dropped with warnings:</p>\n<p><ac:image ac:alt=\"bad props\"><ri:attachment ri:filename=\"shot.png\" /></ac:image></p>\n",
   "warnings": [
     "line 13: assets/shot.png: ignoring width='wide' (must be a number)",
     "line 13: assets/shot.png: ignoring align='middle' (must be left, center, or right)"

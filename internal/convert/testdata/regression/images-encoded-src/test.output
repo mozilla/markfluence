@@ -1,22 +1,22 @@
 {
   "attachments": [
     {
-      "filename": "assets%2Fmy image.png",
+      "filename": "my image.png",
       "path": "<ROOT>/assets/my image.png",
       "source": "assets/my image.png"
     },
     {
-      "filename": "assets%2Fcafé.png",
+      "filename": "café.png",
       "path": "<ROOT>/assets/café.png",
       "source": "assets/café.png"
     },
     {
-      "filename": "assets%2F100%25.png",
+      "filename": "100%.png",
       "path": "<ROOT>/assets/100%.png",
       "source": "assets/100%.png"
     },
     {
-      "filename": "assets%2Fplain.png",
+      "filename": "plain.png",
       "path": "<ROOT>/assets/plain.png",
       "source": "assets/plain.png"
     }
@@ -24,6 +24,6 @@
   "broken": [
     "line 37: IMAGE BROKEN: ..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2Fetc%2Fpasswd.png (outside the documentation root)"
   ],
-  "html": "<h1>Encoded Image Sources</h1>\n<p>A markdown image destination is a URL, not a path, so a filename with a space has to be percent-encoded to be referenced at all. This is the spelling most editors and previews produce, and the one this case exists for:</p>\n<p><ac:image ac:alt=\"percent-encoded\"><ri:attachment ri:filename=\"assets%2Fmy image.png\" /></ac:image></p>\n<p>The angle-bracket form is the same image by another spelling, and resolves to the same attachment:</p>\n<p><ac:image ac:alt=\"angle brackets\"><ri:attachment ri:filename=\"assets%2Fmy image.png\" /></ac:image></p>\n<p>A bare space is not a valid destination, so this is not an image at all -- it stays literal text, exactly as GitHub and a local preview render it. Nothing is uploaded and nothing is reported broken, because no image was ever parsed:</p>\n<p>![bare space](assets/my image.png)</p>\n<p>Non-ASCII filenames encode the same way:</p>\n<p><ac:image ac:alt=\"accented\"><ri:attachment ri:filename=\"assets%2Fcafé.png\" /></ac:image></p>\n<p>A literal &quot;%&quot; in a filename is not an escape sequence. It is left as written, so a file genuinely named &quot;100%.png&quot; still resolves:</p>\n<p><ac:image ac:alt=\"literal percent\"><ri:attachment ri:filename=\"assets%2F100%25.png\" /></ac:image></p>\n<p>An ordinary path is unaffected:</p>\n<p><ac:image ac:alt=\"plain\"><ri:attachment ri:filename=\"assets%2Fplain.png\" /></ac:image></p>\n<p>An encoded &quot;../&quot; is decoded before the documentation-root check runs, so the encoding cannot slip an escaping path past it -- compare the plain spelling in the images-broken case, which is refused for the same reason:</p>\n<p>line 37: IMAGE BROKEN: ..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2Fetc%2Fpasswd.png (outside the documentation root)</p>\n",
+  "html": "<h1>Encoded Image Sources</h1>\n<p>A markdown image destination is a URL, not a path, so a filename with a space has to be percent-encoded to be referenced at all. This is the spelling most editors and previews produce, and the one this case exists for:</p>\n<p><ac:image ac:alt=\"percent-encoded\"><ri:attachment ri:filename=\"my image.png\" /></ac:image></p>\n<p>The angle-bracket form is the same image by another spelling, and resolves to the same attachment:</p>\n<p><ac:image ac:alt=\"angle brackets\"><ri:attachment ri:filename=\"my image.png\" /></ac:image></p>\n<p>A bare space is not a valid destination, so this is not an image at all -- it stays literal text, exactly as GitHub and a local preview render it. Nothing is uploaded and nothing is reported broken, because no image was ever parsed:</p>\n<p>![bare space](assets/my image.png)</p>\n<p>Non-ASCII filenames encode the same way:</p>\n<p><ac:image ac:alt=\"accented\"><ri:attachment ri:filename=\"café.png\" /></ac:image></p>\n<p>A literal &quot;%&quot; in a filename is not an escape sequence. It is left as written, so a file genuinely named &quot;100%.png&quot; still resolves:</p>\n<p><ac:image ac:alt=\"literal percent\"><ri:attachment ri:filename=\"100%.png\" /></ac:image></p>\n<p>An ordinary path is unaffected:</p>\n<p><ac:image ac:alt=\"plain\"><ri:attachment ri:filename=\"plain.png\" /></ac:image></p>\n<p>An encoded &quot;../&quot; is decoded before the documentation-root check runs, so the encoding cannot slip an escaping path past it -- compare the plain spelling in the images-broken case, which is refused for the same reason:</p>\n<p>line 37: IMAGE BROKEN: ..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2Fetc%2Fpasswd.png (outside the documentation root)</p>\n",
   "warnings": []
 }
