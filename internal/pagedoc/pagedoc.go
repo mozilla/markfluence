@@ -25,6 +25,26 @@ import (
 	"github.com/mozilla/markfluence/internal/ui"
 )
 
+// Placement is where a page is being written and what that implies for its
+// frontmatter. The zero value is "on its own": no tree, no directory, parent
+// taken from the page itself -- which is what `read` prints and what a
+// single-page export writes.
+type Placement struct {
+	// Dir is where the page's file sits relative to the root of what is being
+	// written, in slash form. "" is that root.
+	Dir string
+
+	// Parent overrides the parent: frontmatter field. Empty derives it from the
+	// page, which yields its parent id or "null".
+	//
+	// A tree export sets it to a relative path to the parent's own .md file, so
+	// the tree can be published into fresh pages; create resolves such a path
+	// against the referring file's directory. It stays an id for the export
+	// root, whose parent is outside the tree, and for a page whose parent is a
+	// folder, which has no file to point at.
+	Parent string
+}
+
 // Doc is a page rendered as markdown. Frontmatter and Body are separate because
 // read prints them together while export writes them to a file, and because a
 // caller may want the body alone.
@@ -38,17 +58,15 @@ func (d Doc) String() string { return d.Frontmatter + "\n" + d.Body }
 
 // Render converts a page's storage body to markdown and builds its frontmatter.
 //
-// pageDir is where the page's file sits relative to the root of what is being
-// written, in slash form -- "" for a file at that root, which is what `read`
-// passes and what a single-page export produces. See convert.StorageOptions.
+// See Placement for what pl carries.
 //
 // The page must have been fetched with its body (GetPageBodyOrNil).
-func Render(c *client.ConfluenceClient, page *client.Page, pageDir string) (Doc, error) {
-	body, err := convert.StorageToMarkdown(page.Body.Storage.Value, Options(c, page, pageDir))
+func Render(c *client.ConfluenceClient, page *client.Page, pl Placement) (Doc, error) {
+	body, err := convert.StorageToMarkdown(page.Body.Storage.Value, Options(c, page, pl))
 	if err != nil {
 		return Doc{}, err
 	}
-	return Doc{Frontmatter: Frontmatter(c, page), Body: body}, nil
+	return Doc{Frontmatter: Frontmatter(c, page, pl.Parent), Body: body}, nil
 }
 
 // Options assembles what the converter cannot fetch for itself: the attachment
@@ -63,17 +81,17 @@ func Render(c *client.ConfluenceClient, page *client.Page, pageDir string) (Doc,
 // One conversion, parameterized by where the page sits. read and export produce
 // identical markdown for the same position; read has no tree, so it passes the
 // empty one.
-func Options(c *client.ConfluenceClient, page *client.Page, pageDir string) convert.StorageOptions {
+func Options(c *client.ConfluenceClient, page *client.Page, pl Placement) convert.StorageOptions {
 	return convert.StorageOptions{
 		Sources:   Sources(c, page),
 		PageLinks: PageLinks(c, page),
-		PageDir:   pageDir,
+		PageDir:   pl.Dir,
 		// Where an attachment with no recorded path is placed: the directory
 		// named after the page, beside the page's own file. Computed here rather
 		// than in the converter, which has no business knowing how a title
 		// becomes a directory name, and computed once so that every command
 		// placing such an attachment agrees with the markdown that points at it.
-		AttachmentDir: AttachmentDir(page, pageDir),
+		AttachmentDir: AttachmentDir(page, pl.Dir),
 		// The site, never the gateway: these URLs are published into a page.
 		SiteURL: c.SiteURL(),
 	}
@@ -193,12 +211,17 @@ func SourcesFrom(atts []client.Attachment) map[string]string {
 }
 
 // Frontmatter builds the YAML frontmatter prefix: title, space, parent,
-// page_id, and (best-effort) page_width. parent is "null" for a top-level page,
-// else the parent's page id (both free from the fetched page). A failed
-// page_width read is tolerated -- the field is simply omitted rather than
-// failing the render.
-func Frontmatter(c *client.ConfluenceClient, page *client.Page) string {
-	parent := page.ParentID
+// page_id, and (best-effort) page_width. A failed page_width read is tolerated
+// -- the field is simply omitted rather than failing the render.
+//
+// parentOverride replaces the parent field when set; empty derives it from the
+// page, which is "null" for a top-level page and the parent's id otherwise
+// (both free from the fetched page). See Placement.Parent.
+func Frontmatter(c *client.ConfluenceClient, page *client.Page, parentOverride string) string {
+	parent := parentOverride
+	if parent == "" {
+		parent = page.ParentID
+	}
 	if parent == "" {
 		parent = "null"
 	}
