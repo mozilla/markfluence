@@ -74,8 +74,12 @@ type StorageOptions struct {
 	// It is a second field rather than PageDir plus a slug because deriving it
 	// would mean this package knowing how a title becomes a directory name,
 	// which is internal/pageslug's business and is applied by the caller that
-	// also decides where the file goes. Empty leaves such an attachment beside
-	// the page, which is the pre-tree behaviour.
+	// also decides where the file goes.
+	//
+	// Empty means the root, not "beside the page": with PageDir "home" it
+	// yields ../diagram.png. Every caller sets both together through
+	// pagedoc.Options, and one that sets only PageDir would point every native
+	// attachment a directory too high.
 	AttachmentDir string
 }
 

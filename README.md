@@ -785,9 +785,12 @@ downloaded /out/assets/diagram.png
 downloaded /out/notes.pdf
 ```
 
-An attachment with no recorded path — hand-uploaded, or published before
-markfluence recorded them — is written under its stored name. `--flat` writes
-everything under stored names. `--dest` defaults to the current directory and is
+An attachment with no recorded path — one that originated in Confluence, or was
+published before markfluence recorded them — is written under a directory named
+after the page, since an attachment name is unique per page and not per space:
+two pages' `diagram.png` would otherwise be one file. That is where `read` and
+`export` point at it too. `--flat` writes everything directly under `--dest`,
+under stored names. `--dest` defaults to the current directory and is
 created if missing. An existing file is skipped unless `--force`, and
 `--dry-run` previews without writing.
 

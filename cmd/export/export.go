@@ -169,7 +169,7 @@ func export(c *client.ConfluenceClient, page *client.Page, root string) result {
 	if skipAttachs {
 		return res
 	}
-	res.attachments = writeAttachments(c, atts, referenced, root)
+	res.attachments = writeAttachments(c, page, atts, referenced, root)
 	return res
 }
 
@@ -205,9 +205,15 @@ const statusWrote = "wrote"
 // writeAttachments downloads the attachments to export, reporting the ones left
 // behind rather than dropping them silently.
 func writeAttachments(
-	c *client.ConfluenceClient, atts []client.Attachment, referenced map[string]bool, root string,
+	c *client.ConfluenceClient, page *client.Page, atts []client.Attachment,
+	referenced map[string]bool, root string,
 ) []attachment {
-	opts := attachfile.Options{Root: root, Force: force, DryRun: dryRun}
+	// Dir must be the AttachmentDir the body was rendered with, or an attachment
+	// with no recorded path is written somewhere its own image does not point.
+	// Taken from pagedoc rather than recomputed here, so the two cannot drift.
+	opts := attachfile.Options{
+		Root: root, Dir: pagedoc.AttachmentDir(page, ""), Force: force, DryRun: dryRun,
+	}
 	out := make([]attachment, 0, len(atts))
 	for _, a := range atts {
 		if !allAttachments && !referenced[a.Title] {
