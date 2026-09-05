@@ -61,7 +61,7 @@ func TestExportWritesAttachmentsWhereTheMarkdownPointsThem(t *testing.T) {
 			cl := nativePageServer(t, c.comment)
 			p := page(t, cl)
 			res := exportOne(cl, p, dir, pagedoc.Placement{},
-				placement{file: pageslug.Filename(p.Title, p.ID)})
+				placement{file: pageslug.Filename(p.Title, p.ID)}, newClaims())
 			if res.err != nil {
 				t.Fatalf("export: %v", res.err)
 			}

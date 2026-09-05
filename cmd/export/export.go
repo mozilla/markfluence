@@ -266,6 +266,9 @@ func exportTree(
 func exportNodes(
 	c *client.ConfluenceClient, page *client.Page, root string, nodes []pagetree.Node,
 ) []result {
+	// Which page wrote each destination, so a second page wanting the same file
+	// with different content is reported rather than skipped.
+	claims := newClaims()
 	rootTitle, rootID := "", ""
 	if page != nil {
 		rootTitle, rootID = page.Title, page.ID
@@ -283,7 +286,7 @@ func exportNodes(
 		if fileFlag != "" {
 			place.file = fileFlag
 		}
-		r := exportOne(c, page, root, pagedoc.Placement{}, place)
+		r := exportOne(c, page, root, pagedoc.Placement{}, place, claims)
 		if r.err != nil {
 			failed[page.ID] = true
 		}
@@ -315,7 +318,7 @@ func exportNodes(
 				fmt.Errorf("page %s has no readable body", n.ID), jsonout.CodeValidation))
 		default:
 			r := exportOne(c, child, root,
-				pagedoc.Placement{Dir: place.dir, Parent: place.parentFile}, place)
+				pagedoc.Placement{Dir: place.dir, Parent: place.parentFile}, place, claims)
 			if r.err != nil {
 				failed[n.ID] = true
 			}
@@ -369,7 +372,7 @@ type attachment struct {
 // and its frontmatter; place says where the file goes.
 func exportOne(
 	c *client.ConfluenceClient, page *client.Page, root string,
-	pl pagedoc.Placement, place placement,
+	pl pagedoc.Placement, place placement, claims *destClaims,
 ) result {
 	res := result{page: page, place: place}
 
@@ -400,7 +403,7 @@ func exportOne(
 	if skipAttachs {
 		return res
 	}
-	res.attachments = writeAttachments(c, page, atts, referenced, root, pl.Dir)
+	res.attachments = writeAttachments(c, page, atts, referenced, root, pl.Dir, claims)
 	return res
 }
 
@@ -437,7 +440,7 @@ const statusWrote = "wrote"
 // behind rather than dropping them silently.
 func writeAttachments(
 	c *client.ConfluenceClient, page *client.Page, atts []client.Attachment,
-	referenced map[string]bool, root, pageDir string,
+	referenced map[string]bool, root, pageDir string, claims *destClaims,
 ) []attachment {
 	// Dir must be the AttachmentDir the body was rendered with, or an attachment
 	// with no recorded path is written somewhere its own image does not point.
@@ -450,6 +453,15 @@ func writeAttachments(
 		if !allAttachments && !referenced[a.Title] {
 			out = append(out, attachment{name: a.Title, status: statusSkippedUnreferenced})
 			continue
+		}
+		if dest, err := attachfile.Resolve(a, opts); err == nil {
+			if conflict := claims.claim(dest, page, a); conflict != nil {
+				out = append(out, attachment{
+					name: a.Title, destPath: dest, status: attachfile.StatusFailed,
+					err: conflict, code: jsonout.CodeValidation,
+				})
+				continue
+			}
 		}
 		w := attachfile.Write(c, a, opts)
 		out = append(out, attachment{
