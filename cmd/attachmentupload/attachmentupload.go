@@ -34,15 +34,18 @@ var Cmd = &cobra.Command{
 	Long: "Upload or replace attachments on a Confluence page.\n\n" +
 		"PAGE is a numeric page id, a Confluence page URL, or a markdown file\n" +
 		"whose frontmatter has a page_id.\n\n" +
-		"Each file is attached under its path relative to the documentation\n" +
-		"root (its base name, with no markfluence.yaml above it). A file whose\n" +
-		"contents already match the attachment on the page is skipped, using the same\n" +
-		"checksum bookkeeping create/update use, so uploading by hand and\n" +
-		"publishing agree on what is current; --force uploads anyway.\n\n" +
-		"--name sets the attachment name for a single file, and takes a path:\n" +
-		"markfluence encodes it the way publishing would, so `--name\n" +
+		"Each file is attached under its base name, with its path relative to\n" +
+		"the documentation root recorded in the attachment's comment. A file\n" +
+		"whose contents already match the attachment on the page is skipped,\n" +
+		"using the same checksum bookkeeping create/update use, so uploading by\n" +
+		"hand and publishing agree on what is current; --force uploads anyway.\n\n" +
+		"--name takes a path, not a name, for a single file: `--name\n" +
 		"assets/x.png` produces the attachment an image written as\n" +
-		"![](assets/x.png) resolves to.",
+		"![](assets/x.png) resolves to -- stored as x.png, recorded as\n" +
+		"assets/x.png.\n\n" +
+		"Two files whose base names agree cannot both be uploaded to one page,\n" +
+		"since an attachment name is unique per page; that is refused rather\n" +
+		"than silently overwriting.",
 	Args:              cobra.MinimumNArgs(2),
 	ValidArgsFunction: completion.PageThenFiles,
 	RunE:              run,

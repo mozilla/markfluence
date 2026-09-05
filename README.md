@@ -683,10 +683,11 @@ file can be edited and published straight back with `update`.
 
 Attachments are written to the paths their images were published from, so the
 exported tree matches the layout of the repo the page came from and previews
-locally in GitHub or VSCode. There is deliberately no `--attachments-dir`:
-collecting attachments into one directory would mean rewriting the image `src`s,
-and a later `update` would then publish them under different attachment names,
-orphaning the originals.
+locally in GitHub or VSCode. There is deliberately no `--attachments-dir`. It is no longer *unsafe* — an
+attachment is named by its base name, so moving `assets/x.png` to
+`attachments/x.png` keeps the name `x.png` and orphans nothing — but collecting
+everything into one directory reintroduces exactly the collision the base name
+already has to refuse: two pages' `diagram.png` cannot share a directory.
 
 Only attachments the page actually references are exported. That includes images,
 attachment links, and references inside macros markfluence passes through
@@ -714,21 +715,22 @@ List a page's attachments.
 
 ```console
 $ markfluence attachment-list 1234567890
-NAME                     SIZE  VER  TYPE             SOURCE
-assets%2Fdiagram.png  24.1 KB    3  image/png        assets/diagram.png
-notes.pdf              1.2 MB    1  application/pdf  -
+NAME             SIZE  VER  TYPE             SOURCE
+diagram.png   24.1 KB    3  image/png        assets/diagram.png
+notes.pdf      1.2 MB    1  application/pdf  -
 ```
 
-`NAME` is the name Confluence stores. For an image markfluence published that is
-the percent-encoded source path (see [Body](#body)), and `SOURCE` is the Markdown
-image path it came from — so the table shows at a glance which attachments a
-publish manages and which it will leave alone.
+`NAME` is the name Confluence stores — for an image markfluence published, the
+file's base name (see [Body](#body)) — and `SOURCE` is the Markdown image path
+it came from, recorded in the attachment's comment. The table shows at a glance
+which attachments a publish manages and which it will leave alone.
 
 `SOURCE` is a dash when no source path is recorded: either the attachment was
 uploaded by hand, or it was published before markfluence recorded source paths.
 Those two look the same here; `--json` has a `managed` field that tells them
-apart. Attachments left behind by the encoding change show up this way, which is
-how you find them.
+apart. Attachments left behind by a naming change show up this way, which is how
+you find them — including the percent-encoded names markfluence wrote before it
+started naming attachments by their base name.
 
 ### `attachment-upload`
 
@@ -747,11 +749,15 @@ current. `--force` uploads anyway (bumping the attachment's version), which is
 how you repair an attachment whose stored bytes drifted while its checksum still
 matches. `--dry-run` previews without writing.
 
-`--name` sets the attachment name for a single file and takes a **path**, which
-markfluence encodes for you — so `--name assets/x.png` produces the attachment
-that an image written as `![](assets/x.png)` resolves to. The recorded source
-path always matches the stored name, so a later publish won't create a duplicate
-under a different one.
+`--name` takes a **path**, not a name, for a single file — so `--name
+assets/x.png` produces the attachment that an image written as
+`![](assets/x.png)` resolves to: stored as `x.png`, with `assets/x.png` recorded
+as its source. The stored name is always the base name of the recorded path, so
+a later publish won't create a duplicate under a different one.
+
+Uploading several files at once refuses a collision the same way publishing
+does: `arch/diagram.png` and `deploy/diagram.png` in one command both want the
+attachment `diagram.png`, so neither is uploaded.
 
 ```sh
 markfluence attachment-upload 1234567890 diagram.png
@@ -1186,15 +1192,19 @@ one resolving outside it (`../../secrets/x.png`) is reported as
 `line N: IMAGE BROKEN: … (outside the documentation root)` rather than
 uploaded, and a symlink is refused even when it resolves inside the root.
 
-Confluence attachment names cannot contain `/`, so the path — relative to the
-root, not to the page — is percent-encoded into the attachment name:
-`assets/logo.png` referenced from a page at the root is attached as
-`assets%2Flogo.png`; the same file referenced as `../assets/logo.png` from a
-page one directory down is attached under the *same* name, since both
-resolve to the same root-relative path. The encoding is reversible, so
-`markfluence read` restores an image's original path instead of a flattened
-one. markfluence also records the source path in the attachment's comment, which
-it prefers over decoding the name.
+Confluence attachment names cannot contain `/`, so an image is attached under
+its **base name**: `assets/logo.png` is attached as `logo.png`. The path —
+relative to the root, not to the page — is recorded in the attachment's
+comment, which is what `markfluence read` and `markfluence export` use to put
+the file back where it came from. The same file referenced as
+`../assets/logo.png` from a page one directory down is the same attachment,
+since both resolve to the same root-relative path.
+
+Because the name is only the base name, two images in one file whose names
+agree — `arch/diagram.png` and `deploy/diagram.png` — cannot both be published:
+an attachment name is unique per page, so one would overwrite the other. That is
+refused, naming both paths, and `markfluence check` reports it without
+publishing. Rename one of the files.
 
 Extra properties ride in the title as JSON:
 
