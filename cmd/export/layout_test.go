@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mozilla/markfluence/internal/attachfile"
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/pagedoc"
 	"github.com/mozilla/markfluence/internal/pagetree"
@@ -320,31 +321,58 @@ func TestAttachmentDirFollowsTheDisambiguatedSlug(t *testing.T) {
 	}
 }
 
-// TestFileFlagIsReservedNotTheSlug: --file renames the page's file, and the
-// reservation that keeps an attachment off a page's own file has to cover the
-// path actually written. Reserving the unused slug would leave the real file
-// unprotected and refuse an attachment at a path nothing writes.
+// TestFileFlagIsReservedNotTheSlug goes through exportNodes rather than
+// re-implementing the override-then-reserve sequence, because the sequence is
+// the thing under test: reserving before applying --file leaves the file this
+// run actually writes unprotected, and a hand-rolled body would pass either way.
 func TestFileFlagIsReservedNotTheSlug(t *testing.T) {
 	fileFlag = "custom.md"
 	t.Cleanup(func() { fileFlag = "" })
 
-	places := layout(rootRef{ID: "1", Title: "Home", File: true}, nil)
-	if places["1"].file != "home.md" {
-		t.Fatalf("layout should not know about --file, got %q", places["1"].file)
+	dir := t.TempDir()
+	c := pageWithAttachment(t, "markfluence: sha256=abc path=custom.md")
+	p, err := c.GetPageBodyOrNil("1")
+	if err != nil {
+		t.Fatal(err)
 	}
-	// exportNodes applies the override before reserving; this asserts the order
-	// by exercising it.
-	c := newClaims()
-	p := places["1"]
-	p.file = fileFlag
-	c.reservePage(filepath.Join("/out", p.file), "1")
 
-	if err := c.claim(filepath.Join("/out", "custom.md"), &client.Page{ID: "1"},
-		client.Attachment{Title: "custom.md"}); err == nil {
-		t.Error("an attachment must not be written over the file --file named")
+	results := exportNodes(c, p, rootRef{ID: p.ID, Title: p.Title, File: true}, dir, nil)
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want 1", len(results))
 	}
-	if err := c.claim(filepath.Join("/out", "home.md"), &client.Page{ID: "1"},
-		client.Attachment{Title: "home.md"}); err != nil {
-		t.Errorf("the unused slug must not be reserved: %v", err)
+	if want := filepath.Join(dir, "custom.md"); results[0].destPath != want {
+		t.Errorf("destPath = %q, want %q", results[0].destPath, want)
+	}
+	// The attachment records the very path --file named, so it must be refused
+	// rather than written over the page.
+	if len(results[0].attachments) != 1 {
+		t.Fatalf("attachments = %v, want one", results[0].attachments)
+	}
+	a := results[0].attachments[0]
+	if a.status != attachfile.StatusFailed || !strings.Contains(a.err.Error(), "own file") {
+		t.Errorf("attachment = %+v, want a refusal naming the page's own file", a)
+	}
+}
+
+// TestCollisionWarningSurvivesASuccessfulExport is the bug a hand-built result
+// hid: the placement's warning is appended early in exportOne and the
+// referenced-attachment warnings were *assigned* later, so a page that exported
+// cleanly -- the whole motivating case -- lost it in both human output and
+// --json, while a page that failed kept it.
+func TestCollisionWarningSurvivesASuccessfulExport(t *testing.T) {
+	dir := t.TempDir()
+	c := pageWithAttachment(t, "")
+	p, err := c.GetPageBodyOrNil("1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res := exportOne(c, p, dir, pagedoc.Placement{AttachmentDir: "runbook"},
+		placement{file: "runbook.md", childDir: "runbook", warning: "COLLISION"}, newClaims())
+	if res.err != nil {
+		t.Fatalf("export: %v", res.err)
+	}
+	if len(res.warnings) == 0 || res.warnings[0] != "COLLISION" {
+		t.Errorf("warnings = %v, want the placement's warning kept", res.warnings)
 	}
 }

@@ -240,3 +240,28 @@ func TestExportSkipsTheRenderForAnExistingFile(t *testing.T) {
 		t.Errorf("the attachment was not restored: %v", err)
 	}
 }
+
+// pageWithAttachment serves page 1 "Runbook" with one attachment carrying the
+// given comment ("" for a Confluence-native one) and a body referencing it.
+func pageWithAttachment(t *testing.T, comment string) *client.ConfluenceClient {
+	t.Helper()
+	meta := "{}"
+	if comment != "" {
+		meta = `{"comment":"` + comment + `"}`
+	}
+	return clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/properties"):
+			_, _ = w.Write([]byte(`{"results":[]}`))
+		case strings.Contains(r.URL.Path, "/child/attachment"):
+			_, _ = w.Write([]byte(`{"results":[{"id":"a1","title":"diagram.png","metadata":` +
+				meta + `,"_links":{"download":"/download/diagram.png"}}]}`))
+		case strings.Contains(r.URL.Path, "/download/"):
+			_, _ = w.Write([]byte("PNG"))
+		default:
+			_, _ = w.Write([]byte(`{"id":"1","title":"Runbook","spaceId":"77","body":{"storage":` +
+				`{"value":"<p><ac:image><ri:attachment ri:filename=\"diagram.png\" /></ac:image></p>",` +
+				`"representation":"storage"}},"_links":{"webui":"/spaces/ENG/pages/1/Runbook"}}`))
+		}
+	})
+}

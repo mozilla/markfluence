@@ -196,7 +196,13 @@ func localAttachments(files []string, name string, roots *project.Cache) ([]clie
 		}
 		filename := convert.AttachmentFilename(source)
 		if filename == "" {
-			return nil, badInput{fmt.Errorf("%q is not a usable attachment name", source)}
+			// Reported as typed: source has been normalized, and "/" normalizes
+			// to "" long before it reaches here.
+			given := name
+			if given == "" {
+				given = f
+			}
+			return nil, badInput{fmt.Errorf("%q is not a usable attachment name", given)}
 		}
 		// Keyed on the file, not on the recorded source. With no
 		// markfluence.yaml above them each file's root is its own directory, so
