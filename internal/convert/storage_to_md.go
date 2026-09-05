@@ -106,15 +106,21 @@ type mdRenderer struct {
 	headingSlugs map[string]string
 }
 
-// sourceFor resolves an attachment name back to the markdown image path to write.
-// The path recorded on the attachment wins because it is exact; otherwise the
-// name is decoded. An absolute path is never something markfluence published, so
-// it is refused in both cases and the raw attachment name is used instead.
+// sourceFor resolves an attachment name back to the markdown image path to
+// write: the path recorded on the attachment, or the name itself.
+//
+// A stored name is never interpreted. It used to be decoded, back when the name
+// was an encoding of the path -- but the name is the base name now, so there is
+// nothing in it to decode, and a name that happens to contain "%2F" is a
+// filename with a "%2F" in it. The comment is the only place a path is written
+// down, which also means placement (internal/attachfile) and the markdown
+// written here cannot disagree about where an attachment belongs: both read the
+// same field and fall back to the same name.
+//
+// An absolute recorded path is never something markfluence published, so it is
+// refused and the name is used instead.
 func (r *mdRenderer) sourceFor(filename string) string {
 	if src, ok := r.sources[filename]; ok && src != "" && !path.IsAbs(src) {
-		return src
-	}
-	if src, ok := AttachmentSource(filename); ok {
 		return src
 	}
 	return filename

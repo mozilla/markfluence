@@ -404,13 +404,19 @@ func TestRoundTripPassthrough(t *testing.T) {
 	}
 }
 
-// TestRoundTripEncodedImageSources closes the loop between the two halves of the
-// image-source codec, on real emitted storage rather than a hand-written
-// fragment: every destination `read`/`export` writes must decode back to exactly
-// the path `update` published from. If it did not, exporting a page would rename
-// its own image files, and re-publishing the export would upload them again under
-// new attachment names.
-func TestRoundTripEncodedImageSources(t *testing.T) {
+// TestRoundTripImageSourcesViaRecordedPath closes the loop between publishing an
+// image and reading it back, on real emitted storage rather than a hand-written
+// fragment: every destination `read`/`export` writes must decode to exactly the
+// path `update` published from. If it did not, exporting a page would rename its
+// own image files, and re-publishing the export would upload them again.
+//
+// It used to test the two halves of a codec -- the name encoded the path, and
+// this asserted the decode inverted the encode. There is no codec now: the name
+// is the base name and the path lives only in the attachment's comment. So the
+// property is the same sentence with a different mechanism behind it, and it
+// matters more than it did, because a single recorded field is now the only
+// thing standing between an export and a flattened tree.
+func TestRoundTripImageSourcesViaRecordedPath(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(regressionDir, "images-encoded-src", "test.output"))
 	if err != nil {
 		t.Fatalf("reading golden: %v", err)
@@ -473,10 +479,11 @@ func imageDests(md string) []string {
 	return out
 }
 
-// TestStorageToMarkdownPrefersRecordedSource checks the two ways an image path is
-// recovered. The path recorded on the attachment wins because it is exact; with
-// no record, the attachment name is decoded, which is equally exact for a name
-// markfluence produced.
+// TestStorageToMarkdownPrefersRecordedSource checks the two ways an image path
+// is recovered. The path recorded on the attachment wins because it is the only
+// record there is; with none, the name is used as written and never
+// interpreted -- a name containing "%2F" is a filename with a "%2F" in it, not
+// a path in disguise.
 func TestStorageToMarkdownPrefersRecordedSource(t *testing.T) {
 	const in = `<p><ac:image ac:alt="d"><ri:attachment ri:filename="assets%2Fx.png" /></ac:image></p>`
 
@@ -484,8 +491,11 @@ func TestStorageToMarkdownPrefersRecordedSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "![d](assets/x.png)\n"; got != want {
-		t.Errorf("decoded from name: got %q, want %q", got, want)
+	// The "%" is percent-encoded on the way out because a destination is a URL,
+	// not because the name is being decoded: the file really is called
+	// "assets%2Fx.png".
+	if want := "![d](assets%252Fx.png)\n"; got != want {
+		t.Errorf("name used verbatim: got %q, want %q", got, want)
 	}
 
 	// A recorded source overrides the name -- this is what makes an attachment
