@@ -148,11 +148,18 @@ finds the root by walking up from each file's own directory, independent of the
 working directory and of what else is in the same command (`_plans/026`
 commits 1–4).
 
-**L3** is what makes moving a page free. Moving an *asset* still changes its
-identity; buying that back would need content-addressed names, at the cost of
-being able to reconstruct a tree on export. `images.go` records an attachment's
+**L3** is what makes moving a page free. `images.go` records an attachment's
 `Source` relative to the root rather than to the referencing page, so identity
 follows the asset alone (`_plans/026` commit 4).
+
+Both halves of the sentence that used to follow are now wrong, and it is worth
+saying how. It read that moving an *asset* still changes its identity, and that
+fixing that would need content-addressed names at the cost of being able to
+reconstruct a tree on export. Neither survives `_plans/029`: an attachment is
+named by its base name, so moving an asset within the tree keeps its identity
+and restamps its recorded path, and reconstruction was never the name's job
+anyway — the comment carries the path. What identity still follows is the
+asset's *file name*, so renaming the file is what creates a new attachment.
 
 **L5** and **L6** stay Partial, deferred to #59 (multi-page export). Two
 separate things kept them there, and both are now repaired. Since `_plans/026`
@@ -219,7 +226,7 @@ nothing is computing a wrong answer.
 | | label | guarantee | status |
 |---|---|---|---|
 | **R1** | `report-unresolved-references` | Every reference markfluence could not resolve is reported. | Holds |
-| **R2** | `report-unplaceable-attachments` | Every attachment markfluence could not place is reported. | Holds |
+| **R2** | `report-unplaceable-attachments` | Every attachment markfluence could not name or place is reported. | Holds |
 
 **R1** was false by design and documented as such: the README said an
 unresolved link was "published as-is, which on Confluence is a dead relative
@@ -249,6 +256,20 @@ hrefs ending in `.md`, so that case is never a resolution attempt in the
 first place, by design, since only images are uploaded and a relative href
 to anything else would be dead regardless. That sits outside R1's claim
 rather than inside it unmet, so it does not block Holds.
+
+**R2** covers naming as well as placement, which is a widening of the note and
+not of the label — labels are permanent (see *Changing this document*), so
+`report-unplaceable-attachments` stays as it is even though the guarantee now
+reaches one step earlier in the pipeline.
+
+The step is new. Since `_plans/029` an attachment is named by its base name, so
+two assets in one document can want one name — and there is no correct way to
+publish that, since a name is unique per page. The converter refuses the file
+and names both paths and both lines; `attachment-upload` refuses the same
+collision across a batch; `check` reports it offline as a Broken entry, in the
+same list as a dead link, because renaming a file is the fix in either case.
+An attachment that cannot be named is as unusable as one that cannot be placed,
+and the obligation to say so is the same one.
 
 ## Non-goals
 
