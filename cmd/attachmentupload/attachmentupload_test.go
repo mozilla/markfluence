@@ -4,6 +4,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/client"
@@ -108,6 +109,43 @@ func TestLocalAttachmentsNameIsTheSourcesBaseName(t *testing.T) {
 			t.Errorf("--name %q: stored name %q is not the base name of source %q (%q)",
 				name, got[0].Filename, got[0].Source, want)
 		}
+	}
+}
+
+// TestLocalAttachmentsRefusesABatchCollision is the batch counterpart of the
+// converter's refusal. Nothing downstream would catch it: planAttachments reads
+// what is on the page once, before the loop, so two files claiming one name both
+// plan "created" and the second upload lands on top of the first with both
+// reported as successful.
+func TestLocalAttachmentsRefusesABatchCollision(t *testing.T) {
+	root := t.TempDir()
+	a := writeFile(t, root, "arch/diagram.png")
+	b := writeFile(t, root, "deploy/diagram.png")
+	writeFile(t, root, "markfluence.yaml")
+
+	_, err := localAttachments([]string{a, b}, "", project.NewCache(root))
+	if err == nil {
+		t.Fatal("want a refusal when two files want one attachment name")
+	}
+	for _, want := range []string{"arch/diagram.png", "deploy/diagram.png", "diagram.png"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+}
+
+// TestLocalAttachmentsAllowsTheSameFileTwice keeps the refusal to genuine
+// collisions: naming one file twice is one attachment, not two claims on a name.
+func TestLocalAttachmentsAllowsTheSameFileTwice(t *testing.T) {
+	root := t.TempDir()
+	f := writeFile(t, root, "assets/x.png")
+
+	got, err := localAttachments([]string{f, f}, "", project.NewCache(root))
+	if err != nil {
+		t.Fatalf("localAttachments: %v", err)
+	}
+	if len(got) != 2 || got[0].Filename != got[1].Filename {
+		t.Errorf("got %v, want the same name twice rather than a refusal", got)
 	}
 }
 
