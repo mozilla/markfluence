@@ -45,7 +45,7 @@ func TestRenderFrontmatterQuotesWhenNeeded(t *testing.T) {
 // --- Sources -----------------------------------------------------------------
 
 func TestSourcesFrom(t *testing.T) {
-	managed := client.Attachment{Title: "assets%2Fx.png"}
+	managed := client.Attachment{Title: "x.png"}
 	managed.Metadata.Comment = "markfluence: sha256=abc path=assets/x.png"
 	legacy := client.Attachment{Title: "assets_x.png"}
 	legacy.Metadata.Comment = "mzcld:checksum: abc"
@@ -55,7 +55,7 @@ func TestSourcesFrom(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("got %d sources, want 1: %v", len(got), got)
 	}
-	if got["assets%2Fx.png"] != "assets/x.png" {
+	if got["x.png"] != "assets/x.png" {
 		t.Errorf("sources = %v", got)
 	}
 	// An attachment with no recorded source contributes nothing, so the converter
