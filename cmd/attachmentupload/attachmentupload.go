@@ -187,8 +187,8 @@ func localAttachments(files []string, name string, roots *project.Cache) ([]clie
 		if info.IsDir() {
 			return nil, badInput{fmt.Errorf("%s is a directory", f)}
 		}
-		source := name
-		if source == "" {
+		source := convert.NormalizeSource(name)
+		if name == "" {
 			source, err = rootRelativeSource(f, roots)
 			if err != nil {
 				return nil, err

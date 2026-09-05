@@ -226,9 +226,11 @@ func pageURLByTitle(c *client.ConfluenceClient, title, spaceID string) string {
 // location exactly rather than inferring it from the attachment name.
 //
 // It is an optimization, not a requirement: a page with no attachment
-// references skips the lookup entirely, and a failed lookup returns nil so the
-// converter falls back to decoding names -- a read is worth completing without
-// it, the same way a failed page-width read is tolerated in Frontmatter.
+// references skips the lookup entirely, and a failed lookup returns nil, which
+// leaves every attachment looking unrecorded -- so the markdown points into the
+// page's own directory, which is where an unrecorded one is placed anyway. A
+// read is worth completing without it, the same way a failed page-width read is
+// tolerated in Frontmatter.
 func Sources(c *client.ConfluenceClient, page *client.Page) map[string]string {
 	if !strings.Contains(page.Body.Storage.Value, "<ri:attachment") {
 		return nil

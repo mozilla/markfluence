@@ -120,7 +120,11 @@ func TestSchemaConformanceTree(t *testing.T) {
 	}
 	child := result{
 		page: testPage(), destPath: "out/home/child.md", pageStatus: attachfile.StatusSkipped,
-		place: placement{dir: "home", file: "home/child.md", parentFile: "../home.md"},
+		place: placement{
+			dir: "home", file: "home/child.md", parentFile: "../home.md",
+			warning: `"Child", "child" all slug to "child"; writing them with their page ids appended`,
+		},
+		warnings: []string{`"Child", "child" all slug to "child"; writing them with their page ids appended`},
 	}
 	orphan := result{
 		node:  &pagetree.Node{ID: "789", Title: "Escalation", ParentID: "456", Space: "ENG"},
@@ -139,8 +143,9 @@ func TestSchemaConformanceTree(t *testing.T) {
 	var doc struct {
 		Roots   []string `json:"roots"`
 		Results []struct {
-			PageID     string  `json:"page_id"`
-			ParentFile *string `json:"parent_file"`
+			PageID     string   `json:"page_id"`
+			ParentFile *string  `json:"parent_file"`
+			Warnings   []string `json:"warnings"`
 		} `json:"results"`
 		Summary struct {
 			Skipped     int     `json:"skipped"`
@@ -161,6 +166,10 @@ func TestSchemaConformanceTree(t *testing.T) {
 	}
 	if doc.Summary.ProjectFile == nil || *doc.Summary.ProjectFile != markerWrote {
 		t.Errorf("project_file = %v, want %q", doc.Summary.ProjectFile, markerWrote)
+	}
+	if len(doc.Results[1].Warnings) != 1 {
+		t.Errorf("a page whose name was disambiguated must say so in --json: %v",
+			doc.Results[1].Warnings)
 	}
 	if doc.Summary.Skipped != 1 {
 		t.Errorf("skipped = %d, want 1", doc.Summary.Skipped)

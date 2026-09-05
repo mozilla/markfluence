@@ -47,7 +47,9 @@ type jsonExportAttach struct {
 
 func buildResult(r result) jsonExportResult {
 	res := jsonExportResult{
-		OK:          r.err == nil,
+		// The same condition report() counts as a success, or a consumer
+		// filtering on ok gets a different number than the summary states.
+		OK:          r.err == nil && !anyAttachmentFailed(r),
 		ParentFile:  nullable(r.place.parentFile),
 		DryRun:      dryRun,
 		Status:      r.pageStatus,

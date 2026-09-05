@@ -19,14 +19,16 @@ func node(id, typ, title, parent string) pagetree.Node {
 // file with a directory beside it, a folder is only a directory, and a page
 // under a folder sits inside it.
 func TestLayoutMirrorsTheHierarchy(t *testing.T) {
-	got, warnings := layout(rootRef{ID: "1", Title: "Home", File: true}, []pagetree.Node{
+	got := layout(rootRef{ID: "1", Title: "Home", File: true}, []pagetree.Node{
 		node("2", pagetree.TypePage, "Onboarding", "1"),
 		node("3", pagetree.TypePage, "Escalation", "2"),
 		node("4", pagetree.TypeFolder, "Runbooks", "1"),
 		node("5", pagetree.TypePage, "Deploy", "4"),
 	})
-	if len(warnings) != 0 {
-		t.Errorf("warnings = %v, want none", warnings)
+	for id, p := range got {
+		if p.warning != "" {
+			t.Errorf("%s carries a warning it should not: %q", id, p.warning)
+		}
 	}
 	for _, c := range []struct{ id, file, childDir string }{
 		{"1", "home.md", "home"},
@@ -52,7 +54,7 @@ func TestLayoutMirrorsTheHierarchy(t *testing.T) {
 // publishable into fresh pages: create resolves parent: against the referring
 // file's own directory.
 func TestLayoutParentPathsPointAtTheParentFile(t *testing.T) {
-	got, _ := layout(rootRef{ID: "1", Title: "Home", File: true}, []pagetree.Node{
+	got := layout(rootRef{ID: "1", Title: "Home", File: true}, []pagetree.Node{
 		node("2", pagetree.TypePage, "Onboarding", "1"),
 		node("3", pagetree.TypePage, "Escalation", "2"),
 		node("4", pagetree.TypeFolder, "Runbooks", "1"),
@@ -78,30 +80,35 @@ func TestLayoutParentPathsPointAtTheParentFile(t *testing.T) {
 // one name. Every member of the group takes the suffix, so the result does not
 // depend on which was walked first.
 func TestLayoutDisambiguatesCollidingSiblings(t *testing.T) {
-	got, warnings := layout(rootRef{ID: "1", Title: "Home", File: true}, []pagetree.Node{
+	got := layout(rootRef{ID: "1", Title: "Home", File: true}, []pagetree.Node{
 		node("2", pagetree.TypePage, "Deploy: Prod", "1"),
 		node("3", pagetree.TypePage, "Deploy Prod", "1"),
 	})
 	if got["2"].file != "home/deploy-prod-2.md" || got["3"].file != "home/deploy-prod-3.md" {
 		t.Errorf("files = %q and %q, want both suffixed", got["2"].file, got["3"].file)
 	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "Deploy: Prod") {
-		t.Fatalf("warnings = %v, want one naming both titles", warnings)
+	// Both members carry it, so --json reports it against each affected page
+	// rather than the run having nowhere to put it.
+	for _, id := range []string{"2", "3"} {
+		if !strings.Contains(got[id].warning, "Deploy: Prod") {
+			t.Errorf("%s warning = %q, want it to name both titles", id, got[id].warning)
+		}
 	}
 }
 
 // TestLayoutCollisionNamespaceCoversFolders: a page and a folder both want the
 // same directory, so they are one group even though only one of them has a file.
 func TestLayoutCollisionNamespaceCoversFolders(t *testing.T) {
-	got, warnings := layout(rootRef{ID: "1", Title: "Home", File: true}, []pagetree.Node{
+	got := layout(rootRef{ID: "1", Title: "Home", File: true}, []pagetree.Node{
 		node("2", pagetree.TypePage, "Team", "1"),
 		node("3", pagetree.TypeFolder, "Team", "1"),
 	})
 	if got["2"].childDir == got["3"].childDir {
 		t.Errorf("page and folder share the directory %q", got["2"].childDir)
 	}
-	if len(warnings) != 1 {
-		t.Errorf("warnings = %v, want one", warnings)
+	if got["2"].warning == "" || got["3"].warning == "" {
+		t.Errorf("both the page and the folder should be warned about: %q / %q",
+			got["2"].warning, got["3"].warning)
 	}
 }
 
@@ -110,7 +117,7 @@ func TestLayoutCollisionNamespaceCoversFolders(t *testing.T) {
 // top-level nodes report the folder as their parent, so grouping by parent
 // needs that id even though nothing is written for it.
 func TestLayoutUnderAFolderRoot(t *testing.T) {
-	got, _ := layout(rootRef{ID: "9"}, []pagetree.Node{
+	got := layout(rootRef{ID: "9"}, []pagetree.Node{
 		node("2", pagetree.TypePage, "Runbook", "9"),
 		node("3", pagetree.TypePage, "Escalation", "2"),
 	})
@@ -131,7 +138,7 @@ func TestLayoutUnderAFolderRoot(t *testing.T) {
 // TestLayoutWithoutARootNodeStartsAtTheTop is the --space and folder-root case:
 // there is no file for the thing named, so its children are the top level.
 func TestLayoutWithoutARootNodeStartsAtTheTop(t *testing.T) {
-	got, _ := layout(rootRef{}, []pagetree.Node{
+	got := layout(rootRef{}, []pagetree.Node{
 		node("2", pagetree.TypePage, "Handbook", ""),
 		node("3", pagetree.TypePage, "Onboarding", "2"),
 	})
@@ -294,7 +301,7 @@ func TestWriteProjectFile(t *testing.T) {
 // page's bytes. A native attachment carries no checksum, so nothing else would
 // have caught it.
 func TestAttachmentDirFollowsTheDisambiguatedSlug(t *testing.T) {
-	places, _ := layout(rootRef{ID: "1", Title: "Home", File: true}, []pagetree.Node{
+	places := layout(rootRef{ID: "1", Title: "Home", File: true}, []pagetree.Node{
 		node("2", pagetree.TypePage, "Deploy: Prod", "1"),
 		node("3", pagetree.TypePage, "Deploy Prod", "1"),
 	})
@@ -310,5 +317,34 @@ func TestAttachmentDirFollowsTheDisambiguatedSlug(t *testing.T) {
 	if two != places["2"].childDir || three != places["3"].childDir {
 		t.Errorf("attachment dirs %q and %q do not match the layout's %q and %q",
 			two, three, places["2"].childDir, places["3"].childDir)
+	}
+}
+
+// TestFileFlagIsReservedNotTheSlug: --file renames the page's file, and the
+// reservation that keeps an attachment off a page's own file has to cover the
+// path actually written. Reserving the unused slug would leave the real file
+// unprotected and refuse an attachment at a path nothing writes.
+func TestFileFlagIsReservedNotTheSlug(t *testing.T) {
+	fileFlag = "custom.md"
+	t.Cleanup(func() { fileFlag = "" })
+
+	places := layout(rootRef{ID: "1", Title: "Home", File: true}, nil)
+	if places["1"].file != "home.md" {
+		t.Fatalf("layout should not know about --file, got %q", places["1"].file)
+	}
+	// exportNodes applies the override before reserving; this asserts the order
+	// by exercising it.
+	c := newClaims()
+	p := places["1"]
+	p.file = fileFlag
+	c.reservePage(filepath.Join("/out", p.file), "1")
+
+	if err := c.claim(filepath.Join("/out", "custom.md"), &client.Page{ID: "1"},
+		client.Attachment{Title: "custom.md"}); err == nil {
+		t.Error("an attachment must not be written over the file --file named")
+	}
+	if err := c.claim(filepath.Join("/out", "home.md"), &client.Page{ID: "1"},
+		client.Attachment{Title: "home.md"}); err != nil {
+		t.Errorf("the unused slug must not be reserved: %v", err)
 	}
 }

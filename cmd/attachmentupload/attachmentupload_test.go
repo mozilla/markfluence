@@ -206,3 +206,30 @@ func TestForcedRewritesSkips(t *testing.T) {
 		t.Error("forced mutated its input")
 	}
 }
+
+// TestLocalAttachmentsNormalizesTheNamePath keeps --name recording what
+// publishing the same image would record. An absolute one is the case that
+// matters: Resolve refuses an absolute recorded path outright while sourceFor
+// falls back to the page directory, so the file could never be restored where
+// the markdown says it is.
+func TestLocalAttachmentsNormalizesTheNamePath(t *testing.T) {
+	root := t.TempDir()
+	f := writeFile(t, root, "f.png")
+
+	for _, c := range []struct{ name, want string }{
+		{"/assets/x.png", "assets/x.png"},
+		{"./a/./x.png", "a/x.png"},
+		{"assets/x.png", "assets/x.png"},
+	} {
+		got, err := localAttachments([]string{f}, c.name, project.NewCache(""))
+		if err != nil {
+			t.Fatalf("--name %q: %v", c.name, err)
+		}
+		if got[0].Source != c.want {
+			t.Errorf("--name %q recorded %q, want %q", c.name, got[0].Source, c.want)
+		}
+		if got[0].Filename != "x.png" {
+			t.Errorf("--name %q stored %q, want x.png", c.name, got[0].Filename)
+		}
+	}
+}
