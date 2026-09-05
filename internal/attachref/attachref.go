@@ -6,10 +6,17 @@
 package attachref
 
 // LocalAttachment is a local file to be uploaded as one page's attachment.
-// Path is absolute. Filename is the attachment name, a bijective encoding of
-// Source, so distinct images can never collide on one name. Source is the
-// normalized page-relative path the image was written as, recorded on the
-// attachment so a later read recovers it exactly rather than inferring it.
+// Path is absolute. Filename is the attachment name, which is Source's base
+// name (convert.AttachmentFilename). Source is the normalized root-relative
+// path the image was written as, recorded on the attachment so a later read
+// recovers it exactly rather than inferring it.
+//
+// The mapping from Source to Filename is lossy on purpose, and the loss is
+// checked rather than encoded around: two images whose base names agree cannot
+// both be attached to one page, and whoever builds these refuses that rather
+// than letting one overwrite the other. Filename used to be a bijective
+// encoding of Source, which made a name move whenever a path moved -- and a
+// moved name is a new attachment with the old one orphaned (_plans/029).
 type LocalAttachment struct {
 	Filename string `json:"filename"`
 	Path     string `json:"path"`

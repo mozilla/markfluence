@@ -129,6 +129,28 @@ func TestWarnsWhenAConvertedImageTakesAPastedName(t *testing.T) {
 	}
 }
 
+// TestFencedStorageExampleIsNotAReference is the false positive a text scan
+// produces and a parse does not: markdown that *documents* storage format. The
+// fenced block publishes as a code block and references nothing, so an image
+// sharing its name is taking nothing over.
+//
+// markfluence's own documentation is this shape, which is how the case was
+// found.
+func TestFencedStorageExampleIsNotAReference(t *testing.T) {
+	root := t.TempDir()
+	body := "Storage format looks like this:\n\n" +
+		"```xml\n<ac:image><ri:attachment ri:filename=\"diagram.png\" /></ac:image>\n```\n\n" +
+		"![arch](arch/diagram.png)\n"
+
+	page, err := convertBody(t, root, body, "arch/diagram.png")
+	if err != nil {
+		t.Fatalf("MdToConfluence: %v", err)
+	}
+	if len(page.Warnings) != 0 {
+		t.Errorf("warnings = %v, want none: the fence is an example, not a reference", page.Warnings)
+	}
+}
+
 // TestNoWarningWhenPastedNamesDoNotCollide keeps the scan from firing on the
 // ordinary case: a page mixing pasted storage and images that share no name.
 func TestNoWarningWhenPastedNamesDoNotCollide(t *testing.T) {

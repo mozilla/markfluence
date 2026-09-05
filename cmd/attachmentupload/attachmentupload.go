@@ -3,6 +3,7 @@
 package attachmentupload
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -88,7 +89,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	attachments, err := localAttachments(files, nameFlag, roots)
 	if err != nil {
-		return fatalFail(err.Error(), jsonout.CodeIO)
+		return fatalFail(err.Error(), localAttachmentsCode(err))
 	}
 	for _, dir := range roots.Roots() {
 		ui.Info("root: " + dir)
@@ -140,18 +141,34 @@ func forced(actions []client.SyncAction) []client.SyncAction {
 	return out
 }
 
+// badInput marks a localAttachments failure that is the caller's input rather
+// than the filesystem's, so --json reports VALIDATION instead of IO for a
+// collision or a directory passed where a file was meant.
+type badInput struct{ error }
+
+// localAttachmentsCode maps a localAttachments failure to its --json code.
+func localAttachmentsCode(err error) jsonout.Code {
+	var bad badInput
+	if errors.As(err, &bad) {
+		return jsonout.CodeValidation
+	}
+	return jsonout.CodeIO
+}
+
 // localAttachments resolves each file into an upload, checking readability up
 // front so a batch fails before it has half-uploaded.
 //
-// The attachment name is the encoding of --name, or -- with no override -- the
-// file's source resolved root-relative (internal/project), the same way a
+// The attachment name is the base name of --name, or -- with no override -- of
+// the file's source resolved root-relative (internal/project), the same way a
 // published image's Source is: a page-specific upload of sub/img.png (no
-// project file above it) still records "img.png," but a shared one under a
-// declared root records "sub/img.png," matching what publishing a page that
-// references the same file would record. The recorded source is always the
-// decode of the name, never the local path: if the two disagreed, a later
-// publish would upload a second attachment under the name it computes while a
-// download restored this one somewhere the markdown never references.
+// project file above it) records "img.png", while a shared one under a declared
+// root records "sub/img.png". The recorded source is the path as given and the
+// stored name is its base name, never the other way round: deriving the source
+// back from the name would discard the directory, and the comment is the only
+// place the path is written down.
+//
+// Because a name is only a base name, two files in one batch can want the same
+// one; that is refused below.
 func localAttachments(files []string, name string, roots *project.Cache) ([]client.LocalAttachment, error) {
 	out := make([]client.LocalAttachment, 0, len(files))
 	// An attachment name is unique per page, and a name is now a base name, so
@@ -161,14 +178,14 @@ func localAttachments(files []string, name string, roots *project.Cache) ([]clie
 	// never updates it inside the loop, so both files would plan "created" and
 	// the second upload would quietly land on top of the first, both reported as
 	// successes.
-	claimed := map[string]string{}
+	claimed := map[string]string{} // attachment name -> the file that claimed it
 	for _, f := range files {
 		info, err := os.Stat(f)
 		if err != nil {
 			return nil, err
 		}
 		if info.IsDir() {
-			return nil, fmt.Errorf("%s is a directory", f)
+			return nil, badInput{fmt.Errorf("%s is a directory", f)}
 		}
 		source := name
 		if source == "" {
@@ -179,14 +196,20 @@ func localAttachments(files []string, name string, roots *project.Cache) ([]clie
 		}
 		filename := convert.AttachmentFilename(source)
 		if filename == "" {
-			return nil, fmt.Errorf("%q is not a usable attachment name", source)
+			return nil, badInput{fmt.Errorf("%q is not a usable attachment name", source)}
 		}
-		if prev, dup := claimed[filename]; dup && prev != source {
-			return nil, fmt.Errorf(
+		// Keyed on the file, not on the recorded source. With no
+		// markfluence.yaml above them each file's root is its own directory, so
+		// arch/diagram.png and deploy/diagram.png both record the source
+		// "diagram.png" -- comparing sources would call that one asset claiming
+		// its name twice and wave the collision through. That is the default
+		// case, not a corner of one.
+		if prev, dup := claimed[filename]; dup && prev != f {
+			return nil, badInput{fmt.Errorf(
 				"%s and %s both upload as the attachment %q; rename one or upload them separately",
-				prev, source, filename)
+				prev, f, filename)}
 		}
-		claimed[filename] = source
+		claimed[filename] = f
 		// source is recorded as given, not as a decode of the name. The name is
 		// now the base name, so decoding it back would throw the path away and
 		// record "x.png" for an asset at "docs/assets/x.png" -- which is the one
@@ -221,7 +244,7 @@ func rootRelativeSource(f string, roots *project.Cache) (string, error) {
 	}
 	rel = filepath.ToSlash(rel)
 	if rel == ".." || strings.HasPrefix(rel, "../") {
-		return "", fmt.Errorf("%s resolves outside the documentation root (%s)", f, root.Dir)
+		return "", badInput{fmt.Errorf("%s resolves outside the documentation root (%s)", f, root.Dir)}
 	}
 	return rel, nil
 }

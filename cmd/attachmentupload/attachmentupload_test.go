@@ -118,18 +118,30 @@ func TestLocalAttachmentsNameIsTheSourcesBaseName(t *testing.T) {
 // plan "created" and the second upload lands on top of the first with both
 // reported as successful.
 func TestLocalAttachmentsRefusesABatchCollision(t *testing.T) {
-	root := t.TempDir()
-	a := writeFile(t, root, "arch/diagram.png")
-	b := writeFile(t, root, "deploy/diagram.png")
-	writeFile(t, root, "markfluence.yaml")
+	// Both spellings of the same batch: with a declared root, and without one.
+	// The second is the default and is where an earlier version of this guard
+	// failed -- with no markfluence.yaml each file's root is its own directory,
+	// so both record the source "diagram.png" and a guard comparing sources saw
+	// one asset rather than two.
+	for _, declareRoot := range []bool{true, false} {
+		root := t.TempDir()
+		a := writeFile(t, root, "arch/diagram.png")
+		b := writeFile(t, root, "deploy/diagram.png")
+		cache := project.NewCache("")
+		if declareRoot {
+			writeFile(t, root, "markfluence.yaml")
+			cache = project.NewCache(root)
+		}
 
-	_, err := localAttachments([]string{a, b}, "", project.NewCache(root))
-	if err == nil {
-		t.Fatal("want a refusal when two files want one attachment name")
-	}
-	for _, want := range []string{"arch/diagram.png", "deploy/diagram.png", "diagram.png"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error %q does not mention %q", err, want)
+		_, err := localAttachments([]string{a, b}, "", cache)
+		if err == nil {
+			t.Fatalf("declared root %v: want a refusal when two files want one attachment name",
+				declareRoot)
+		}
+		for _, want := range []string{"arch", "deploy", "diagram.png"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("declared root %v: error %q does not mention %q", declareRoot, err, want)
+			}
 		}
 	}
 }

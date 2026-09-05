@@ -9,44 +9,6 @@ import (
 	"github.com/mozilla/markfluence/internal/client"
 )
 
-// TestReferencedNamesMatchesEveryContext is why the scan reads raw storage
-// rather than walking the parsed tree: the converter special-cases ac:image
-// only, so an attachment link's target or a reference inside a pass-through
-// macro would be dropped from the export.
-func TestReferencedNamesMatchesEveryContext(t *testing.T) {
-	const storage = `<p><ac:image><ri:attachment ri:filename="assets%2Fx.png" /></ac:image></p>` +
-		`<p><ac:link><ri:attachment ri:filename="spec.pdf" /></ac:link></p>` +
-		`<ac:structured-macro ac:name="viewfile">` +
-		`<ac:parameter ac:name="name"><ri:attachment ri:filename="data.csv" /></ac:parameter>` +
-		`</ac:structured-macro>`
-
-	got := referencedNames(storage)
-	for _, want := range []string{"assets%2Fx.png", "spec.pdf", "data.csv"} {
-		if !got[want] {
-			t.Errorf("%q not detected as referenced", want)
-		}
-	}
-	if len(got) != 3 {
-		t.Errorf("got %d names, want 3: %v", len(got), got)
-	}
-}
-
-func TestReferencedNamesEmptyBody(t *testing.T) {
-	if got := referencedNames("<p>nothing here</p>"); len(got) != 0 {
-		t.Errorf("got %v, want no references", got)
-	}
-}
-
-// TestReferencedNamesUnescapes covers a name carrying an XML entity: storage is
-// XHTML, so an ampersand in a filename arrives escaped and must be compared
-// against the attachment title in its decoded form.
-func TestReferencedNamesUnescapes(t *testing.T) {
-	got := referencedNames(`<ri:attachment ri:filename="a&amp;b.png" />`)
-	if !got["a&b.png"] {
-		t.Errorf("got %v, want the decoded a&b.png", got)
-	}
-}
-
 func TestMissingReferences(t *testing.T) {
 	referenced := map[string]bool{"here.png": true, "gone.png": true, "also-gone.png": true}
 	atts := []client.Attachment{{Title: "here.png"}}
