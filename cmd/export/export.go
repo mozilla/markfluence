@@ -151,7 +151,7 @@ func export(c *client.ConfluenceClient, page *client.Page, root string) result {
 	}
 
 	// The page sits at the top level of dest today; a tree export positions it.
-	doc, err := pagedoc.Render(c, page, "")
+	doc, err := pagedoc.Render(c, page, pagedoc.Placement{})
 	if err != nil {
 		res.err, res.code = err, jsonout.CodeConvert
 		return res
