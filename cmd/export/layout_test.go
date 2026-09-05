@@ -118,3 +118,62 @@ func TestLayoutWithoutARootNodeStartsAtTheTop(t *testing.T) {
 		t.Errorf("parentFile = %q, want %q", got["3"].parentFile, want)
 	}
 }
+
+// TestCheckTarget covers the three usage errors, all recognizable without a
+// server: no target, two targets, and a space walk whose depth was never asked
+// for.
+func TestCheckTarget(t *testing.T) {
+	for _, c := range []struct {
+		name       string
+		args       []string
+		space      string
+		depthGiven bool
+		wantErr    string
+	}{
+		{"page alone", []string{"123"}, "", false, ""},
+		{"space with depth", nil, "ENG", true, ""},
+		{"neither", nil, "", false, "no page given"},
+		{"both", []string{"123"}, "ENG", false, "cannot be combined"},
+		{"space without depth", nil, "ENG", false, "needs an explicit --depth"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			err := checkTarget(c.args, c.space, c.depthGiven)
+			switch {
+			case c.wantErr == "" && err != nil:
+				t.Errorf("checkTarget = %v, want nil", err)
+			case c.wantErr != "" && err == nil:
+				t.Errorf("checkTarget = nil, want an error mentioning %q", c.wantErr)
+			case c.wantErr != "" && !strings.Contains(err.Error(), c.wantErr):
+				t.Errorf("checkTarget = %v, want it to mention %q", err, c.wantErr)
+			}
+		})
+	}
+}
+
+// TestParseDepth pins the vocabulary, including the difference from children's:
+// 0 is a request for the named page alone rather than for nothing.
+func TestParseDepth(t *testing.T) {
+	for _, c := range []struct {
+		in      string
+		want    int
+		wantErr bool
+	}{
+		{"0", 0, false},
+		{"1", 1, false},
+		{"all", -1, false},
+		{"-1", 0, true},
+		{"", 0, true},
+		{"deep", 0, true},
+	} {
+		got, err := parseDepth(c.in)
+		if c.wantErr {
+			if err == nil {
+				t.Errorf("parseDepth(%q) = %d, nil; want an error", c.in, got)
+			}
+			continue
+		}
+		if err != nil || got != c.want {
+			t.Errorf("parseDepth(%q) = %d, %v; want %d, nil", c.in, got, err, c.want)
+		}
+	}
+}

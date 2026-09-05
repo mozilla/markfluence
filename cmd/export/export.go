@@ -38,6 +38,7 @@ var (
 	dest           string
 	fileFlag       string
 	depthOpt       string
+	spaceOpt       string
 	allAttachments bool
 	skipAttachs    bool
 	force          bool
@@ -46,11 +47,15 @@ var (
 
 // Cmd is the export command.
 var Cmd = &cobra.Command{
-	Use:   command + " PAGE",
+	Use:   command + " [PAGE]",
 	Short: "Write a Confluence page and its attachments to a directory",
 	Long: "Write a Confluence page and the attachments it uses to a directory.\n\n" +
 		"PAGE is a numeric page id, a Confluence page URL, or a markdown file\n" +
 		"whose frontmatter has a page_id.\n\n" +
+		"Pass --space KEY instead of a PAGE to export a whole space, whose root\n" +
+		"pages become the top level. It needs an explicit --depth, since a space\n" +
+		"walk is one pair of requests per page and folder in it and should be\n" +
+		"asked for rather than typed by accident.\n\n" +
 		"The page is written as markdown with title/space/parent/page_id/\n" +
 		"page_width frontmatter -- the same output `read` prints -- so an\n" +
 		"exported file can be edited and published back with update.\n\n" +
@@ -66,7 +71,7 @@ var Cmd = &cobra.Command{
 		"and not per space. Only attachments the page references are exported;\n" +
 		"--all-attachments takes everything on the page.\n\n" +
 		"This is the one-command form of `read` plus `attachment-download`.",
-	Args:              cobra.ExactArgs(1),
+	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
 	RunE:              run,
 }
@@ -75,6 +80,8 @@ func init() {
 	Cmd.Flags().StringVar(&dest, "dest", ".", "Directory to write the export into.")
 	Cmd.Flags().StringVar(&depthOpt, "depth", "0",
 		`How deep to export: 0 for the page alone, a positive number, or "all".`)
+	Cmd.Flags().StringVar(&spaceOpt, "space", "",
+		"Export a whole space, by key, instead of a PAGE.")
 	Cmd.Flags().StringVar(&fileFlag, "file", "",
 		"Name for the page file (default: a slug of the title, or the page id if that slugs to nothing).")
 	Cmd.Flags().BoolVar(&allAttachments, "all-attachments", false,
@@ -87,6 +94,9 @@ func init() {
 
 	completion.RegisterFlag(Cmd, "dest", completion.Directories)
 	completion.RegisterFlag(Cmd, "depth", completion.Values("0", "1", "2", depthAll))
+	// A space key lives on the server, and completion runs on every keystroke,
+	// so it completes to nothing rather than stalling the shell.
+	completion.RegisterFlag(Cmd, "space", cobra.NoFileCompletions)
 }
 
 func run(cmd *cobra.Command, args []string) error {
@@ -101,8 +111,8 @@ func run(cmd *cobra.Command, args []string) error {
 		return fatalFail(err.Error(), jsonout.CodeConfig)
 	}
 
-	pageID, err := pageref.Resolve(args[0])
-	if err != nil {
+	// Neither of these needs a server to be recognized as a usage error.
+	if err := checkTarget(args, spaceOpt, cmd.Flags().Changed("depth")); err != nil {
 		return fatalFail(err.Error(), jsonout.CodeValidation)
 	}
 
@@ -121,6 +131,15 @@ func run(cmd *cobra.Command, args []string) error {
 	root, err := filepath.Abs(dest)
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeIO)
+	}
+
+	if spaceOpt != "" {
+		return exportSpace(c, spaceOpt, root, depth)
+	}
+
+	pageID, err := pageref.Resolve(args[0])
+	if err != nil {
+		return fatalFail(err.Error(), jsonout.CodeValidation)
 	}
 
 	page, err := c.GetPageBodyOrNil(pageID)
@@ -150,6 +169,50 @@ func run(cmd *cobra.Command, args []string) error {
 // depthNone is --depth 0: the named page and nothing under it.
 const depthNone = 0
 
+// checkTarget requires exactly one of PAGE and --space, and an explicit --depth
+// alongside --space.
+//
+// A space walk with the default depth would export nothing at all -- the space
+// itself is not a page and has no file -- and defaulting it to "all" instead
+// would make a bare typo fire thousands of requests at a shared instance. So it
+// is asked for.
+func checkTarget(args []string, space string, depthGiven bool) error {
+	switch {
+	case len(args) == 0 && space == "":
+		return errors.New("no page given: pass a PAGE, or --space KEY to export a whole space")
+	case len(args) > 0 && space != "":
+		return errors.New("PAGE and --space cannot be combined: --space exports a whole space")
+	case space != "" && !depthGiven:
+		return errors.New(`--space needs an explicit --depth (--depth all for the whole space)`)
+	}
+	return nil
+}
+
+// exportSpace exports a space's pages, its root pages forming the top level.
+//
+// The key is resolved before the walk even though the route the walk uses takes
+// a key: an unknown key is a typo and deserves to be named as one, and the v1
+// route reports it as a 404 -- which is also what a rejected credential looks
+// like.
+func exportSpace(c *client.ConfluenceClient, key, root string, depth int) error {
+	spaceID, err := c.ResolveSpaceID(key)
+	if err != nil {
+		return spaceFail(err, jsonout.CodeFor(err))
+	}
+	if spaceID == "" {
+		return fatalFail(fmt.Sprintf("space %q not found", key), jsonout.CodeValidation)
+	}
+
+	nodes, err := pagetree.WalkSpace(c, key, depth)
+	if err != nil {
+		return spaceFail(err, jsonout.CodeFor(err))
+	}
+	if dryRun && !ui.IsJSON() {
+		ui.Warn("DRY RUN — no files will be written.")
+	}
+	return report(exportNodes(c, nil, root, nodes))
+}
+
 // parseDepth reads the --depth vocabulary: a non-negative number, or "all".
 //
 // 0 is legal here and is the default, unlike `children --depth`, which refuses
@@ -167,7 +230,8 @@ func parseDepth(v string) (int, error) {
 	return n, nil
 }
 
-// exportTree walks the subtree (when asked) and exports every page in it.
+// exportTree walks the subtree (when asked) and exports the page and every page
+// under it.
 //
 // A walk failure fails the command rather than one page: pagetree aborts on the
 // first listing error, before any page has been exported, so there is no
@@ -182,54 +246,80 @@ func exportTree(
 			return nil, err
 		}
 	}
+	return exportNodes(c, page, root, nodes), nil
+}
 
-	places, warnings := layout(page.Title, page.ID, nodes)
-	// The root's own file keeps whatever --file said; everything below is named
-	// from its slug.
-	rootPlace := places[page.ID]
-	if fileFlag != "" {
-		rootPlace.file = fileFlag
+// exportNodes exports a root page (when there is one) and every walked page
+// beneath it, in walk order.
+//
+// page is nil when the thing named has no file of its own -- a whole space --
+// so the walk's top level is the top of the export.
+func exportNodes(
+	c *client.ConfluenceClient, page *client.Page, root string, nodes []pagetree.Node,
+) []result {
+	rootTitle, rootID := "", ""
+	if page != nil {
+		rootTitle, rootID = page.Title, page.ID
 	}
+	places, warnings := layout(rootTitle, rootID, nodes)
 
-	results := []result{exportOne(c, page, root, pagedoc.Placement{}, rootPlace)}
-	results[0].warnings = append(warnings, results[0].warnings...)
-
-	// A page whose own parent failed is skipped rather than written with a
-	// parent: pointing at a file that does not exist -- create's precedent for
-	// the same shape.
+	results := make([]result, 0, len(nodes)+1)
+	// failed carries a page's failure down to its descendants: a page whose
+	// parent was not written must not be written with a parent: pointing at a
+	// file that does not exist. create's precedent for the same shape.
 	failed := map[string]bool{}
-	if results[0].err != nil {
-		failed[page.ID] = true
-	}
-	for _, n := range nodes {
-		if n.Type == pagetree.TypeFolder {
-			continue
+
+	if page != nil {
+		place := places[page.ID]
+		if fileFlag != "" {
+			place.file = fileFlag
 		}
-		place := places[n.ID]
-		if failed[n.ParentID] {
-			failed[n.ID] = true
-			results = append(results, skippedResult(n, place, "parent page was not exported; skipping"))
-			continue
-		}
-		child, err := c.GetPageBodyOrNil(n.ID)
-		if err != nil {
-			failed[n.ID] = true
-			results = append(results, failedResult(n, place, err, jsonout.CodeFor(err)))
-			continue
-		}
-		if child == nil || child.Body.Storage.Value == "" {
-			failed[n.ID] = true
-			results = append(results, failedResult(n, place,
-				fmt.Errorf("page %s has no readable body", n.ID), jsonout.CodeValidation))
-			continue
-		}
-		r := exportOne(c, child, root, pagedoc.Placement{Dir: place.dir, Parent: place.parentFile}, place)
+		r := exportOne(c, page, root, pagedoc.Placement{}, place)
 		if r.err != nil {
-			failed[n.ID] = true
+			failed[page.ID] = true
 		}
 		results = append(results, r)
 	}
-	return results, nil
+
+	for _, n := range nodes {
+		if n.Type == pagetree.TypeFolder {
+			// A folder shapes paths and nothing else: no file, no result row,
+			// and its directory appears only because something lands in it.
+			continue
+		}
+		place := places[n.ID]
+		switch {
+		case failed[n.ParentID]:
+			failed[n.ID] = true
+			results = append(results, failedResult(n, place,
+				errors.New("parent page was not exported; skipping"), jsonout.CodeValidation))
+			continue
+		}
+		child, err := c.GetPageBodyOrNil(n.ID)
+		switch {
+		case err != nil:
+			failed[n.ID] = true
+			results = append(results, failedResult(n, place, err, jsonout.CodeFor(err)))
+		case child == nil || child.Body.Storage.Value == "":
+			failed[n.ID] = true
+			results = append(results, failedResult(n, place,
+				fmt.Errorf("page %s has no readable body", n.ID), jsonout.CodeValidation))
+		default:
+			r := exportOne(c, child, root,
+				pagedoc.Placement{Dir: place.dir, Parent: place.parentFile}, place)
+			if r.err != nil {
+				failed[n.ID] = true
+			}
+			results = append(results, r)
+		}
+	}
+
+	// Collision warnings belong to the run rather than to any one page; the
+	// first result is where a reader looks first.
+	if len(warnings) > 0 && len(results) > 0 {
+		results[0].warnings = append(warnings, results[0].warnings...)
+	}
+	return results
 }
 
 // failedResult is a page that could not be exported, carrying enough of the
@@ -238,11 +328,6 @@ func failedResult(n pagetree.Node, place placement, err error, code jsonout.Code
 	return result{
 		node: &n, place: place, err: err, code: code,
 	}
-}
-
-// skippedResult is a page not attempted because an ancestor failed.
-func skippedResult(n pagetree.Node, place placement, msg string) result {
-	return failedResult(n, place, errors.New(msg), jsonout.CodeValidation)
 }
 
 // result is everything one page's export produced.
@@ -492,6 +577,18 @@ func fatalFail(msg string, code jsonout.Code) error {
 		ui.Error(msg)
 	}
 	return ui.SilentExit(2)
+}
+
+// spaceFail reports a failure of a whole-space walk: there is no page id to
+// name, so it takes the stderr errorObject shape children --space established
+// for exactly this, which find and search share.
+func spaceFail(err error, code jsonout.Code) error {
+	if ui.IsJSON() {
+		_ = jsonout.EmitError(os.Stderr, command, err.Error(), code)
+	} else {
+		ui.Error(err.Error())
+	}
+	return ui.SilentExit(1)
 }
 
 // operationalFail reports a failure against the page: under --json a results[0]
