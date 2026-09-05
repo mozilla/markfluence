@@ -479,7 +479,9 @@ func exportOne(
 	}
 
 	referenced := convert.ReferencedAttachmentNames(page.Body.Storage.Value)
-	res.warnings = missingReferences(referenced, atts)
+	// Appended, not assigned: the placement may already have contributed the
+	// note about a name this page did not choose.
+	res.warnings = append(res.warnings, missingReferences(referenced, atts)...)
 	if skipAttachs {
 		return res
 	}
@@ -642,12 +644,13 @@ func envelope(results []result, marker, destRoot string, succeeded, failed, skip
 
 // reportOne prints one page's lines: the page file, then its attachments.
 func reportOne(r result) {
-	// Before the failure branch: a name this page did not choose is worth
-	// saying whether or not the page went on to export.
-	for _, w := range r.warnings {
-		ui.Warn(w)
-	}
 	if r.err != nil {
+		// A page that failed still reports what it was warned about -- a name
+		// it did not choose is worth saying either way -- but with no lines of
+		// its own to follow.
+		for _, w := range r.warnings {
+			ui.Warn(w)
+		}
 		ui.Error(fmt.Sprintf("%-10s %s: %s", attachfile.StatusFailed, r.title(), r.err))
 		return
 	}
@@ -674,6 +677,9 @@ func reportOne(r result) {
 	if unreferenced > 0 {
 		ui.Dim(fmt.Sprintf("           (skipped %d unreferenced attachment(s); "+
 			"--all-attachments to include)", unreferenced))
+	}
+	for _, w := range r.warnings {
+		ui.Warn(w)
 	}
 }
 
