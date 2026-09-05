@@ -15,6 +15,9 @@ import (
 
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/clienttest"
+	"github.com/mozilla/markfluence/internal/pagedoc"
+	"github.com/mozilla/markfluence/internal/pageslug"
+	"github.com/mozilla/markfluence/internal/pagetree"
 )
 
 // nativePageServer serves a page whose only image is an attachment with no
@@ -55,7 +58,10 @@ func TestExportWritesAttachmentsWhereTheMarkdownPointsThem(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			dir := t.TempDir()
-			res := export(nativePageServer(t, c.comment), page(t, nativePageServer(t, c.comment)), dir)
+			cl := nativePageServer(t, c.comment)
+			p := page(t, cl)
+			res := exportOne(cl, p, dir, pagedoc.Placement{},
+				placement{file: pageslug.Filename(p.Title, p.ID)})
 			if res.err != nil {
 				t.Fatalf("export: %v", res.err)
 			}
@@ -85,4 +91,93 @@ func page(t *testing.T, c *client.ConfluenceClient) *client.Page {
 		t.Fatal(err)
 	}
 	return p
+}
+
+// treeServer serves a two-level tree: Home (1) with a child Onboarding (2),
+// each carrying one Confluence-native attachment of the same name -- the case
+// page-scoping exists for.
+func treeServer(t *testing.T) *client.ConfluenceClient {
+	t.Helper()
+	body := func(id, title string) string {
+		return `{"id":"` + id + `","title":"` + title + `","spaceId":"77","body":{"storage":` +
+			`{"value":"<p><ac:image><ri:attachment ri:filename=\"diagram.png\" /></ac:image></p>",` +
+			`"representation":"storage"}},"_links":{"webui":"/spaces/ENG/pages/` + id + `/x"}}`
+	}
+	return clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/properties"):
+			_, _ = w.Write([]byte(`{"results":[]}`))
+		case strings.Contains(r.URL.Path, "/child/page"):
+			if strings.Contains(r.URL.Path, "/1/") {
+				_, _ = w.Write([]byte(`{"results":[{"id":"2","type":"page","title":"Onboarding",` +
+					`"status":"current","extensions":{"position":1},` +
+					`"_links":{"webui":"/spaces/ENG/pages/2/Onboarding"}}]}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"results":[]}`))
+		case strings.Contains(r.URL.Path, "/child/folder"):
+			_, _ = w.Write([]byte(`{"results":[]}`))
+		case strings.Contains(r.URL.Path, "/child/attachment"):
+			_, _ = w.Write([]byte(`{"results":[{"id":"a1","title":"diagram.png","metadata":{},` +
+				`"_links":{"download":"/download/diagram.png"}}]}`))
+		case strings.HasPrefix(r.URL.Path, "/download/"):
+			_, _ = w.Write([]byte("PNG"))
+		case strings.Contains(r.URL.Path, "/pages/2"):
+			_, _ = w.Write([]byte(body("2", "Onboarding")))
+		default:
+			_, _ = w.Write([]byte(body("1", "Home")))
+		}
+	})
+}
+
+// TestExportTreeMirrorsTheHierarchy is the feature end to end: the exact set of
+// files written, the parent: path that makes the tree republishable, and two
+// same-named native attachments landing in different directories rather than on
+// top of each other.
+func TestExportTreeMirrorsTheHierarchy(t *testing.T) {
+	dir := t.TempDir()
+	c := treeServer(t)
+	root := page(t, c)
+
+	results, err := exportTree(c, root, dir, pagetree.AllDepths)
+	if err != nil {
+		t.Fatalf("exportTree: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("got %d results, want 2", len(results))
+	}
+	for _, r := range results {
+		if r.err != nil {
+			t.Fatalf("%s: %v", r.title(), r.err)
+		}
+	}
+
+	for _, want := range []string{
+		"home.md",
+		"home/onboarding.md",
+		"home/diagram.png",
+		"home/onboarding/diagram.png",
+	} {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(want))); err != nil {
+			t.Errorf("missing %s: %v", want, err)
+		}
+	}
+
+	child, err := os.ReadFile(filepath.Join(dir, "home", "onboarding.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(child), "parent: ../home.md") {
+		t.Errorf("child frontmatter does not point at its parent file:\n%s", child)
+	}
+	if !strings.Contains(string(child), "](onboarding/diagram.png)") {
+		t.Errorf("child image is not page-scoped:\n%s", child)
+	}
+	parent, err := os.ReadFile(filepath.Join(dir, "home.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(parent), "](home/diagram.png)") {
+		t.Errorf("root image is not page-scoped:\n%s", parent)
+	}
 }

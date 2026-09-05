@@ -30,30 +30,6 @@ func TestMissingReferencesNoneWhenAllPresent(t *testing.T) {
 		t.Errorf("got %v, want no warnings", got)
 	}
 }
-
-func TestPageFilename(t *testing.T) {
-	cases := []struct {
-		name, title, id, override, want string
-	}{
-		{"plain title", "markfluence test page", "123", "", "markfluence-test-page.md"},
-		{"punctuation dropped", "Q3 Planning: 2026!", "123", "", "q3-planning-2026.md"},
-		{"collapses whitespace", "a   b\tc", "123", "", "a-b-c.md"},
-		{"strips path separators", "docs/notes", "123", "", "docsnotes.md"},
-		{"unicode letters kept", "Café Plans", "123", "", "café-plans.md"},
-		{"id fallback when slug empty", "………", "2848423944", "", "2848423944.md"},
-		{"id fallback when title empty", "", "2848423944", "", "2848423944.md"},
-		{"override wins", "markfluence test page", "123", "custom.md", "custom.md"},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			page := &client.Page{ID: c.id, Title: c.title}
-			if got := pageFilename(page, c.override); got != c.want {
-				t.Errorf("pageFilename(%q) = %q, want %q", c.title, got, c.want)
-			}
-		})
-	}
-}
-
 func TestWritePageSkipsExistingUnlessForce(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "page.md")
