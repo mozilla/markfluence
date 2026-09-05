@@ -1,6 +1,7 @@
 package export
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -327,10 +328,13 @@ func TestAttachmentDirFollowsTheDisambiguatedSlug(t *testing.T) {
 // run actually writes unprotected, and a hand-rolled body would pass either way.
 func TestFileFlagIsReservedNotTheSlug(t *testing.T) {
 	fileFlag = "custom.md"
-	t.Cleanup(func() { fileFlag = "" })
+	// The two extra attachments are not referenced by the body; this is about
+	// where an attachment may land, not about which are exported.
+	allAttachments = true
+	t.Cleanup(func() { fileFlag, allAttachments = "", false })
 
 	dir := t.TempDir()
-	c := pageWithAttachment(t, "markfluence: sha256=abc path=custom.md")
+	c := nativePageServer(t, "", "custom.md", "home.md")
 	p, err := c.GetPageBodyOrNil("1")
 	if err != nil {
 		t.Fatal(err)
@@ -343,14 +347,19 @@ func TestFileFlagIsReservedNotTheSlug(t *testing.T) {
 	if want := filepath.Join(dir, "custom.md"); results[0].destPath != want {
 		t.Errorf("destPath = %q, want %q", results[0].destPath, want)
 	}
-	// The attachment records the very path --file named, so it must be refused
-	// rather than written over the page.
-	if len(results[0].attachments) != 1 {
-		t.Fatalf("attachments = %v, want one", results[0].attachments)
+	// Both directions. The attachment recording the path --file named must be
+	// refused; the one recording the slug this run does not use must not be,
+	// since nothing is written there.
+	byName := map[string]attachment{}
+	for _, a := range results[0].attachments {
+		byName[a.name] = a
 	}
-	a := results[0].attachments[0]
-	if a.status != attachfile.StatusFailed || !strings.Contains(a.err.Error(), "own file") {
-		t.Errorf("attachment = %+v, want a refusal naming the page's own file", a)
+	if a := byName["custom.md"]; a.status != attachfile.StatusFailed ||
+		!strings.Contains(a.err.Error(), "own file") {
+		t.Errorf("custom.md = %+v, want a refusal naming the page's own file", a)
+	}
+	if a := byName["home.md"]; a.status == attachfile.StatusFailed {
+		t.Errorf("home.md = %+v, want it written: --file means nothing is at the slug", a)
 	}
 }
 
@@ -361,7 +370,7 @@ func TestFileFlagIsReservedNotTheSlug(t *testing.T) {
 // --json, while a page that failed kept it.
 func TestCollisionWarningSurvivesASuccessfulExport(t *testing.T) {
 	dir := t.TempDir()
-	c := pageWithAttachment(t, "")
+	c := nativePageServer(t, "")
 	p, err := c.GetPageBodyOrNil("1")
 	if err != nil {
 		t.Fatal(err)
@@ -374,5 +383,73 @@ func TestCollisionWarningSurvivesASuccessfulExport(t *testing.T) {
 	}
 	if len(res.warnings) == 0 || res.warnings[0] != "COLLISION" {
 		t.Errorf("warnings = %v, want the placement's warning kept", res.warnings)
+	}
+}
+
+// TestFolderCollisionIsReported closes the half of the warning regression that
+// survived: siblingSlugs covers folder directories in the same namespace as
+// page files, so two sibling folders that slug the same are renamed -- but a
+// folder produces no result, so its warning had nowhere to land and the user
+// got id-suffixed directories with no explanation anywhere.
+func TestFolderCollisionIsReported(t *testing.T) {
+	places := layout(rootRef{ID: "1", Title: "Home", File: true}, []pagetree.Node{
+		node("2", pagetree.TypeFolder, "Run Books", "1"),
+		node("3", pagetree.TypeFolder, "Run: Books", "1"),
+		node("4", pagetree.TypePage, "Deploy", "2"),
+	})
+	if places["2"].childDir == places["3"].childDir {
+		t.Fatal("the two folders share a directory")
+	}
+	if places["2"].warning == "" {
+		t.Fatal("the layout does not warn about the folder collision")
+	}
+
+	dir := t.TempDir()
+	c := nativePageServer(t, "")
+	p, err := c.GetPageBodyOrNil("1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	results := exportNodes(c, p, rootRef{ID: "1", Title: "Home", File: true}, dir, []pagetree.Node{
+		node("2", pagetree.TypeFolder, "Run Books", "1"),
+		node("3", pagetree.TypeFolder, "Run: Books", "1"),
+	})
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want just the root page", len(results))
+	}
+	found := false
+	for _, w := range results[0].warnings {
+		if strings.Contains(w, "Run: Books") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("warnings = %v, want the folder collision reported somewhere", results[0].warnings)
+	}
+}
+
+// TestReportOneWarnsInHumanOutput covers the two loops in reportOne: a page
+// that exported and a page that failed both have to say what they were warned
+// about, and only --json was asserted before.
+func TestReportOneWarnsInHumanOutput(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		r    result
+	}{
+		{"exported", result{
+			page: &client.Page{ID: "1", Title: "Home"}, pageStatus: statusWrote,
+			destPath: "/out/home.md", warnings: []string{"RENAMED"},
+		}},
+		{"failed", result{
+			node: &pagetree.Node{ID: "2", Title: "Child"}, place: placement{file: "child.md"},
+			err: errors.New("boom"), warnings: []string{"RENAMED"},
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			out := captureBoth(t, func() { reportOne(c.r) })
+			if !strings.Contains(out, "RENAMED") {
+				t.Errorf("output = %q, want the warning", out)
+			}
+		})
 	}
 }
