@@ -150,8 +150,6 @@ func selectAttachments(attachments []client.Attachment, names []string) (
 	return wanted, missing
 }
 
-// report prints the per-attachment outcomes and returns the command's exit
-// status: 1 if any attachment failed.
 // pageDirFor is the directory an attachment with no recorded path is written
 // under: a slug of the page's title, matching what convert.sourceFor points the
 // markdown at (via pagedoc.Options) so that a downloaded file lands where a
@@ -178,6 +176,8 @@ func pageDirFor(c *client.ConfluenceClient, pageID string) (string, error) {
 	return pageslug.For(folder.Title, pageID), nil
 }
 
+// report prints the per-attachment outcomes and returns the command's exit
+// status: 1 if any attachment failed.
 func report(results []attachfile.Outcome) error {
 	failed := 0
 	skipped := 0

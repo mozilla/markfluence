@@ -156,8 +156,18 @@ func (r *mdRenderer) sourceFor(filename string) string {
 // ones -- the same conversion images.go's rootRelative does in the other
 // direction.
 //
-// A failure (only possible for inputs that are not both relative) falls back to
-// the path unchanged, which is what a page at the root would have produced.
+// filepath.Rel fails for an absolute-versus-relative pair and, more reachably
+// here, for a target that climbs above dir -- Rel("home", "../assets/x.png").
+// A recorded path should never contain ".." (images.go refuses an escaping
+// image before recording one), but a comment is server data and an older
+// markfluence recorded page-relative sources, so it happens. The fallback
+// leaves the path unchanged, which reads as relative to the root.
+//
+// That is a destination pointing at a file attachfile.Resolve refuses to write,
+// since it reads the same string as root-relative and clamps it. Both halves
+// report the problem in their own way rather than one of them inventing a
+// plausible path: R2 covers the unwritten attachment, and the markdown says
+// where the page claimed the image was.
 func relativeTo(dir, target string) string {
 	if dir == "" {
 		return target

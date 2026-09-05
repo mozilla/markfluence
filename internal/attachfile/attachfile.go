@@ -74,10 +74,14 @@ type Options struct {
 // Resolve decides where an attachment is written, and is the first of two
 // guards on a server-controlled string becoming a filesystem path.
 //
-// The recorded source path is used, not a decode of the attachment name: there
-// is no way to tell a hand-uploaded "a%2Fb.png" from one markfluence published,
-// so decoding by default would scatter a literally-named file into a/b.png. An
-// attachment with no recorded source keeps its stored name.
+// The recorded source path is used, not a decode of the attachment name: a name
+// is a base name and is never interpreted, so a file really called "a%2Fb.png"
+// stays one file rather than being scattered into a/b.png.
+//
+// An attachment with no recorded source keeps its stored name, placed under
+// Options.Dir -- the directory named after its page -- because a name is unique
+// per page and not per space. convert.sourceFor points the markdown at exactly
+// that path.
 //
 // This check is *lexical*, and by the time a root-relative model records a
 // Source (025), the ".." this clamp refuses is never one markfluence itself

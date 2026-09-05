@@ -3,10 +3,9 @@
 //
 // One conversion, parameterized. Every command that renders a page goes through
 // Options, so `read` and `export` cannot drift apart by accident -- only by
-// argument, and the arguments are the page's position in whatever is being
-// written and the form its parent takes. For a page at the top level of that
-// tree, which is what `read` prints and what a single-page export writes, the
-// two are byte-identical.
+// argument, and the argument is where the page sits in whatever is being
+// written. For a page at the top level of that tree, which is what `read`
+// prints and what a single-page export writes, the two are byte-identical.
 //
 // It needs a client (page width, attachment list) and so cannot live in
 // internal/convert, which is deliberately client-free; that is why
@@ -61,10 +60,9 @@ func Render(c *client.ConfluenceClient, page *client.Page, pageDir string) (Doc,
 // options that can disagree, and here a disagreement means an attachment
 // written to a path the markdown does not point at.
 //
-// One conversion, parameterized. read and export produce identical markdown for
-// identical arguments; what differs between them is the arguments -- read has
-// no tree, so it passes the empty position and the page's parent id, while a
-// tree export passes the page's directory and a parent path.
+// One conversion, parameterized by where the page sits. read and export produce
+// identical markdown for the same position; read has no tree, so it passes the
+// empty one.
 func Options(c *client.ConfluenceClient, page *client.Page, pageDir string) convert.StorageOptions {
 	return convert.StorageOptions{
 		Sources:   Sources(c, page),
@@ -75,10 +73,21 @@ func Options(c *client.ConfluenceClient, page *client.Page, pageDir string) conv
 		// than in the converter, which has no business knowing how a title
 		// becomes a directory name, and computed once so that every command
 		// placing such an attachment agrees with the markdown that points at it.
-		AttachmentDir: path.Join(pageDir, pageslug.For(page.Title, page.ID)),
+		AttachmentDir: AttachmentDir(page, pageDir),
 		// The site, never the gateway: these URLs are published into a page.
 		SiteURL: c.SiteURL(),
 	}
+}
+
+// AttachmentDir is where an attachment with no recorded path belongs: the
+// directory named after the page, beside the page's own file at pageDir.
+//
+// Exported because both sides of the same decision need it and must not compute
+// it twice: the markdown that points at the attachment (through Options) and
+// the write that puts it there (attachfile.Options.Dir). A caller that renders
+// a page and writes its attachments passes this to both.
+func AttachmentDir(page *client.Page, pageDir string) string {
+	return path.Join(pageDir, pageslug.For(page.Title, page.ID))
 }
 
 // PageLinks maps each page an <ac:link> in this body points at to its absolute
