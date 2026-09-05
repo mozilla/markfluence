@@ -24,7 +24,7 @@ func testPage() *client.Page {
 // past a copy of the shape.
 func emit(t *testing.T, res ...result) []byte {
 	t.Helper()
-	env := envelope(res, markerSkipped, len(res), 0, 0)
+	env := envelope(res, markerSkipped, "/out", len(res), 0, 0)
 	var buf bytes.Buffer
 	if err := jsonout.Emit(&buf, env); err != nil {
 		t.Fatalf("Emit: %v", err)
@@ -129,7 +129,7 @@ func TestSchemaConformanceTree(t *testing.T) {
 		code:  jsonout.CodeValidation,
 	}
 
-	env := envelope([]result{root, child, orphan}, markerWrote, 2, 1, 1)
+	env := envelope([]result{root, child, orphan}, markerWrote, "/out", 2, 1, 1)
 	var buf bytes.Buffer
 	if err := jsonout.Emit(&buf, env); err != nil {
 		t.Fatal(err)

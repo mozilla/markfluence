@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/pagedoc"
 	"github.com/mozilla/markfluence/internal/pagetree"
 )
 
@@ -152,6 +154,22 @@ func TestCheckTarget(t *testing.T) {
 	}
 }
 
+// TestCheckSpaceDepth: --space --depth 0 passes checkTarget, which only asks
+// whether --depth was given, and would then walk nothing at all -- writing a
+// stray project-marker file and reporting success. The value has to be checked
+// too.
+func TestCheckSpaceDepth(t *testing.T) {
+	if err := checkSpaceDepth("ENG", depthNone); err == nil {
+		t.Error("want a refusal for --space --depth 0")
+	}
+	if err := checkSpaceDepth("ENG", 1); err != nil {
+		t.Errorf("--space --depth 1 must be allowed: %v", err)
+	}
+	if err := checkSpaceDepth("", depthNone); err != nil {
+		t.Errorf("a page export at depth 0 is the default: %v", err)
+	}
+}
+
 // TestParseDepth pins the vocabulary, including the difference from children's:
 // 0 is a request for the named page alone rather than for nothing.
 func TestParseDepth(t *testing.T) {
@@ -242,4 +260,32 @@ func TestWriteProjectFile(t *testing.T) {
 			t.Error("a dry run must not create the file")
 		}
 	})
+}
+
+// TestAttachmentDirFollowsTheDisambiguatedSlug is the invariant the conflict
+// rule leans on: page directories are unique, so two pages' same-named native
+// attachments cannot meet. It failed when the attachment directory was
+// recomputed from the title instead of taken from the layout -- two siblings
+// whose titles slug the same then shared one directory, and the second page's
+// image was skipped as "already there" while its markdown pointed at the first
+// page's bytes. A native attachment carries no checksum, so nothing else would
+// have caught it.
+func TestAttachmentDirFollowsTheDisambiguatedSlug(t *testing.T) {
+	places, _ := layout("Home", "1", []pagetree.Node{
+		node("2", pagetree.TypePage, "Deploy: Prod", "1"),
+		node("3", pagetree.TypePage, "Deploy Prod", "1"),
+	})
+
+	two := pagedoc.AttachmentDirFor(&client.Page{ID: "2", Title: "Deploy: Prod"},
+		pagedoc.Placement{Dir: places["2"].dir, AttachmentDir: places["2"].childDir})
+	three := pagedoc.AttachmentDirFor(&client.Page{ID: "3", Title: "Deploy Prod"},
+		pagedoc.Placement{Dir: places["3"].dir, AttachmentDir: places["3"].childDir})
+
+	if two == three {
+		t.Fatalf("both pages place attachments in %q", two)
+	}
+	if two != places["2"].childDir || three != places["3"].childDir {
+		t.Errorf("attachment dirs %q and %q do not match the layout's %q and %q",
+			two, three, places["2"].childDir, places["3"].childDir)
+	}
 }

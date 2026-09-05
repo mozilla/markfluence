@@ -34,6 +34,22 @@ type Placement struct {
 	// written, in slash form. "" is that root.
 	Dir string
 
+	// AttachmentDir overrides where an attachment with no recorded path is
+	// placed. Empty derives it from the page's own title, which is right for a
+	// page standing alone.
+	//
+	// A tree sets it, because a title is not enough there: two siblings whose
+	// titles slug the same are written to directories disambiguated by page id,
+	// and deriving the directory here would put both pages' attachments back in
+	// one place -- the very collision page-scoping exists to prevent. The caller
+	// that named the directories is the only one that knows.
+	AttachmentDir string
+
+	// Attachments is the page's attachment list, when the caller has already
+	// fetched it. Options otherwise fetches its own, which for a tree export is
+	// a second listing of every page on top of the walk's own requests.
+	Attachments []client.Attachment
+
 	// Parent overrides the parent: frontmatter field. Empty derives it from the
 	// page, which yields its parent id or "null".
 	//
@@ -83,7 +99,7 @@ func Render(c *client.ConfluenceClient, page *client.Page, pl Placement) (Doc, e
 // empty one.
 func Options(c *client.ConfluenceClient, page *client.Page, pl Placement) convert.StorageOptions {
 	return convert.StorageOptions{
-		Sources:   Sources(c, page),
+		Sources:   pl.sources(c, page),
 		PageLinks: PageLinks(c, page),
 		PageDir:   pl.Dir,
 		// Where an attachment with no recorded path is placed: the directory
@@ -91,14 +107,42 @@ func Options(c *client.ConfluenceClient, page *client.Page, pl Placement) conver
 		// than in the converter, which has no business knowing how a title
 		// becomes a directory name, and computed once so that every command
 		// placing such an attachment agrees with the markdown that points at it.
-		AttachmentDir: AttachmentDir(page, pl.Dir),
+		AttachmentDir: AttachmentDirFor(page, pl),
 		// The site, never the gateway: these URLs are published into a page.
 		SiteURL: c.SiteURL(),
 	}
 }
 
-// AttachmentDir is where an attachment with no recorded path belongs: the
-// directory named after the page, beside the page's own file at pageDir.
+// sources is the attachment name-to-path map, from the caller's own listing
+// when it has one.
+func (pl Placement) sources(c *client.ConfluenceClient, page *client.Page) map[string]string {
+	if pl.Attachments != nil {
+		return SourcesFrom(pl.Attachments)
+	}
+	return Sources(c, page)
+}
+
+// AttachmentDirFor is where this placement puts an attachment with no recorded
+// path: the directory the placement names, or one derived from the page when it
+// names none.
+//
+// Exported because the write side needs the identical answer -- the markdown
+// destination and attachfile.Options.Dir are the same decision, and computing
+// it twice is how they drift.
+func AttachmentDirFor(page *client.Page, pl Placement) string {
+	return pl.attachmentDir(page)
+}
+
+func (pl Placement) attachmentDir(page *client.Page) string {
+	if pl.AttachmentDir != "" {
+		return pl.AttachmentDir
+	}
+	return AttachmentDir(page, pl.Dir)
+}
+
+// AttachmentDir is where an attachment with no recorded path belongs when
+// nothing else has decided: the directory named after the page, beside the
+// page's own file at pageDir.
 //
 // Exported because both sides of the same decision need it and must not compute
 // it twice: the markdown that points at the attachment (through Options) and
