@@ -233,3 +233,21 @@ func TestLocalAttachmentsNormalizesTheNamePath(t *testing.T) {
 		}
 	}
 }
+
+// TestLocalAttachmentsUnusableNameReportsWhatWasTyped: source is normalized
+// before the check, and "/" normalizes to "" -- so reporting source would
+// answer a --name the user did not type.
+func TestLocalAttachmentsUnusableNameReportsWhatWasTyped(t *testing.T) {
+	root := t.TempDir()
+	f := writeFile(t, root, "f.png")
+
+	for _, name := range []string{"/", ".", "./"} {
+		_, err := localAttachments([]string{f}, name, project.NewCache(""))
+		if err == nil {
+			t.Fatalf("--name %q: want a refusal", name)
+		}
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("--name %q: error %q does not quote what was typed", name, err)
+		}
+	}
+}

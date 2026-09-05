@@ -162,10 +162,11 @@ func localAttachmentsCode(err error) jsonout.Code {
 // the file's source resolved root-relative (internal/project), the same way a
 // published image's Source is: a page-specific upload of sub/img.png (no
 // project file above it) records "img.png", while a shared one under a declared
-// root records "sub/img.png". The recorded source is the path as given and the
-// stored name is its base name, never the other way round: deriving the source
-// back from the name would discard the directory, and the comment is the only
-// place the path is written down.
+// root records "sub/img.png". The recorded source is the path as given, cleaned
+// the way a publish would clean it (convert.NormalizeSource), and the stored
+// name is its base name -- never the other way round: deriving the source back
+// from the name would discard the directory, and the comment is the only place
+// the path is written down.
 //
 // Because a name is only a base name, two files in one batch can want the same
 // one; that is refused below.
@@ -216,10 +217,10 @@ func localAttachments(files []string, name string, roots *project.Cache) ([]clie
 				prev, f, filename)}
 		}
 		claimed[filename] = f
-		// source is recorded as given, not as a decode of the name. The name is
-		// now the base name, so decoding it back would throw the path away and
-		// record "x.png" for an asset at "docs/assets/x.png" -- which is the one
-		// copy of the path there is.
+		// source is recorded as the caller gave it (normalized), not as a decode
+		// of the name. The name is now the base name, so decoding it back would
+		// throw the path away and record "x.png" for an asset at
+		// "docs/assets/x.png" -- which is the one copy of the path there is.
 		out = append(out, client.LocalAttachment{Path: f, Filename: filename, Source: source})
 	}
 	return out, nil

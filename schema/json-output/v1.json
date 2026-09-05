@@ -501,7 +501,7 @@
       }
     },
     "exportResult": {
-      "description": "One exported page. status is whether the page file was written or skipped; the attachments array holds every attachment considered, including unreferenced ones (dest_path null, status skipped_unreferenced). warnings lists anything worth saying about this page that did not stop it: references it makes to attachments that are not attached, and a name it did not choose because a sibling slugged the same.",
+      "description": "One exported page. status is whether the page file was written or skipped; the attachments array holds every attachment considered, including unreferenced ones (dest_path null, status skipped_unreferenced). warnings lists anything worth saying about this page besides its outcome, and is present whether or not it exported: references it makes to attachments that are not attached, and a name it did not choose because a sibling slugged the same.",
       "type": "object",
       "additionalProperties": false,
       "required": [

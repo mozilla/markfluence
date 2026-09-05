@@ -180,24 +180,15 @@ func run(cmd *cobra.Command, args []string) error {
 			pageID), jsonout.CodeValidation)
 	}
 
-	if dryRun && !ui.IsJSON() {
-		ui.Warn("DRY RUN — no files will be written.")
-	}
-
-	nodes, err := walkUnder(c, page.ID, depth)
-	if err != nil {
-		return operationalFail(pageID, err, jsonout.CodeFor(err))
-	}
-	// After the walk, still before the first page. A failed walk exports
-	// nothing, and this file re-roots the documentation root for every later
-	// run in that directory -- a command that did nothing must not change how
-	// an unrelated publish resolves its images.
-	marker, err := writeProjectFile(root, depth != depthNone)
-	if err != nil {
-		return fatalFail(err.Error(), jsonout.CodeIO)
-	}
-	ref := rootRef{ID: page.ID, Title: page.Title, File: true}
-	return report(exportNodes(c, page, ref, root, nodes), marker, root)
+	return runExport(c, root, target{
+		page:      page,
+		ref:       rootRef{ID: page.ID, Title: page.Title, File: true},
+		multiPage: depth != depthNone,
+		walk:      func() ([]pagetree.Node, error) { return walkUnder(c, page.ID, depth) },
+		fail: func(err error, code jsonout.Code) error {
+			return operationalFail(pageID, err, code)
+		},
+	})
 }
 
 // depthNone is --depth 0: the named page and nothing under it.
@@ -240,18 +231,14 @@ func checkSpaceDepth(space string, depth int) error {
 // destination -- there is no file to write for it -- so its children are the
 // top level, which is the same shape a space export takes.
 func exportFolder(c *client.ConfluenceClient, folderID, root string, depth int) error {
-	if dryRun && !ui.IsJSON() {
-		ui.Warn("DRY RUN — no files will be written.")
-	}
-	nodes, err := pagetree.Walk(c, folderID, depth)
-	if err != nil {
-		return operationalFail(folderID, err, jsonout.CodeFor(err))
-	}
-	marker, err := writeProjectFile(root, true)
-	if err != nil {
-		return fatalFail(err.Error(), jsonout.CodeIO)
-	}
-	return report(exportNodes(c, nil, rootRef{ID: folderID}, root, nodes), marker, root)
+	return runExport(c, root, target{
+		ref:       rootRef{ID: folderID},
+		multiPage: true,
+		walk:      func() ([]pagetree.Node, error) { return pagetree.Walk(c, folderID, depth) },
+		fail: func(err error, code jsonout.Code) error {
+			return operationalFail(folderID, err, code)
+		},
+	})
 }
 
 // exportSpace exports a space's pages, its root pages forming the top level.
@@ -269,18 +256,12 @@ func exportSpace(c *client.ConfluenceClient, key, root string, depth int) error 
 		return fatalFail(fmt.Sprintf("space %q not found", key), jsonout.CodeValidation)
 	}
 
-	if dryRun && !ui.IsJSON() {
-		ui.Warn("DRY RUN — no files will be written.")
-	}
-	nodes, err := pagetree.WalkSpace(c, key, depth)
-	if err != nil {
-		return spaceFail(err, jsonout.CodeFor(err))
-	}
-	marker, err := writeProjectFile(root, true)
-	if err != nil {
-		return fatalFail(err.Error(), jsonout.CodeIO)
-	}
-	return report(exportNodes(c, nil, rootRef{}, root, nodes), marker, root)
+	return runExport(c, root, target{
+		ref:       rootRef{},
+		multiPage: true,
+		walk:      func() ([]pagetree.Node, error) { return pagetree.WalkSpace(c, key, depth) },
+		fail:      spaceFail,
+	})
 }
 
 // parseDepth reads the --depth vocabulary: a non-negative number, or "all".
@@ -298,6 +279,53 @@ func parseDepth(v string) (int, error) {
 		return 0, fmt.Errorf("invalid --depth %q: want a non-negative number or %q", v, depthAll)
 	}
 	return n, nil
+}
+
+// target is what an export was pointed at: a page, a folder, or a space. The
+// three differ in four things and agree on everything else, which is what
+// runExport exists to keep true.
+type target struct {
+	// page is the named page, when there is one. A folder and a space have no
+	// file of their own, so theirs is nil and their children are the top level.
+	page *client.Page
+	// ref is what the layout hangs the walk off; see rootRef.
+	ref rootRef
+	// multiPage says whether a project file is needed at the destination. Only
+	// a page at --depth 0 does without one.
+	multiPage bool
+	// walk produces the nodes under the target.
+	walk func() ([]pagetree.Node, error)
+	// fail reports a walk failure. A page names itself in the result; a space
+	// has no page id, so it reports an error object on stderr instead.
+	fail func(error, jsonout.Code) error
+}
+
+// runExport is the order every export happens in, in one copy.
+//
+// The order is load-bearing at one point: the project file is written after the
+// walk and before the first page. After the walk because a failed walk exports
+// nothing, and that file re-roots the documentation root for every later run in
+// the directory -- a command that did nothing must not change how an unrelated
+// publish resolves its images. Before the first page because a run that dies
+// partway must leave a tree that still republishes.
+//
+// It is a function rather than three tidy copies because those copies had
+// already drifted once, in the way that matters: the marker was written before
+// the walk in all three, so a failed walk planted a file that re-roots every
+// later run in the directory.
+func runExport(c *client.ConfluenceClient, root string, t target) error {
+	if dryRun && !ui.IsJSON() {
+		ui.Warn("DRY RUN — no files will be written.")
+	}
+	nodes, err := t.walk()
+	if err != nil {
+		return t.fail(err, jsonout.CodeFor(err))
+	}
+	marker, err := writeProjectFile(root, t.multiPage)
+	if err != nil {
+		return fatalFail(err.Error(), jsonout.CodeIO)
+	}
+	return report(exportNodes(c, t.page, t.ref, root, nodes), marker, root)
 }
 
 // walkUnder is the subtree, or nothing at --depth 0.
@@ -346,6 +374,10 @@ func exportNodes(
 	}
 
 	results := make([]result, 0, len(nodes)+1)
+	// orphaned holds warnings from nodes that produce no result of their own --
+	// folders. They are attached to a page below, so they are still reported.
+	var orphaned []string
+
 	// failed carries a page's failure down to its descendants: a page whose
 	// parent was not written must not be written with a parent: pointing at a
 	// file that does not exist. create's precedent for the same shape.
@@ -364,6 +396,11 @@ func exportNodes(
 		if n.Type == pagetree.TypeFolder {
 			// A folder shapes paths and nothing else: no file, no result row,
 			// and its directory appears only because something lands in it.
+			// Its warning still has to go somewhere, though -- two sibling
+			// folders that slug the same are renamed with no page to say so.
+			if place := places[n.ID]; place.warning != "" {
+				orphaned = append(orphaned, place.warning)
+			}
 			continue
 		}
 		place := places[n.ID]
@@ -394,6 +431,12 @@ func exportNodes(
 		}
 	}
 
+	// A folder's warning rides on the first result there is: it is about the
+	// run's layout rather than about any one page, and a run with no results at
+	// all wrote nothing for it to be about.
+	if len(orphaned) > 0 && len(results) > 0 {
+		results[0].warnings = append(orphaned, results[0].warnings...)
+	}
 	return results
 }
 

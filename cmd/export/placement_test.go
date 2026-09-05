@@ -7,6 +7,7 @@ package export
 // drifting apart.
 
 import (
+	"bytes"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,11 +25,19 @@ import (
 // nativePageServer serves a page whose only image is an attachment with no
 // markfluence comment -- one uploaded through the browser, which is what every
 // page that did not originate here looks like.
-func nativePageServer(t *testing.T, comment string) *client.ConfluenceClient {
+func nativePageServer(t *testing.T, comment string, extra ...string) *client.ConfluenceClient {
 	t.Helper()
 	meta := "{}"
 	if comment != "" {
 		meta = `{"comment":"` + comment + `"}`
+	}
+	// extra names further attachments by their recorded path, for tests about
+	// where an attachment is allowed to land.
+	more := ""
+	for i, path := range extra {
+		more += `,{"id":"x` + string(rune('0'+i)) + `","title":"` + filepath.Base(path) +
+			`","metadata":{"comment":"markfluence: sha256=zzz path=` + path + `"},` +
+			`"_links":{"download":"/download/x.png"}}`
 	}
 	return clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -36,7 +45,7 @@ func nativePageServer(t *testing.T, comment string) *client.ConfluenceClient {
 			_, _ = w.Write([]byte(`{"results":[]}`))
 		case strings.Contains(r.URL.Path, "/child/attachment"):
 			_, _ = w.Write([]byte(`{"results":[{"id":"a1","title":"diagram.png","metadata":` +
-				meta + `,"_links":{"download":"/download/diagram.png"}}]}`))
+				meta + `,"_links":{"download":"/download/diagram.png"}}` + more + `]}`))
 		case strings.Contains(r.URL.Path, "/download/"):
 			_, _ = w.Write([]byte("PNG"))
 		default:
@@ -241,27 +250,25 @@ func TestExportSkipsTheRenderForAnExistingFile(t *testing.T) {
 	}
 }
 
-// pageWithAttachment serves page 1 "Runbook" with one attachment carrying the
-// given comment ("" for a Confluence-native one) and a body referencing it.
-func pageWithAttachment(t *testing.T, comment string) *client.ConfluenceClient {
+// captureBoth runs fn with stdout and stderr redirected into one buffer.
+// Human output splits Success/Info (stdout) from Warn/Error (stderr), so a test
+// about what a reader sees needs both.
+func captureBoth(t *testing.T, fn func()) string {
 	t.Helper()
-	meta := "{}"
-	if comment != "" {
-		meta = `{"comment":"` + comment + `"}`
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
 	}
-	return clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/properties"):
-			_, _ = w.Write([]byte(`{"results":[]}`))
-		case strings.Contains(r.URL.Path, "/child/attachment"):
-			_, _ = w.Write([]byte(`{"results":[{"id":"a1","title":"diagram.png","metadata":` +
-				meta + `,"_links":{"download":"/download/diagram.png"}}]}`))
-		case strings.Contains(r.URL.Path, "/download/"):
-			_, _ = w.Write([]byte("PNG"))
-		default:
-			_, _ = w.Write([]byte(`{"id":"1","title":"Runbook","spaceId":"77","body":{"storage":` +
-				`{"value":"<p><ac:image><ri:attachment ri:filename=\"diagram.png\" /></ac:image></p>",` +
-				`"representation":"storage"}},"_links":{"webui":"/spaces/ENG/pages/1/Runbook"}}`))
-		}
-	})
+	outOld, errOld := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = w, w
+	fn()
+	os.Stdout, os.Stderr = outOld, errOld
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatal(err)
+	}
+	return buf.String()
 }
