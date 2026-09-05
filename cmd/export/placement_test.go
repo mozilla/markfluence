@@ -140,7 +140,7 @@ func TestExportTreeMirrorsTheHierarchy(t *testing.T) {
 	c := treeServer(t)
 	root := page(t, c)
 
-	results, err := exportTree(c, root, dir, pagetree.AllDepths)
+	results, _, err := exportTree(c, root, dir, pagetree.AllDepths)
 	if err != nil {
 		t.Fatalf("exportTree: %v", err)
 	}

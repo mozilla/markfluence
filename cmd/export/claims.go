@@ -19,6 +19,13 @@ import (
 // two pages disagreeing about what that path holds, which is not.
 type destClaims struct {
 	by map[string]claim
+	// pages is every path this run will write a page's markdown to, reserved
+	// before anything is written. A recorded attachment path is a server-side
+	// string that can name any file under dest, including one of these, and the
+	// parent's attachments are written before its children are exported -- so
+	// without this the attachment lands first and the page it shadowed is
+	// reported "skipped (exists)" and counted as a success.
+	pages map[string]string
 }
 
 type claim struct {
@@ -26,7 +33,12 @@ type claim struct {
 	checksum string
 }
 
-func newClaims() *destClaims { return &destClaims{by: map[string]claim{}} }
+func newClaims() *destClaims {
+	return &destClaims{by: map[string]claim{}, pages: map[string]string{}}
+}
+
+// reservePage records that pageID's markdown will be written to dest.
+func (d *destClaims) reservePage(dest, pageID string) { d.pages[dest] = pageID }
 
 // claim records that page is about to write dest for attachment a, and reports
 // a conflict when another page already wrote it with different content.
@@ -45,6 +57,11 @@ func newClaims() *destClaims { return &destClaims{by: map[string]claim{}} }
 // So a missing checksum means the case is not one this rule covers, not that
 // the rule failed to decide.
 func (d *destClaims) claim(dest string, page *client.Page, a client.Attachment) error {
+	if owner, taken := d.pages[dest]; taken {
+		return fmt.Errorf(
+			"attachment %q of page %s resolves to %s, which is page %s's own file",
+			a.Title, page.ID, dest, owner)
+	}
 	sum := a.Meta().SHA256
 	prev, seen := d.by[dest]
 	if !seen {

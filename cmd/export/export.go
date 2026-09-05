@@ -105,21 +105,25 @@ func run(cmd *cobra.Command, args []string) error {
 	username, _ := cmd.Flags().GetString("username")
 	cloudID, _ := cmd.Flags().GetString("cloud-id")
 	envFile, _ := cmd.Flags().GetString("env-file")
+	// Before the credential check: none of these needs a server to be
+	// recognized as a usage error, and reporting a missing token for a command
+	// that was mistyped anyway helps nobody.
+	if err := checkTarget(args, spaceOpt, cmd.Flags().Changed("depth")); err != nil {
+		return fatalFail(err.Error(), jsonout.CodeValidation)
+	}
+	depth, err := parseDepth(depthOpt)
+	if err != nil {
+		return fatalFail(err.Error(), jsonout.CodeValidation)
+	}
+	if err := checkSpaceDepth(spaceOpt, depth); err != nil {
+		return fatalFail(err.Error(), jsonout.CodeValidation)
+	}
+
 	c, err := client.Resolve(client.ResolveOptions{
 		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile,
 	})
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeConfig)
-	}
-
-	// Neither of these needs a server to be recognized as a usage error.
-	if err := checkTarget(args, spaceOpt, cmd.Flags().Changed("depth")); err != nil {
-		return fatalFail(err.Error(), jsonout.CodeValidation)
-	}
-
-	depth, err := parseDepth(depthOpt)
-	if err != nil {
-		return fatalFail(err.Error(), jsonout.CodeValidation)
 	}
 	if depth != depthNone && fileFlag != "" {
 		// --file names one file, while a page's directory is named from its
@@ -164,11 +168,11 @@ func run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeIO)
 	}
-	results, err := exportTree(c, page, root, depth)
+	results, warnings, err := exportTree(c, page, root, depth)
 	if err != nil {
 		return operationalFail(pageID, err, jsonout.CodeFor(err))
 	}
-	return report(results, marker)
+	return report(results, marker, root, warnings)
 }
 
 // depthNone is --depth 0: the named page and nothing under it.
@@ -189,6 +193,20 @@ func checkTarget(args []string, space string, depthGiven bool) error {
 		return errors.New("PAGE and --space cannot be combined: --space exports a whole space")
 	case space != "" && !depthGiven:
 		return errors.New(`--space needs an explicit --depth (--depth all for the whole space)`)
+	}
+	return nil
+}
+
+// checkSpaceDepth refuses a space export that would walk nothing.
+//
+// checkTarget asks only whether --depth was given, and "0" is given. But a
+// space has no file of its own, so depth 0 walks nothing, exports nothing, and
+// would still plant a project-marker file at the destination and report
+// success.
+func checkSpaceDepth(space string, depth int) error {
+	if space != "" && depth == depthNone {
+		return errors.New("--space with --depth 0 would export nothing: " +
+			"a space has no file of its own (--depth all for the whole space)")
 	}
 	return nil
 }
@@ -219,7 +237,8 @@ func exportSpace(c *client.ConfluenceClient, key, root string, depth int) error 
 	if err != nil {
 		return spaceFail(err, jsonout.CodeFor(err))
 	}
-	return report(exportNodes(c, nil, root, nodes), marker)
+	results, warnings := exportNodes(c, nil, root, nodes)
+	return report(results, marker, root, warnings)
 }
 
 // parseDepth reads the --depth vocabulary: a non-negative number, or "all".
@@ -247,15 +266,16 @@ func parseDepth(v string) (int, error) {
 // partial result to report against.
 func exportTree(
 	c *client.ConfluenceClient, page *client.Page, root string, depth int,
-) ([]result, error) {
+) ([]result, []string, error) {
 	var nodes []pagetree.Node
 	if depth != depthNone {
 		var err error
 		if nodes, err = pagetree.Walk(c, page.ID, depth); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	return exportNodes(c, page, root, nodes), nil
+	results, warnings := exportNodes(c, page, root, nodes)
+	return results, warnings, nil
 }
 
 // exportNodes exports a root page (when there is one) and every walked page
@@ -265,7 +285,7 @@ func exportTree(
 // so the walk's top level is the top of the export.
 func exportNodes(
 	c *client.ConfluenceClient, page *client.Page, root string, nodes []pagetree.Node,
-) []result {
+) ([]result, []string) {
 	// Which page wrote each destination, so a second page wanting the same file
 	// with different content is reported rather than skipped.
 	claims := newClaims()
@@ -274,6 +294,16 @@ func exportNodes(
 		rootTitle, rootID = page.Title, page.ID
 	}
 	places, warnings := layout(rootTitle, rootID, nodes)
+	// Every page's file is spoken for before a single attachment is written.
+	// An attachment's recorded path can name any file under dest, and a
+	// parent's attachments are written before its children are exported, so
+	// otherwise an attachment lands on a child's file and the child is skipped
+	// as "already there" -- silently, and counted as a success.
+	for id, p := range places {
+		if p.file != "" {
+			claims.reservePage(filepath.Join(root, filepath.FromSlash(p.file)), id)
+		}
+	}
 
 	results := make([]result, 0, len(nodes)+1)
 	// failed carries a page's failure down to its descendants: a page whose
@@ -286,7 +316,7 @@ func exportNodes(
 		if fileFlag != "" {
 			place.file = fileFlag
 		}
-		r := exportOne(c, page, root, pagedoc.Placement{}, place, claims)
+		r := exportOne(c, page, root, pagedoc.Placement{AttachmentDir: place.childDir}, place, claims)
 		if r.err != nil {
 			failed[page.ID] = true
 		}
@@ -317,8 +347,9 @@ func exportNodes(
 			results = append(results, failedResult(n, place,
 				fmt.Errorf("page %s has no readable body", n.ID), jsonout.CodeValidation))
 		default:
-			r := exportOne(c, child, root,
-				pagedoc.Placement{Dir: place.dir, Parent: place.parentFile}, place, claims)
+			r := exportOne(c, child, root, pagedoc.Placement{
+				Dir: place.dir, AttachmentDir: place.childDir, Parent: place.parentFile,
+			}, place, claims)
 			if r.err != nil {
 				failed[n.ID] = true
 			}
@@ -326,12 +357,10 @@ func exportNodes(
 		}
 	}
 
-	// Collision warnings belong to the run rather than to any one page; the
-	// first result is where a reader looks first.
-	if len(warnings) > 0 && len(results) > 0 {
-		results[0].warnings = append(warnings, results[0].warnings...)
-	}
-	return results
+	// Collision warnings belong to the run rather than to any one page, and a
+	// page's own warnings are not printed when that page failed -- so they are
+	// returned rather than folded into a result.
+	return results, warnings
 }
 
 // failedResult is a page that could not be exported, carrying enough of the
@@ -397,6 +426,7 @@ func exportOne(
 	if exists(res.destPath) && !force {
 		res.pageStatus = attachfile.StatusSkipped
 	} else {
+		pl.Attachments = atts
 		doc, err := pagedoc.Render(c, page, pl)
 		if err != nil {
 			res.err, res.code = err, jsonout.CodeConvert
@@ -413,7 +443,7 @@ func exportOne(
 	if skipAttachs {
 		return res
 	}
-	res.attachments = writeAttachments(c, page, atts, referenced, root, pl.Dir, claims)
+	res.attachments = writeAttachments(c, page, atts, referenced, root, pl, claims)
 	return res
 }
 
@@ -426,9 +456,10 @@ func attachmentsFor(c *client.ConfluenceClient, page *client.Page) ([]client.Att
 	return c.ListAttachments(page.ID)
 }
 
-// exists reports whether something is already at path. A stat error other than
-// "not there" is treated as "there": the write below will fail with a better
-// message than this could, and refusing to overwrite is the safe reading.
+// exists reports whether stat succeeded. Any stat failure -- including a
+// permission error on a parent directory -- reads as "not there", so the write
+// goes ahead and fails with a message naming the real problem rather than this
+// reporting a skip it cannot justify.
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
@@ -458,13 +489,13 @@ const statusWrote = "wrote"
 // behind rather than dropping them silently.
 func writeAttachments(
 	c *client.ConfluenceClient, page *client.Page, atts []client.Attachment,
-	referenced map[string]bool, root, pageDir string, claims *destClaims,
+	referenced map[string]bool, root string, pl pagedoc.Placement, claims *destClaims,
 ) []attachment {
 	// Dir must be the AttachmentDir the body was rendered with, or an attachment
 	// with no recorded path is written somewhere its own image does not point.
 	// Taken from pagedoc rather than recomputed here, so the two cannot drift.
 	opts := attachfile.Options{
-		Root: root, Dir: pagedoc.AttachmentDir(page, pageDir), Force: force, DryRun: dryRun,
+		Root: root, Dir: pagedoc.AttachmentDirFor(page, pl), Force: force, DryRun: dryRun,
 	}
 	out := make([]attachment, 0, len(atts))
 	for _, a := range atts {
@@ -509,7 +540,7 @@ func missingReferences(referenced map[string]bool, atts []client.Attachment) []s
 }
 
 // report prints the outcomes and returns the command's exit status.
-func report(results []result, marker string) error {
+func report(results []result, marker, destRoot string, runWarnings []string) error {
 	failed, succeeded, skipped := 0, 0, 0
 	for _, r := range results {
 		if r.err != nil || anyAttachmentFailed(r) {
@@ -523,7 +554,8 @@ func report(results []result, marker string) error {
 	}
 
 	if ui.IsJSON() {
-		if err := jsonout.Emit(os.Stdout, envelope(results, marker, succeeded, failed, skipped)); err != nil {
+		env := envelope(results, marker, destRoot, succeeded, failed, skipped)
+		if err := jsonout.Emit(os.Stdout, env); err != nil {
 			return err
 		}
 		if failed > 0 {
@@ -532,8 +564,11 @@ func report(results []result, marker string) error {
 		return nil
 	}
 
+	for _, w := range runWarnings {
+		ui.Warn(w)
+	}
 	if marker == markerWrote {
-		ui.Success(fmt.Sprintf("%-10s %s", statusWrote, filepath.Join(dest, project.Filename)))
+		ui.Success(fmt.Sprintf("%-10s %s", statusWrote, filepath.Join(destRoot, project.Filename)))
 	}
 	for _, r := range results {
 		reportOne(r)
@@ -551,7 +586,7 @@ func report(results []result, marker string) error {
 // envelope is the document --json emits, split out so the schema conformance
 // test validates what the command really writes rather than a hand-copied
 // duplicate of it.
-func envelope(results []result, marker string, succeeded, failed, skipped int) jsonout.Envelope {
+func envelope(results []result, marker, destRoot string, succeeded, failed, skipped int) jsonout.Envelope {
 	out := make([]any, 0, len(results))
 	for _, r := range results {
 		out = append(out, buildResult(r))
@@ -563,7 +598,7 @@ func envelope(results []result, marker string, succeeded, failed, skipped int) j
 	// dest is the root every path in this export is relative to, and the marker
 	// is what makes it one.
 	if marker != markerSkipped {
-		env.Roots = []string{dest}
+		env.Roots = []string{destRoot}
 	}
 	return env
 }

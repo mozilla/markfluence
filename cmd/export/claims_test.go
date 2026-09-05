@@ -73,3 +73,37 @@ func TestClaimsDistinctDestinationsAreIndependent(t *testing.T) {
 		}
 	}
 }
+
+// TestClaimsRefusesAnAttachmentLandingOnAPageFile is the security case: a
+// recorded path is a server-side string that can name any file under dest,
+// including one an exported page occupies. A parent's attachments are written
+// before its children are exported, so without this the attachment lands first
+// and the child page is reported "skipped (exists)" -- silently, and counted as
+// a success, leaving attacker-chosen bytes in a file the reader believes is a
+// page they exported.
+func TestClaimsRefusesAnAttachmentLandingOnAPageFile(t *testing.T) {
+	c := newClaims()
+	c.reservePage("/out/handbook/onboarding.md", "999")
+
+	err := c.claim("/out/handbook/onboarding.md", &client.Page{ID: "12345"},
+		attWithSum("evil.md", "handbook/onboarding.md", "aaa"))
+	if err == nil {
+		t.Fatal("an attachment must not be written over a page's own file")
+	}
+	for _, want := range []string{"evil.md", "999"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+}
+
+// TestClaimsAllowsAnAttachmentBesideAPageFile keeps the reservation to exact
+// paths: a page directory holds its own attachments by design.
+func TestClaimsAllowsAnAttachmentBesideAPageFile(t *testing.T) {
+	c := newClaims()
+	c.reservePage("/out/handbook/onboarding.md", "999")
+	if err := c.claim("/out/handbook/onboarding/diagram.png", &client.Page{ID: "999"},
+		client.Attachment{Title: "diagram.png"}); err != nil {
+		t.Errorf("an attachment under a page's own directory must be fine: %v", err)
+	}
+}
