@@ -161,45 +161,44 @@ and restamps its recorded path, and reconstruction was never the name's job
 anyway — the comment carries the path. What identity still follows is the
 asset's *file name*, so renaming the file is what creates a new attachment.
 
-**L5** and **L6** stay Partial, deferred to #59 (multi-page export). Two
-separate things kept them there, and both are now repaired. Since `_plans/026`
-commit 4 records an attachment's `Source` relative to the root,
-`attachfile.Resolve`'s `dest + source` join for a layout with an asset above
-the page no longer escapes. And `_plans/030` fixed a straightforward L5
-counterexample this file previously asserted did not exist: an
-`<ac:adf-extension>` — the storage form of the editor's purple Note panel —
-fell through `storage_to_md.go`'s transparent-wrapper default, so `export`
-wrote its content twice and republishing that deleted the panel and left two
-copies of its prose in the body (#125). It was measured, not hypothetical:
-`check --show-html` on a real export reported zero `adf-extension` and two
-copies of each panel's text.
+**L5** and **L6** stay **Partial**, and #59 -- the issue this file said would
+settle them -- is what established that they cannot be Holds as worded.
 
-The lesson is worth keeping. The claim that single-page round-trip "already
-works" survived here because nothing tests it — the table below says Laws are
-verified by property tests, and L5 has none. Until it does, treat its status as
-an assertion about known constructs rather than a property.
+Multi-page export now exists, which is what the previous note said was missing:
+provenance-based attachment placement, directory mirroring, and a tree whose
+`parent:` paths let it publish into fresh pages (`_plans/029`). The attachment
+half of the round-trip is repaired too, and by a different change than expected
+-- an attachment is named by its base name, so positioning a page's images no
+longer moves its attachments (`_plans/029` §"The thing 025 got wrong").
 
-What's still missing is multi-page export itself (Use case 8) —
-provenance-based attachment placement, directory mirroring — which is what
-these guarantees' own wording actually describes (a whole tree, either
-roundtrip direction). Calling them Holds now would be declaring a win on
-half the guarantee.
+What does not hold is the wording: *"publishing it back unedited makes no change
+to the page"*. Measured 2026-09-05 against a live page, exporting and
+republishing changes the stored storage in two ways that have nothing to do with
+content:
 
-**L7** is why a markdown destination is percent-encoded on the way out: an
-unencoded space produces a file that no longer parses as a link.
+- Confluence's editor writes `<li><p>text</p></li>`; the converter emits
+  `<li>text</li>`.
+- A TOC macro carries `ac:local-id`, `ac:macro-id` and `data-layout`
+  attributes; the converter's canonical form omits them.
 
-**L8** is stated negatively on purpose. Identity does not come *only* from
-frontmatter — `--page-id` overrides it — so the claim worth guaranteeing is that
-neither identity nor hierarchy is ever derived from where a file sits on disk.
-That is what forecloses inferring a parent from a directory.
+Both render identically and neither loses anything, which is the converter's
+stated design target -- *semantic* rather than byte-for-byte equivalence. So the
+guarantee as written asks for something markfluence deliberately does not do,
+and the honest reading is that L5 and L6 are the wrong shape rather than unmet.
+Rewording them is a decision in its own right and is not taken here.
 
-### A corollary worth naming
+What *is* now verified, by a property test rather than an assertion
+(`TestRoundTripMarkdownIsAFixedPoint`, over every `storage2md` case rather than
+a hand-kept list): **markdown is a fixed point.** Export a page, publish that
+markdown back, export again, and the markdown is identical. Once a page has been
+through markfluence it stops moving. That test found real drift on its first run
+-- a hard break gained a leading space on every cycle -- which is the argument
+for having it, and answers the note this file added when #125 showed L5 had no
+property test at all.
 
-**Two people publishing the same repository from different checkouts produce the
-same attachment names and the same links.** This follows from L2 and L3 together
-rather than standing on its own, and it is not worth satisfying separately. It is
-named because it is the form a user recognises, and because it is the one that
-visibly forbids recording a checkout's disk layout on the shared server copy.
+One exception to the fixed point is expected and converges: a Confluence-native
+attachment is unmanaged, so the first republish restamps its comment. The second
+cycle is stable.
 
 ## Conformance
 
