@@ -375,6 +375,7 @@ func exportOne(
 	pl pagedoc.Placement, place placement, claims *destClaims,
 ) result {
 	res := result{page: page, place: place}
+	res.destPath = filepath.Join(root, filepath.FromSlash(place.file))
 
 	atts, err := attachmentsFor(c, page)
 	if err != nil {
@@ -385,17 +386,26 @@ func exportOne(
 		return res
 	}
 
-	doc, err := pagedoc.Render(c, page, pl)
-	if err != nil {
-		res.err, res.code = err, jsonout.CodeConvert
-		return res
-	}
-
-	res.destPath = filepath.Join(root, filepath.FromSlash(place.file))
-	res.pageStatus, err = writePage(res.destPath, doc.String())
-	if err != nil {
-		res.err, res.code = err, jsonout.CodeIO
-		return res
+	// A file that is already there is not written again (S3), and rendering it
+	// only to throw the result away is what makes a retry cost as much as the
+	// first run. Skipping the render skips the page-width read and every
+	// <ac:link> title lookup with it.
+	//
+	// The attachment pass below still runs, which is what lets a retry finish a
+	// run that died partway through *attachments* rather than partway through
+	// pages.
+	if exists(res.destPath) && !force {
+		res.pageStatus = attachfile.StatusSkipped
+	} else {
+		doc, err := pagedoc.Render(c, page, pl)
+		if err != nil {
+			res.err, res.code = err, jsonout.CodeConvert
+			return res
+		}
+		if res.pageStatus, err = writePage(res.destPath, doc.String()); err != nil {
+			res.err, res.code = err, jsonout.CodeIO
+			return res
+		}
 	}
 
 	referenced := convert.ReferencedAttachmentNames(page.Body.Storage.Value)
@@ -416,10 +426,18 @@ func attachmentsFor(c *client.ConfluenceClient, page *client.Page) ([]client.Att
 	return c.ListAttachments(page.ID)
 }
 
+// exists reports whether something is already at path. A stat error other than
+// "not there" is treated as "there": the write below will fail with a better
+// message than this could, and refusing to overwrite is the safe reading.
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 // writePage writes the document, honoring --force and --dry-run. It reports
 // whether the file was written or skipped.
 func writePage(path, content string) (string, error) {
-	if _, err := os.Stat(path); err == nil && !force {
+	if exists(path) && !force {
 		return attachfile.StatusSkipped, nil
 	}
 	if dryRun {

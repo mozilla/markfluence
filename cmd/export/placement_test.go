@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mozilla/markfluence/internal/attachfile"
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/clienttest"
 	"github.com/mozilla/markfluence/internal/pagedoc"
@@ -36,7 +37,7 @@ func nativePageServer(t *testing.T, comment string) *client.ConfluenceClient {
 		case strings.Contains(r.URL.Path, "/child/attachment"):
 			_, _ = w.Write([]byte(`{"results":[{"id":"a1","title":"diagram.png","metadata":` +
 				meta + `,"_links":{"download":"/download/diagram.png"}}]}`))
-		case strings.HasPrefix(r.URL.Path, "/download/"):
+		case strings.Contains(r.URL.Path, "/download/"):
 			_, _ = w.Write([]byte("PNG"))
 		default:
 			_, _ = w.Write([]byte(`{"id":"1","title":"Runbook","spaceId":"77","body":{"storage":` +
@@ -120,7 +121,7 @@ func treeServer(t *testing.T) *client.ConfluenceClient {
 		case strings.Contains(r.URL.Path, "/child/attachment"):
 			_, _ = w.Write([]byte(`{"results":[{"id":"a1","title":"diagram.png","metadata":{},` +
 				`"_links":{"download":"/download/diagram.png"}}]}`))
-		case strings.HasPrefix(r.URL.Path, "/download/"):
+		case strings.Contains(r.URL.Path, "/download/"):
 			_, _ = w.Write([]byte("PNG"))
 		case strings.Contains(r.URL.Path, "/pages/2"):
 			_, _ = w.Write([]byte(body("2", "Onboarding")))
@@ -179,5 +180,61 @@ func TestExportTreeMirrorsTheHierarchy(t *testing.T) {
 	}
 	if !strings.Contains(string(parent), "](home/diagram.png)") {
 		t.Errorf("root image is not page-scoped:\n%s", parent)
+	}
+}
+
+// TestExportSkipsTheRenderForAnExistingFile is the retry story: a page already
+// on disk is not re-rendered, so the run does not pay for the page-width read
+// and the link lookups a render costs -- while its attachments are still
+// checked, which is what lets a retry finish a run that died partway through
+// downloading them.
+func TestExportSkipsTheRenderForAnExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	var propertyReads, downloads int
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/properties"):
+			propertyReads++
+			_, _ = w.Write([]byte(`{"results":[]}`))
+		case strings.Contains(r.URL.Path, "/child/attachment"):
+			_, _ = w.Write([]byte(`{"results":[{"id":"a1","title":"diagram.png","metadata":{},` +
+				`"_links":{"download":"/download/diagram.png"}}]}`))
+		case strings.Contains(r.URL.Path, "/download/"):
+			downloads++
+			_, _ = w.Write([]byte("PNG"))
+		default:
+			_, _ = w.Write([]byte(`{"id":"1","title":"Runbook","spaceId":"77","body":{"storage":` +
+				`{"value":"<p><ac:image><ri:attachment ri:filename=\"diagram.png\" /></ac:image></p>",` +
+				`"representation":"storage"}},"_links":{"webui":"/spaces/ENG/pages/1/Runbook"}}`))
+		}
+	})
+	p := page(t, c)
+	place := placement{file: "runbook.md"}
+
+	first := exportOne(c, p, dir, pagedoc.Placement{}, place, newClaims())
+	if first.pageStatus != statusWrote {
+		t.Fatalf("first run status = %q, want %q", first.pageStatus, statusWrote)
+	}
+	readsAfterFirst, downloadsAfterFirst := propertyReads, downloads
+
+	// Delete the attachment but keep the page file: the shape a run that died
+	// partway through its attachments leaves behind.
+	if err := os.Remove(filepath.Join(dir, "runbook", "diagram.png")); err != nil {
+		t.Fatal(err)
+	}
+
+	second := exportOne(c, p, dir, pagedoc.Placement{}, place, newClaims())
+	if second.pageStatus != attachfile.StatusSkipped {
+		t.Errorf("second run status = %q, want %q", second.pageStatus, attachfile.StatusSkipped)
+	}
+	if propertyReads != readsAfterFirst {
+		t.Errorf("page width was read again on a skipped page (%d then %d)",
+			readsAfterFirst, propertyReads)
+	}
+	if downloads != downloadsAfterFirst+1 {
+		t.Errorf("downloads = %d, want the missing attachment fetched again", downloads)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "runbook", "diagram.png")); err != nil {
+		t.Errorf("the attachment was not restored: %v", err)
 	}
 }
