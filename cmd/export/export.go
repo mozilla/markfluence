@@ -184,15 +184,20 @@ func run(cmd *cobra.Command, args []string) error {
 		ui.Warn("DRY RUN — no files will be written.")
 	}
 
+	nodes, err := walkUnder(c, page.ID, depth)
+	if err != nil {
+		return operationalFail(pageID, err, jsonout.CodeFor(err))
+	}
+	// After the walk, still before the first page. A failed walk exports
+	// nothing, and this file re-roots the documentation root for every later
+	// run in that directory -- a command that did nothing must not change how
+	// an unrelated publish resolves its images.
 	marker, err := writeProjectFile(root, depth != depthNone)
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeIO)
 	}
-	results, warnings, err := exportTree(c, page, root, depth)
-	if err != nil {
-		return operationalFail(pageID, err, jsonout.CodeFor(err))
-	}
-	return report(results, marker, root, warnings)
+	ref := rootRef{ID: page.ID, Title: page.Title, File: true}
+	return report(exportNodes(c, page, ref, root, nodes), marker, root)
 }
 
 // depthNone is --depth 0: the named page and nothing under it.
@@ -238,16 +243,15 @@ func exportFolder(c *client.ConfluenceClient, folderID, root string, depth int) 
 	if dryRun && !ui.IsJSON() {
 		ui.Warn("DRY RUN — no files will be written.")
 	}
-	marker, err := writeProjectFile(root, true)
-	if err != nil {
-		return fatalFail(err.Error(), jsonout.CodeIO)
-	}
 	nodes, err := pagetree.Walk(c, folderID, depth)
 	if err != nil {
 		return operationalFail(folderID, err, jsonout.CodeFor(err))
 	}
-	results, warnings := exportNodes(c, nil, rootRef{ID: folderID}, root, nodes)
-	return report(results, marker, root, warnings)
+	marker, err := writeProjectFile(root, true)
+	if err != nil {
+		return fatalFail(err.Error(), jsonout.CodeIO)
+	}
+	return report(exportNodes(c, nil, rootRef{ID: folderID}, root, nodes), marker, root)
 }
 
 // exportSpace exports a space's pages, its root pages forming the top level.
@@ -268,16 +272,15 @@ func exportSpace(c *client.ConfluenceClient, key, root string, depth int) error 
 	if dryRun && !ui.IsJSON() {
 		ui.Warn("DRY RUN — no files will be written.")
 	}
-	marker, err := writeProjectFile(root, true)
-	if err != nil {
-		return fatalFail(err.Error(), jsonout.CodeIO)
-	}
 	nodes, err := pagetree.WalkSpace(c, key, depth)
 	if err != nil {
 		return spaceFail(err, jsonout.CodeFor(err))
 	}
-	results, warnings := exportNodes(c, nil, rootRef{}, root, nodes)
-	return report(results, marker, root, warnings)
+	marker, err := writeProjectFile(root, true)
+	if err != nil {
+		return fatalFail(err.Error(), jsonout.CodeIO)
+	}
+	return report(exportNodes(c, nil, rootRef{}, root, nodes), marker, root)
 }
 
 // parseDepth reads the --depth vocabulary: a non-negative number, or "all".
@@ -297,24 +300,16 @@ func parseDepth(v string) (int, error) {
 	return n, nil
 }
 
-// exportTree walks the subtree (when asked) and exports the page and every page
-// under it.
+// walkUnder is the subtree, or nothing at --depth 0.
 //
 // A walk failure fails the command rather than one page: pagetree aborts on the
 // first listing error, before any page has been exported, so there is no
 // partial result to report against.
-func exportTree(
-	c *client.ConfluenceClient, page *client.Page, root string, depth int,
-) ([]result, []string, error) {
-	var nodes []pagetree.Node
-	if depth != depthNone {
-		var err error
-		if nodes, err = pagetree.Walk(c, page.ID, depth); err != nil {
-			return nil, nil, err
-		}
+func walkUnder(c *client.ConfluenceClient, pageID string, depth int) ([]pagetree.Node, error) {
+	if depth == depthNone {
+		return nil, nil
 	}
-	results, warnings := exportNodes(c, page, rootRef{ID: page.ID, Title: page.Title, File: true}, root, nodes)
-	return results, warnings, nil
+	return pagetree.Walk(c, pageID, depth)
 }
 
 // exportNodes exports a root page (when there is one) and every walked page
@@ -327,16 +322,23 @@ func exportTree(
 func exportNodes(
 	c *client.ConfluenceClient, page *client.Page, ref rootRef, root string,
 	nodes []pagetree.Node,
-) ([]result, []string) {
+) []result {
 	// Which page wrote each destination, so a second page wanting the same file
 	// with different content is reported rather than skipped.
 	claims := newClaims()
-	places, warnings := layout(ref, nodes)
+	places := layout(ref, nodes)
 	// Every page's file is spoken for before a single attachment is written.
 	// An attachment's recorded path can name any file under dest, and a
 	// parent's attachments are written before its children are exported, so
 	// otherwise an attachment lands on a child's file and the child is skipped
 	// as "already there" -- silently, and counted as a success.
+	if page != nil && fileFlag != "" {
+		// Applied before the reservation below, or the reserved path is the
+		// slug this run does not use and the file it does write is unprotected.
+		p := places[page.ID]
+		p.file = fileFlag
+		places[page.ID] = p
+	}
 	for id, p := range places {
 		if p.file != "" {
 			claims.reservePage(filepath.Join(root, filepath.FromSlash(p.file)), id)
@@ -351,9 +353,6 @@ func exportNodes(
 
 	if page != nil {
 		place := places[page.ID]
-		if fileFlag != "" {
-			place.file = fileFlag
-		}
 		r := exportOne(c, page, root, pagedoc.Placement{AttachmentDir: place.childDir}, place, claims)
 		if r.err != nil {
 			failed[page.ID] = true
@@ -395,18 +394,17 @@ func exportNodes(
 		}
 	}
 
-	// Collision warnings belong to the run rather than to any one page, and a
-	// page's own warnings are not printed when that page failed -- so they are
-	// returned rather than folded into a result.
-	return results, warnings
+	return results
 }
 
 // failedResult is a page that could not be exported, carrying enough of the
 // walk's row to be reported without a fetched page.
 func failedResult(n pagetree.Node, place placement, err error, code jsonout.Code) result {
-	return result{
-		node: &n, place: place, err: err, code: code,
+	r := result{node: &n, place: place, err: err, code: code}
+	if place.warning != "" {
+		r.warnings = append(r.warnings, place.warning)
 	}
+	return r
 }
 
 // result is everything one page's export produced.
@@ -443,12 +441,16 @@ func exportOne(
 ) result {
 	res := result{page: page, place: place}
 	res.destPath = filepath.Join(root, filepath.FromSlash(place.file))
+	if place.warning != "" {
+		res.warnings = append(res.warnings, place.warning)
+	}
 
 	atts, err := attachmentsFor(c, page)
 	if err != nil {
 		// The listing is needed both to resolve image paths and to know what to
-		// download, so unlike read -- which tolerates a failure and falls back to
-		// decoding names -- an export cannot quietly produce a partial tree.
+		// download, so unlike read -- which tolerates a failure and places every
+		// attachment as though it were unrecorded -- an export cannot quietly
+		// produce a partial tree.
 		res.err, res.code = err, jsonout.CodeFor(err)
 		return res
 	}
@@ -578,7 +580,7 @@ func missingReferences(referenced map[string]bool, atts []client.Attachment) []s
 }
 
 // report prints the outcomes and returns the command's exit status.
-func report(results []result, marker, destRoot string, runWarnings []string) error {
+func report(results []result, marker, destRoot string) error {
 	failed, succeeded, skipped := 0, 0, 0
 	for _, r := range results {
 		if r.err != nil || anyAttachmentFailed(r) {
@@ -602,9 +604,6 @@ func report(results []result, marker, destRoot string, runWarnings []string) err
 		return nil
 	}
 
-	for _, w := range runWarnings {
-		ui.Warn(w)
-	}
 	if marker == markerWrote {
 		ui.Success(fmt.Sprintf("%-10s %s", statusWrote, filepath.Join(destRoot, project.Filename)))
 	}
@@ -643,6 +642,11 @@ func envelope(results []result, marker, destRoot string, succeeded, failed, skip
 
 // reportOne prints one page's lines: the page file, then its attachments.
 func reportOne(r result) {
+	// Before the failure branch: a name this page did not choose is worth
+	// saying whether or not the page went on to export.
+	for _, w := range r.warnings {
+		ui.Warn(w)
+	}
 	if r.err != nil {
 		ui.Error(fmt.Sprintf("%-10s %s: %s", attachfile.StatusFailed, r.title(), r.err))
 		return
@@ -670,9 +674,6 @@ func reportOne(r result) {
 	if unreferenced > 0 {
 		ui.Dim(fmt.Sprintf("           (skipped %d unreferenced attachment(s); "+
 			"--all-attachments to include)", unreferenced))
-	}
-	for _, w := range r.warnings {
-		ui.Warn(w)
 	}
 }
 

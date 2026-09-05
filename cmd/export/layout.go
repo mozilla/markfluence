@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/mozilla/markfluence/internal/pageslug"
@@ -34,6 +33,10 @@ type placement struct {
 	parentFile string
 	// folder marks a directory-only node.
 	folder bool
+	// warning explains a name this node did not choose: the -<id> suffix a
+	// colliding sibling group forced on all of it. Carried per node rather than
+	// per run so it reaches --json, where a run has nowhere to put a warning.
+	warning string
 }
 
 // rootRef describes what the walk hangs off, which pagetree does not report:
@@ -51,9 +54,8 @@ type rootRef struct {
 
 // layout assigns a placement to the export root and to everything under it,
 // and reports the slug collisions it disambiguated.
-func layout(root rootRef, nodes []pagetree.Node) (map[string]placement, []string) {
+func layout(root rootRef, nodes []pagetree.Node) map[string]placement {
 	out := make(map[string]placement, len(nodes)+1)
-	var warnings []string
 
 	// Grouped by parent, because siblings are the only scope in which two names
 	// can collide once the hierarchy is mirrored.
@@ -76,13 +78,13 @@ func layout(root rootRef, nodes []pagetree.Node) (map[string]placement, []string
 	var assign func(parentID, dir string)
 	assign = func(parentID, dir string) {
 		children := byParent[parentID]
-		slugs, w := siblingSlugs(children)
-		warnings = append(warnings, w...)
+		slugs, warnings := siblingSlugs(children)
 		for _, n := range children {
 			p := placement{
 				dir:      dir,
 				childDir: path.Join(dir, slugs[n.ID]),
 				folder:   n.Type == pagetree.TypeFolder,
+				warning:  warnings[n.ID],
 			}
 			if !p.folder {
 				p.file = path.Join(dir, slugs[n.ID]+".md")
@@ -95,9 +97,7 @@ func layout(root rootRef, nodes []pagetree.Node) (map[string]placement, []string
 		}
 	}
 	assign(root.ID, top)
-
-	sort.Strings(warnings) // map iteration order must not reach the output
-	return out, warnings
+	return out
 }
 
 // siblingSlugs names each node in one directory, appending the page id to every
@@ -112,7 +112,7 @@ func layout(root rootRef, nodes []pagetree.Node) (map[string]placement, []string
 //
 // The namespace covers page files, page directories and folder directories
 // together, since a page "Team" and a folder "Team" both want team/.
-func siblingSlugs(nodes []pagetree.Node) (map[string]string, []string) {
+func siblingSlugs(nodes []pagetree.Node) (slugs, warnings map[string]string) {
 	groups := map[string][]pagetree.Node{}
 	var order []string
 	for _, n := range nodes {
@@ -124,7 +124,7 @@ func siblingSlugs(nodes []pagetree.Node) (map[string]string, []string) {
 	}
 
 	out := make(map[string]string, len(nodes))
-	var warnings []string
+	warned := map[string]string{}
 	for _, s := range order {
 		group := groups[s]
 		if len(group) == 1 {
@@ -136,11 +136,13 @@ func siblingSlugs(nodes []pagetree.Node) (map[string]string, []string) {
 			out[n.ID] = s + "-" + n.ID
 			names = append(names, fmt.Sprintf("%q", n.Title))
 		}
-		warnings = append(warnings, fmt.Sprintf(
-			"%s all slug to %q; writing them with their page ids appended",
-			strings.Join(names, ", "), s))
+		msg := fmt.Sprintf("%s all slug to %q; writing them with their page ids appended",
+			strings.Join(names, ", "), s)
+		for _, n := range group {
+			warned[n.ID] = msg
+		}
 	}
-	return out, warnings
+	return out, warned
 }
 
 // relativeTo expresses target -- a path relative to dest -- as a path from dir.

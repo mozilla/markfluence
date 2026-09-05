@@ -54,6 +54,17 @@ func AttachmentFilename(src string) string {
 	return path.Base(rel)
 }
 
+// NormalizeSource reduces a source path to the form a publish would record for
+// the same file: "./a/x.png" and "/a/x.png" both become "a/x.png".
+//
+// Exported for attachment-upload's --name, which takes a path and records it.
+// Recording it verbatim lets it disagree with what publishing the same image
+// would record -- and an absolute one is worse than untidy, since Resolve
+// refuses an absolute recorded path outright while sourceFor falls back to the
+// page directory, so the file could never be restored where the markdown says
+// it is.
+func NormalizeSource(src string) string { return normalizeSrc(src) }
+
 // normalizeSrc reduces a markdown image src to a clean relative path: "./a/x.png"
 // and "a/./x.png" both become "a/x.png". A leading "/" is dropped because image
 // resolution joins src onto the page's directory anyway, so an absolute-looking
