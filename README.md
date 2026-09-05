@@ -683,7 +683,40 @@ file can be edited and published straight back with `update`.
 
 Attachments are written to the paths their images were published from, so the
 exported tree matches the layout of the repo the page came from and previews
-locally in GitHub or VSCode. There is deliberately no `--attachments-dir`. It is no longer *unsafe* — an
+locally in GitHub or VSCode. `--depth` exports the page's descendants as well, mirroring the Confluence
+hierarchy:
+
+```console
+$ markfluence export 1234567890 --depth all --dest out
+wrote      out/markfluence.yaml
+wrote      out/handbook.md
+wrote      out/handbook/onboarding.md
+downloaded out/handbook/onboarding/diagram.png
+2 pages (2 exported, 0 skipped, 0 failed)
+```
+
+A page becomes `<slug>.md` with a `<slug>/` beside it holding its children and
+its own Confluence-native attachments; a folder becomes a directory. Each
+child's `parent:` points at its parent's file (`parent: ../handbook.md`), so the
+tree can be published into fresh pages rather than only back into the ids it
+came from. `--depth` takes `0` (the default, the page alone), a positive number,
+or `all`.
+
+`--space KEY` exports a whole space instead of a page, its root pages forming
+the top level. It needs an explicit `--depth`, since walking a space costs a
+pair of requests per page and folder in it. A **folder** can be the target too,
+in which case what is inside it becomes the top level.
+
+`markfluence.yaml` is written at `--dest` for a multi-page export, marking it as
+a project root. Without it, each exported file's root would be its own
+directory, and a shared asset above a page would resolve outside it — so the
+tree would not publish back. An existing one is left alone.
+
+A page whose file already exists is skipped, so a re-run resumes rather than
+re-fetching; `--force` re-exports everything, which is also how you refresh a
+tree whose pages changed upstream.
+
+There is deliberately no `--attachments-dir`. It is no longer *unsafe* — an
 attachment is named by its base name, so moving `assets/x.png` to
 `attachments/x.png` keeps the name `x.png` and orphans nothing — but collecting
 everything into one directory reintroduces exactly the collision the base name

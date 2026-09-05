@@ -130,3 +130,43 @@ Recorded as they happen, so 029 stays the design and this stays the log.
    `AttachmentSource` for a test asserting the invariant that inverted, and an
    unused function fails `lint`, which the standing rule does not permit.
 4. **Commits 23 and 24 are swapped**, per the Close section above.
+5. **The collision refusal is a returned error, not a `Broken` entry** (029
+   commit 2). Nothing blocks a publish on `Broken` -- `update` appends it to the
+   report and carries on -- so reporting it that way would have put the page up
+   wrong and said so afterwards. `check` gets a typed error so it can still
+   report it as a document defect rather than a converter failure.
+6. **A pasted `ri:filename` warns rather than refusing.** Unlike two markdown
+   images, a pasted reference may legitimately mean the very attachment being
+   published, and refusing would break pages that publish fine today.
+7. **Commit 6 was repurposed.** Its planned content moved into commit 5 by the
+   standing rule, so it became something 029 did not anticipate: retiring
+   fixtures describing attachments the scheme can no longer produce. The
+   `regression/images-encoded-src` case keeps its name -- it is about encoded
+   *destinations*, so 029's rename suggestion was wrong.
+8. **Commit 14 (`feat(read)`) does not exist.** `read` and `export` share
+   `pagedoc.Options`, so read's behaviour changed inside commit 12. Noticed only
+   because a test that should have failed did not; its tests are in 12.
+9. **`attachfile.Resolve` takes `Options`** rather than `(root, attachment,
+   flat)`. Two of its four inputs were already there, and a third positional
+   argument after a bare bool is how callers transpose them.
+10. **A prep commit for `pagedoc.Placement`**, which 029 did not foresee: a tree
+    overrides `parent:`, and passing position and parent separately would let a
+    caller position the body one way and the frontmatter another. It later grew
+    the attachment directory and the attachment listing for the same reason.
+11. **Commit 20 (the slug pre-flight) is part of the layout commit.** The
+    function that names files is the one that can see the collision.
+12. **Two positions, not one.** 029's §Layout table implies a single `PageDir`;
+    the page's *file* directory and the directory its unrecorded attachments
+    live in are different (`home` vs `home/child`), and conflating them put
+    every native attachment beside the page instead of under it.
+13. **A folder as the export target was missing entirely.** 029 specifies it and
+    the implementation never did it; found by running the command against a real
+    space. Fixing it exposed that the layout needed a `rootRef` -- the walk's
+    top-level nodes report a folder as their parent but report nothing for a
+    space, and conflating those placed every page at the destination root.
+14. **L5/L6 stay Partial, and #59 is what proved they must.** The live
+    instance shows export-then-republish changes the stored storage in two ways
+    that are semantic no-ops (`<li><p>` wrapping, TOC macro attributes), so the
+    guarantee asks for something the converter deliberately does not do. The
+    property test asserts the markdown fixed point instead -- and found real
+    drift on its first run. See `docs/guarantees.md`.
