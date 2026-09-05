@@ -944,7 +944,21 @@ Two consequences to carry into implementation:
   exports as different markdown depending on how many pages were asked for.
   Nothing depends on today's flat-in-the-root behaviour.
 
-**Slug collisions are refused, naming both pages.** `slugify` is lossy —
+  > **Correction (`_plans/029`, #59).** The last sentence is wrong. The
+  > attachment *name* depended on it. A name was the percent-encoded
+  > root-relative path, and the name is the attachment's identity, so
+  > page-scoping an attachment moved its markdown path, moved its name, and made
+  > republishing create a second attachment while orphaning the first. The rule
+  > stands and the reasoning for it stands; what changed to make it payable is
+  > that an attachment is now named by its base name, so a moved path keeps its
+  > name. See `_plans/029` §"The thing 025 got wrong".
+
+**Slug collisions are refused, naming both pages.** *(Superseded by
+`_plans/029`, which disambiguates with a `-<id>` suffix instead. Refusing makes
+a space unexportable over a punctuation variant, and `--space` exists for spaces
+the caller cannot retitle; the L2 objection below does not reach an exported
+filename, which is ergonomic because identity travels in `page_id` under L8.)*
+`slugify` is lossy —
 `Deploy: Prod`, `Deploy Prod` and `deploy-prod` all become `deploy-prod`, and
 long titles truncate — so two pages can want one filename even though Confluence
 enforces unique titles per space. Mirroring narrows this to siblings, and it does
