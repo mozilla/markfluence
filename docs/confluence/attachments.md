@@ -4,14 +4,20 @@
 
 `/` is not legal in an attachment name. Everything else we have tried is.
 
-markfluence therefore flattens an image's path into a name by percent-encoding
-`%` → `%25` first and `/` → `%2F` second — bijective, so distinct paths can never
-collide and `read` can recover the original path exactly. See
-`internal/convert/attachname.go`.
+markfluence names an attachment by its **base name** — `assets/diagram.png` is
+attached as `diagram.png` — and records the path in the attachment's comment.
+See `internal/convert/attachname.go`.
+
+It used to flatten the whole path into the name by percent-encoding `%` → `%25`
+then `/` → `%2F`, which was bijective. The measurements below were taken against
+those names and are kept, because they are facts about Confluence rather than
+about markfluence: a name containing `%2F` still resolves, and someone will
+still encounter one on a page published before the change. What they no longer
+describe is what markfluence produces.
 
 | in the name | result | |
 |---|---|---|
-| `/` | illegal — hence the encoding | Transcribed |
+| `/` | illegal — hence the base name | Transcribed |
 | `%2F` (encoded slash) | resolves and renders; the image URL re-escapes it to `%252F` | **Verified** |
 | a literal space | stored and returned byte-identically; renders | **Verified 2026-08-07** |
 | non-ASCII (`é`) | stored and returned byte-identically, NFC preserved | **Verified 2026-08-07** |
@@ -54,8 +60,9 @@ The comment carries fixed overhead — `markfluence: ` + `sha256=` + 64 hex +
 ` path=` is **90 characters** — so a recorded source path may be at most
 **165 characters**.
 
-The name limit never binds first. A name is the path with each `/` expanded to
-`%2F`, so a 165-character path would need 45 slashes before it reached 255.
+The name limit never binds first, and by a wider margin than it used to: a name
+is now a single path component, so it is bounded by the filesystem's own name
+limit (255 on every filesystem markfluence runs on) long before Confluence's.
 
 Measured against realistic paths:
 
@@ -120,9 +127,15 @@ is no reason to take either away.
 A skip does not rewrite the comment, so an attachment whose stored `path=` is
 wrong would keep it until its bytes happened to change. `planAttachments`
 therefore treats a *recorded path that disagrees with the local source* as an
-update even when the checksum matches. The name is the encoding of the path, so
-the two are always in lockstep — under a matching name, a differing path means
-the stored comment does not say what markfluence wrote.
+update even when the checksum matches: under a matching name, a differing path
+means the stored comment does not say what markfluence wrote.
+
+Since the name became the base name this branch does more than repair a mangled
+path — it is how an asset that **moved** settles. Moving `assets/flow.png` to
+`img/flow.png` keeps the name `flow.png`, so the attachment is found, the bytes
+match, and only the path disagrees: one re-upload to restamp the comment, and
+nothing orphaned. Under the encoded names the move changed the name too, so the
+old attachment was simply abandoned and this branch never saw it.
 
 A legacy comment records no path at all. That is not a disagreement and stays a
 skip; re-uploading every one of those is the churn the checksum comparison
