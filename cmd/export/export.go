@@ -19,6 +19,7 @@ import (
 	"github.com/mozilla/markfluence/internal/pagedoc"
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagetree"
+	"github.com/mozilla/markfluence/internal/project"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -159,11 +160,15 @@ func run(cmd *cobra.Command, args []string) error {
 		ui.Warn("DRY RUN — no files will be written.")
 	}
 
+	marker, err := writeProjectFile(root, depth != depthNone)
+	if err != nil {
+		return fatalFail(err.Error(), jsonout.CodeIO)
+	}
 	results, err := exportTree(c, page, root, depth)
 	if err != nil {
 		return operationalFail(pageID, err, jsonout.CodeFor(err))
 	}
-	return report(results)
+	return report(results, marker)
 }
 
 // depthNone is --depth 0: the named page and nothing under it.
@@ -203,14 +208,18 @@ func exportSpace(c *client.ConfluenceClient, key, root string, depth int) error 
 		return fatalFail(fmt.Sprintf("space %q not found", key), jsonout.CodeValidation)
 	}
 
+	if dryRun && !ui.IsJSON() {
+		ui.Warn("DRY RUN — no files will be written.")
+	}
+	marker, err := writeProjectFile(root, true)
+	if err != nil {
+		return fatalFail(err.Error(), jsonout.CodeIO)
+	}
 	nodes, err := pagetree.WalkSpace(c, key, depth)
 	if err != nil {
 		return spaceFail(err, jsonout.CodeFor(err))
 	}
-	if dryRun && !ui.IsJSON() {
-		ui.Warn("DRY RUN — no files will be written.")
-	}
-	return report(exportNodes(c, nil, root, nodes))
+	return report(exportNodes(c, nil, root, nodes), marker)
 }
 
 // parseDepth reads the --depth vocabulary: a non-negative number, or "all".
@@ -470,7 +479,7 @@ func missingReferences(referenced map[string]bool, atts []client.Attachment) []s
 }
 
 // report prints the outcomes and returns the command's exit status.
-func report(results []result) error {
+func report(results []result, marker string) error {
 	failed, succeeded := 0, 0
 	for _, r := range results {
 		if r.err != nil || anyAttachmentFailed(r) {
@@ -488,6 +497,11 @@ func report(results []result) error {
 		env := jsonout.NewEnvelope(command, out, map[string]int{
 			"total": len(results), "succeeded": succeeded, "failed": failed,
 		})
+		// dest is the root every path in this export is relative to, and the
+		// marker above is what makes it one.
+		if marker != markerSkipped {
+			env.Roots = []string{dest}
+		}
 		if err := jsonout.Emit(os.Stdout, env); err != nil {
 			return err
 		}
@@ -497,6 +511,9 @@ func report(results []result) error {
 		return nil
 	}
 
+	if marker == markerWrote {
+		ui.Success(fmt.Sprintf("%-10s %s", statusWrote, filepath.Join(dest, project.Filename)))
+	}
 	for _, r := range results {
 		reportOne(r)
 	}

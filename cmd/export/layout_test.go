@@ -1,6 +1,8 @@
 package export
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -176,4 +178,68 @@ func TestParseDepth(t *testing.T) {
 			t.Errorf("parseDepth(%q) = %d, %v; want %d, nil", c.in, got, err, c.want)
 		}
 	}
+}
+
+// TestWriteProjectFile covers the marker an exported tree needs to be
+// republishable: written for a multi-page export, never for a single page (its
+// file is already at dest, so the fallback root is dest), and never over an
+// existing one.
+func TestWriteProjectFile(t *testing.T) {
+	t.Run("multi-page writes it", func(t *testing.T) {
+		dir := t.TempDir()
+		got, err := writeProjectFile(dir, true)
+		if err != nil || got != markerWrote {
+			t.Fatalf("writeProjectFile = %q, %v; want %q", got, err, markerWrote)
+		}
+		body, err := os.ReadFile(filepath.Join(dir, "markfluence.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(body), "Marks the root") {
+			t.Errorf("body = %q, want the explanatory comment", body)
+		}
+	})
+
+	t.Run("single page writes none", func(t *testing.T) {
+		dir := t.TempDir()
+		got, err := writeProjectFile(dir, false)
+		if err != nil || got != markerSkipped {
+			t.Fatalf("writeProjectFile = %q, %v; want no marker", got, err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "markfluence.yaml")); err == nil {
+			t.Error("a single-page export must not plant a project file")
+		}
+	})
+
+	t.Run("existing is left alone", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "markfluence.yaml")
+		if err := os.WriteFile(path, []byte("mine: keep\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		got, err := writeProjectFile(dir, true)
+		if err != nil || got != markerExists {
+			t.Fatalf("writeProjectFile = %q, %v; want %q", got, err, markerExists)
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(body) != "mine: keep\n" {
+			t.Errorf("body = %q, want the existing file untouched", body)
+		}
+	})
+
+	t.Run("dry run writes nothing", func(t *testing.T) {
+		dir := t.TempDir()
+		dryRun = true
+		t.Cleanup(func() { dryRun = false })
+		got, err := writeProjectFile(dir, true)
+		if err != nil || got != markerWrote {
+			t.Fatalf("writeProjectFile = %q, %v; want it previewed as written", got, err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "markfluence.yaml")); err == nil {
+			t.Error("a dry run must not create the file")
+		}
+	})
 }
