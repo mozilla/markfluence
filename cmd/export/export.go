@@ -510,29 +510,20 @@ func missingReferences(referenced map[string]bool, atts []client.Attachment) []s
 
 // report prints the outcomes and returns the command's exit status.
 func report(results []result, marker string) error {
-	failed, succeeded := 0, 0
+	failed, succeeded, skipped := 0, 0, 0
 	for _, r := range results {
 		if r.err != nil || anyAttachmentFailed(r) {
 			failed++
 			continue
 		}
 		succeeded++
+		if r.pageStatus == attachfile.StatusSkipped {
+			skipped++
+		}
 	}
 
 	if ui.IsJSON() {
-		out := make([]any, 0, len(results))
-		for _, r := range results {
-			out = append(out, buildResult(r))
-		}
-		env := jsonout.NewEnvelope(command, out, map[string]int{
-			"total": len(results), "succeeded": succeeded, "failed": failed,
-		})
-		// dest is the root every path in this export is relative to, and the
-		// marker above is what makes it one.
-		if marker != markerSkipped {
-			env.Roots = []string{dest}
-		}
-		if err := jsonout.Emit(os.Stdout, env); err != nil {
+		if err := jsonout.Emit(os.Stdout, envelope(results, marker, succeeded, failed, skipped)); err != nil {
 			return err
 		}
 		if failed > 0 {
@@ -548,12 +539,33 @@ func report(results []result, marker string) error {
 		reportOne(r)
 	}
 	if len(results) > 1 {
-		ui.Info(fmt.Sprintf("%d pages (%d exported, %d failed)", len(results), succeeded, failed))
+		ui.Info(fmt.Sprintf("%d pages (%d exported, %d skipped, %d failed)",
+			len(results), succeeded-skipped, skipped, failed))
 	}
 	if failed > 0 {
 		return ui.SilentExit(1)
 	}
 	return nil
+}
+
+// envelope is the document --json emits, split out so the schema conformance
+// test validates what the command really writes rather than a hand-copied
+// duplicate of it.
+func envelope(results []result, marker string, succeeded, failed, skipped int) jsonout.Envelope {
+	out := make([]any, 0, len(results))
+	for _, r := range results {
+		out = append(out, buildResult(r))
+	}
+	env := jsonout.NewEnvelope(command, out, jsonExportSummary{
+		Total: len(results), Succeeded: succeeded, Failed: failed, Skipped: skipped,
+		ProjectFile: nullable(marker),
+	})
+	// dest is the root every path in this export is relative to, and the marker
+	// is what makes it one.
+	if marker != markerSkipped {
+		env.Roots = []string{dest}
+	}
+	return env
 }
 
 // reportOne prints one page's lines: the page file, then its attachments.
@@ -654,5 +666,5 @@ func operationalFail(pageID string, err error, code jsonout.Code) error {
 // of a hand-copied duplicate of it.
 func failEnvelope(pageID string, err error, code jsonout.Code) jsonout.Envelope {
 	return jsonout.NewEnvelope(command, []any{jsonout.NewSingleOpFailure(pageID, err, code)},
-		map[string]int{"total": 1, "succeeded": 0, "failed": 1})
+		jsonExportSummary{Total: 1, Failed: 1})
 }

@@ -89,7 +89,7 @@
           "results": {
             "items": { "oneOf": [{ "$ref": "#/$defs/exportResult" }, { "$ref": "#/$defs/singleOpFailure" }] }
           },
-          "summary": { "$ref": "#/$defs/basicSummary" }
+          "summary": { "$ref": "#/$defs/exportSummary" }
         }
       }
     },
@@ -487,13 +487,26 @@
         "code": { "$ref": "#/$defs/codeOrNull" }
       }
     },
+    "exportSummary": {
+      "description": "export batch summary. skipped counts pages whose file was already on disk; a run that exports nothing new is all skipped and still succeeded. project_file says what happened to the markfluence.yaml a multi-page export needs to be republishable: null for a single-page export, which needs none.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "succeeded", "failed", "skipped", "project_file"],
+      "properties": {
+        "total": { "type": "integer" },
+        "succeeded": { "type": "integer" },
+        "failed": { "type": "integer" },
+        "skipped": { "type": "integer" },
+        "project_file": { "enum": ["wrote", "exists", null] }
+      }
+    },
     "exportResult": {
       "description": "One exported page. status is whether the page file was written or skipped; the attachments array holds every attachment considered, including unreferenced ones (dest_path null, status skipped_unreferenced). warnings lists references the page makes to attachments that are not attached.",
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "ok", "page_id", "title", "space", "parent", "parent_type", "dry_run", "status",
-        "dest_path", "attachments", "warnings", "error", "code"
+        "ok", "page_id", "title", "space", "parent", "parent_type", "parent_file", "dry_run",
+        "status", "dest_path", "attachments", "warnings", "error", "code"
       ],
       "properties": {
         "ok": { "type": "boolean" },
@@ -502,6 +515,10 @@
         "space": { "type": "string" },
         "parent": { "$ref": "#/$defs/stringOrNull" },
         "parent_type": { "$ref": "#/$defs/parentTypeOrNull" },
+        "parent_file": {
+          "$ref": "#/$defs/stringOrNull",
+          "description": "The parent: value written into the exported file, when it is a path to the parent's own .md. Null when the parent stayed an id -- the export root, or a page whose parent is a folder."
+        },
         "dry_run": { "type": "boolean" },
         "status": { "enum": ["wrote", "skipped", ""] },
         "dest_path": { "$ref": "#/$defs/stringOrNull" },
