@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pagedoc"
 	"github.com/mozilla/markfluence/internal/pageref"
+	"github.com/mozilla/markfluence/internal/pageslug"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -240,44 +240,13 @@ func missingReferences(referenced map[string]bool, atts []client.Attachment) []s
 	return missing
 }
 
-// slugUnsafeRE matches everything a filename slug drops: anything that is not a
-// letter, digit, underscore, hyphen, or whitespace. Unicode letters are kept, so
-// a non-Latin title still yields a usable name.
-var slugUnsafeRE = regexp.MustCompile(`[^\p{L}\p{N}_\s-]+`)
-
-// whitespaceRE collapses each whitespace run into a single hyphen.
-var whitespaceRE = regexp.MustCompile(`\s+`)
-
-// slugMax caps the slug so a long title can't produce a filename the filesystem
-// rejects; 80 leaves room for the extension well inside every limit.
-const slugMax = 80
-
 // pageFilename is the name to write the page under: --file when given, else a
-// slug of the title, else the page id.
-//
-// The slug is filename-specific rather than the converter's heading-anchor
-// sluggers: it must drop path separators, cap length, and produce something
-// usable when a title slugs to nothing. Reusing an anchor slugger would also
-// mean a change to anchor generation silently renaming exported files.
+// slug of the title, else the page id (internal/pageslug).
 func pageFilename(page *client.Page, override string) string {
 	if override != "" {
 		return override
 	}
-	if s := slugify(page.Title); s != "" {
-		return s + ".md"
-	}
-	return page.ID + ".md"
-}
-
-func slugify(title string) string {
-	s := strings.ToLower(strings.TrimSpace(title))
-	s = slugUnsafeRE.ReplaceAllString(s, "")
-	s = whitespaceRE.ReplaceAllString(s, "-")
-	s = strings.Trim(s, "-")
-	if len([]rune(s)) > slugMax {
-		s = strings.Trim(string([]rune(s)[:slugMax]), "-")
-	}
-	return s
+	return pageslug.Filename(page.Title, page.ID)
 }
 
 // report prints the outcome and returns the command's exit status.

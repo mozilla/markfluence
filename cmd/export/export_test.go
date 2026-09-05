@@ -54,30 +54,6 @@ func TestPageFilename(t *testing.T) {
 	}
 }
 
-// TestSlugifyCaps keeps a very long title from producing a filename the
-// filesystem rejects, and must not leave a trailing hyphen when the cut lands
-// on a word boundary.
-func TestSlugifyCaps(t *testing.T) {
-	got := slugify(strings.Repeat("long title ", 40))
-	if len([]rune(got)) > slugMax {
-		t.Errorf("slug is %d runes, want <= %d", len([]rune(got)), slugMax)
-	}
-	if strings.HasSuffix(got, "-") {
-		t.Errorf("slug %q ends in a hyphen", got)
-	}
-}
-
-// TestSlugifyNeverProducesAPath is the safety property: --file is the only way
-// to write outside the destination directory's top level.
-func TestSlugifyNeverProducesAPath(t *testing.T) {
-	for _, title := range []string{"../escape", "/etc/passwd", "a/b/c", `a\b`} {
-		got := slugify(title)
-		if strings.ContainsAny(got, `/\`) {
-			t.Errorf("slugify(%q) = %q, which contains a path separator", title, got)
-		}
-	}
-}
-
 func TestWritePageSkipsExistingUnlessForce(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "page.md")
