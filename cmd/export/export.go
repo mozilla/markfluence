@@ -3,10 +3,12 @@
 package export
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/mozilla/markfluence/internal/attachfile"
@@ -16,7 +18,7 @@ import (
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pagedoc"
 	"github.com/mozilla/markfluence/internal/pageref"
-	"github.com/mozilla/markfluence/internal/pageslug"
+	"github.com/mozilla/markfluence/internal/pagetree"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -29,9 +31,13 @@ const command = "export"
 // what it is given -- so it only ever appears in this command's output.
 const statusSkippedUnreferenced = "skipped_unreferenced"
 
+// depthAll is the --depth value meaning "however deep it goes".
+const depthAll = "all"
+
 var (
 	dest           string
 	fileFlag       string
+	depthOpt       string
 	allAttachments bool
 	skipAttachs    bool
 	force          bool
@@ -48,9 +54,16 @@ var Cmd = &cobra.Command{
 		"The page is written as markdown with title/space/parent/page_id/\n" +
 		"page_width frontmatter -- the same output `read` prints -- so an\n" +
 		"exported file can be edited and published back with update.\n\n" +
-		"Attachments are written to the paths the page's images were published\n" +
-		"from, so the exported tree matches the source repo's layout and\n" +
-		"previews locally. Only attachments the page references are exported;\n" +
+		"--depth exports the page's descendants too, mirroring the Confluence\n" +
+		"hierarchy: a page becomes <slug>.md with a <slug>/ beside it for its\n" +
+		"children, a folder becomes a directory, and each child's parent:\n" +
+		"points at its parent's file so the tree can be published into fresh\n" +
+		"pages. It costs a pair of requests per page and folder walked, plus\n" +
+		"the page's own.\n\n" +
+		"Attachments markfluence published are written to the paths their\n" +
+		"images came from; one that originated in Confluence is written under\n" +
+		"the page's own directory, since attachment names are unique per page\n" +
+		"and not per space. Only attachments the page references are exported;\n" +
 		"--all-attachments takes everything on the page.\n\n" +
 		"This is the one-command form of `read` plus `attachment-download`.",
 	Args:              cobra.ExactArgs(1),
@@ -60,6 +73,8 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().StringVar(&dest, "dest", ".", "Directory to write the export into.")
+	Cmd.Flags().StringVar(&depthOpt, "depth", "0",
+		`How deep to export: 0 for the page alone, a positive number, or "all".`)
 	Cmd.Flags().StringVar(&fileFlag, "file", "",
 		"Name for the page file (default: a slug of the title, or the page id if that slugs to nothing).")
 	Cmd.Flags().BoolVar(&allAttachments, "all-attachments", false,
@@ -71,6 +86,7 @@ func init() {
 		"Preview what would be written without creating any files.")
 
 	completion.RegisterFlag(Cmd, "dest", completion.Directories)
+	completion.RegisterFlag(Cmd, "depth", completion.Values("0", "1", "2", depthAll))
 }
 
 func run(cmd *cobra.Command, args []string) error {
@@ -88,6 +104,18 @@ func run(cmd *cobra.Command, args []string) error {
 	pageID, err := pageref.Resolve(args[0])
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeValidation)
+	}
+
+	depth, err := parseDepth(depthOpt)
+	if err != nil {
+		return fatalFail(err.Error(), jsonout.CodeValidation)
+	}
+	if depth != depthNone && fileFlag != "" {
+		// --file names one file, while a page's directory is named from its
+		// slug regardless -- so honouring it in a tree would let a page's file
+		// and its own subdirectory disagree.
+		return fatalFail("--file applies to a single page; it cannot be combined with --depth",
+			jsonout.CodeValidation)
 	}
 
 	root, err := filepath.Abs(dest)
@@ -112,13 +140,119 @@ func run(cmd *cobra.Command, args []string) error {
 		ui.Warn("DRY RUN — no files will be written.")
 	}
 
-	res := export(c, page, root)
-	return report(res)
+	results, err := exportTree(c, page, root, depth)
+	if err != nil {
+		return operationalFail(pageID, err, jsonout.CodeFor(err))
+	}
+	return report(results)
 }
 
-// result is everything one export produced.
+// depthNone is --depth 0: the named page and nothing under it.
+const depthNone = 0
+
+// parseDepth reads the --depth vocabulary: a non-negative number, or "all".
+//
+// 0 is legal here and is the default, unlike `children --depth`, which refuses
+// it: there it would be a request for no rows at all, while here it is the
+// named page by itself -- a real answer, and the one this command gave before
+// it could walk.
+func parseDepth(v string) (int, error) {
+	if v == depthAll {
+		return pagetree.AllDepths, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("invalid --depth %q: want a non-negative number or %q", v, depthAll)
+	}
+	return n, nil
+}
+
+// exportTree walks the subtree (when asked) and exports every page in it.
+//
+// A walk failure fails the command rather than one page: pagetree aborts on the
+// first listing error, before any page has been exported, so there is no
+// partial result to report against.
+func exportTree(
+	c *client.ConfluenceClient, page *client.Page, root string, depth int,
+) ([]result, error) {
+	var nodes []pagetree.Node
+	if depth != depthNone {
+		var err error
+		if nodes, err = pagetree.Walk(c, page.ID, depth); err != nil {
+			return nil, err
+		}
+	}
+
+	places, warnings := layout(page.Title, page.ID, nodes)
+	// The root's own file keeps whatever --file said; everything below is named
+	// from its slug.
+	rootPlace := places[page.ID]
+	if fileFlag != "" {
+		rootPlace.file = fileFlag
+	}
+
+	results := []result{exportOne(c, page, root, pagedoc.Placement{}, rootPlace)}
+	results[0].warnings = append(warnings, results[0].warnings...)
+
+	// A page whose own parent failed is skipped rather than written with a
+	// parent: pointing at a file that does not exist -- create's precedent for
+	// the same shape.
+	failed := map[string]bool{}
+	if results[0].err != nil {
+		failed[page.ID] = true
+	}
+	for _, n := range nodes {
+		if n.Type == pagetree.TypeFolder {
+			continue
+		}
+		place := places[n.ID]
+		if failed[n.ParentID] {
+			failed[n.ID] = true
+			results = append(results, skippedResult(n, place, "parent page was not exported; skipping"))
+			continue
+		}
+		child, err := c.GetPageBodyOrNil(n.ID)
+		if err != nil {
+			failed[n.ID] = true
+			results = append(results, failedResult(n, place, err, jsonout.CodeFor(err)))
+			continue
+		}
+		if child == nil || child.Body.Storage.Value == "" {
+			failed[n.ID] = true
+			results = append(results, failedResult(n, place,
+				fmt.Errorf("page %s has no readable body", n.ID), jsonout.CodeValidation))
+			continue
+		}
+		r := exportOne(c, child, root, pagedoc.Placement{Dir: place.dir, Parent: place.parentFile}, place)
+		if r.err != nil {
+			failed[n.ID] = true
+		}
+		results = append(results, r)
+	}
+	return results, nil
+}
+
+// failedResult is a page that could not be exported, carrying enough of the
+// walk's row to be reported without a fetched page.
+func failedResult(n pagetree.Node, place placement, err error, code jsonout.Code) result {
+	return result{
+		node: &n, place: place, err: err, code: code,
+	}
+}
+
+// skippedResult is a page not attempted because an ancestor failed.
+func skippedResult(n pagetree.Node, place placement, msg string) result {
+	return failedResult(n, place, errors.New(msg), jsonout.CodeValidation)
+}
+
+// result is everything one page's export produced.
 type result struct {
-	page        *client.Page
+	page *client.Page
+	// node is the walk row for a page that was never fetched -- one whose body
+	// failed, or that was skipped because an ancestor did. Exactly one of page
+	// and node is set.
+	node        *pagetree.Node
+	place       placement
 	destPath    string
 	pageStatus  string // "wrote" or attachfile.StatusSkipped
 	attachments []attachment
@@ -137,9 +271,13 @@ type attachment struct {
 	code     jsonout.Code
 }
 
-// export writes the page file and its attachments.
-func export(c *client.ConfluenceClient, page *client.Page, root string) result {
-	res := result{page: page}
+// exportOne writes one page's file and its attachments. pl positions the body
+// and its frontmatter; place says where the file goes.
+func exportOne(
+	c *client.ConfluenceClient, page *client.Page, root string,
+	pl pagedoc.Placement, place placement,
+) result {
+	res := result{page: page, place: place}
 
 	atts, err := attachmentsFor(c, page)
 	if err != nil {
@@ -150,14 +288,13 @@ func export(c *client.ConfluenceClient, page *client.Page, root string) result {
 		return res
 	}
 
-	// The page sits at the top level of dest today; a tree export positions it.
-	doc, err := pagedoc.Render(c, page, pagedoc.Placement{})
+	doc, err := pagedoc.Render(c, page, pl)
 	if err != nil {
 		res.err, res.code = err, jsonout.CodeConvert
 		return res
 	}
 
-	res.destPath = filepath.Join(root, pageFilename(page, fileFlag))
+	res.destPath = filepath.Join(root, filepath.FromSlash(place.file))
 	res.pageStatus, err = writePage(res.destPath, doc.String())
 	if err != nil {
 		res.err, res.code = err, jsonout.CodeIO
@@ -169,7 +306,7 @@ func export(c *client.ConfluenceClient, page *client.Page, root string) result {
 	if skipAttachs {
 		return res
 	}
-	res.attachments = writeAttachments(c, page, atts, referenced, root)
+	res.attachments = writeAttachments(c, page, atts, referenced, root, pl.Dir)
 	return res
 }
 
@@ -206,13 +343,13 @@ const statusWrote = "wrote"
 // behind rather than dropping them silently.
 func writeAttachments(
 	c *client.ConfluenceClient, page *client.Page, atts []client.Attachment,
-	referenced map[string]bool, root string,
+	referenced map[string]bool, root, pageDir string,
 ) []attachment {
 	// Dir must be the AttachmentDir the body was rendered with, or an attachment
 	// with no recorded path is written somewhere its own image does not point.
 	// Taken from pagedoc rather than recomputed here, so the two cannot drift.
 	opts := attachfile.Options{
-		Root: root, Dir: pagedoc.AttachmentDir(page, ""), Force: force, DryRun: dryRun,
+		Root: root, Dir: pagedoc.AttachmentDir(page, pageDir), Force: force, DryRun: dryRun,
 	}
 	out := make([]attachment, 0, len(atts))
 	for _, a := range atts {
@@ -247,50 +384,61 @@ func missingReferences(referenced map[string]bool, atts []client.Attachment) []s
 	return missing
 }
 
-// pageFilename is the name to write the page under: --file when given, else a
-// slug of the title, else the page id (internal/pageslug).
-func pageFilename(page *client.Page, override string) string {
-	if override != "" {
-		return override
-	}
-	return pageslug.Filename(page.Title, page.ID)
-}
-
-// report prints the outcome and returns the command's exit status.
-func report(res result) error {
-	failed := 0
-	for _, a := range res.attachments {
-		if a.status == attachfile.StatusFailed {
+// report prints the outcomes and returns the command's exit status.
+func report(results []result) error {
+	failed, succeeded := 0, 0
+	for _, r := range results {
+		if r.err != nil || anyAttachmentFailed(r) {
 			failed++
+			continue
 		}
+		succeeded++
 	}
 
 	if ui.IsJSON() {
-		env := jsonout.NewEnvelope(command, []any{buildResult(res)}, map[string]int{
-			"total": 1, "succeeded": boolToInt(res.err == nil), "failed": boolToInt(res.err != nil),
+		out := make([]any, 0, len(results))
+		for _, r := range results {
+			out = append(out, buildResult(r))
+		}
+		env := jsonout.NewEnvelope(command, out, map[string]int{
+			"total": len(results), "succeeded": succeeded, "failed": failed,
 		})
 		if err := jsonout.Emit(os.Stdout, env); err != nil {
 			return err
 		}
-		if res.err != nil || failed > 0 {
+		if failed > 0 {
 			return ui.SilentExit(1)
 		}
 		return nil
 	}
 
-	if res.err != nil {
-		ui.Error(res.err.Error())
+	for _, r := range results {
+		reportOne(r)
+	}
+	if len(results) > 1 {
+		ui.Info(fmt.Sprintf("%d pages (%d exported, %d failed)", len(results), succeeded, failed))
+	}
+	if failed > 0 {
 		return ui.SilentExit(1)
 	}
+	return nil
+}
 
-	if res.pageStatus == attachfile.StatusSkipped {
-		ui.Dim(fmt.Sprintf("%-10s %s  (exists; --force to overwrite)", res.pageStatus, res.destPath))
+// reportOne prints one page's lines: the page file, then its attachments.
+func reportOne(r result) {
+	if r.err != nil {
+		ui.Error(fmt.Sprintf("%-10s %s: %s", attachfile.StatusFailed, r.title(), r.err))
+		return
+	}
+
+	if r.pageStatus == attachfile.StatusSkipped {
+		ui.Dim(fmt.Sprintf("%-10s %s  (exists; --force to overwrite)", r.pageStatus, r.destPath))
 	} else {
-		ui.Success(fmt.Sprintf("%-10s %s", res.pageStatus, res.destPath))
+		ui.Success(fmt.Sprintf("%-10s %s", r.pageStatus, r.destPath))
 	}
 
 	unreferenced := 0
-	for _, a := range res.attachments {
+	for _, a := range r.attachments {
 		switch a.status {
 		case statusSkippedUnreferenced:
 			unreferenced++
@@ -306,21 +454,33 @@ func report(res result) error {
 		ui.Dim(fmt.Sprintf("           (skipped %d unreferenced attachment(s); "+
 			"--all-attachments to include)", unreferenced))
 	}
-	for _, w := range res.warnings {
+	for _, w := range r.warnings {
 		ui.Warn(w)
 	}
-
-	if failed > 0 {
-		return ui.SilentExit(1)
-	}
-	return nil
 }
 
-func boolToInt(b bool) int {
-	if b {
-		return 1
+// title identifies a page in human output, whether or not it was ever fetched.
+func (r result) title() string {
+	switch {
+	case r.place.file != "":
+		return r.place.file
+	case r.page != nil:
+		return r.page.Title
+	case r.node != nil:
+		return r.node.Title
 	}
-	return 0
+	return ""
+}
+
+// anyAttachmentFailed reports whether a page that itself exported cleanly left
+// an attachment behind, which still fails the run.
+func anyAttachmentFailed(r result) bool {
+	for _, a := range r.attachments {
+		if a.status == attachfile.StatusFailed {
+			return true
+		}
+	}
+	return false
 }
 
 // fatalFail reports a config/usage/pre-flight failure: a JSON error object on

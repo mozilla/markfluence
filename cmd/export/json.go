@@ -41,12 +41,20 @@ func buildResult(r result) jsonExportResult {
 		Attachments: []jsonExportAttach{},
 		Warnings:    []string{},
 	}
-	if r.page != nil {
+	switch {
+	case r.page != nil:
 		res.PageID = r.page.ID
 		res.Title = r.page.Title
 		res.Space = client.SpaceKeyFromWebUI(r.page.Links.WebUI)
 		res.Parent = nullable(r.page.ParentID)
 		res.ParentType = nullable(r.page.ParentType)
+	case r.node != nil:
+		// Never fetched -- its body failed, or an ancestor's did -- so what is
+		// known about it is the walk's own row.
+		res.PageID = r.node.ID
+		res.Title = r.node.Title
+		res.Space = r.node.Space
+		res.Parent = nullable(r.node.ParentID)
 	}
 	for _, a := range r.attachments {
 		entry := jsonExportAttach{
