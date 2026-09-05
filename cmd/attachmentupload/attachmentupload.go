@@ -170,10 +170,10 @@ func localAttachments(files []string, name string, roots *project.Cache) ([]clie
 		if filename == "" {
 			return nil, fmt.Errorf("%q is not a usable attachment name", source)
 		}
-		// Round-trip the name so source is exactly what a decode yields.
-		if decoded, ok := convert.AttachmentSource(filename); ok {
-			source = decoded
-		}
+		// source is recorded as given, not as a decode of the name. The name is
+		// now the base name, so decoding it back would throw the path away and
+		// record "x.png" for an asset at "docs/assets/x.png" -- which is the one
+		// copy of the path there is.
 		out = append(out, client.LocalAttachment{Path: f, Filename: filename, Source: source})
 	}
 	return out, nil
@@ -268,7 +268,3 @@ func failEnvelope(pageID string, err error, code jsonout.Code, roots *project.Ca
 	env.Roots = roots.Roots()
 	return env
 }
-
-// decodeName is convert.AttachmentSource, wrapped so tests can assert the
-// lockstep invariant without importing the converter.
-func decodeName(filename string) (string, bool) { return convert.AttachmentSource(filename) }
