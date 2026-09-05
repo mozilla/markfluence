@@ -19,7 +19,7 @@ func managed(title, source string) client.Attachment {
 
 func TestResolveUsesRecordedSource(t *testing.T) {
 	root := filepath.Clean("/tmp/dest")
-	got, err := Resolve(root, managed("assets%2Fx.png", "assets/x.png"), false)
+	got, err := Resolve(root, managed("x.png", "assets/x.png"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,8 +30,15 @@ func TestResolveUsesRecordedSource(t *testing.T) {
 }
 
 // TestResolveIgnoresNameWhenUnmanaged is why restoration reads the comment and
-// never decodes the stored name: a hand-uploaded file literally named
-// "a%2Fb.png" must not be scattered into a/b.png.
+// never interprets the stored name: a file literally named "a%2Fb.png" must not
+// be scattered into a/b.png.
+//
+// This used to be a judgement call -- a name that looked encoded might have been
+// one markfluence wrote, and there was no telling. It is not one any more.
+// markfluence names an attachment by its base name, so a name containing "%2F"
+// is a filename, and convert.sourceFor answers the same way on the markdown
+// side. The two agreeing is what keeps a downloaded file where the markdown
+// says it is.
 func TestResolveIgnoresNameWhenUnmanaged(t *testing.T) {
 	root := filepath.Clean("/tmp/dest")
 	got, err := Resolve(root, client.Attachment{Title: "a%2Fb.png"}, false)
@@ -46,11 +53,11 @@ func TestResolveIgnoresNameWhenUnmanaged(t *testing.T) {
 
 func TestResolveFlatIgnoresSource(t *testing.T) {
 	root := filepath.Clean("/tmp/dest")
-	got, err := Resolve(root, managed("assets%2Fx.png", "assets/x.png"), true)
+	got, err := Resolve(root, managed("x.png", "assets/x.png"), true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(root, "assets%2Fx.png")
+	want := filepath.Join(root, "x.png")
 	if got != want {
 		t.Errorf("Resolve = %q, want %q", got, want)
 	}
@@ -61,7 +68,7 @@ func TestResolveFlatIgnoresSource(t *testing.T) {
 // inside --dest it is fine.
 func TestResolveAllowsLegitimateParent(t *testing.T) {
 	root := filepath.Clean("/tmp/dest")
-	got, err := Resolve(root, managed("..%2Fassets%2Flogo.png", "../assets/logo.png"), false)
+	got, err := Resolve(root, managed("logo.png", "../assets/logo.png"), false)
 	if err == nil {
 		t.Fatalf("Resolve = %q; a source escaping the root must be refused", got)
 	}
@@ -134,7 +141,7 @@ func withDownload(a client.Attachment) client.Attachment {
 func TestWriteCreatesNestedPath(t *testing.T) {
 	root := t.TempDir()
 	c := testClient(t, "BYTES")
-	got := Write(c, withDownload(managed("assets%2Fx.png", "assets/x.png")),
+	got := Write(c, withDownload(managed("x.png", "assets/x.png")),
 		Options{Root: root})
 	if got.Status != StatusDownloaded {
 		t.Fatalf("status = %q (%v), want downloaded", got.Status, got.Err)
@@ -203,7 +210,7 @@ func TestWriteRemovesPartialFileOnDownloadFailure(t *testing.T) {
 func TestWriteDryRunCreatesNothing(t *testing.T) {
 	root := t.TempDir()
 	c := testClient(t, "BYTES")
-	got := Write(c, withDownload(managed("assets%2Fx.png", "assets/x.png")),
+	got := Write(c, withDownload(managed("x.png", "assets/x.png")),
 		Options{Root: root, DryRun: true})
 	if got.Status != StatusDownloaded {
 		t.Errorf("status = %q, want downloaded (the forecast)", got.Status)
@@ -233,9 +240,9 @@ func TestWriteRefusesEscapeWithoutWriting(t *testing.T) {
 func TestWriteFlatUsesStoredName(t *testing.T) {
 	root := t.TempDir()
 	c := testClient(t, "BYTES")
-	got := Write(c, withDownload(managed("assets%2Fx.png", "assets/x.png")),
+	got := Write(c, withDownload(managed("x.png", "assets/x.png")),
 		Options{Root: root, Flat: true})
-	if want := filepath.Join(root, "assets%2Fx.png"); got.DestPath != want {
+	if want := filepath.Join(root, "x.png"); got.DestPath != want {
 		t.Errorf("dest = %q, want %q", got.DestPath, want)
 	}
 }
@@ -292,7 +299,7 @@ func TestWriteRefusesSymlinkedDirectory(t *testing.T) {
 	root, outside := symlinkFixture(t)
 	c := testClient(t, "PWNED")
 
-	got := Write(c, withDownload(managed("assets%2Fx.png", "assets/x.png")), Options{Root: root})
+	got := Write(c, withDownload(managed("x.png", "assets/x.png")), Options{Root: root})
 	if got.Status != StatusFailed {
 		t.Errorf("status = %q, want failed", got.Status)
 	}
@@ -347,7 +354,7 @@ func TestWriteCreatesRootWhenMissing(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "new", "dest")
 	c := testClient(t, "BYTES")
 
-	got := Write(c, withDownload(managed("assets%2Fx.png", "assets/x.png")), Options{Root: root})
+	got := Write(c, withDownload(managed("x.png", "assets/x.png")), Options{Root: root})
 	if got.Status != StatusDownloaded {
 		t.Fatalf("status = %q (%v), want downloaded", got.Status, got.Err)
 	}
@@ -414,7 +421,7 @@ func TestResolveNormalizesRoot(t *testing.T) {
 		"/tmp/other/../dest",
 	}
 	for _, root := range roots {
-		got, err := Resolve(root, managed("assets%2Fx.png", "assets/x.png"), false)
+		got, err := Resolve(root, managed("x.png", "assets/x.png"), false)
 		if err != nil {
 			t.Errorf("Resolve(root=%q) errored: %v", root, err)
 			continue
@@ -440,7 +447,7 @@ func TestResolveNormalizedRootStillRefusesEscapes(t *testing.T) {
 func TestWriteNormalizesRoot(t *testing.T) {
 	dir := t.TempDir()
 	c := testClient(t, "BYTES")
-	got := Write(c, withDownload(managed("assets%2Fx.png", "assets/x.png")),
+	got := Write(c, withDownload(managed("x.png", "assets/x.png")),
 		Options{Root: dir + string(os.PathSeparator)})
 	if got.Status != StatusDownloaded {
 		t.Fatalf("status = %q (%v), want downloaded", got.Status, got.Err)
