@@ -673,10 +673,28 @@ func (r *mdRenderer) renderCallout(n *snode, alert string) string {
 func (r *mdRenderer) renderInlineChildren(n *snode) string {
 	var b strings.Builder
 	for _, k := range coalesceSplitMarks(n.kids) {
-		b.WriteString(r.renderInline(k))
+		part := r.renderInline(k)
+		// Storage is XHTML and its newlines are insignificant, so
+		// "<br />\nSecond" is the ordinary spelling -- and that newline
+		// normalizes to a space, landing immediately after the two-space hard
+		// break as a leading space on the next line. Markdown keeps it, so
+		// every export-and-republish cycle indented the line one character
+		// further. Trimmed here rather than with a pass over the assembled
+		// string, which cannot tell this whitespace from the two spaces that
+		// *are* the next hard break. Found by the round-trip property test.
+		// Never trim a hard break itself: two of them in a row are two blank
+		// line-endings, and its own leading spaces are what make it one.
+		if k.name != "br" && strings.HasSuffix(b.String(), hardBreak) {
+			part = strings.TrimLeft(part, " \t")
+		}
+		b.WriteString(part)
 	}
 	return strings.TrimSpace(b.String())
 }
+
+// hardBreak is markdown's two-space line break, as renderInline emits it for a
+// <br />.
+const hardBreak = "  \n"
 
 // formatMarks are the inline formatting tags coalesceSplitMarks may hoist
 // across a link boundary.
@@ -844,7 +862,7 @@ func (r *mdRenderer) renderInline(n *snode) string {
 	case "del", "s", "strike":
 		return "~~" + r.renderInlineChildren(n) + "~~"
 	case "br":
-		return "  \n"
+		return hardBreak
 	case "a":
 		return r.renderLink(n)
 	case "ac:image":
