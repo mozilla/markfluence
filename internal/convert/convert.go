@@ -83,6 +83,9 @@ func MdToConfluence(
 		// a reported line matches what a reader sees opening the file, not
 		// what the parser sees after Extract already removed the header.
 		lineOffset: strings.Count(md.Content[:len(md.Content)-len(md.Body)], "\n"),
+		// Scanned from the unshielded body: after shielding, the tag names are
+		// sentinels and the attribute would no longer match.
+		pastedNames: pastedAttachmentNames(md.Body),
 	}
 	var buf bytes.Buffer
 	if err := newMarkdown(r).Convert([]byte(shielded), &buf); err != nil {
