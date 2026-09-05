@@ -51,8 +51,10 @@ var Cmd = &cobra.Command{
 	Use:   command + " [PAGE]",
 	Short: "Write a Confluence page and its attachments to a directory",
 	Long: "Write a Confluence page and the attachments it uses to a directory.\n\n" +
-		"PAGE is a numeric page id, a Confluence page URL, or a markdown file\n" +
-		"whose frontmatter has a page_id.\n\n" +
+		"PAGE is a numeric page id, a Confluence page or folder URL, or a\n" +
+		"markdown file whose frontmatter has a page_id. A folder has no content\n" +
+		"of its own, so it is a target only with --depth: what is inside it\n" +
+		"becomes the top level of the export.\n\n" +
 		"Pass --space KEY instead of a PAGE to export a whole space, whose root\n" +
 		"pages become the top level. It needs an explicit --depth, since a space\n" +
 		"walk is one pair of requests per page and folder in it and should be\n" +
@@ -152,7 +154,23 @@ func run(cmd *cobra.Command, args []string) error {
 		return operationalFail(pageID, err, jsonout.CodeFor(err))
 	}
 	if page == nil {
-		return operationalFail(pageID, fmt.Errorf("page %s not found", pageID), jsonout.CodeNotFound)
+		// Every v2 page route answers a folder id with 404, and pageref accepts
+		// a folder URL because that is what a browser hands you. A folder has no
+		// body to export, so it is only a target when there is a walk: its
+		// children become the top level, exactly as a space's roots do.
+		folder, ferr := c.GetFolderOrNil(pageID)
+		if ferr != nil {
+			return operationalFail(pageID, ferr, jsonout.CodeFor(ferr))
+		}
+		if folder == nil {
+			return operationalFail(pageID, fmt.Errorf("page %s not found", pageID), jsonout.CodeNotFound)
+		}
+		if depth == depthNone {
+			return operationalFail(pageID, fmt.Errorf(
+				"%s is a folder, which has no content of its own; pass --depth to export what is in it",
+				pageID), jsonout.CodeValidation)
+		}
+		return exportFolder(c, pageID, root, depth)
 	}
 	if page.Body.Storage.Value == "" {
 		return operationalFail(pageID, fmt.Errorf(
@@ -211,6 +229,25 @@ func checkSpaceDepth(space string, depth int) error {
 	return nil
 }
 
+// exportFolder exports what is inside a folder. The folder itself is the
+// destination -- there is no file to write for it -- so its children are the
+// top level, which is the same shape a space export takes.
+func exportFolder(c *client.ConfluenceClient, folderID, root string, depth int) error {
+	if dryRun && !ui.IsJSON() {
+		ui.Warn("DRY RUN — no files will be written.")
+	}
+	marker, err := writeProjectFile(root, true)
+	if err != nil {
+		return fatalFail(err.Error(), jsonout.CodeIO)
+	}
+	nodes, err := pagetree.Walk(c, folderID, depth)
+	if err != nil {
+		return operationalFail(folderID, err, jsonout.CodeFor(err))
+	}
+	results, warnings := exportNodes(c, nil, rootRef{ID: folderID}, root, nodes)
+	return report(results, marker, root, warnings)
+}
+
 // exportSpace exports a space's pages, its root pages forming the top level.
 //
 // The key is resolved before the walk even though the route the walk uses takes
@@ -237,7 +274,7 @@ func exportSpace(c *client.ConfluenceClient, key, root string, depth int) error 
 	if err != nil {
 		return spaceFail(err, jsonout.CodeFor(err))
 	}
-	results, warnings := exportNodes(c, nil, root, nodes)
+	results, warnings := exportNodes(c, nil, rootRef{}, root, nodes)
 	return report(results, marker, root, warnings)
 }
 
@@ -274,26 +311,25 @@ func exportTree(
 			return nil, nil, err
 		}
 	}
-	results, warnings := exportNodes(c, page, root, nodes)
+	results, warnings := exportNodes(c, page, rootRef{ID: page.ID, Title: page.Title, File: true}, root, nodes)
 	return results, warnings, nil
 }
 
 // exportNodes exports a root page (when there is one) and every walked page
 // beneath it, in walk order.
 //
-// page is nil when the thing named has no file of its own -- a whole space --
-// so the walk's top level is the top of the export.
+// page is nil when the thing named has no file of its own -- a folder, or a
+// whole space -- so the walk's top level is the top of the export. ref still
+// carries that thing's id, because the walk's top-level nodes report it as
+// their parent and the layout groups by parent.
 func exportNodes(
-	c *client.ConfluenceClient, page *client.Page, root string, nodes []pagetree.Node,
+	c *client.ConfluenceClient, page *client.Page, ref rootRef, root string,
+	nodes []pagetree.Node,
 ) ([]result, []string) {
 	// Which page wrote each destination, so a second page wanting the same file
 	// with different content is reported rather than skipped.
 	claims := newClaims()
-	rootTitle, rootID := "", ""
-	if page != nil {
-		rootTitle, rootID = page.Title, page.ID
-	}
-	places, warnings := layout(rootTitle, rootID, nodes)
+	places, warnings := layout(ref, nodes)
 	// Every page's file is spoken for before a single attachment is written.
 	// An attachment's recorded path can name any file under dest, and a
 	// parent's attachments are written before its children are exported, so
