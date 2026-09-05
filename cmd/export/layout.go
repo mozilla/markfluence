@@ -36,14 +36,22 @@ type placement struct {
 	folder bool
 }
 
+// rootRef describes what the walk hangs off, which pagetree does not report:
+// it walks what is *under* a node, so the named thing is never among nodes.
+type rootRef struct {
+	// ID is the parent id the walk's top-level nodes carry. Empty for a space,
+	// whose root pages report no parent at all.
+	ID string
+	// Title names the root when it has a file.
+	Title string
+	// File is whether the root is written as markdown. A page is; a folder and
+	// a space are not, and their children become the top level of the export.
+	File bool
+}
+
 // layout assigns a placement to the export root and to everything under it,
 // and reports the slug collisions it disambiguated.
-//
-// The root is described separately because pagetree walks what is *under* a
-// node, so the named page is not among nodes. An empty rootID means there is no
-// root file at all -- a folder or a whole space -- and the walk's top level
-// starts at dest.
-func layout(rootTitle, rootID string, nodes []pagetree.Node) (map[string]placement, []string) {
+func layout(root rootRef, nodes []pagetree.Node) (map[string]placement, []string) {
 	out := make(map[string]placement, len(nodes)+1)
 	var warnings []string
 
@@ -55,12 +63,12 @@ func layout(rootTitle, rootID string, nodes []pagetree.Node) (map[string]placeme
 	}
 
 	top := ""
-	if rootID != "" {
-		out[rootID] = placement{
-			childDir: pageslug.For(rootTitle, rootID),
-			file:     pageslug.Filename(rootTitle, rootID),
+	if root.File {
+		out[root.ID] = placement{
+			childDir: pageslug.For(root.Title, root.ID),
+			file:     pageslug.Filename(root.Title, root.ID),
 		}
-		top = out[rootID].childDir
+		top = out[root.ID].childDir
 	}
 
 	// Depth-first, so a parent is placed before the children that need its
@@ -86,7 +94,7 @@ func layout(rootTitle, rootID string, nodes []pagetree.Node) (map[string]placeme
 			assign(n.ID, p.childDir)
 		}
 	}
-	assign(rootID, top)
+	assign(root.ID, top)
 
 	sort.Strings(warnings) // map iteration order must not reach the output
 	return out, warnings

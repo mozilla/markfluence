@@ -19,7 +19,7 @@ func node(id, typ, title, parent string) pagetree.Node {
 // file with a directory beside it, a folder is only a directory, and a page
 // under a folder sits inside it.
 func TestLayoutMirrorsTheHierarchy(t *testing.T) {
-	got, warnings := layout("Home", "1", []pagetree.Node{
+	got, warnings := layout(rootRef{ID: "1", Title: "Home", File: true}, []pagetree.Node{
 		node("2", pagetree.TypePage, "Onboarding", "1"),
 		node("3", pagetree.TypePage, "Escalation", "2"),
 		node("4", pagetree.TypeFolder, "Runbooks", "1"),
@@ -52,7 +52,7 @@ func TestLayoutMirrorsTheHierarchy(t *testing.T) {
 // publishable into fresh pages: create resolves parent: against the referring
 // file's own directory.
 func TestLayoutParentPathsPointAtTheParentFile(t *testing.T) {
-	got, _ := layout("Home", "1", []pagetree.Node{
+	got, _ := layout(rootRef{ID: "1", Title: "Home", File: true}, []pagetree.Node{
 		node("2", pagetree.TypePage, "Onboarding", "1"),
 		node("3", pagetree.TypePage, "Escalation", "2"),
 		node("4", pagetree.TypeFolder, "Runbooks", "1"),
@@ -78,7 +78,7 @@ func TestLayoutParentPathsPointAtTheParentFile(t *testing.T) {
 // one name. Every member of the group takes the suffix, so the result does not
 // depend on which was walked first.
 func TestLayoutDisambiguatesCollidingSiblings(t *testing.T) {
-	got, warnings := layout("Home", "1", []pagetree.Node{
+	got, warnings := layout(rootRef{ID: "1", Title: "Home", File: true}, []pagetree.Node{
 		node("2", pagetree.TypePage, "Deploy: Prod", "1"),
 		node("3", pagetree.TypePage, "Deploy Prod", "1"),
 	})
@@ -93,7 +93,7 @@ func TestLayoutDisambiguatesCollidingSiblings(t *testing.T) {
 // TestLayoutCollisionNamespaceCoversFolders: a page and a folder both want the
 // same directory, so they are one group even though only one of them has a file.
 func TestLayoutCollisionNamespaceCoversFolders(t *testing.T) {
-	got, warnings := layout("Home", "1", []pagetree.Node{
+	got, warnings := layout(rootRef{ID: "1", Title: "Home", File: true}, []pagetree.Node{
 		node("2", pagetree.TypePage, "Team", "1"),
 		node("3", pagetree.TypeFolder, "Team", "1"),
 	})
@@ -105,10 +105,33 @@ func TestLayoutCollisionNamespaceCoversFolders(t *testing.T) {
 	}
 }
 
+// TestLayoutUnderAFolderRoot is the folder-as-target case, and the reason
+// rootRef carries an id separately from whether there is a file: the walk's
+// top-level nodes report the folder as their parent, so grouping by parent
+// needs that id even though nothing is written for it.
+func TestLayoutUnderAFolderRoot(t *testing.T) {
+	got, _ := layout(rootRef{ID: "9"}, []pagetree.Node{
+		node("2", pagetree.TypePage, "Runbook", "9"),
+		node("3", pagetree.TypePage, "Escalation", "2"),
+	})
+	if want := "runbook.md"; got["2"].file != want {
+		t.Errorf("file = %q, want %q at the top level", got["2"].file, want)
+	}
+	if want := "runbook/escalation.md"; got["3"].file != want {
+		t.Errorf("file = %q, want %q", got["3"].file, want)
+	}
+	if want := "../runbook.md"; got["3"].parentFile != want {
+		t.Errorf("parentFile = %q, want %q", got["3"].parentFile, want)
+	}
+	if got["2"].parentFile != "" {
+		t.Errorf("a page whose parent is the folder keeps an id, got %q", got["2"].parentFile)
+	}
+}
+
 // TestLayoutWithoutARootNodeStartsAtTheTop is the --space and folder-root case:
 // there is no file for the thing named, so its children are the top level.
 func TestLayoutWithoutARootNodeStartsAtTheTop(t *testing.T) {
-	got, _ := layout("", "", []pagetree.Node{
+	got, _ := layout(rootRef{}, []pagetree.Node{
 		node("2", pagetree.TypePage, "Handbook", ""),
 		node("3", pagetree.TypePage, "Onboarding", "2"),
 	})
@@ -271,7 +294,7 @@ func TestWriteProjectFile(t *testing.T) {
 // page's bytes. A native attachment carries no checksum, so nothing else would
 // have caught it.
 func TestAttachmentDirFollowsTheDisambiguatedSlug(t *testing.T) {
-	places, _ := layout("Home", "1", []pagetree.Node{
+	places, _ := layout(rootRef{ID: "1", Title: "Home", File: true}, []pagetree.Node{
 		node("2", pagetree.TypePage, "Deploy: Prod", "1"),
 		node("3", pagetree.TypePage, "Deploy Prod", "1"),
 	})
