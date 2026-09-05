@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/mozilla/markfluence/internal/pagetree"
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/attachfile"
@@ -18,10 +19,12 @@ func testPage() *client.Page {
 	return p
 }
 
-func emit(t *testing.T, res result) []byte {
+// emit builds the document through the command's own builder, so a renamed key
+// or a changed summary has to reach the schema through this test rather than
+// past a copy of the shape.
+func emit(t *testing.T, res ...result) []byte {
 	t.Helper()
-	env := jsonout.NewEnvelope(command, []any{buildResult(res)},
-		map[string]int{"total": 1, "succeeded": 1, "failed": 0})
+	env := envelope(res, markerSkipped, len(res), 0, 0)
 	var buf bytes.Buffer
 	if err := jsonout.Emit(&buf, env); err != nil {
 		t.Fatalf("Emit: %v", err)
@@ -104,5 +107,65 @@ func TestBuildResultCarriesSpaceAndParent(t *testing.T) {
 	}
 	if res.Parent == nil || *res.Parent != "456" {
 		t.Errorf("parent = %v, want 456", res.Parent)
+	}
+}
+
+// TestSchemaConformanceTree validates the shapes only a tree produces: a page
+// carrying a parent: path, a page that was never fetched because its own parent
+// failed, and a summary reporting a skip and a planted project file.
+func TestSchemaConformanceTree(t *testing.T) {
+	root := result{
+		page: testPage(), destPath: "out/home.md", pageStatus: statusWrote,
+		place: placement{file: "home.md"},
+	}
+	child := result{
+		page: testPage(), destPath: "out/home/child.md", pageStatus: attachfile.StatusSkipped,
+		place: placement{dir: "home", file: "home/child.md", parentFile: "../home.md"},
+	}
+	orphan := result{
+		node:  &pagetree.Node{ID: "789", Title: "Escalation", ParentID: "456", Space: "ENG"},
+		place: placement{dir: "home/child", file: "home/child/escalation.md"},
+		err:   errors.New("parent page was not exported; skipping"),
+		code:  jsonout.CodeValidation,
+	}
+
+	env := envelope([]result{root, child, orphan}, markerWrote, 2, 1, 1)
+	var buf bytes.Buffer
+	if err := jsonout.Emit(&buf, env); err != nil {
+		t.Fatal(err)
+	}
+	schematest.ValidateEnvelope(t, buf.Bytes())
+
+	var doc struct {
+		Roots   []string `json:"roots"`
+		Results []struct {
+			PageID     string  `json:"page_id"`
+			ParentFile *string `json:"parent_file"`
+		} `json:"results"`
+		Summary struct {
+			Skipped     int     `json:"skipped"`
+			ProjectFile *string `json:"project_file"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Results[0].ParentFile != nil {
+		t.Errorf("root parent_file = %v, want null", *doc.Results[0].ParentFile)
+	}
+	if doc.Results[1].ParentFile == nil || *doc.Results[1].ParentFile != "../home.md" {
+		t.Errorf("child parent_file = %v, want ../home.md", doc.Results[1].ParentFile)
+	}
+	if doc.Results[2].PageID != "789" {
+		t.Errorf("a page that was never fetched must still be named: %+v", doc.Results[2])
+	}
+	if doc.Summary.ProjectFile == nil || *doc.Summary.ProjectFile != markerWrote {
+		t.Errorf("project_file = %v, want %q", doc.Summary.ProjectFile, markerWrote)
+	}
+	if doc.Summary.Skipped != 1 {
+		t.Errorf("skipped = %d, want 1", doc.Summary.Skipped)
+	}
+	if len(doc.Roots) != 1 {
+		t.Errorf("roots = %v, want the destination", doc.Roots)
 	}
 }
