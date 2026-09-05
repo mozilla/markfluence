@@ -15,10 +15,17 @@ import (
 // AllDepths walks the whole subtree, however deep it goes.
 const AllDepths = -1
 
+// The two node types a walk reports. A folder is the Cloud content type that
+// can hold pages without being one.
+const (
+	TypePage   = "page"
+	TypeFolder = "folder"
+)
+
 // Node is one page or folder in a walked subtree.
 type Node struct {
 	ID     string
-	Type   string // "page" or "folder"
+	Type   string // TypePage or TypeFolder
 	Title  string
 	Status string
 	// ParentID is the node this one hangs off, which for a top-level result is
