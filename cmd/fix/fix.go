@@ -28,7 +28,12 @@ var Cmd = &cobra.Command{
 	Long: "Reconcile each markdown file's frontmatter to its live Confluence page.\n\n" +
 		"Populates/refreshes page_id, space, parent, and page_width (and fills a\n" +
 		"missing title) from the live page. Each file is processed independently;\n" +
-		"the command exits non-zero if any file failed.",
+		"the command exits non-zero if any file failed.\n\n" +
+		"parent is written as the live page's parent id. In a tree written by\n" +
+		"`export --depth`, where parent points at the parent's own .md file,\n" +
+		"fix therefore replaces that path with an id -- consistent with\n" +
+		"reconciling to the live page, and worth knowing before running it over\n" +
+		"an exported tree.",
 	Args:              cobra.MinimumNArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
 	RunE:              run,

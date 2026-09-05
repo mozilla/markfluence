@@ -2,7 +2,9 @@ package attachmentupload
 
 import (
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/client"
@@ -23,9 +25,9 @@ func writeFile(t *testing.T, dir, name string) string {
 
 func TestLocalAttachmentsUsesBaseName(t *testing.T) {
 	dir := t.TempDir()
-	path := writeFile(t, dir, "docs/assets/x.png")
+	file := writeFile(t, dir, "docs/assets/x.png")
 
-	got, err := localAttachments([]string{path}, "", project.NewCache(""))
+	got, err := localAttachments([]string{file}, "", project.NewCache(""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,8 +40,8 @@ func TestLocalAttachmentsUsesBaseName(t *testing.T) {
 	if got[0].Source != "x.png" {
 		t.Errorf("source = %q, want x.png", got[0].Source)
 	}
-	if got[0].Path != path {
-		t.Errorf("path = %q, want %q", got[0].Path, path)
+	if got[0].Path != file {
+		t.Errorf("path = %q, want %q", got[0].Path, file)
 	}
 }
 
@@ -50,61 +52,112 @@ func TestLocalAttachmentsUsesBaseName(t *testing.T) {
 // would record (internal/convert/images.go).
 func TestLocalAttachmentsSourceIsRootRelative(t *testing.T) {
 	root := t.TempDir()
-	path := writeFile(t, root, "docs/assets/x.png")
+	file := writeFile(t, root, "docs/assets/x.png")
 
-	got, err := localAttachments([]string{path}, "", project.NewCache(root))
+	got, err := localAttachments([]string{file}, "", project.NewCache(root))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := "docs/assets/x.png"; got[0].Source != want {
 		t.Errorf("source = %q, want %q", got[0].Source, want)
 	}
-	if want := "docs%2Fassets%2Fx.png"; got[0].Filename != want {
+	if want := "x.png"; got[0].Filename != want {
 		t.Errorf("filename = %q, want %q", got[0].Filename, want)
 	}
 }
 
-// TestLocalAttachmentsNameEncodesPath is the point of --name taking a path: the
-// user writes a path and markfluence produces the attachment a publish of
-// ![](assets/x.png) would resolve to, without them typing an escape.
-func TestLocalAttachmentsNameEncodesPath(t *testing.T) {
+// TestLocalAttachmentsNameTakesAPath is the point of --name taking a path: the
+// user writes the path the markdown uses and markfluence produces the
+// attachment a publish of ![](assets/x.png) would resolve to -- the base name,
+// with the path itself kept as the recorded source.
+func TestLocalAttachmentsNameTakesAPath(t *testing.T) {
 	dir := t.TempDir()
-	path := writeFile(t, dir, "somewhere/else.png")
+	file := writeFile(t, dir, "somewhere/else.png")
 
-	got, err := localAttachments([]string{path}, "assets/x.png", project.NewCache(""))
+	got, err := localAttachments([]string{file}, "assets/x.png", project.NewCache(""))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got[0].Filename != "assets%2Fx.png" {
-		t.Errorf("filename = %q, want assets%%2Fx.png", got[0].Filename)
+	if got[0].Filename != "x.png" {
+		t.Errorf("filename = %q, want x.png", got[0].Filename)
 	}
 	if got[0].Source != "assets/x.png" {
 		t.Errorf("source = %q, want assets/x.png", got[0].Source)
 	}
 }
 
-// TestLocalAttachmentsSourceIsAlwaysTheDecodedName is the lockstep invariant:
-// if the recorded path and the stored name could disagree, a later publish
-// would upload a second attachment while a restoring download put this one
-// where the markdown never references it.
-func TestLocalAttachmentsSourceIsAlwaysTheDecodedName(t *testing.T) {
+// TestLocalAttachmentsNameIsTheSourcesBaseName is the lockstep invariant, in
+// the form the basename scheme gives it: the stored name is exactly the base
+// name of the recorded source. If the two could disagree, a later publish would
+// upload a second attachment while a restoring download put this one where the
+// markdown never references it.
+//
+// It replaces an invariant stated the other way round -- that the source is
+// always a decode of the name -- which held only while the name carried the
+// whole path. Decoding a base name back into a source would discard the path,
+// and the comment is now the only place it is written down.
+func TestLocalAttachmentsNameIsTheSourcesBaseName(t *testing.T) {
 	dir := t.TempDir()
-	path := writeFile(t, dir, "f.png")
+	file := writeFile(t, dir, "f.png")
 
 	for _, name := range []string{"", "assets/x.png", "./a/./b.png", "../shared/logo.png", "plain.png"} {
-		got, err := localAttachments([]string{path}, name, project.NewCache(""))
+		got, err := localAttachments([]string{file}, name, project.NewCache(""))
 		if err != nil {
 			t.Fatalf("--name %q: %v", name, err)
 		}
-		decoded, ok := decodeName(got[0].Filename)
-		if !ok {
-			t.Errorf("--name %q: stored name %q does not decode", name, got[0].Filename)
-			continue
+		if want := path.Base(got[0].Source); got[0].Filename != want {
+			t.Errorf("--name %q: stored name %q is not the base name of source %q (%q)",
+				name, got[0].Filename, got[0].Source, want)
 		}
-		if decoded != got[0].Source {
-			t.Errorf("--name %q: source %q != decode of %q (%q)",
-				name, got[0].Source, got[0].Filename, decoded)
+	}
+}
+
+// TestLocalAttachmentsRefusesABatchCollision is the batch counterpart of the
+// converter's refusal. Nothing downstream would catch it: planAttachments reads
+// what is on the page once, before the loop, so two files claiming one name both
+// plan "created" and the second upload lands on top of the first with both
+// reported as successful.
+func TestLocalAttachmentsRefusesABatchCollision(t *testing.T) {
+	// Both spellings of the same batch: with a declared root, and without one.
+	// The second is the default and is where an earlier version of this guard
+	// failed -- with no markfluence.yaml each file's root is its own directory,
+	// so both record the source "diagram.png" and a guard comparing sources saw
+	// one asset rather than two.
+	for _, declareRoot := range []bool{true, false} {
+		root := t.TempDir()
+		a := writeFile(t, root, "arch/diagram.png")
+		b := writeFile(t, root, "deploy/diagram.png")
+		cache := project.NewCache("")
+		if declareRoot {
+			writeFile(t, root, "markfluence.yaml")
+			cache = project.NewCache(root)
 		}
+
+		_, err := localAttachments([]string{a, b}, "", cache)
+		if err == nil {
+			t.Fatalf("declared root %v: want a refusal when two files want one attachment name",
+				declareRoot)
+		}
+		for _, want := range []string{"arch", "deploy", "diagram.png"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("declared root %v: error %q does not mention %q", declareRoot, err, want)
+			}
+		}
+	}
+}
+
+// TestLocalAttachmentsAllowsTheSameFileTwice keeps the refusal to genuine
+// collisions: naming one file twice is one attachment, not two claims on a name.
+func TestLocalAttachmentsAllowsTheSameFileTwice(t *testing.T) {
+	root := t.TempDir()
+	f := writeFile(t, root, "assets/x.png")
+
+	got, err := localAttachments([]string{f, f}, "", project.NewCache(root))
+	if err != nil {
+		t.Fatalf("localAttachments: %v", err)
+	}
+	if len(got) != 2 || got[0].Filename != got[1].Filename {
+		t.Errorf("got %v, want the same name twice rather than a refusal", got)
 	}
 }
 
@@ -117,9 +170,9 @@ func TestLocalAttachmentsSourceIsAlwaysTheDecodedName(t *testing.T) {
 func TestLocalAttachmentsRejectsRootEscape(t *testing.T) {
 	unrelatedRoot := t.TempDir()
 	fileDir := t.TempDir()
-	path := writeFile(t, fileDir, "x.png")
+	file := writeFile(t, fileDir, "x.png")
 
-	if _, err := localAttachments([]string{path}, "", project.NewCache(unrelatedRoot)); err == nil {
+	if _, err := localAttachments([]string{file}, "", project.NewCache(unrelatedRoot)); err == nil {
 		t.Error("want an error when --root does not contain the file")
 	}
 }
@@ -151,5 +204,50 @@ func TestForcedRewritesSkips(t *testing.T) {
 	}
 	if in[0].Action != "skipped" {
 		t.Error("forced mutated its input")
+	}
+}
+
+// TestLocalAttachmentsNormalizesTheNamePath keeps --name recording what
+// publishing the same image would record. An absolute one is the case that
+// matters: Resolve refuses an absolute recorded path outright while sourceFor
+// falls back to the page directory, so the file could never be restored where
+// the markdown says it is.
+func TestLocalAttachmentsNormalizesTheNamePath(t *testing.T) {
+	root := t.TempDir()
+	f := writeFile(t, root, "f.png")
+
+	for _, c := range []struct{ name, want string }{
+		{"/assets/x.png", "assets/x.png"},
+		{"./a/./x.png", "a/x.png"},
+		{"assets/x.png", "assets/x.png"},
+	} {
+		got, err := localAttachments([]string{f}, c.name, project.NewCache(""))
+		if err != nil {
+			t.Fatalf("--name %q: %v", c.name, err)
+		}
+		if got[0].Source != c.want {
+			t.Errorf("--name %q recorded %q, want %q", c.name, got[0].Source, c.want)
+		}
+		if got[0].Filename != "x.png" {
+			t.Errorf("--name %q stored %q, want x.png", c.name, got[0].Filename)
+		}
+	}
+}
+
+// TestLocalAttachmentsUnusableNameReportsWhatWasTyped: source is normalized
+// before the check, and "/" normalizes to "" -- so reporting source would
+// answer a --name the user did not type.
+func TestLocalAttachmentsUnusableNameReportsWhatWasTyped(t *testing.T) {
+	root := t.TempDir()
+	f := writeFile(t, root, "f.png")
+
+	for _, name := range []string{"/", ".", "./"} {
+		_, err := localAttachments([]string{f}, name, project.NewCache(""))
+		if err == nil {
+			t.Fatalf("--name %q: want a refusal", name)
+		}
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("--name %q: error %q does not quote what was typed", name, err)
+		}
 	}
 }

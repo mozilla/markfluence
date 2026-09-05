@@ -12,6 +12,7 @@ type jsonExportResult struct {
 	Space       string             `json:"space"`
 	Parent      *string            `json:"parent"`
 	ParentType  *string            `json:"parent_type"`
+	ParentFile  *string            `json:"parent_file"`
 	DryRun      bool               `json:"dry_run"`
 	Status      string             `json:"status"`
 	DestPath    *string            `json:"dest_path"`
@@ -19,6 +20,18 @@ type jsonExportResult struct {
 	Warnings    []string           `json:"warnings"`
 	Error       *string            `json:"error"`
 	Code        *string            `json:"code"`
+}
+
+// jsonExportSummary is export's summary. It is a typed struct rather than the
+// map every other batch uses because project_file is not a count, and it
+// carries skipped because skip-and-resume is how a retry works here: a run that
+// exports nothing new is all skipped and has still succeeded.
+type jsonExportSummary struct {
+	Total       int     `json:"total"`
+	Succeeded   int     `json:"succeeded"`
+	Failed      int     `json:"failed"`
+	Skipped     int     `json:"skipped"`
+	ProjectFile *string `json:"project_file"`
 }
 
 // jsonExportAttach is one attachment's outcome. dest_path is null for an
@@ -34,19 +47,30 @@ type jsonExportAttach struct {
 
 func buildResult(r result) jsonExportResult {
 	res := jsonExportResult{
-		OK:          r.err == nil,
+		// The same condition report() counts as a success, or a consumer
+		// filtering on ok gets a different number than the summary states.
+		OK:          r.err == nil && !anyAttachmentFailed(r),
+		ParentFile:  nullable(r.place.parentFile),
 		DryRun:      dryRun,
 		Status:      r.pageStatus,
 		DestPath:    nullable(r.destPath),
 		Attachments: []jsonExportAttach{},
 		Warnings:    []string{},
 	}
-	if r.page != nil {
+	switch {
+	case r.page != nil:
 		res.PageID = r.page.ID
 		res.Title = r.page.Title
 		res.Space = client.SpaceKeyFromWebUI(r.page.Links.WebUI)
 		res.Parent = nullable(r.page.ParentID)
 		res.ParentType = nullable(r.page.ParentType)
+	case r.node != nil:
+		// Never fetched -- its body failed, or an ancestor's did -- so what is
+		// known about it is the walk's own row.
+		res.PageID = r.node.ID
+		res.Title = r.node.Title
+		res.Space = r.node.Space
+		res.Parent = nullable(r.node.ParentID)
 	}
 	for _, a := range r.attachments {
 		entry := jsonExportAttach{

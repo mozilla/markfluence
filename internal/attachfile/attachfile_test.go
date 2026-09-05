@@ -19,7 +19,7 @@ func managed(title, source string) client.Attachment {
 
 func TestResolveUsesRecordedSource(t *testing.T) {
 	root := filepath.Clean("/tmp/dest")
-	got, err := Resolve(root, managed("assets%2Fx.png", "assets/x.png"), false)
+	got, err := Resolve(managed("x.png", "assets/x.png"), Options{Root: root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,12 +29,81 @@ func TestResolveUsesRecordedSource(t *testing.T) {
 	}
 }
 
+// TestResolveScopesAnUnmanagedAttachmentToItsPage is the placement half of the
+// rule convert.sourceFor implements on the markdown side: an attachment with no
+// recorded path goes in the directory named after its page. Attachment names
+// are unique per page and not per space, so fifty Confluence-native pages can
+// each carry a diagram.png; left flat they would be one file.
+func TestResolveScopesAnUnmanagedAttachmentToItsPage(t *testing.T) {
+	root := filepath.Clean("/tmp/dest")
+	got, err := Resolve(client.Attachment{Title: "diagram.png"}, Options{Root: root, Dir: "home/child"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(root, "home", "child", "diagram.png"); got != want {
+		t.Errorf("Resolve = %q, want %q", got, want)
+	}
+}
+
+// TestResolveIgnoresDirForARecordedPath keeps the two provenances apart: a
+// recorded path is relative to the root and is authoritative, so page-scoping
+// must not push it under a page directory as well.
+func TestResolveIgnoresDirForARecordedPath(t *testing.T) {
+	root := filepath.Clean("/tmp/dest")
+	got, err := Resolve(managed("brand.png", "assets/brand.png"), Options{Root: root, Dir: "home/child"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(root, "assets", "brand.png"); got != want {
+		t.Errorf("Resolve = %q, want %q", got, want)
+	}
+}
+
+// TestResolveFlatIgnoresDir: --flat means "bare name, straight in --dest", and
+// that has to beat page-scoping too or the flag stops meaning what it says.
+func TestResolveFlatIgnoresDir(t *testing.T) {
+	root := filepath.Clean("/tmp/dest")
+	got, err := Resolve(managed("x.png", "assets/x.png"), Options{Root: root, Dir: "home", Flat: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(root, "x.png"); got != want {
+		t.Errorf("Resolve = %q, want %q", got, want)
+	}
+}
+
+// TestResolveClampsDespiteDir keeps the containment check ahead of the new
+// join. Dir comes from a page title by way of internal/pageslug, which drops
+// path separators, so it cannot traverse -- but the clamp is what guarantees
+// that rather than pageslug's good behaviour, and a stored name is server data
+// either way.
+func TestResolveClampsDespiteDir(t *testing.T) {
+	root := filepath.Clean("/tmp/dest")
+	for _, c := range []struct{ dir, title string }{
+		{"../escape", "x.png"},
+		{"home", "../../x.png"},
+		{"..", "x.png"},
+	} {
+		if got, err := Resolve(client.Attachment{Title: c.title},
+			Options{Root: root, Dir: c.dir}); err == nil {
+			t.Errorf("Resolve(dir %q, title %q) = %q, nil; want a refusal", c.dir, c.title, got)
+		}
+	}
+}
+
 // TestResolveIgnoresNameWhenUnmanaged is why restoration reads the comment and
-// never decodes the stored name: a hand-uploaded file literally named
-// "a%2Fb.png" must not be scattered into a/b.png.
+// never interprets the stored name: a file literally named "a%2Fb.png" must not
+// be scattered into a/b.png.
+//
+// This used to be a judgement call -- a name that looked encoded might have been
+// one markfluence wrote, and there was no telling. It is not one any more.
+// markfluence names an attachment by its base name, so a name containing "%2F"
+// is a filename, and convert.sourceFor answers the same way on the markdown
+// side. The two agreeing is what keeps a downloaded file where the markdown
+// says it is.
 func TestResolveIgnoresNameWhenUnmanaged(t *testing.T) {
 	root := filepath.Clean("/tmp/dest")
-	got, err := Resolve(root, client.Attachment{Title: "a%2Fb.png"}, false)
+	got, err := Resolve(client.Attachment{Title: "a%2Fb.png"}, Options{Root: root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,11 +115,11 @@ func TestResolveIgnoresNameWhenUnmanaged(t *testing.T) {
 
 func TestResolveFlatIgnoresSource(t *testing.T) {
 	root := filepath.Clean("/tmp/dest")
-	got, err := Resolve(root, managed("assets%2Fx.png", "assets/x.png"), true)
+	got, err := Resolve(managed("x.png", "assets/x.png"), Options{Root: root, Flat: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(root, "assets%2Fx.png")
+	want := filepath.Join(root, "x.png")
 	if got != want {
 		t.Errorf("Resolve = %q, want %q", got, want)
 	}
@@ -61,13 +130,13 @@ func TestResolveFlatIgnoresSource(t *testing.T) {
 // inside --dest it is fine.
 func TestResolveAllowsLegitimateParent(t *testing.T) {
 	root := filepath.Clean("/tmp/dest")
-	got, err := Resolve(root, managed("..%2Fassets%2Flogo.png", "../assets/logo.png"), false)
+	got, err := Resolve(managed("logo.png", "../assets/logo.png"), Options{Root: root})
 	if err == nil {
 		t.Fatalf("Resolve = %q; a source escaping the root must be refused", got)
 	}
 
 	// The same path is fine when the page sits a directory deeper.
-	got, err = Resolve(root, managed("x", "docs/../assets/logo.png"), false)
+	got, err = Resolve(managed("x", "docs/../assets/logo.png"), Options{Root: root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +158,7 @@ func TestResolveRefusesEscapes(t *testing.T) {
 		".",
 	}
 	for _, src := range cases {
-		if got, err := Resolve(root, managed("n.png", src), false); err == nil {
+		if got, err := Resolve(managed("n.png", src), Options{Root: root}); err == nil {
 			t.Errorf("Resolve(path=%q) = %q, nil; want a refusal", src, got)
 		}
 	}
@@ -99,13 +168,13 @@ func TestResolveRefusesEscapes(t *testing.T) {
 // "/tmp/destmore" starts with "/tmp/dest" but is not inside it.
 func TestResolveRefusesRootPrefixSibling(t *testing.T) {
 	root := filepath.Clean("/tmp/dest")
-	if got, err := Resolve(root, managed("n.png", "../destmore/x.png"), false); err == nil {
+	if got, err := Resolve(managed("n.png", "../destmore/x.png"), Options{Root: root}); err == nil {
 		t.Errorf("Resolve = %q, nil; want a refusal for a sibling sharing the root's prefix", got)
 	}
 }
 
 func TestResolveEscapeMessageNamesTheAttachment(t *testing.T) {
-	_, err := Resolve(filepath.Clean("/tmp/dest"), managed("evil.png", "../../x"), false)
+	_, err := Resolve(managed("evil.png", "../../x"), Options{Root: filepath.Clean("/tmp/dest")})
 	if err == nil {
 		t.Fatal("want an error")
 	}
@@ -134,7 +203,7 @@ func withDownload(a client.Attachment) client.Attachment {
 func TestWriteCreatesNestedPath(t *testing.T) {
 	root := t.TempDir()
 	c := testClient(t, "BYTES")
-	got := Write(c, withDownload(managed("assets%2Fx.png", "assets/x.png")),
+	got := Write(c, withDownload(managed("x.png", "assets/x.png")),
 		Options{Root: root})
 	if got.Status != StatusDownloaded {
 		t.Fatalf("status = %q (%v), want downloaded", got.Status, got.Err)
@@ -203,7 +272,7 @@ func TestWriteRemovesPartialFileOnDownloadFailure(t *testing.T) {
 func TestWriteDryRunCreatesNothing(t *testing.T) {
 	root := t.TempDir()
 	c := testClient(t, "BYTES")
-	got := Write(c, withDownload(managed("assets%2Fx.png", "assets/x.png")),
+	got := Write(c, withDownload(managed("x.png", "assets/x.png")),
 		Options{Root: root, DryRun: true})
 	if got.Status != StatusDownloaded {
 		t.Errorf("status = %q, want downloaded (the forecast)", got.Status)
@@ -233,9 +302,9 @@ func TestWriteRefusesEscapeWithoutWriting(t *testing.T) {
 func TestWriteFlatUsesStoredName(t *testing.T) {
 	root := t.TempDir()
 	c := testClient(t, "BYTES")
-	got := Write(c, withDownload(managed("assets%2Fx.png", "assets/x.png")),
+	got := Write(c, withDownload(managed("x.png", "assets/x.png")),
 		Options{Root: root, Flat: true})
-	if want := filepath.Join(root, "assets%2Fx.png"); got.DestPath != want {
+	if want := filepath.Join(root, "x.png"); got.DestPath != want {
 		t.Errorf("dest = %q, want %q", got.DestPath, want)
 	}
 }
@@ -292,7 +361,7 @@ func TestWriteRefusesSymlinkedDirectory(t *testing.T) {
 	root, outside := symlinkFixture(t)
 	c := testClient(t, "PWNED")
 
-	got := Write(c, withDownload(managed("assets%2Fx.png", "assets/x.png")), Options{Root: root})
+	got := Write(c, withDownload(managed("x.png", "assets/x.png")), Options{Root: root})
 	if got.Status != StatusFailed {
 		t.Errorf("status = %q, want failed", got.Status)
 	}
@@ -347,7 +416,7 @@ func TestWriteCreatesRootWhenMissing(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "new", "dest")
 	c := testClient(t, "BYTES")
 
-	got := Write(c, withDownload(managed("assets%2Fx.png", "assets/x.png")), Options{Root: root})
+	got := Write(c, withDownload(managed("x.png", "assets/x.png")), Options{Root: root})
 	if got.Status != StatusDownloaded {
 		t.Fatalf("status = %q (%v), want downloaded", got.Status, got.Err)
 	}
@@ -370,7 +439,7 @@ func TestResolveDoesNotExpandTildeOrVars(t *testing.T) {
 		"~": filepath.Join(root, "~"),
 	}
 	for src, want := range cases {
-		got, err := Resolve(root, managed("n.png", src), false)
+		got, err := Resolve(managed("n.png", src), Options{Root: root})
 		if err != nil || got != want {
 			t.Errorf("Resolve(path=%q) = %q, %v; want %q", src, got, err, want)
 		}
@@ -393,7 +462,7 @@ func TestResolveCleansInteriorTraversal(t *testing.T) {
 		"./x.png":         filepath.Join(root, "x.png"),
 	}
 	for src, want := range cases {
-		got, err := Resolve(root, managed("n.png", src), false)
+		got, err := Resolve(managed("n.png", src), Options{Root: root})
 		if err != nil || got != want {
 			t.Errorf("Resolve(path=%q) = %q, %v; want %q", src, got, err, want)
 		}
@@ -414,7 +483,7 @@ func TestResolveNormalizesRoot(t *testing.T) {
 		"/tmp/other/../dest",
 	}
 	for _, root := range roots {
-		got, err := Resolve(root, managed("assets%2Fx.png", "assets/x.png"), false)
+		got, err := Resolve(managed("x.png", "assets/x.png"), Options{Root: root})
 		if err != nil {
 			t.Errorf("Resolve(root=%q) errored: %v", root, err)
 			continue
@@ -429,7 +498,7 @@ func TestResolveNormalizesRoot(t *testing.T) {
 // normalization wrong: cleaning the root must not soften containment.
 func TestResolveNormalizedRootStillRefusesEscapes(t *testing.T) {
 	for _, root := range []string{"/tmp/dest/", "/tmp/./dest", "/tmp//dest"} {
-		if got, err := Resolve(root, managed("n.png", "../escape.png"), false); err == nil {
+		if got, err := Resolve(managed("n.png", "../escape.png"), Options{Root: root}); err == nil {
 			t.Errorf("Resolve(root=%q, path=../escape.png) = %q, nil; want a refusal", root, got)
 		}
 	}
@@ -440,7 +509,7 @@ func TestResolveNormalizedRootStillRefusesEscapes(t *testing.T) {
 func TestWriteNormalizesRoot(t *testing.T) {
 	dir := t.TempDir()
 	c := testClient(t, "BYTES")
-	got := Write(c, withDownload(managed("assets%2Fx.png", "assets/x.png")),
+	got := Write(c, withDownload(managed("x.png", "assets/x.png")),
 		Options{Root: dir + string(os.PathSeparator)})
 	if got.Status != StatusDownloaded {
 		t.Fatalf("status = %q (%v), want downloaded", got.Status, got.Err)

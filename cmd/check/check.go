@@ -142,6 +142,24 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 
 	page, err := convert.MdToConfluence(mf, root, index, checkBaseURL, checkSpaceKey, buildinfo.Stamp())
 	if err != nil {
+		// Two assets wanting one attachment name is a defect in the document,
+		// not a failure of the converter: the author fixes it by renaming a
+		// file, exactly as they would fix a dead link. Reported as Broken so it
+		// reads that way and lands in the same list, rather than as a failed
+		// file whose error field a reader has to interpret.
+		//
+		// It is the only entry the file gets, which is the one way this is
+		// weaker than the rest of check: a collision aborts the conversion, so
+		// any broken link found before it is discarded with the page, and a
+		// second collision is never reached. Fix the collision and re-run for
+		// the full list. Enumerating both would mean the converter carrying on
+		// past a document it has already refused to publish.
+		var collision *convert.NameCollisionError
+		if errors.As(err, &collision) {
+			r.broken = []string{collision.Error()}
+			r.status = statusBroken
+			return r
+		}
 		return r.fail(err, jsonout.CodeConvert)
 	}
 	r.broken = page.Broken

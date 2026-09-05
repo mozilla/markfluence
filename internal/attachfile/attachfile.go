@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -50,8 +51,19 @@ type Options struct {
 	// attachment is measured against the same path -- and is cleaned here, so a
 	// trailing separator or an interior "." is not a caller's problem.
 	Root string
-	// Flat writes each attachment under its stored name, ignoring the source
-	// path recorded in its comment.
+	// Dir is where an attachment with *no* recorded source path is written,
+	// relative to Root: the directory named after the page it hangs off
+	// (internal/pageslug), in slash form. Empty writes it directly under Root.
+	//
+	// It exists because an attachment name is unique per *page* and not per
+	// space, so fifty Confluence-native pages can each carry a diagram.png. Left
+	// flat, they would all resolve to one file. It must match the AttachmentDir
+	// the markdown was rendered with (convert.StorageOptions), or the file lands
+	// somewhere the image does not point.
+	Dir string
+
+	// Flat writes each attachment under its stored name directly in Root,
+	// ignoring both the source path recorded in its comment and Dir.
 	Flat bool
 	// Force overwrites a file that already exists instead of skipping it.
 	Force bool
@@ -62,10 +74,14 @@ type Options struct {
 // Resolve decides where an attachment is written, and is the first of two
 // guards on a server-controlled string becoming a filesystem path.
 //
-// The recorded source path is used, not a decode of the attachment name: there
-// is no way to tell a hand-uploaded "a%2Fb.png" from one markfluence published,
-// so decoding by default would scatter a literally-named file into a/b.png. An
-// attachment with no recorded source keeps its stored name.
+// The recorded source path is used, not a decode of the attachment name: a name
+// is a base name and is never interpreted, so a file really called "a%2Fb.png"
+// stays one file rather than being scattered into a/b.png.
+//
+// An attachment with no recorded source keeps its stored name, placed under
+// Options.Dir -- the directory named after its page -- because a name is unique
+// per page and not per space. convert.sourceFor points the markdown at exactly
+// that path.
 //
 // This check is *lexical*, and by the time a root-relative model records a
 // Source (025), the ".." this clamp refuses is never one markfluence itself
@@ -95,11 +111,18 @@ type Options struct {
 // not expand "~" or "$HOME" -- Go has no notion of either -- so a source path of
 // "~/.ssh/authorized_keys" yields a literal "~" directory inside root rather
 // than touching the home directory.
-func Resolve(root string, a client.Attachment, flat bool) (string, error) {
+func Resolve(a client.Attachment, opts Options) (string, error) {
+	root := opts.Root
 	rel := a.Title
-	if !flat {
+	if !opts.Flat {
 		if src := a.Meta().Source; src != "" {
+			// A recorded path is relative to the root and is used as recorded.
 			rel = src
+		} else {
+			// None recorded: page-scoped, so two pages' same-named native
+			// attachments cannot collide. convert.sourceFor points the markdown
+			// at the same place.
+			rel = path.Join(opts.Dir, a.Title)
 		}
 	}
 	// A stored name is a single path element by construction; guard anyway, since
@@ -115,15 +138,15 @@ func Resolve(root string, a client.Attachment, flat bool) (string, error) {
 	// rather than a hole, but the symptom -- everything refused, for no visible
 	// reason -- is not one worth leaving available.
 	root = filepath.Clean(root)
-	path := filepath.Join(root, filepath.FromSlash(rel))
-	if path != root && !strings.HasPrefix(path, root+string(os.PathSeparator)) {
+	dest := filepath.Join(root, filepath.FromSlash(rel))
+	if dest != root && !strings.HasPrefix(dest, root+string(os.PathSeparator)) {
 		return "", fmt.Errorf("attachment %q resolves to %q, outside the destination directory",
-			a.Title, path)
+			a.Title, dest)
 	}
-	if path == root {
+	if dest == root {
 		return "", fmt.Errorf("attachment %q has no filename", a.Title)
 	}
-	return path, nil
+	return dest, nil
 }
 
 // Write resolves an attachment's destination and downloads it there, reporting
@@ -142,7 +165,8 @@ func Write(c *client.ConfluenceClient, a client.Attachment, opts Options) Outcom
 	// relative path between them are all in the same form.
 	root := filepath.Clean(opts.Root)
 
-	path, err := Resolve(root, a, opts.Flat)
+	opts.Root = root
+	path, err := Resolve(a, opts)
 	if err != nil {
 		res.Status, res.Err, res.Code = StatusFailed, err, jsonout.CodeValidation
 		return res

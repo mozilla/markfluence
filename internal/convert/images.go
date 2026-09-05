@@ -6,6 +6,7 @@ import (
 	"html"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -24,8 +25,10 @@ var allowedAlign = map[string]bool{"left": true, "center": true, "right": true}
 
 // renderImage rewrites an image to a Confluence <ac:image>. Remote images become
 // an ri:url reference; a local image with a supported extension that exists
-// becomes an ri:attachment (collected for upload, deduped by filename); a missing
-// file or unsupported extension becomes literal "IMAGE BROKEN: ..." text.
+// becomes an ri:attachment (collected for upload, deduped by source path); a
+// missing file or unsupported extension becomes literal "IMAGE BROKEN: ..."
+// text. Two different sources whose attachment names agree are refused
+// outright, since one would overwrite the other.
 func (r *storageRenderer) renderImage(
 	w util.BufWriter, source []byte, node ast.Node, entering bool,
 ) (ast.WalkStatus, error) {
@@ -102,11 +105,45 @@ func (r *storageRenderer) renderImage(
 
 	default:
 		filename := AttachmentFilename(rootRel)
-		if !r.seen[filename] {
-			if r.seen == nil {
-				r.seen = map[string]bool{}
+		prev, claimed := r.seen[filename]
+		switch {
+		case claimed && prev.source != rootRel:
+			// Two different assets, one attachment name. Refused rather than
+			// reported, because there is no correct way to publish it: an
+			// attachment name is unique per page, so one upload would overwrite
+			// the other and the page would show a single image in both places
+			// while recording a single path. Broken would not do -- nothing
+			// blocks a publish on it (see cmd/update), so the page would go up
+			// wrong.
+			//
+			// Comparing source paths and not just the name is what keeps the
+			// same image referenced twice a dedupe rather than a collision.
+			return ast.WalkStop, &NameCollisionError{
+				Name:   filename,
+				First:  prev.line + prev.source,
+				Second: r.linePrefix(node, source) + rootRel,
 			}
-			r.seen[filename] = true
+
+		case claimed:
+			// The same asset again: one upload, two references.
+
+		default:
+			if r.seen == nil {
+				r.seen = map[string]claimedName{}
+			}
+			r.seen[filename] = claimedName{source: rootRel, line: r.linePrefix(node, source)}
+			if r.pastedNames[filename] {
+				// Raw storage in this same body already points at this name, and
+				// the shield means renderImage never sees it. Publishing rebinds
+				// that reference to this asset -- a part of the page the author
+				// did not edit now shows a different image. Warned rather than
+				// refused: unlike two images, a pasted reference is a reference
+				// and may well mean this very attachment.
+				r.warnings = append(r.warnings, fmt.Sprintf(
+					"%s%s publishes as the attachment %q, which raw storage in this "+
+						"page already references",
+					r.linePrefix(node, source), rootRel, filename))
+			}
 			r.attachments = append(r.attachments, Attachment{
 				Filename: filename, Path: filepath.Join(r.root.Dir, rootRel), Source: rootRel,
 			})
@@ -160,6 +197,100 @@ func (r *storageRenderer) parseImageTitle(prefix, titleRaw, src string) map[stri
 		}
 	}
 	return attrs
+}
+
+// NameCollisionError reports two assets in one file that want one attachment
+// name. Typed rather than a bare error because `check` reports it as a document
+// defect -- a Broken entry, like a dead link -- where an untyped conversion
+// failure is reported as the converter having failed outright. Publishing
+// commands need no such distinction: either way the file does not go up.
+type NameCollisionError struct {
+	Name   string // the attachment name both assets want
+	First  string // the first image, as "line N: path"
+	Second string // the one that collided with it
+}
+
+func (e *NameCollisionError) Error() string {
+	return fmt.Sprintf("%s and %s both publish as the attachment %q; rename one of them",
+		e.First, e.Second, e.Name)
+}
+
+// riFilenameRE matches an ri:filename attribute in storage.
+var riFilenameRE = regexp.MustCompile(`ri:filename="([^"]*)"`)
+
+// ReferencedAttachmentNames is the set of attachment names a piece of storage
+// refers to.
+//
+// Matching the literal attribute is exact -- it is the same string Confluence
+// resolves -- and matching it anywhere rather than only inside ac:image is
+// deliberate: the converter special-cases images alone, so a link target or a
+// reference inside a macro that passes through as raw storage would otherwise
+// be missed.
+//
+// Exported for `export`, which asks the same question of a page it fetched.
+// Safe over raw text there because stored storage has no code fences; asking it
+// of *markdown* needs the parse pastedAttachmentNames does first.
+func ReferencedAttachmentNames(storage string) map[string]bool {
+	m := riFilenameRE.FindAllStringSubmatch(storage, -1)
+	if len(m) == 0 {
+		return nil
+	}
+	names := make(map[string]bool, len(m))
+	for _, g := range m {
+		names[html.UnescapeString(g[1])] = true
+	}
+	return names
+}
+
+// pastedAttachmentNames is the set of attachment names raw storage in this body
+// already refers to.
+//
+// renderImage cannot discover these for itself: shieldStorage renames the tags
+// before goldmark sees them, so a pasted reference is never an *ast.Image and
+// never reaches the naming branch.
+//
+// It walks the parsed document and reads only the raw-HTML nodes rather than
+// scanning the source text, which matters for one common document: markdown
+// that *documents* storage format. A fenced code block holding
+// <ri:attachment ri:filename="diagram.png" /> is an example, not a reference --
+// it publishes as a code block and points at nothing -- and a text scan cannot
+// tell the two apart. cmd/export runs the same-looking scan over text safely
+// because what it scans is stored storage, where there are no code fences.
+//
+// Names are unshielded before matching, since by this point the tags carry
+// sentinels. Matching the literal attribute anywhere in a raw-HTML node, rather
+// than only inside ac:image, is deliberate for the reason export's scan gives:
+// a link target or a macro-internal reference counts too.
+func pastedAttachmentNames(doc ast.Node, source []byte, unshield func(string) string) map[string]bool {
+	var raw strings.Builder
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		switch n.Kind() {
+		case ast.KindHTMLBlock:
+			b := n.(*ast.HTMLBlock)
+			for i := 0; i < b.Lines().Len(); i++ {
+				seg := b.Lines().At(i)
+				raw.Write(seg.Value(source))
+			}
+			if b.HasClosure() {
+				closure := b.ClosureLine
+				raw.Write(closure.Value(source))
+			}
+		case ast.KindRawHTML:
+			h := n.(*ast.RawHTML)
+			for i := 0; i < h.Segments.Len(); i++ {
+				seg := h.Segments.At(i)
+				raw.Write(seg.Value(source))
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+	if raw.Len() == 0 {
+		return nil
+	}
+	return ReferencedAttachmentNames(unshield(raw.String()))
 }
 
 // acImage builds an <ac:image> referencing an attachment (riFilename) or a URL

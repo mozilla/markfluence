@@ -1,12 +1,12 @@
 {
   "attachments": [
     {
-      "filename": "assets%2Flogo.png",
+      "filename": "logo.png",
       "path": "<ROOT>/assets/logo.png",
       "source": "assets/logo.png"
     }
   ],
   "broken": [],
-  "html": "<h1>Shared Assets</h1>\n<p>A page in a subdirectory referencing an asset directory above it -- the layout GitHub renders too -- is published, with the path preserved in the attachment name:</p>\n<p><ac:image ac:alt=\"the logo\"><ri:attachment ri:filename=\"assets%2Flogo.png\" /></ac:image></p>\n",
+  "html": "<h1>Shared Assets</h1>\n<p>A page in a subdirectory referencing an asset directory above it -- the layout GitHub renders too -- is published, with the path preserved in the attachment name:</p>\n<p><ac:image ac:alt=\"the logo\"><ri:attachment ri:filename=\"logo.png\" /></ac:image></p>\n",
   "warnings": []
 }

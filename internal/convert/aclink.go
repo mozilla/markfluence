@@ -51,6 +51,36 @@ type StorageOptions struct {
 	// be the site and never the gateway, since these URLs are published back
 	// into a page. Empty passes space links through.
 	SiteURL string
+
+	// PageDir is where the page's markdown file sits, relative to the root of
+	// whatever is being written -- "" for a file at that root, "home" for
+	// dest/home/child.md's parent, and so on, in slash form.
+	//
+	// It exists because a markdown destination is resolved relative to the file
+	// that carries it, while an attachment's recorded path is relative to the
+	// root. Those coincide only for a file at the root, which is the only case
+	// single-page export ever produced. Writing a tree ends the coincidence: a
+	// page at dest/home/child.md referencing a recorded assets/brand.png has to
+	// say ../assets/brand.png, or publishing the export back reports
+	// IMAGE BROKEN for every shared asset below the root.
+	//
+	PageDir string
+
+	// AttachmentDir is where an attachment with *no* recorded path is placed,
+	// relative to that same root: the directory named after the page, beside
+	// the page's own file, so that two pages' same-named native attachments
+	// cannot collide (internal/attachfile).
+	//
+	// It is a second field rather than PageDir plus a slug because deriving it
+	// would mean this package knowing how a title becomes a directory name,
+	// which is internal/pageslug's business and is applied by the caller that
+	// also decides where the file goes.
+	//
+	// Empty means the root, not "beside the page": with PageDir "home" it
+	// yields ../diagram.png. Every caller sets both together through
+	// pagedoc.Options, and one that sets only PageDir would point every native
+	// attachment a directory too high.
+	AttachmentDir string
 }
 
 // PageLinkTargets returns every page an <ac:link> in this storage points at, so

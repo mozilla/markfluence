@@ -46,7 +46,18 @@ type storageRenderer struct {
 	attachments []Attachment
 	broken      []string
 	warnings    []string
-	seen        map[string]bool
+	// seen maps an attachment name to the image that claimed it. It records the
+	// source path, not just the fact of a claim, because the name is now the
+	// base name: a second image reaching the same name is either the same asset
+	// again (deduped) or a different asset that cannot be published alongside it
+	// (refused), and only the path tells them apart.
+	seen map[string]claimedName
+
+	// pastedNames are the attachment names referenced by raw ri:filename in the
+	// body -- storage the shield passes through untouched, which renderImage
+	// therefore never sees. A converted image landing on one of these rebinds a
+	// reference the author did not touch, which is worth a warning.
+	pastedNames map[string]bool
 
 	// linkBrokenText is the literal replacement text for the *ast.Link
 	// currently being rendered, set on entering when its target is Broken and
@@ -99,6 +110,13 @@ func (r *storageRenderer) linePrefix(n ast.Node, source []byte) string {
 		return fmt.Sprintf("line %d: ", line)
 	}
 	return ""
+}
+
+// claimedName is an image that has taken an attachment name, kept so a later
+// image reaching the same name can be reported against it by path and line.
+type claimedName struct {
+	source string
+	line   string // a "line N: " prefix, or "" when the position is unknown
 }
 
 // RegisterFuncs registers the node handlers this renderer overrides.

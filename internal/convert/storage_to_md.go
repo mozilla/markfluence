@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -73,10 +74,12 @@ func StorageToMarkdown(storage string, opts StorageOptions) (string, error) {
 		return "", err
 	}
 	r := &mdRenderer{
-		sources:      opts.Sources,
-		pageLinks:    opts.PageLinks,
-		siteURL:      strings.TrimSuffix(opts.SiteURL, "/"),
-		headingSlugs: headingSlugs(root),
+		sources:       opts.Sources,
+		pageDir:       path.Clean("/" + opts.PageDir)[1:],
+		attachmentDir: path.Clean("/" + opts.AttachmentDir)[1:],
+		pageLinks:     opts.PageLinks,
+		siteURL:       strings.TrimSuffix(opts.SiteURL, "/"),
+		headingSlugs:  headingSlugs(root),
 	}
 	blocks := r.blockStrings(root.kids, "")
 	out := strings.Join(blocks, "\n\n")
@@ -90,9 +93,18 @@ func StorageToMarkdown(storage string, opts StorageOptions) (string, error) {
 // mdRenderer carries the per-conversion context the storage->markdown walk needs.
 // A fresh one is used per conversion, so nothing leaks between documents.
 type mdRenderer struct {
-	// sources maps attachment name -> the image path it was published from. May
-	// be nil, in which case paths are recovered by decoding attachment names.
+	// sources maps attachment name -> the image path it was published from,
+	// relative to the root. May be nil, in which case an attachment is placed
+	// under the page's own directory by its stored name.
 	sources map[string]string
+
+	// pageDir is where the page's file sits relative to that same root, which is
+	// what turns a root-relative path into a destination the markdown can carry.
+	// attachmentDir is where an attachment with no recorded path is placed --
+	// the directory named after the page, which is a level below pageDir. See
+	// StorageOptions.
+	pageDir       string
+	attachmentDir string
 
 	// pageLinks maps an <ac:link> page target -> its absolute URL, resolved by
 	// the caller. A target missing from it passes through as raw storage.
@@ -106,18 +118,65 @@ type mdRenderer struct {
 	headingSlugs map[string]string
 }
 
-// sourceFor resolves an attachment name back to the markdown image path to write.
-// The path recorded on the attachment wins because it is exact; otherwise the
-// name is decoded. An absolute path is never something markfluence published, so
-// it is refused in both cases and the raw attachment name is used instead.
+// sourceFor resolves an attachment name to the markdown image path to write,
+// positioned relative to the page's own directory.
+//
+// Two provenances, one rule each, and both are positioned:
+//
+//   - a recorded path is relative to the root, so it becomes a path from the
+//     page to there: assets/brand.png read by dest/home/child.md is
+//     ../assets/brand.png.
+//   - no recorded path means the file is placed in the directory named after
+//     the page, so the destination is that directory and the file: child/x.png
+//     for a page whose own file is child.md, wherever that file sits.
+//
+// A page at the root of what is being written gets the identity transform for a
+// recorded path, which is what keeps single-page export unchanged.
+//
+// A stored name is never interpreted. It used to be decoded, back when the name
+// was an encoding of the path -- but the name is the base name now, so there is
+// nothing in it to decode, and a name that happens to contain "%2F" is a
+// filename with a "%2F" in it. The comment is the only place a path is written
+// down, which also means placement (internal/attachfile) and the markdown
+// written here cannot disagree about where an attachment belongs: both read the
+// same field and position it the same way.
+//
+// An absolute recorded path is never something markfluence published, so it is
+// refused and the attachment is treated as having none.
 func (r *mdRenderer) sourceFor(filename string) string {
 	if src, ok := r.sources[filename]; ok && src != "" && !path.IsAbs(src) {
-		return src
+		return relativeTo(r.pageDir, src)
 	}
-	if src, ok := AttachmentSource(filename); ok {
-		return src
+	return relativeTo(r.pageDir, path.Join(r.attachmentDir, filename))
+}
+
+// relativeTo expresses a root-relative path as one relative to dir, both in
+// slash form. It is filepath.Rel bracketed by the slash conversions, because
+// package path has no Rel and these are URL-ish paths rather than filesystem
+// ones -- the same conversion images.go's rootRelative does in the other
+// direction.
+//
+// filepath.Rel fails for an absolute-versus-relative pair and, more reachably
+// here, for a target that climbs above dir -- Rel("home", "../assets/x.png").
+// A recorded path should never contain ".." (images.go refuses an escaping
+// image before recording one), but a comment is server data and an older
+// markfluence recorded page-relative sources, so it happens. The fallback
+// leaves the path unchanged, which reads as relative to the root.
+//
+// That is a destination pointing at a file attachfile.Resolve refuses to write,
+// since it reads the same string as root-relative and clamps it. Both halves
+// report the problem in their own way rather than one of them inventing a
+// plausible path: R2 covers the unwritten attachment, and the markdown says
+// where the page claimed the image was.
+func relativeTo(dir, target string) string {
+	if dir == "" {
+		return target
 	}
-	return filename
+	rel, err := filepath.Rel(filepath.FromSlash(dir), filepath.FromSlash(target))
+	if err != nil {
+		return target
+	}
+	return filepath.ToSlash(rel)
 }
 
 // snode is a minimal parsed storage node: an element (name + attrs + children) or
@@ -614,10 +673,28 @@ func (r *mdRenderer) renderCallout(n *snode, alert string) string {
 func (r *mdRenderer) renderInlineChildren(n *snode) string {
 	var b strings.Builder
 	for _, k := range coalesceSplitMarks(n.kids) {
-		b.WriteString(r.renderInline(k))
+		part := r.renderInline(k)
+		// Storage is XHTML and its newlines are insignificant, so
+		// "<br />\nSecond" is the ordinary spelling -- and that newline
+		// normalizes to a space, landing immediately after the two-space hard
+		// break as a leading space on the next line. Markdown keeps it, so
+		// every export-and-republish cycle indented the line one character
+		// further. Trimmed here rather than with a pass over the assembled
+		// string, which cannot tell this whitespace from the two spaces that
+		// *are* the next hard break. Found by the round-trip property test.
+		// Never trim a hard break itself: two of them in a row are two blank
+		// line-endings, and its own leading spaces are what make it one.
+		if k.name != "br" && strings.HasSuffix(b.String(), hardBreak) {
+			part = strings.TrimLeft(part, " \t")
+		}
+		b.WriteString(part)
 	}
 	return strings.TrimSpace(b.String())
 }
+
+// hardBreak is markdown's two-space line break, as renderInline emits it for a
+// <br />.
+const hardBreak = "  \n"
 
 // formatMarks are the inline formatting tags coalesceSplitMarks may hoist
 // across a link boundary.
@@ -785,7 +862,7 @@ func (r *mdRenderer) renderInline(n *snode) string {
 	case "del", "s", "strike":
 		return "~~" + r.renderInlineChildren(n) + "~~"
 	case "br":
-		return "  \n"
+		return hardBreak
 	case "a":
 		return r.renderLink(n)
 	case "ac:image":

@@ -785,7 +785,7 @@ func TestPlanAttachmentsClassifiesWithoutUploading(t *testing.T) {
 // extensions, and the download link is an API path, not /download/attachments.
 func TestListAttachmentsDecodesMetadata(t *testing.T) {
 	list := `{"results":[{` +
-		`"id":"att99","title":"assets%2Fx.png",` +
+		`"id":"att99","title":"x.png",` +
 		`"metadata":{"comment":"` + attachmentCommentPrefix + `sha256=abc path=assets/x.png"},` +
 		`"version":{"number":3,"when":"2026-08-05T22:17:28.040Z"},` +
 		`"extensions":{"mediaType":"image/png","fileSize":171},` +
@@ -1236,7 +1236,7 @@ func TestSyncAttachmentsStampsSource(t *testing.T) {
 	path, _ := writeTempImage(t)
 	c, s := newServer(t, resp{200, `{"results":[]}`}, resp{200, `{}`})
 	_, err := c.SyncAttachments("1", []LocalAttachment{
-		{Path: path, Filename: "assets%2Fx.png", Source: "assets/x.png"},
+		{Path: path, Filename: "x.png", Source: "assets/x.png"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1292,7 +1292,7 @@ func TestSyncAttachmentsLabelsTextPartsUTF8(t *testing.T) {
 	source := "assets/probe-café.png"
 	c, s := newServer(t, resp{200, `{"results":[]}`}, resp{200, `{}`})
 	_, err := c.SyncAttachments("1", []LocalAttachment{
-		{Path: path, Filename: "assets%2Fprobe-café.png", Source: source},
+		{Path: path, Filename: "probe-café.png", Source: source},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1325,11 +1325,11 @@ func TestSyncAttachmentsLabelsTextPartsUTF8(t *testing.T) {
 func TestSyncAttachmentsRestampsMangledSource(t *testing.T) {
 	path, sum := writeTempImage(t)
 	// A comment stored double-encoded: "é" recorded as "Ã©".
-	list := `{"results":[{"id":"a1","title":"assets%2Fprobe-café.png","metadata":{"comment":"` +
+	list := `{"results":[{"id":"a1","title":"probe-café.png","metadata":{"comment":"` +
 		attachmentComment(sum, "assets/probe-cafÃ©.png") + `"}}]}`
 	c, s := newServer(t, resp{200, list}, resp{200, `{}`})
 	actions, err := c.SyncAttachments("1", []LocalAttachment{
-		{Path: path, Filename: "assets%2Fprobe-café.png", Source: "assets/probe-café.png"},
+		{Path: path, Filename: "probe-café.png", Source: "assets/probe-café.png"},
 	})
 	if err != nil {
 		t.Fatal(err)

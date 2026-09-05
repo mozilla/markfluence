@@ -3,6 +3,7 @@
 package attachmentupload
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,15 +35,18 @@ var Cmd = &cobra.Command{
 	Long: "Upload or replace attachments on a Confluence page.\n\n" +
 		"PAGE is a numeric page id, a Confluence page URL, or a markdown file\n" +
 		"whose frontmatter has a page_id.\n\n" +
-		"Each file is attached under its path relative to the documentation\n" +
-		"root (its base name, with no markfluence.yaml above it). A file whose\n" +
-		"contents already match the attachment on the page is skipped, using the same\n" +
-		"checksum bookkeeping create/update use, so uploading by hand and\n" +
-		"publishing agree on what is current; --force uploads anyway.\n\n" +
-		"--name sets the attachment name for a single file, and takes a path:\n" +
-		"markfluence encodes it the way publishing would, so `--name\n" +
+		"Each file is attached under its base name, with its path relative to\n" +
+		"the documentation root recorded in the attachment's comment. A file\n" +
+		"whose contents already match the attachment on the page is skipped,\n" +
+		"using the same checksum bookkeeping create/update use, so uploading by\n" +
+		"hand and publishing agree on what is current; --force uploads anyway.\n\n" +
+		"--name takes a path, not a name, for a single file: `--name\n" +
 		"assets/x.png` produces the attachment an image written as\n" +
-		"![](assets/x.png) resolves to.",
+		"![](assets/x.png) resolves to -- stored as x.png, recorded as\n" +
+		"assets/x.png.\n\n" +
+		"Two files whose base names agree cannot both be uploaded to one page,\n" +
+		"since an attachment name is unique per page; that is refused rather\n" +
+		"than silently overwriting.",
 	Args:              cobra.MinimumNArgs(2),
 	ValidArgsFunction: completion.PageThenFiles,
 	RunE:              run,
@@ -85,7 +89,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	attachments, err := localAttachments(files, nameFlag, roots)
 	if err != nil {
-		return fatalFail(err.Error(), jsonout.CodeIO)
+		return fatalFail(err.Error(), localAttachmentsCode(err))
 	}
 	for _, dir := range roots.Roots() {
 		ui.Info("root: " + dir)
@@ -137,30 +141,55 @@ func forced(actions []client.SyncAction) []client.SyncAction {
 	return out
 }
 
+// badInput marks a localAttachments failure that is the caller's input rather
+// than the filesystem's, so --json reports VALIDATION instead of IO for a
+// collision or a directory passed where a file was meant.
+type badInput struct{ error }
+
+// localAttachmentsCode maps a localAttachments failure to its --json code.
+func localAttachmentsCode(err error) jsonout.Code {
+	var bad badInput
+	if errors.As(err, &bad) {
+		return jsonout.CodeValidation
+	}
+	return jsonout.CodeIO
+}
+
 // localAttachments resolves each file into an upload, checking readability up
 // front so a batch fails before it has half-uploaded.
 //
-// The attachment name is the encoding of --name, or -- with no override -- the
-// file's source resolved root-relative (internal/project), the same way a
+// The attachment name is the base name of --name, or -- with no override -- of
+// the file's source resolved root-relative (internal/project), the same way a
 // published image's Source is: a page-specific upload of sub/img.png (no
-// project file above it) still records "img.png," but a shared one under a
-// declared root records "sub/img.png," matching what publishing a page that
-// references the same file would record. The recorded source is always the
-// decode of the name, never the local path: if the two disagreed, a later
-// publish would upload a second attachment under the name it computes while a
-// download restored this one somewhere the markdown never references.
+// project file above it) records "img.png", while a shared one under a declared
+// root records "sub/img.png". The recorded source is the path as given, cleaned
+// the way a publish would clean it (convert.NormalizeSource), and the stored
+// name is its base name -- never the other way round: deriving the source back
+// from the name would discard the directory, and the comment is the only place
+// the path is written down.
+//
+// Because a name is only a base name, two files in one batch can want the same
+// one; that is refused below.
 func localAttachments(files []string, name string, roots *project.Cache) ([]client.LocalAttachment, error) {
 	out := make([]client.LocalAttachment, 0, len(files))
+	// An attachment name is unique per page, and a name is now a base name, so
+	// two FILEs in one batch can want the same one. The converter refuses the
+	// same thing for two images in one document; here nothing else would catch
+	// it: planAttachments builds its map of what is already on the page once and
+	// never updates it inside the loop, so both files would plan "created" and
+	// the second upload would quietly land on top of the first, both reported as
+	// successes.
+	claimed := map[string]string{} // attachment name -> the file that claimed it
 	for _, f := range files {
 		info, err := os.Stat(f)
 		if err != nil {
 			return nil, err
 		}
 		if info.IsDir() {
-			return nil, fmt.Errorf("%s is a directory", f)
+			return nil, badInput{fmt.Errorf("%s is a directory", f)}
 		}
-		source := name
-		if source == "" {
+		source := convert.NormalizeSource(name)
+		if name == "" {
 			source, err = rootRelativeSource(f, roots)
 			if err != nil {
 				return nil, err
@@ -168,12 +197,30 @@ func localAttachments(files []string, name string, roots *project.Cache) ([]clie
 		}
 		filename := convert.AttachmentFilename(source)
 		if filename == "" {
-			return nil, fmt.Errorf("%q is not a usable attachment name", source)
+			// Reported as typed: source has been normalized, and "/" normalizes
+			// to "" long before it reaches here.
+			given := name
+			if given == "" {
+				given = f
+			}
+			return nil, badInput{fmt.Errorf("%q is not a usable attachment name", given)}
 		}
-		// Round-trip the name so source is exactly what a decode yields.
-		if decoded, ok := convert.AttachmentSource(filename); ok {
-			source = decoded
+		// Keyed on the file, not on the recorded source. With no
+		// markfluence.yaml above them each file's root is its own directory, so
+		// arch/diagram.png and deploy/diagram.png both record the source
+		// "diagram.png" -- comparing sources would call that one asset claiming
+		// its name twice and wave the collision through. That is the default
+		// case, not a corner of one.
+		if prev, dup := claimed[filename]; dup && prev != f {
+			return nil, badInput{fmt.Errorf(
+				"%s and %s both upload as the attachment %q; rename one or upload them separately",
+				prev, f, filename)}
 		}
+		claimed[filename] = f
+		// source is recorded as the caller gave it (normalized), not as a decode
+		// of the name. The name is now the base name, so decoding it back would
+		// throw the path away and record "x.png" for an asset at
+		// "docs/assets/x.png" -- which is the one copy of the path there is.
 		out = append(out, client.LocalAttachment{Path: f, Filename: filename, Source: source})
 	}
 	return out, nil
@@ -204,7 +251,7 @@ func rootRelativeSource(f string, roots *project.Cache) (string, error) {
 	}
 	rel = filepath.ToSlash(rel)
 	if rel == ".." || strings.HasPrefix(rel, "../") {
-		return "", fmt.Errorf("%s resolves outside the documentation root (%s)", f, root.Dir)
+		return "", badInput{fmt.Errorf("%s resolves outside the documentation root (%s)", f, root.Dir)}
 	}
 	return rel, nil
 }
@@ -268,7 +315,3 @@ func failEnvelope(pageID string, err error, code jsonout.Code, roots *project.Ca
 	env.Roots = roots.Roots()
 	return env
 }
-
-// decodeName is convert.AttachmentSource, wrapped so tests can assert the
-// lockstep invariant without importing the converter.
-func decodeName(filename string) (string, bool) { return convert.AttachmentSource(filename) }

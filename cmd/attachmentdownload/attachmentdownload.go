@@ -12,6 +12,7 @@ import (
 	"github.com/mozilla/markfluence/internal/completion"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pageref"
+	"github.com/mozilla/markfluence/internal/pageslug"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -39,8 +40,13 @@ var Cmd = &cobra.Command{
 		"An attachment markfluence published records the markdown image path it\n" +
 		"came from, and is written back to that path under --dest, so the\n" +
 		"downloaded tree matches what the page's markdown references and\n" +
-		"previews locally. An attachment without a recorded path is written\n" +
-		"under its stored name. --flat writes everything under stored names.\n\n" +
+		"previews locally.\n\n" +
+		"An attachment without a recorded path -- one that originated in\n" +
+		"Confluence -- is written under a directory named after the page, since\n" +
+		"an attachment name is unique per page and not per space: two pages'\n" +
+		"diagram.png would otherwise be one file. That is where `read` and\n" +
+		"`export` point at it too.\n\n" +
+		"--flat writes everything directly under --dest, under stored names.\n\n" +
 		"A recorded path that would resolve outside --dest is refused for that\n" +
 		"attachment, since the path comes from an attachment comment anyone who\n" +
 		"can edit the page controls.\n\n" +
@@ -83,6 +89,17 @@ func run(cmd *cobra.Command, args []string) error {
 		return operationalFail(pageID, err, jsonout.CodeFor(err))
 	}
 
+	// An attachment with no recorded path is written under the directory named
+	// after its page, so the page's title is needed even though nothing else
+	// here reads it. Fetched before anything is written and fatal if it fails:
+	// half the attachments scoped and half not is worse than none of them.
+	pageDir := ""
+	if !flat {
+		if pageDir, err = pageDirFor(c, pageID); err != nil {
+			return operationalFail(pageID, err, jsonout.CodeFor(err))
+		}
+	}
+
 	wanted, missing := selectAttachments(attachments, args[1:])
 	if dryRun && !ui.IsJSON() {
 		ui.Warn("DRY RUN — no files will be written.")
@@ -92,7 +109,7 @@ func run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeIO)
 	}
-	opts := attachfile.Options{Root: root, Flat: flat, Force: force, DryRun: dryRun}
+	opts := attachfile.Options{Root: root, Dir: pageDir, Flat: flat, Force: force, DryRun: dryRun}
 
 	results := make([]attachfile.Outcome, 0, len(wanted)+len(missing))
 	for _, a := range wanted {
@@ -131,6 +148,32 @@ func selectAttachments(attachments []client.Attachment, names []string) (
 		missing = append(missing, n)
 	}
 	return wanted, missing
+}
+
+// pageDirFor is the directory an attachment with no recorded path is written
+// under: a slug of the page's title, matching what convert.sourceFor points the
+// markdown at (via pagedoc.Options) so that a downloaded file lands where a
+// read of the same page says it is.
+//
+// A folder id is accepted here exactly as pageref.Resolve accepts one, and has
+// a title to slug like any page; the page route answers a folder id with 404,
+// hence the fallback rather than a failure.
+func pageDirFor(c *client.ConfluenceClient, pageID string) (string, error) {
+	page, err := c.GetPageOrNil(pageID)
+	if err != nil {
+		return "", err
+	}
+	if page != nil {
+		return pageslug.For(page.Title, pageID), nil
+	}
+	folder, err := c.GetFolderOrNil(pageID)
+	if err != nil {
+		return "", err
+	}
+	if folder == nil {
+		return "", fmt.Errorf("page %s not found", pageID)
+	}
+	return pageslug.For(folder.Title, pageID), nil
 }
 
 // report prints the per-attachment outcomes and returns the command's exit
