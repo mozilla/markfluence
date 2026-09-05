@@ -151,6 +151,14 @@ func forced(actions []client.SyncAction) []client.SyncAction {
 // download restored this one somewhere the markdown never references.
 func localAttachments(files []string, name string, roots *project.Cache) ([]client.LocalAttachment, error) {
 	out := make([]client.LocalAttachment, 0, len(files))
+	// An attachment name is unique per page, and a name is now a base name, so
+	// two FILEs in one batch can want the same one. The converter refuses the
+	// same thing for two images in one document; here nothing else would catch
+	// it: planAttachments builds its map of what is already on the page once and
+	// never updates it inside the loop, so both files would plan "created" and
+	// the second upload would quietly land on top of the first, both reported as
+	// successes.
+	claimed := map[string]string{}
 	for _, f := range files {
 		info, err := os.Stat(f)
 		if err != nil {
@@ -170,6 +178,12 @@ func localAttachments(files []string, name string, roots *project.Cache) ([]clie
 		if filename == "" {
 			return nil, fmt.Errorf("%q is not a usable attachment name", source)
 		}
+		if prev, dup := claimed[filename]; dup && prev != source {
+			return nil, fmt.Errorf(
+				"%s and %s both upload as the attachment %q; rename one or upload them separately",
+				prev, source, filename)
+		}
+		claimed[filename] = source
 		// source is recorded as given, not as a decode of the name. The name is
 		// now the base name, so decoding it back would throw the path away and
 		// record "x.png" for an asset at "docs/assets/x.png" -- which is the one
