@@ -116,9 +116,11 @@ func (r *storageRenderer) renderImage(
 			//
 			// Comparing source paths and not just the name is what keeps the
 			// same image referenced twice a dedupe rather than a collision.
-			return ast.WalkStop, fmt.Errorf(
-				"%s%s and %s%s both publish as the attachment %q; rename one of them",
-				prev.line, prev.source, r.linePrefix(node, source), rootRel, filename)
+			return ast.WalkStop, &NameCollisionError{
+				Name:   filename,
+				First:  prev.line + prev.source,
+				Second: r.linePrefix(node, source) + rootRel,
+			}
 
 		case claimed:
 			// The same asset again: one upload, two references.
@@ -193,6 +195,22 @@ func (r *storageRenderer) parseImageTitle(prefix, titleRaw, src string) map[stri
 		}
 	}
 	return attrs
+}
+
+// NameCollisionError reports two assets in one file that want one attachment
+// name. Typed rather than a bare error because `check` reports it as a document
+// defect -- a Broken entry, like a dead link -- where an untyped conversion
+// failure is reported as the converter having failed outright. Publishing
+// commands need no such distinction: either way the file does not go up.
+type NameCollisionError struct {
+	Name   string // the attachment name both assets want
+	First  string // the first image, as "line N: path"
+	Second string // the one that collided with it
+}
+
+func (e *NameCollisionError) Error() string {
+	return fmt.Sprintf("%s and %s both publish as the attachment %q; rename one of them",
+		e.First, e.Second, e.Name)
 }
 
 // pastedRiFilenameRE matches an ri:filename attribute in a markdown body -- raw
