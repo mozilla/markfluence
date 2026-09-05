@@ -130,6 +130,53 @@ func TestRunBroken(t *testing.T) {
 	}
 }
 
+// TestRunNameCollisionIsBroken pins the bucket, not just the message. A
+// collision fails the conversion, and every other conversion failure is
+// reported as a failed file -- but this one is a defect in the document, the
+// same kind of thing as a dead link, so it belongs in broken where an author
+// looking for what to fix will find it.
+func TestRunNameCollisionIsBroken(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "arch", "diagram.png"), "PNG")
+	write(t, filepath.Join(dir, "deploy", "diagram.png"), "PNG")
+	write(t, filepath.Join(dir, "main.md"),
+		"# Main\n\n![arch](arch/diagram.png)\n\n![deploy](deploy/diagram.png)\n")
+
+	ui.SetJSON(true)
+	t.Cleanup(func() { ui.SetJSON(false) })
+
+	out, err := captureOutput(t, func() error { return run(testCmd(t, ""), []string{filepath.Join(dir, "main.md")}) })
+	if !ui.IsSilent(err) || ui.ExitCode(err) != 1 {
+		t.Fatalf("run = %v, want a silent exit-1 error", err)
+	}
+	var env struct {
+		Results []struct {
+			Status string   `json:"status"`
+			Broken []string `json:"broken"`
+			Error  *string  `json:"error"`
+			Code   *string  `json:"code"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	if len(env.Results) != 1 {
+		t.Fatalf("results = %v, want one", env.Results)
+	}
+	got := env.Results[0]
+	if got.Status != "broken" {
+		t.Errorf("status = %q, want broken -- a collision is a document defect, not a failed file", got.Status)
+	}
+	if got.Error != nil || got.Code != nil {
+		t.Errorf("error/code = %v/%v, want both null (broken says it all)", got.Error, got.Code)
+	}
+	if len(got.Broken) != 1 ||
+		!strings.Contains(got.Broken[0], "arch/diagram.png") ||
+		!strings.Contains(got.Broken[0], "deploy/diagram.png") {
+		t.Errorf("broken = %v, want one entry naming both paths", got.Broken)
+	}
+}
+
 func TestRunFailed(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "bad.md"), "---\npage_width: huge\n---\n# Bad\n")
