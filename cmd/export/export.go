@@ -4,7 +4,6 @@ package export
 
 import (
 	"fmt"
-	"html"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,6 +13,7 @@ import (
 	"github.com/mozilla/markfluence/internal/attachfile"
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/completion"
+	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/pagedoc"
 	"github.com/mozilla/markfluence/internal/pageref"
@@ -163,7 +163,7 @@ func export(c *client.ConfluenceClient, page *client.Page, root string) result {
 		return res
 	}
 
-	referenced := referencedNames(page.Body.Storage.Value)
+	referenced := convert.ReferencedAttachmentNames(page.Body.Storage.Value)
 	res.warnings = missingReferences(referenced, atts)
 	if skipAttachs {
 		return res
@@ -219,24 +219,6 @@ func writeAttachments(
 		})
 	}
 	return out
-}
-
-// riFilenameRE matches every ri:filename attribute value in a storage body.
-var riFilenameRE = regexp.MustCompile(`ri:filename="([^"]*)"`)
-
-// referencedNames is the set of attachment names the page refers to.
-//
-// It matches ri:filename anywhere in the raw storage rather than only inside
-// ac:image, because the converter special-cases images alone: an attachment
-// link's target, or a reference inside a macro that passes through as raw
-// storage, would otherwise be dropped from the export. Matching the literal
-// attribute is exact -- it is the same string Confluence resolves.
-func referencedNames(storage string) map[string]bool {
-	names := map[string]bool{}
-	for _, m := range riFilenameRE.FindAllStringSubmatch(storage, -1) {
-		names[html.UnescapeString(m[1])] = true
-	}
-	return names
 }
 
 // missingReferences reports names the page refers to that are not attached --

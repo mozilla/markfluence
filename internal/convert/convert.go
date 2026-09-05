@@ -18,6 +18,7 @@ import (
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/renderer"
 	"github.com/yuin/goldmark/renderer/html"
+	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
 )
 
@@ -28,6 +29,12 @@ const (
 	// versionToken is replaced by the build version stamp passed to MdToConfluence.
 	versionToken = "<!-- markfluence-version -->"
 )
+
+// scanParser parses for inspection rather than for rendering: same extensions,
+// none of the AST transformers. Those carry a *storageRenderer and append
+// warnings to it as a side effect, so parsing twice through newMarkdown would
+// report every table-cell warning twice.
+var scanParser = goldmark.New(goldmark.WithExtensions(extension.GFM)).Parser()
 
 // newMarkdown builds the goldmark instance: GFM for tables/strikethrough/
 // task-lists/autolinks, the callout and table-cell-background AST transformers,
@@ -83,12 +90,16 @@ func MdToConfluence(
 		// a reported line matches what a reader sees opening the file, not
 		// what the parser sees after Extract already removed the header.
 		lineOffset: strings.Count(md.Content[:len(md.Content)-len(md.Body)], "\n"),
-		// Scanned from the unshielded body: after shielding, the tag names are
-		// sentinels and the attribute would no longer match.
-		pastedNames: pastedAttachmentNames(md.Body),
 	}
+	// Parsed before rendering so raw storage is identified structurally rather
+	// than by scanning text: a fenced example of storage format is a code block
+	// here, not a reference, and markfluence's own documentation is exactly that
+	// shape. One extra parse buys a scan a document about storage cannot fool.
+	src := []byte(shielded)
+	r.pastedNames = pastedAttachmentNames(scanParser.Parse(text.NewReader(src)), src, unshield)
+
 	var buf bytes.Buffer
-	if err := newMarkdown(r).Convert([]byte(shielded), &buf); err != nil {
+	if err := newMarkdown(r).Convert(src, &buf); err != nil {
 		return nil, err
 	}
 	out := unshield(buf.String())

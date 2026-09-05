@@ -25,8 +25,10 @@ var allowedAlign = map[string]bool{"left": true, "center": true, "right": true}
 
 // renderImage rewrites an image to a Confluence <ac:image>. Remote images become
 // an ri:url reference; a local image with a supported extension that exists
-// becomes an ri:attachment (collected for upload, deduped by filename); a missing
-// file or unsupported extension becomes literal "IMAGE BROKEN: ..." text.
+// becomes an ri:attachment (collected for upload, deduped by source path); a
+// missing file or unsupported extension becomes literal "IMAGE BROKEN: ..."
+// text. Two different sources whose attachment names agree are refused
+// outright, since one would overwrite the other.
 func (r *storageRenderer) renderImage(
 	w util.BufWriter, source []byte, node ast.Node, entering bool,
 ) (ast.WalkStatus, error) {
@@ -213,21 +215,23 @@ func (e *NameCollisionError) Error() string {
 		e.First, e.Second, e.Name)
 }
 
-// pastedRiFilenameRE matches an ri:filename attribute in a markdown body -- raw
-// storage the author pasted, which the shield hands through untouched.
-var pastedRiFilenameRE = regexp.MustCompile(`ri:filename="([^"]*)"`)
+// riFilenameRE matches an ri:filename attribute in storage.
+var riFilenameRE = regexp.MustCompile(`ri:filename="([^"]*)"`)
 
-// pastedAttachmentNames is the set of attachment names raw storage in body
-// already refers to.
+// ReferencedAttachmentNames is the set of attachment names a piece of storage
+// refers to.
 //
-// renderImage cannot discover these for itself: shieldStorage renames the tags
-// before goldmark sees them, so a pasted reference is never an *ast.Image and
-// never reaches the naming branch. Matching the literal attribute is exact --
-// it is the same string Confluence resolves -- and matching it anywhere rather
-// than only inside ac:image is deliberate, for the reason cmd/export's own scan
-// gives: a link target or a macro-internal reference counts too.
-func pastedAttachmentNames(body string) map[string]bool {
-	m := pastedRiFilenameRE.FindAllStringSubmatch(body, -1)
+// Matching the literal attribute is exact -- it is the same string Confluence
+// resolves -- and matching it anywhere rather than only inside ac:image is
+// deliberate: the converter special-cases images alone, so a link target or a
+// reference inside a macro that passes through as raw storage would otherwise
+// be missed.
+//
+// Exported for `export`, which asks the same question of a page it fetched.
+// Safe over raw text there because stored storage has no code fences; asking it
+// of *markdown* needs the parse pastedAttachmentNames does first.
+func ReferencedAttachmentNames(storage string) map[string]bool {
+	m := riFilenameRE.FindAllStringSubmatch(storage, -1)
 	if len(m) == 0 {
 		return nil
 	}
@@ -236,6 +240,57 @@ func pastedAttachmentNames(body string) map[string]bool {
 		names[html.UnescapeString(g[1])] = true
 	}
 	return names
+}
+
+// pastedAttachmentNames is the set of attachment names raw storage in this body
+// already refers to.
+//
+// renderImage cannot discover these for itself: shieldStorage renames the tags
+// before goldmark sees them, so a pasted reference is never an *ast.Image and
+// never reaches the naming branch.
+//
+// It walks the parsed document and reads only the raw-HTML nodes rather than
+// scanning the source text, which matters for one common document: markdown
+// that *documents* storage format. A fenced code block holding
+// <ri:attachment ri:filename="diagram.png" /> is an example, not a reference --
+// it publishes as a code block and points at nothing -- and a text scan cannot
+// tell the two apart. cmd/export runs the same-looking scan over text safely
+// because what it scans is stored storage, where there are no code fences.
+//
+// Names are unshielded before matching, since by this point the tags carry
+// sentinels. Matching the literal attribute anywhere in a raw-HTML node, rather
+// than only inside ac:image, is deliberate for the reason export's scan gives:
+// a link target or a macro-internal reference counts too.
+func pastedAttachmentNames(doc ast.Node, source []byte, unshield func(string) string) map[string]bool {
+	var raw strings.Builder
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		switch n.Kind() {
+		case ast.KindHTMLBlock:
+			b := n.(*ast.HTMLBlock)
+			for i := 0; i < b.Lines().Len(); i++ {
+				seg := b.Lines().At(i)
+				raw.Write(seg.Value(source))
+			}
+			if b.HasClosure() {
+				closure := b.ClosureLine
+				raw.Write(closure.Value(source))
+			}
+		case ast.KindRawHTML:
+			h := n.(*ast.RawHTML)
+			for i := 0; i < h.Segments.Len(); i++ {
+				seg := h.Segments.At(i)
+				raw.Write(seg.Value(source))
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+	if raw.Len() == 0 {
+		return nil
+	}
+	return ReferencedAttachmentNames(unshield(raw.String()))
 }
 
 // acImage builds an <ac:image> referencing an attachment (riFilename) or a URL
