@@ -76,6 +76,62 @@ func TestRunPrintsMarkdown(t *testing.T) {
 	}
 }
 
+// TestRunPositionsAnUnsourcedAttachment covers the placement rule read shares
+// with export and attachment-download: an attachment with no recorded path
+// belongs in the directory named after its page, so the markdown says so.
+//
+// Without this, read prints diagram.png while attachment-download writes
+// runbook/diagram.png and the image does not resolve. The three agree because
+// they go through one pagedoc.Options, and this is the assertion that says so
+// for read.
+func TestRunPositionsAnUnsourcedAttachment(t *testing.T) {
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/properties"):
+			_, _ = w.Write([]byte(`{"results":[]}`))
+		case strings.Contains(r.URL.Path, "/child/attachment"):
+			// No markfluence comment: this one originated in Confluence, so
+			// there is no recorded path to put it back at.
+			_, _ = w.Write([]byte(`{"results":[{"id":"a1","title":"diagram.png","metadata":{}}]}`))
+		default:
+			_, _ = w.Write([]byte(pageWithBody(
+				`<p><ac:image><ri:attachment ri:filename=\"diagram.png\" /></ac:image></p>`)))
+		}
+	})
+	out, err := captureStdout(t, func() error { return run(testCmd(t, c.SiteURL()), []string{"1"}) })
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !strings.Contains(out, "](runbook/diagram.png)") {
+		t.Errorf("output = %q, want the attachment under the page's own directory", out)
+	}
+}
+
+// TestRunKeepsARecordedPathAsWritten is the other provenance: a path recorded by
+// a publish is relative to the root, and read prints from that root, so it is
+// carried through untouched rather than positioned against anything.
+func TestRunKeepsARecordedPathAsWritten(t *testing.T) {
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/properties"):
+			_, _ = w.Write([]byte(`{"results":[]}`))
+		case strings.Contains(r.URL.Path, "/child/attachment"):
+			_, _ = w.Write([]byte(`{"results":[{"id":"a1","title":"brand.png","metadata":` +
+				`{"comment":"markfluence: sha256=abc path=assets/brand.png"}}]}`))
+		default:
+			_, _ = w.Write([]byte(pageWithBody(
+				`<p><ac:image><ri:attachment ri:filename=\"brand.png\" /></ac:image></p>`)))
+		}
+	})
+	out, err := captureStdout(t, func() error { return run(testCmd(t, c.SiteURL()), []string{"1"}) })
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !strings.Contains(out, "](assets/brand.png)") {
+		t.Errorf("output = %q, want the recorded path unchanged", out)
+	}
+}
+
 func TestRunPrintsStorage(t *testing.T) {
 	formatFlag = formatStorage
 	t.Cleanup(func() { formatFlag = formatMarkdown })

@@ -1,20 +1,27 @@
 // Package pagedoc renders a fetched Confluence page as a markdown document:
 // frontmatter plus the converted body.
 //
-// It exists so `read` and `export` emit byte-identical markdown -- that they
-// agree is the property export rests on, since an exported tree is meant to be
-// the same thing `read` prints. It needs a client (page width, attachment list)
-// and so cannot live in internal/convert, which is deliberately client-free;
-// that is why StorageToMarkdown takes a sources map rather than fetching one.
+// One conversion, parameterized. Every command that renders a page goes through
+// Options, so `read` and `export` cannot drift apart by accident -- only by
+// argument, and the arguments are the page's position in whatever is being
+// written and the form its parent takes. For a page at the top level of that
+// tree, which is what `read` prints and what a single-page export writes, the
+// two are byte-identical.
+//
+// It needs a client (page width, attachment list) and so cannot live in
+// internal/convert, which is deliberately client-free; that is why
+// StorageToMarkdown takes a sources map rather than fetching one.
 package pagedoc
 
 import (
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/frontmatter"
+	"github.com/mozilla/markfluence/internal/pageslug"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/ui"
 )
@@ -32,9 +39,13 @@ func (d Doc) String() string { return d.Frontmatter + "\n" + d.Body }
 
 // Render converts a page's storage body to markdown and builds its frontmatter.
 //
+// pageDir is where the page's file sits relative to the root of what is being
+// written, in slash form -- "" for a file at that root, which is what `read`
+// passes and what a single-page export produces. See convert.StorageOptions.
+//
 // The page must have been fetched with its body (GetPageBodyOrNil).
-func Render(c *client.ConfluenceClient, page *client.Page) (Doc, error) {
-	body, err := convert.StorageToMarkdown(page.Body.Storage.Value, Options(c, page))
+func Render(c *client.ConfluenceClient, page *client.Page, pageDir string) (Doc, error) {
+	body, err := convert.StorageToMarkdown(page.Body.Storage.Value, Options(c, page, pageDir))
 	if err != nil {
 		return Doc{}, err
 	}
@@ -42,15 +53,29 @@ func Render(c *client.ConfluenceClient, page *client.Page) (Doc, error) {
 }
 
 // Options assembles what the converter cannot fetch for itself: the attachment
-// source paths, the resolved <ac:link> page URLs, and the site base.
+// source paths, the resolved <ac:link> page URLs, the page's position, and the
+// site base.
 //
-// Both read and export go through it rather than assembling their own, which is
-// the same reason Render exists -- the two must emit byte-identical markdown,
-// and options built in two places are options that can disagree.
-func Options(c *client.ConfluenceClient, page *client.Page) convert.StorageOptions {
+// Every command that renders a page goes through it rather than assembling its
+// own, which is the same reason Render exists: options built in two places are
+// options that can disagree, and here a disagreement means an attachment
+// written to a path the markdown does not point at.
+//
+// One conversion, parameterized. read and export produce identical markdown for
+// identical arguments; what differs between them is the arguments -- read has
+// no tree, so it passes the empty position and the page's parent id, while a
+// tree export passes the page's directory and a parent path.
+func Options(c *client.ConfluenceClient, page *client.Page, pageDir string) convert.StorageOptions {
 	return convert.StorageOptions{
 		Sources:   Sources(c, page),
 		PageLinks: PageLinks(c, page),
+		PageDir:   pageDir,
+		// Where an attachment with no recorded path is placed: the directory
+		// named after the page, beside the page's own file. Computed here rather
+		// than in the converter, which has no business knowing how a title
+		// becomes a directory name, and computed once so that every command
+		// placing such an attachment agrees with the markdown that points at it.
+		AttachmentDir: path.Join(pageDir, pageslug.For(page.Title, page.ID)),
 		// The site, never the gateway: these URLs are published into a page.
 		SiteURL: c.SiteURL(),
 	}
