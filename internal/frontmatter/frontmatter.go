@@ -421,6 +421,61 @@ func setField(b *block, key, value, comment string) {
 	b.mapping.Values[at] = mv
 }
 
+// Normalize rewrites content's frontmatter in canonical field order, reporting
+// whether anything moved.
+//
+// It is a no-op when the order already holds, which is what makes the reported
+// boolean mean exactly "keys moved" and keeps the blank-line handling
+// predictable: blank lines are dropped only as a consequence of a real reorder,
+// never as a side effect of some unrelated field being written. A canonical
+// file keeps its blank lines -- this normalizes ordering, it is not a formatter.
+func Normalize(content string) (string, bool, error) {
+	loc := frontmatterRE.FindStringSubmatchIndex(content)
+	if loc == nil {
+		return content, false, nil
+	}
+	b, err := parseBlock(content[loc[2]:loc[3]])
+	if err != nil {
+		return "", false, err
+	}
+	if isCanonical(b.mapping) {
+		return content, false, nil
+	}
+	sort.SliceStable(b.mapping.Values, func(i, j int) bool {
+		return keyLess(b.mapping.Values[i].Key.GetToken().Value,
+			b.mapping.Values[j].Key.GetToken().Value)
+	})
+	return "---\n" + dropBlankLines(b.mapping.String()) + "\n---\n" + content[loc[1]:], true, nil
+}
+
+// isCanonical reports whether a mapping's keys are already in keyLess order.
+func isCanonical(m *ast.MappingNode) bool {
+	for i := 1; i < len(m.Values); i++ {
+		if keyLess(m.Values[i].Key.GetToken().Value, m.Values[i-1].Key.GetToken().Value) {
+			return false
+		}
+	}
+	return true
+}
+
+// dropBlankLines removes blank lines from an emitted block.
+//
+// Textual rather than structural because a blank line is not a node: it lives in
+// the preceding value's token origin, so reordering carries it to a position
+// that means nothing. Safe as a text filter because nothing this package emits
+// spans more than one line -- a value containing a newline is written as a
+// double-quoted scalar with an escape, never as a "|" block.
+func dropBlankLines(s string) string {
+	lines := strings.Split(s, "\n")
+	kept := lines[:0]
+	for _, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "\n")
+}
+
 // --- MarkdownFile ---------------------------------------------------------------
 
 // MarkdownFile is a markdown source file parsed once: its path, raw text,
