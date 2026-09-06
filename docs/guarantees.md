@@ -205,6 +205,7 @@ cycle is stable.
 | | label | guarantee | status |
 |---|---|---|---|
 | **C1** | `preview-compatible-resolution` | A reference resolves the way a Markdown preview resolves it, GitHub's included. | Holds |
+| **C2** | `frontmatter-is-valid-yaml` | Frontmatter markfluence writes parses as YAML, and reads back as the values it wrote. | Holds |
 
 Not an internal property: agreement with an external specification. It always
 held for images, which resolve page-relative; links now resolve the same way
@@ -215,6 +216,51 @@ directory (`_plans/026` commit 5).
 Kept separate from L1 because this is the one that could in principle be traded
 away — markfluence could choose its own resolution rules and document them — and
 L1 could not.
+
+**C2** was false until #130, and false in a way only an outside tool could see.
+`internal/frontmatter` was a hand-rolled flat-key parser that split each line at
+the first `:`, so it read back its own `title: Deploy Runbook: Part 2`
+perfectly while every real YAML parser rejected it. The colon was one member of
+a class: booleans, numbers, nulls, flow collections and the reserved indicators
+were all written bare and read back as the wrong type or not at all.
+
+It holds now because the block is parsed and emitted by `goccy/go-yaml`, and
+because the writer **verifies its own output** rather than trusting it: it emits
+with goccy's chosen style, re-reads the result, and falls back to a
+double-quoted scalar when the two disagree. That fallback is load-bearing, not
+belt-and-braces — goccy drops a tab, emits a value beginning `? ` as a document
+it then refuses to parse, and writes `.inf`/`.nan` bare, where any conforming
+reader sees a float. A hand-written predicate listing those shapes would be
+incomplete, since they turned up only by probing; checking beats predicting, and
+the check keeps holding if goccy regresses.
+
+The check compares the re-read **node kind** as well as its text, which is what
+makes the `.inf` case work. An earlier version compared text alone and passed:
+`scalarValue` flattens every scalar to its token, so markfluence read `.inf`
+back as `.inf` and the round-trip looked clean while the file said "float" to
+everyone else. Comparing text is comparing the wrong thing.
+
+The flat contract is enforced on **read**, not assumed: a scalar whose source
+spans more than one line is refused. It has to be, because an untouched key is
+re-emitted from the node the parser produced and goccy's re-emission of a parsed
+node is not identity — a continued plain scalar comes back as a `|-` block that
+the parser then rejects, so a write would produce a file markfluence could not
+read, and in `create` only after the page had been made.
+
+Two limits, stated rather than papered over. Quoting is goccy's, but **typing is
+ours**: `page_id` and `parent` are written as YAML integers and nulls, because
+`page_id: "123"` is valid YAML that says the wrong thing. That is a hand-rolled
+rule, confined to two keys whose value domains are closed. And the verification
+is a *self*-check — it proves goccy can re-read what goccy wrote, not that
+another implementation can. There is no second YAML library in `go.mod` to
+settle that, deliberately; a divergence reported by a real tool is an issue to
+fix, and the failing frontmatter is the evidence.
+
+Kept separate from **L7** (`output-is-valid-markdown`) because they are checked
+against different external specifications. A file with broken frontmatter still
+renders as markdown — GitHub shows it, and it was VSCode's YAML extension that
+complained — so folding this into L7 would leave its status ambiguous about
+which spec had failed.
 
 ## Reporting
 
@@ -344,6 +390,6 @@ would write *something*, under a name nobody chose.
 |---|---|
 | Safety | adversarial tests: traversal attempts, pre-existing files |
 | Laws | property tests: generate trees, assert the equation |
-| Conformance | fixtures checked against what a Markdown preview renders |
+| Conformance | C1: fixtures checked against what a Markdown preview renders. C2: the writer verifies its own output at runtime, plus a round-trip test and fuzz target; agreement with *other* YAML implementations is review judgement |
 | Reporting | example tests asserting a specific message appears |
 | Policy | review judgement |
