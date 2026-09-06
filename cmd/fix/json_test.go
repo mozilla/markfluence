@@ -66,6 +66,7 @@ func TestJSONResultChanged(t *testing.T) {
       "new": "123"
     }
   ],
+  "reordered": false,
   "warnings": [],
   "error": null,
   "code": null

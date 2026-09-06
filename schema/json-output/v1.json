@@ -407,7 +407,7 @@
     "fixResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ok", "status", "file", "page_id", "dry_run", "changes", "warnings", "error", "code"],
+      "required": ["ok", "status", "file", "page_id", "dry_run", "changes", "reordered", "warnings", "error", "code"],
       "properties": {
         "ok": { "type": "boolean" },
         "status": { "enum": ["changed", "consistent", "failed"] },
@@ -426,6 +426,10 @@
               "new": { "type": "string" }
             }
           }
+        },
+        "reordered": {
+          "description": "Whether fix rewrote the frontmatter into canonical field order. Independent of changes: a file whose values all match its live page can still be reordered, and that counts as changed.",
+          "type": "boolean"
         },
         "warnings": { "type": "array", "items": { "type": "string" } },
         "error": { "$ref": "#/$defs/stringOrNull" },

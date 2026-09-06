@@ -278,7 +278,7 @@ func fixServer(t *testing.T, page string, widthProperty string) *client.Confluen
 }
 
 func TestProcessFileConsistentDoesNotWrite(t *testing.T) {
-	content := "---\npage_id: 1\nspace: ENG\nparent: null\ntitle: X\npage_width: max\n---\nbody\n"
+	content := "---\ntitle: X\nspace: ENG\nparent: null\npage_id: 1\npage_width: max\n---\nbody\n"
 	path := writeFixture(t, content)
 	c := fixServer(t, pageJSON("1", "X", "", "/spaces/ENG/pages/1/X"), `"max"`)
 
@@ -383,6 +383,34 @@ func TestOrNull(t *testing.T) {
 	}
 	if got := orNull("123"); got != "123" {
 		t.Errorf(`orNull("123") = %q, want "123"`, got)
+	}
+}
+
+// TestProcessFileNormalizesFieldOrder pins that a file whose values all match
+// its live page is still rewritten when its fields are out of canonical order,
+// and reports that separately from any value change.
+func TestProcessFileNormalizesFieldOrder(t *testing.T) {
+	content := "---\npage_id: 1\nspace: ENG\nparent: null\ntitle: X\npage_width: max\n---\nbody\n"
+	path := writeFixture(t, content)
+	c := fixServer(t, pageJSON("1", "X", "", "/spaces/ENG/pages/1/X"), `"max"`)
+
+	r := processFile(path, c)
+	if !r.ok || r.status != statusChanged {
+		t.Fatalf("result = %+v, want ok/changed", r)
+	}
+	if !r.reordered {
+		t.Error("reordered = false, want true")
+	}
+	if len(r.changes) != 0 {
+		t.Errorf("changes = %+v, want none: only the order differs", r.changes)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "---\ntitle: X\nspace: ENG\nparent: null\npage_id: 1\npage_width: max\n---\nbody\n"
+	if string(got) != want {
+		t.Errorf("file =\n%q\nwant\n%q", got, want)
 	}
 }
 
