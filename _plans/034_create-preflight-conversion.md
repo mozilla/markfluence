@@ -212,11 +212,14 @@ created nothing.
   attachments. It is therefore one of S7's three named residuals, not something
   this plan closes; anything claiming publish can only fail remotely is wrong.
 
-- **Routing a preflight HTTP error through `jsonout.CodeFor`.** `newFailure`
+- **Routing a preflight HTTP error through `jsonout.CodeFor`** (#133). `newFailure`
   defaults to VALIDATION, so a rejected credential or a 5xx from `checkPageID`,
   `ResolveSpaceID`, `checkTitleFree` or `checkParentInSpace` still reports
   VALIDATION rather than AUTH/NETWORK/API. Pre-existing, and a real improvement
   now that `failure` carries a code at all -- but it changes the code on
-  failures this issue is not about, so it wants its own decision.
+  failures this issue is not about, so it wants its own decision. `cmd/fix`'s
+  `locateCode` is the rule to copy, and `CodeFor` alone is not: it answers
+  NETWORK for any non-`HTTPError`, so `no title given` would become a network
+  problem.
 - **`update`.** It has no reserve phase, so a conversion failure already fails
   the file with nothing created. Nothing to fix.
