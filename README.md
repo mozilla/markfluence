@@ -240,9 +240,10 @@ content type — in which case give its id the same way you would a page's.
 Page width defaults to `max`; set it with `--page-width narrow|wide|max` (which
 overrides the frontmatter `page_width` and may apply across a batch).
 
-All files are validated first — if any would fail (a problem with its `page_id`, a
-title clash in the space, an unresolvable parent), nothing is created. Both kinds
-of clash name the page in the way, so you can go look at it:
+All files are checked first — if any would fail (a problem with its `page_id`, a
+title clash in the space, an unresolvable parent, or markdown the converter
+refuses), nothing is created. Both kinds of clash name the page in the way, so
+you can go look at it:
 
 ```console
 $ markfluence create docs/runbook.md
@@ -269,6 +270,13 @@ resolves regardless of which direction it points, or whether the two link to eac
 other. A run interrupted after this point leaves a permanent, empty page version
 behind rather than no page at all; every id is already persisted (unless
 `--no-persist`), so a plain `update` finishes the job.
+
+The preflight phase converts each file too, keeping only the answer to "can this
+convert at all?" — so markdown the converter refuses (two images in one document
+whose file names match, say) aborts the batch instead of leaving an empty page
+and a `page_id` behind. What can still leave a stub is a server or network
+failure while publishing, which no local check could have predicted; see S7 in
+[docs/guarantees.md](docs/guarantees.md).
 
 `--dry-run` validates every file (the same checks a real run makes, so it exits
 non-zero on the same failures) and previews what would be created — pages,
@@ -919,7 +927,7 @@ Notes on the schema:
   literally publish.
 - **Compound values are objects**, never display strings — `version`,
   `page_width`, and the `created`/`updated` author stamps on `info`.
-- **`create`'s two-phase abort** (a validation failure means nothing is created)
+- **`create`'s preflight abort** (any file failing means nothing is created)
   lists every input file — failed ones with an `error`, the rest as
   `not_created` — and sets `summary.aborted: true`.
 - **Warnings and broken image/link notices** are data (`warnings`/`broken`
