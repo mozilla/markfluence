@@ -37,7 +37,7 @@ func TestResolveTitlePageID(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			title, pageID := resolveTitlePageID(tc.cliTitle, tc.cliPageID, mf)
+			title, _, pageID := resolveTitlePageID(tc.cliTitle, tc.cliPageID, mf)
 			if title != tc.wantTitle || pageID != tc.wantPageID {
 				t.Errorf("resolveTitlePageID = %q/%q, want %q/%q",
 					title, pageID, tc.wantTitle, tc.wantPageID)
@@ -51,7 +51,10 @@ func TestResolveTitlePageIDEmptyWhenAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	title, pageID := resolveTitlePageID("", "", mf)
+	title, present, pageID := resolveTitlePageID("", "", mf)
+	if present {
+		t.Error("titlePresent = true, want false for a file with no frontmatter")
+	}
 	if title != "" || pageID != "" {
 		t.Errorf("resolveTitlePageID = %q/%q, want empty/empty", title, pageID)
 	}
@@ -297,5 +300,85 @@ func TestProcessFileForceBypassesMtimeSkip(t *testing.T) {
 	}
 	if !sawPut {
 		t.Fatal("want UpdatePage to have been called despite the old mtime")
+	}
+}
+
+// TestResolveTitlePageIDSeparatesAbsentFromEmpty pins the distinction the
+// empty-title check rests on. An absent title means the file does not manage
+// its page's title, which update honours by keeping the live one; a present but
+// empty title is a half-finished edit.
+func TestResolveTitlePageIDSeparatesAbsentFromEmpty(t *testing.T) {
+	tests := []struct {
+		name, content, cliTitle string
+		wantTitle               string
+		wantPresent             bool
+	}{
+		{"absent", "---\npage_id: 1\n---\nb\n", "", "", false},
+		{"present and empty", "---\ntitle:\npage_id: 1\n---\nb\n", "", "", true},
+		{"present and null", "---\ntitle: null\npage_id: 1\n---\nb\n", "", "", true},
+		{"present with value", "---\ntitle: T\npage_id: 1\n---\nb\n", "", "T", true},
+		// --title wins, as every other override does, so it satisfies a
+		// present-but-empty frontmatter title rather than tripping over it.
+		{"flag over empty", "---\ntitle:\npage_id: 1\n---\nb\n", "CLI", "CLI", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mf, err := frontmatter.Parse("f.md", tc.content)
+			if err != nil {
+				t.Fatal(err)
+			}
+			title, present, _ := resolveTitlePageID(tc.cliTitle, "", mf)
+			if title != tc.wantTitle || present != tc.wantPresent {
+				t.Errorf("resolveTitlePageID = %q/%v, want %q/%v",
+					title, present, tc.wantTitle, tc.wantPresent)
+			}
+		})
+	}
+}
+
+// TestProcessFileRejectsEmptyTitle exercises the error path itself, not just
+// resolveTitlePageID. The client points at a URL nothing serves: reaching it
+// would be the failure, since the check has to fire before any request the way
+// the non-numeric page_id check does.
+func TestProcessFileRejectsEmptyTitle(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.md")
+	if err := os.WriteFile(path, []byte("---\ntitle:\npage_id: 123\n---\nbody\n"), 0o644); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	c := client.New(client.Config{SiteURL: "https://wiki.invalid"})
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	if r.ok {
+		t.Fatal("a present-but-empty title must fail the file")
+	}
+	if !strings.Contains(r.errMsg, "empty 'title:'") {
+		t.Errorf("errMsg = %q, want the empty-title sentence", r.errMsg)
+	}
+	if r.code != jsonout.CodeValidation {
+		t.Errorf("code = %q, want %q", r.code, jsonout.CodeValidation)
+	}
+}
+
+// TestProcessFileKeepsLiveTitleWhenAbsent is the other half: no title key is a
+// legitimate shape, and update takes the page's own title.
+func TestProcessFileKeepsLiveTitleWhenAbsent(t *testing.T) {
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/pages/123") && r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(`{"id":"123","title":"Live Title","version":{"number":3},` +
+				`"_links":{"webui":"/spaces/ENG/pages/123/Live"}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.md")
+	if err := os.WriteFile(path, []byte("---\npage_id: 123\n---\nbody\n"), 0o644); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	if r.title != "Live Title" {
+		t.Errorf("title = %q, want the live page's title", r.title)
 	}
 }
