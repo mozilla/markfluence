@@ -140,6 +140,22 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 		return r.fail(fmt.Errorf("building the link index: %w", err), jsonout.CodeIO)
 	}
 
+	// Collected before the conversion, which can bail out: a frontmatter defect
+	// is independent of anything the converter finds, and reporting it only when
+	// the body happens to convert would hide it behind an unrelated failure.
+	//
+	// A title that is present and empty is a guaranteed publish failure needing
+	// no network to see: create and update both reject it. The narrowness
+	// elsewhere -- never reporting whether page_id/space/parent are set -- holds
+	// because check cannot know which verb is coming, and that reasoning stops
+	// applying once both verbs agree. An absent title stays unreported: update
+	// accepts it and keeps the live page's title.
+	var frontmatterBroken []string
+	if title, present := mf.TitleField(); present && title == "" {
+		frontmatterBroken = append(frontmatterBroken,
+			"frontmatter has an empty 'title:'; give it a value or remove it")
+	}
+
 	page, err := convert.MdToConfluence(mf, root, index, checkBaseURL, checkSpaceKey, buildinfo.Stamp())
 	if err != nil {
 		// Two assets wanting one attachment name is a defect in the document,
@@ -156,13 +172,13 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 		// past a document it has already refused to publish.
 		var collision *convert.NameCollisionError
 		if errors.As(err, &collision) {
-			r.broken = []string{collision.Error()}
+			r.broken = append(frontmatterBroken, collision.Error())
 			r.status = statusBroken
 			return r
 		}
 		return r.fail(err, jsonout.CodeConvert)
 	}
-	r.broken = page.Broken
+	r.broken = append(frontmatterBroken, page.Broken...)
 	r.warnings = page.Warnings
 	if showHTML {
 		r.debugHTML = page.HTML
