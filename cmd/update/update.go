@@ -143,7 +143,16 @@ func processFile(
 		return r.fail(err, jsonout.CodeValidation)
 	}
 
-	title, pageID := resolveTitlePageID(titleFlag, pageIDFlag, mf)
+	title, titlePresent, pageID := resolveTitlePageID(titleFlag, pageIDFlag, mf)
+	// Before the request, like the page-id check below: an empty title is a
+	// local defect, and paying for a round trip to discover it is waste. Only a
+	// title that is *present* and empty is wrong -- an absent title means the
+	// file does not manage the page's title, which is honoured further down.
+	if title == "" && titlePresent {
+		return r.fail(errors.New(
+			"frontmatter has an empty 'title:'; give it a value, remove it to keep the "+
+				"live page title, or pass --title"), jsonout.CodeValidation)
+	}
 	if pageID == "" {
 		return r.fail(errors.New("no page id: set page_id in frontmatter or pass --page-id"),
 			jsonout.CodeValidation)
@@ -298,18 +307,23 @@ func overrideNeedsSingleFile(cliTitle, cliPageID string, nFiles int) bool {
 }
 
 // resolveTitlePageID resolves the effective title and page id, letting the CLI
-// flags override the file's frontmatter. Either may be "" (an empty title falls
-// back to the live page title later; an empty page id is an error).
-func resolveTitlePageID(cliTitle, cliPageID string, mf *frontmatter.MarkdownFile) (title, pageID string) {
+// flags override the file's frontmatter. An empty page id is an error; an empty
+// title is an error only when the frontmatter key is present, which is what
+// titlePresent reports. An absent title falls back to the live page title later.
+//
+// --title wins over both, as every other override does, so it satisfies a
+// present-but-empty frontmatter title rather than tripping over it.
+func resolveTitlePageID(cliTitle, cliPageID string, mf *frontmatter.MarkdownFile) (
+	title string, titlePresent bool, pageID string) {
 	title = cliTitle
 	if title == "" {
-		title = mf.Title()
+		title, titlePresent = mf.TitleField()
 	}
 	pageID = cliPageID
 	if pageID == "" {
 		pageID = mf.PageID()
 	}
-	return title, pageID
+	return title, titlePresent, pageID
 }
 
 // resolveWidth resolves the page width to assert. It returns apply=false when
