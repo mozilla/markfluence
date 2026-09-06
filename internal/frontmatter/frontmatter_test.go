@@ -309,6 +309,57 @@ func TestUpdateFieldKeepsACommentOnlyBlocksNote(t *testing.T) {
 	}
 }
 
+// --- Normalize -------------------------------------------------------------------
+
+func TestNormalizeReordersAndDropsBlanks(t *testing.T) {
+	in := "---\npage_width: max\npage_id: 9\ncustom: z\n\nparent: 4\nspace: ENG\ntitle: T\n---\nbody\n"
+	got, reordered, err := frontmatter.Normalize(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reordered {
+		t.Error("reordered = false, want true")
+	}
+	want := "---\ntitle: T\nspace: ENG\nparent: 4\npage_id: 9\ncustom: z\npage_width: max\n---\nbody\n"
+	if got != want {
+		t.Errorf("Normalize =\n%q\nwant\n%q", got, want)
+	}
+}
+
+// TestNormalizeIsANoOpWhenCanonical is what makes "reordered" mean exactly "keys
+// moved", and is why a canonical file keeps its blank lines: normalize orders
+// fields, it is not a formatter.
+func TestNormalizeIsANoOpWhenCanonical(t *testing.T) {
+	for _, in := range []string{
+		"---\ntitle: T\nspace: ENG\npage_id: 9\n---\nbody\n",
+		"---\ntitle: T\n\npage_id: 9\n---\nbody\n",
+		"# no frontmatter at all\n",
+	} {
+		got, reordered, err := frontmatter.Normalize(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if reordered {
+			t.Errorf("Normalize(%q) reordered = true, want false", in)
+		}
+		if got != in {
+			t.Errorf("Normalize(%q) = %q, want it unchanged", in, got)
+		}
+	}
+}
+
+func TestNormalizeKeepsACommentWithItsKey(t *testing.T) {
+	in := "---\npage_id: 9\n# about the title\ntitle: T\n---\nbody\n"
+	got, _, err := frontmatter.Normalize(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "---\n# about the title\ntitle: T\npage_id: 9\n---\nbody\n"
+	if got != want {
+		t.Errorf("Normalize =\n%q\nwant\n%q", got, want)
+	}
+}
+
 // --- MarkdownFile accessors -----------------------------------------------------
 
 func TestMarkdownFileAccessors(t *testing.T) {
