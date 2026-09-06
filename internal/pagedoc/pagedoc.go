@@ -279,20 +279,19 @@ func Frontmatter(c *client.ConfluenceClient, page *client.Page, parentOverride s
 }
 
 // RenderFrontmatter assembles the frontmatter block from resolved field values,
-// omitting space/parent/page_width when empty. UpdateField emits them in the
-// canonical order and auto-quotes values as needed.
+// omitting space/parent/page_width when empty. frontmatter.Render emits them in
+// the canonical order and quotes values as YAML needs.
 func RenderFrontmatter(title, space, parent, pageID, width string) string {
-	fm := ""
-	fm = frontmatter.UpdateField(fm, "title", title, "")
+	fields := []frontmatter.Field{{Key: "title", Value: title}}
 	if space != "" {
-		fm = frontmatter.UpdateField(fm, "space", space, "")
+		fields = append(fields, frontmatter.Field{Key: "space", Value: space})
 	}
 	if parent != "" {
-		fm = frontmatter.UpdateField(fm, "parent", parent, "")
+		fields = append(fields, frontmatter.Field{Key: "parent", Value: parent})
 	}
-	fm = frontmatter.UpdateField(fm, "page_id", pageID, "")
+	fields = append(fields, frontmatter.Field{Key: "page_id", Value: pageID})
 	if width != "" {
-		fm = frontmatter.UpdateField(fm, "page_width", width, "")
+		fields = append(fields, frontmatter.Field{Key: "page_width", Value: width})
 	}
-	return fm
+	return frontmatter.Render(fields)
 }

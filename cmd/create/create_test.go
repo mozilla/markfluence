@@ -409,3 +409,23 @@ func TestTopoSortOrdersParentsBeforeChildren(t *testing.T) {
 		t.Errorf("order = %v, want parent before child before grandchild", got)
 	}
 }
+
+// TestWriteBackFrontmatterQuotesAColonTitle is #130 at the layer that writes it.
+func TestWriteBackFrontmatterQuotesAColonTitle(t *testing.T) {
+	r := record{title: "Deploy Runbook: Part 2", spaceKey: "ENG", width: pagewidth.Max}
+
+	got, err := writeBackFrontmatter("---\ntitle: x\n---\nbody\n", r, "123", "null", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `title: "Deploy Runbook: Part 2"`) {
+		t.Errorf("writeBackFrontmatter =\n%s\nwant the colon title quoted", got)
+	}
+	mf, err := frontmatter.Parse("f.md", got)
+	if err != nil {
+		t.Fatalf("wrote frontmatter it cannot read back: %v", err)
+	}
+	if mf.Title() != r.title {
+		t.Errorf("title round-tripped as %q, want %q", mf.Title(), r.title)
+	}
+}

@@ -141,7 +141,10 @@ func processFile(filename string, c *client.ConfluenceClient) *fixResult {
 
 	content := mf.Content
 	for _, ch := range r.changes {
-		content = frontmatter.UpdateField(content, ch.field, ch.newValue, "")
+		var err error
+		if content, err = frontmatter.UpdateField(content, ch.field, ch.newValue, ""); err != nil {
+			return r.fail(err, jsonout.CodeValidation)
+		}
 	}
 	if err := os.WriteFile(filename, []byte(content), 0o644); err != nil {
 		return r.fail(err, jsonout.CodeIO)
@@ -207,10 +210,16 @@ func plannedChanges(fm map[string]string, page *client.Page, liveWidth string) [
 		}
 		current, present := fm[lv.field]
 		switch {
-		case !present || strings.TrimSpace(current) == "":
+		case !present:
 			changes = append(changes, change{lv.field, "(none)", lv.value})
 		case norm(current) != norm(lv.value):
-			changes = append(changes, change{lv.field, current, lv.value})
+			// A present-but-blank value goes through norm, not straight to
+			// "(none)": every null spelling now parses to "", so a top-level
+			// page's `parent: null` reads as "" and norm makes it equal to the
+			// orNull("null") the live side reports. Short-circuiting on blank
+			// would plan `parent: (none) -> null` on every run, write it, read
+			// "" again, and never converge.
+			changes = append(changes, change{lv.field, orNone(current), lv.value})
 		}
 	}
 
@@ -242,6 +251,15 @@ func norm(value string) string {
 		return ""
 	}
 	return t
+}
+
+// orNone renders a frontmatter value for the "old" column, naming a blank as
+// "(none)" the way an absent field is named.
+func orNone(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "(none)"
+	}
+	return s
 }
 
 func orNull(s string) string {
