@@ -9,6 +9,13 @@
 // too. A parent cycle among the given files is a different graph -- the
 // reserve phase needs a real topological order for it and rejects the batch
 // outright when there isn't one.
+//
+// Preflight converts every file too, and throws the result away. Only the error
+// is wanted: a document the converter refuses is refused before anything is
+// created, rather than after the reserve phase has already made a page and put
+// its id in the file (#127). The result cannot be reused by publish, because
+// reserve seeds the batch's page ids into the shared link index in between --
+// see resolveFile.
 package create
 
 import (
@@ -126,9 +133,17 @@ type record struct {
 // failure is a phase-1 validation error against a file (or "(hierarchy)").
 // pageID and url are set only for a frontmatter page_id failure, which is the one
 // validation error that can name a page: see pageIDFailure.
+//
+// code travels with the failure rather than being supplied by abort(), which
+// used to hardcode VALIDATION for everything phase 1 rejected. It stopped being
+// true once phase 1 started converting: a conversion failure reports CONVERT,
+// the same code it reported from phase 3 before the check moved (see
+// convertFailure). Every literal building one of these must set code, since
+// abortedResult emits whatever is here and "" is not in the schema's enum.
 type failure struct {
 	filename, message string
 	pageID, url       string
+	code              jsonout.Code
 }
 
 // pageIDFailure is a phase-1 failure about a file's frontmatter page_id. create
@@ -147,13 +162,33 @@ type pageIDFailure struct {
 
 func (e *pageIDFailure) Error() string { return e.message }
 
+// convertFailure marks a phase-1 error as having come from the converter rather
+// than from validation, so the failure reports CONVERT. Typed for the same
+// reason pageIDFailure is: resolveFile hands back a plain error, and newFailure
+// is the one place that turns one into a reportable failure -- so what a caller
+// needs to know beyond the message travels in the error's type.
+//
+// It carries no message of its own. The converter's own error text is already
+// the whole diagnosis (a NameCollisionError names both paths, with lines, and
+// says which one to rename), and wrapping it in "converting: ..." would only
+// push that further from the start of the line.
+type convertFailure struct{ err error }
+
+func (e *convertFailure) Error() string { return e.err.Error() }
+func (e *convertFailure) Unwrap() error { return e.err }
+
 // newFailure records a phase-1 error against a file, carrying over the fields of
-// a page_id failure so abort() can report them without re-fetching anything.
+// a page_id failure so abort() can report them without re-fetching anything,
+// and the code the error's type implies.
 func newFailure(filename string, err error) failure {
-	f := failure{filename: filename, message: err.Error()}
+	f := failure{filename: filename, message: err.Error(), code: jsonout.CodeValidation}
 	var pf *pageIDFailure
 	if errors.As(err, &pf) {
 		f.pageID, f.url = pf.pageID, pf.url
+	}
+	var cf *convertFailure
+	if errors.As(err, &cf) {
+		f.code = jsonout.CodeConvert
 	}
 	return f
 }
@@ -288,13 +323,17 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 		for _, r := range records {
 			if r.parent.kind == parentInSet && byAbs[r.parent.abs].spaceID != r.spaceID {
-				errs = append(errs, failure{filename: r.filename, message: "parent page is not in the target space"})
+				errs = append(errs, failure{
+					filename: r.filename,
+					message:  "parent page is not in the target space",
+					code:     jsonout.CodeValidation,
+				})
 			}
 		}
 		if len(errs) == 0 {
 			ordered, err = topoSort(records, byAbs)
 			if err != nil {
-				errs = append(errs, failure{filename: "(hierarchy)", message: err.Error()})
+				errs = append(errs, failure{filename: "(hierarchy)", message: err.Error(), code: jsonout.CodeValidation})
 			}
 		}
 	}
@@ -470,6 +509,11 @@ func reserveOne(
 // interrupted run leaves stubs where the old single-pass create left pages
 // missing entirely -- uglier, but every id is already persisted, so a plain
 // `markfluence update` finishes the job).
+//
+// What can still fail here is a server or network condition -- and only that.
+// The conversion runs a second time, but it already ran in preflight against
+// the same file, so a document defect never reaches this point; that is the
+// residual S7 (no-partial-create) stays Partial for.
 func publishOne(r record, res *createResult, pageID string, version int, c *client.ConfluenceClient) *createResult {
 	// SiteURL, not BaseURL: rewritten links are published into the page, so they
 	// must point at the site even when requests go through the gateway.
@@ -595,6 +639,28 @@ func resolveFile(
 
 	if err := checkTitleFree(c, title, spaceKey, spaceID); err != nil {
 		return record{}, err
+	}
+
+	// Convert, and keep nothing but the error. A defect the converter refuses --
+	// two assets wanting one attachment name, say -- is a property of the file on
+	// disk, so asking here, before the reserve phase creates anything, is what
+	// keeps it from leaving a content-less page and a page_id the author has to
+	// undo by hand (#127).
+	//
+	// Last, after every server check, so the error precedence above is untouched:
+	// a page_id that is taken or broken stays the first thing reported about a
+	// file, which is what its own comment argues for. The cost is that a file
+	// that cannot convert still makes those requests first.
+	//
+	// The page is discarded rather than handed to publishOne, and its Broken and
+	// Warnings with it. This index has not been seeded with the batch's own page
+	// ids yet, so an in-set link renders unresolved here and resolves there --
+	// reusing this result would publish the unresolved one, which is the ordering
+	// dependency _plans/026 removed. The *error* is the same in both phases,
+	// because no error path reads the index at all; that is pinned by
+	// TestErrorDoesNotDependOnTheIndex in internal/convert.
+	if _, err := convert.MdToConfluence(mf, root, index, c.SiteURL(), spaceKey, buildinfo.Stamp()); err != nil {
+		return record{}, &convertFailure{err: err}
 	}
 
 	return record{filename, abs, mf, title, spaceKey, spaceID, parent, width, root, index}, nil

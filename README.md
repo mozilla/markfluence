@@ -247,7 +247,7 @@ of clash name the page in the way, so you can go look at it:
 ```console
 $ markfluence create docs/runbook.md
   ✗ [docs/runbook.md] a page already exists at page_id 123 ("Deploy Runbook"): https://wiki.example.net/wiki/spaces/ENG/pages/123/Deploy+Runbook
-  ✗ Aborting: 1 file(s) failed validation; nothing was created.
+  ✗ Aborting: 1 file(s) failed preflight; nothing was created.
 ```
 
 A file whose `page_id` doesn't resolve is also a failure, not a fresh page:
