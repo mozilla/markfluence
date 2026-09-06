@@ -128,7 +128,18 @@ func processFile(filename string, c *client.ConfluenceClient) *fixResult {
 	}
 
 	r.changes = plannedChanges(mf.Frontmatter, page, liveWidth)
-	if len(r.changes) == 0 {
+	// Field order is reconciled too, and counts as a change: reporting a
+	// jumbled file "consistent" would mean running fix, being told there is
+	// nothing to do, and still having a jumbled file. Computed before any edit,
+	// which is stable because a surgical UpdateField never moves an existing key
+	// and inserting before the first key that sorts after it cannot flip
+	// canonicity either way.
+	_, reordered, err := frontmatter.Normalize(mf.Content)
+	if err != nil {
+		return r.fail(err, jsonout.CodeValidation)
+	}
+	r.reordered = reordered
+	if len(r.changes) == 0 && !r.reordered {
 		r.ok = true
 		r.status = statusConsistent
 		return r
@@ -145,6 +156,12 @@ func processFile(filename string, c *client.ConfluenceClient) *fixResult {
 		if content, err = frontmatter.UpdateField(content, ch.field, ch.newValue, ""); err != nil {
 			return r.fail(err, jsonout.CodeValidation)
 		}
+	}
+	// Last, so a key inserted above lands in canonical position rather than
+	// wherever the surgical insert put it.
+	content, _, err = frontmatter.Normalize(content)
+	if err != nil {
+		return r.fail(err, jsonout.CodeValidation)
 	}
 	if err := os.WriteFile(filename, []byte(content), 0o644); err != nil {
 		return r.fail(err, jsonout.CodeIO)

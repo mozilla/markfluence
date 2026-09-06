@@ -22,15 +22,16 @@ const noneDisplay = "(none)"
 
 // fixResult captures the outcome of reconciling one file.
 type fixResult struct {
-	file     string
-	ok       bool
-	status   string
-	pageID   string
-	dryRun   bool
-	changes  []change
-	warnings []string
-	errMsg   string
-	code     jsonout.Code
+	file      string
+	ok        bool
+	status    string
+	pageID    string
+	dryRun    bool
+	changes   []change
+	reordered bool
+	warnings  []string
+	errMsg    string
+	code      jsonout.Code
 }
 
 func (r *fixResult) fail(err error, code jsonout.Code) *fixResult {
@@ -55,6 +56,9 @@ func (r *fixResult) renderHuman() {
 		ui.Info(prefix + " already consistent")
 		return
 	}
+	if r.reordered {
+		ui.Info(prefix + " normalized frontmatter field order")
+	}
 	// The per-field lines are identical in a dry-run; the leading DRY RUN banner
 	// (and dry_run in --json) is the only signal nothing was written.
 	for _, ch := range r.changes {
@@ -64,15 +68,16 @@ func (r *fixResult) renderHuman() {
 
 // jsonFixResult is fix's --json result shape.
 type jsonFixResult struct {
-	OK       bool          `json:"ok"`
-	Status   string        `json:"status"`
-	File     string        `json:"file"`
-	PageID   *string       `json:"page_id"`
-	DryRun   bool          `json:"dry_run"`
-	Changes  []jsonChange  `json:"changes"`
-	Warnings []string      `json:"warnings"`
-	Error    *string       `json:"error"`
-	Code     *jsonout.Code `json:"code"`
+	OK        bool          `json:"ok"`
+	Status    string        `json:"status"`
+	File      string        `json:"file"`
+	PageID    *string       `json:"page_id"`
+	DryRun    bool          `json:"dry_run"`
+	Changes   []jsonChange  `json:"changes"`
+	Reordered bool          `json:"reordered"`
+	Warnings  []string      `json:"warnings"`
+	Error     *string       `json:"error"`
+	Code      *jsonout.Code `json:"code"`
 }
 
 // jsonChange is one reconciled field. old is null when there was no prior value.
@@ -84,13 +89,14 @@ type jsonChange struct {
 
 func (r *fixResult) jsonResult() jsonFixResult {
 	res := jsonFixResult{
-		OK:       r.ok,
-		Status:   r.status,
-		File:     r.file,
-		PageID:   nullableStr(r.pageID),
-		DryRun:   r.dryRun,
-		Changes:  toJSONChanges(r.changes),
-		Warnings: nonNilStrings(r.warnings),
+		OK:        r.ok,
+		Status:    r.status,
+		File:      r.file,
+		PageID:    nullableStr(r.pageID),
+		DryRun:    r.dryRun,
+		Changes:   toJSONChanges(r.changes),
+		Reordered: r.reordered,
+		Warnings:  nonNilStrings(r.warnings),
 	}
 	if !r.ok {
 		res.Error = &r.errMsg
