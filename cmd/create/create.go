@@ -784,7 +784,10 @@ func overrideNeedsSingleFile(cliTitle string, nFiles int) bool {
 	return cliTitle != "" && nFiles != 1
 }
 
-// writeBackFrontmatter sets every field create persists.
+// writeBackFrontmatter sets every field create persists, then normalizes the
+// block's field order. Normalizing here rather than leaving it to fix costs
+// nothing: persist already rewrites all five fields, so there is no untouched
+// line left for a surgical edit to protect.
 func writeBackFrontmatter(content string, r record, pageID, parentValue, parentComment string) (string, error) {
 	fields := []struct{ key, value, comment string }{
 		{"title", r.title, ""},
@@ -799,7 +802,8 @@ func writeBackFrontmatter(content string, r record, pageID, parentValue, parentC
 			return "", err
 		}
 	}
-	return content, nil
+	content, _, err = frontmatter.Normalize(content)
+	return content, err
 }
 
 // resolveTitle returns the effective title: --title overrides the frontmatter.

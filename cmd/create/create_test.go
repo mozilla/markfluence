@@ -410,6 +410,24 @@ func TestTopoSortOrdersParentsBeforeChildren(t *testing.T) {
 	}
 }
 
+// TestWriteBackFrontmatterNormalizes pins that persist leaves the block in
+// canonical order even when the author's file was not. Unlike an ordinary
+// surgical edit there is nothing to protect here: persist rewrites all five
+// fields anyway, so there is no untouched line for a minimal diff to preserve.
+func TestWriteBackFrontmatterNormalizes(t *testing.T) {
+	in := "---\npage_id: null\ntitle: My Page\n---\nbody\n"
+	r := record{title: "My Page", spaceKey: "ENG", width: pagewidth.Max}
+
+	got, err := writeBackFrontmatter(in, r, "123", "null", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "---\ntitle: My Page\nspace: ENG\nparent: null\npage_id: 123\npage_width: max\n---\nbody\n"
+	if got != want {
+		t.Errorf("writeBackFrontmatter =\n%q\nwant\n%q", got, want)
+	}
+}
+
 // TestWriteBackFrontmatterQuotesAColonTitle is #130 at the layer that writes it.
 func TestWriteBackFrontmatterQuotesAColonTitle(t *testing.T) {
 	r := record{title: "Deploy Runbook: Part 2", spaceKey: "ENG", width: pagewidth.Max}
