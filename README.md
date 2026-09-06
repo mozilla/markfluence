@@ -336,8 +336,11 @@ Usage: markfluence fix FILE... [flags]
 Reconcile each file's frontmatter (`page_id`, `space`, `parent`, `page_width`, and
 a missing `title`) to match its live Confluence page. The page is located by
 `page_id`, or by searching for the `title` when `page_id` is absent. `fix` never
-creates, updates, or moves pages — it's read-only on the server and writes a file
-only when a field actually changed. `--dry-run` reports the changes without writing.
+creates, updates, or moves pages — it's read-only on the server. It writes a file
+when a field changed, and also when the frontmatter fields are out of canonical
+order (`title`, `space`, `parent`, `page_id`, then the rest alphabetically),
+which is reported separately as `reordered`. `--dry-run` reports both without
+writing.
 
 ```sh
 markfluence fix docs/*.md
