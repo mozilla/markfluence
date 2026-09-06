@@ -341,3 +341,54 @@ func TestNeverImportsClient(t *testing.T) {
 		}
 	}
 }
+
+// TestRunEmptyTitleIsBroken pins that a present-but-empty title is reported.
+// The narrowness elsewhere -- check never reports whether page_id/space/parent
+// are set -- rests on check not knowing whether create or update is coming, and
+// that reasoning stops applying to title once both verbs reject an empty one.
+func TestRunEmptyTitleIsBroken(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "main.md"), "---\ntitle:\npage_id: 1\n---\n# Main\n")
+
+	out, err := captureOutput(t, func() error { return run(testCmd(t, ""), []string{filepath.Join(dir, "main.md")}) })
+	if !ui.IsSilent(err) || ui.ExitCode(err) != 1 {
+		t.Fatalf("run = %v, want a silent exit-1 error", err)
+	}
+	if !strings.Contains(out, "empty 'title:'") {
+		t.Errorf("output = %q, want the empty-title message", out)
+	}
+}
+
+// TestRunAbsentTitleIsNotReported is the other half: a file with no title key is
+// the normal shape for update, which keeps the live page's title.
+func TestRunAbsentTitleIsNotReported(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "main.md"), "---\npage_id: 1\n---\n# Main\n")
+
+	out, err := captureOutput(t, func() error { return run(testCmd(t, ""), []string{filepath.Join(dir, "main.md")}) })
+	if err != nil {
+		t.Fatalf("run = %v, want success", err)
+	}
+	if strings.Contains(out, "title") {
+		t.Errorf("output = %q, want no complaint about the absent title", out)
+	}
+}
+
+// TestRunEmptyTitleReportedEvenWhenConversionFails pins that a frontmatter
+// defect is not hidden behind an unrelated one. A name collision aborts the
+// conversion, and collecting the title check afterwards made it unreachable.
+func TestRunEmptyTitleReportedEvenWhenConversionFails(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "arch", "diagram.png"), "PNG")
+	write(t, filepath.Join(dir, "ops", "diagram.png"), "PNG")
+	write(t, filepath.Join(dir, "main.md"),
+		"---\ntitle:\n---\n![a](arch/diagram.png)\n\n![b](ops/diagram.png)\n")
+
+	out, err := captureOutput(t, func() error { return run(testCmd(t, ""), []string{filepath.Join(dir, "main.md")}) })
+	if !ui.IsSilent(err) || ui.ExitCode(err) != 1 {
+		t.Fatalf("run = %v, want a silent exit-1 error", err)
+	}
+	if !strings.Contains(out, "empty 'title:'") {
+		t.Errorf("output = %q, want the empty-title message alongside the collision", out)
+	}
+}

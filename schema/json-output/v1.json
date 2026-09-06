@@ -433,7 +433,7 @@
       }
     },
     "checkResult": {
-      "description": "One checked file. broken/warnings are always [] (never null), matching ConfluencePage's own convention. status=broken means broken is non-empty (frontmatter or converter); status=failed means the file never reached a clean answer at all (unreadable, unterminated frontmatter, bad page_width, non-numeric page_id) -- code is VALIDATION in that case. debug is non-null only when --show-html was passed and the file reached the converter (never on a failed file).",
+      "description": "One checked file. broken/warnings are always [] (never null), matching ConfluencePage's own convention. status=broken means broken is non-empty (frontmatter or converter); status=failed means the file never reached a clean answer at all (unreadable, unterminated frontmatter, frontmatter that is not valid YAML or not a flat mapping of single-line scalars, bad page_width, non-numeric page_id) -- code is VALIDATION in that case. debug is non-null only when --show-html was passed and the file reached the converter (never on a failed file).",
       "type": "object",
       "additionalProperties": false,
       "required": ["ok", "status", "file", "broken", "warnings", "debug", "error", "code"],
