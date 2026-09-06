@@ -533,8 +533,10 @@ const collidingBody = "---\ntitle: A\n---\n![arch](arch/diagram.png)\n\n![deploy
 // with "a page already exists at page_id" instead. Preflight converts now, so
 // the file is refused with nothing created and nothing written.
 //
-// The fake has no attachment support and errors on an unexpected request, so a
-// fixture that reached the publish phase would fail here twice over.
+// Asserted on the page count and the file, not on the fake refusing an
+// attachment request: reverting the fix fails this file at MdToConfluence in
+// the publish phase, which is before SyncAttachments, so the fake never sees
+// one.
 func TestRunRefusesADocumentDefectBeforeCreatingAnything(t *testing.T) {
 	resetOpts(t)
 	dir := t.TempDir()
