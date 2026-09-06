@@ -7,11 +7,15 @@ package convert_test
 // create is three-phase (_plans/034). Preflight validates every file, reserve
 // creates a content-less page for each and seeds its id into the shared index,
 // publish converts and fills each page in. Preflight converts too, purely to
-// learn whether the file can convert at all -- which is only sound because
-// neither NameCollisionError (images.go) nor goldmark's own failure reads the
-// index, so the verdict cannot differ between the two phases. It is also why
-// the preflight result is *discarded* rather than reused by publish: the HTML
-// does differ, since an in-set link resolves only once the id is there.
+// learn whether the file can convert at all. That is sound for a narrower
+// reason than "the converter ignores the index": whether renderImage runs at
+// all does depend on it, since renderLink skips a broken link's children and
+// Broken is decided by FileExists. What holds is that reserve only calls
+// SetPage, which writes idx.pages alone -- nothing there can raise an error or
+// change one's text, and FileExists/Anchor read idx.anchors, fixed at Build
+// time and the same in both phases. It is also why the preflight result is
+// *discarded* rather than reused by publish: the HTML does differ, since an
+// in-set link resolves only once the id is there.
 //
 // Both halves are asserted together on purpose. Either alone can pass
 // vacuously -- "the errors match" proves nothing if the seeding never mattered.

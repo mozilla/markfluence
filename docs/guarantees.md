@@ -52,7 +52,7 @@ A violation here does damage, rather than producing a wrong answer.
 | **S4** | `no-removal-as-side-effect` | Nothing is removed as a side effect. Removal is a command's stated purpose or it does not happen. | Vacuous |
 | **S5** | `remove-only-ours` | markfluence removes only what markfluence created. | Vacuous |
 | **S6** | `removal-is-previewable` | A command that removes says what it will remove before doing it, and honours `--dry-run`. | Vacuous |
-| **S7** | `no-partial-create` | A file `create` fails leaves no page behind. | Partial |
+| **S7** | `no-partial-create` | A file that `create` fails to publish leaves no page behind. | Partial |
 
 **S1** is enforced by `attachfile.Resolve`, which refuses a traversing path
 rather than clipping it.
@@ -124,19 +124,35 @@ gap is not the part that looks alarming.
 `create` is three-phase: preflight validates every file, reserve creates a
 content-less page for each and persists its `page_id`, publish converts and
 fills each page in. Anything preflight rejects aborts the batch with nothing
-created, and since #127 that includes **every failure knowable from the files on
-disk** — preflight converts each file and keeps the error, so a document the
-converter refuses (two assets wanting one attachment name, say) never reaches
-the reserve phase. It used to, which is what made the guarantee worth writing:
-the author was left with a content-less page, a `page_id` they did not ask for,
-and a re-run that refused because a page was already at that id.
+created, and since #127 that includes **every defect the converter can find in
+the files on disk** — preflight converts each file and keeps the error, so a
+document the converter refuses (two assets wanting one attachment name, say)
+never reaches the reserve phase. It used to, which is what made the guarantee
+worth writing: the author was left with a content-less page, a `page_id` they
+did not ask for, and a re-run that refused because a page was already at that
+id.
 
-What remains is a **server or network failure in the publish phase**, which
-leaves the reserved stub behind. That is deliberate rather than unaddressed:
-`_plans/026` accepted it as the price of reserving every id before converting
-anything, which is what stopped link resolution depending on creation order.
-The stub is not lost work — its id is already in the frontmatter, so a plain
-`markfluence update` finishes publishing it — but a page exists that the
+Three residuals remain, and only the first is purely remote:
+
+- **A server or network failure while publishing.** The stub stays, with its
+  `page_id` already in the frontmatter, so a plain `markfluence update`
+  finishes publishing it.
+- **An attachment that cannot be read.** `client.SyncAttachments` opens every
+  asset to checksum and upload it, which the converter never does — it only
+  `Lstat`s. So an unreadable image (mode `000`, a file replaced between the two
+  steps) fails in the publish phase, locally, after the stub exists. Deliberately
+  not pre-flighted: it duplicates the read the upload makes anyway and races the
+  filesystem, so the check can pass and the upload still fail.
+- **A frontmatter file that cannot be written.** `reserveOne` calls
+  `os.WriteFile` *after* `CreatePage`, so a read-only `.md` leaves a stub whose
+  id is **not** persisted — the one case where `markfluence update` cannot pick
+  the work up, since nothing on disk names the page. `failKeepingPage` keeps the
+  id and URL in the result for exactly this reason: the run's own output is the
+  only remaining trace.
+
+The first is deliberate rather than unaddressed: `_plans/026` accepted it as the
+price of reserving every id before converting anything, which is what stopped
+link resolution depending on creation order. In all three a page exists that the
 command reported as failed, so the guarantee does not hold as written.
 
 Closing it would mean deleting the stub, and that is not a change this

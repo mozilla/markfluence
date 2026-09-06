@@ -274,14 +274,17 @@ behind rather than no page at all; every id is already persisted (unless
 The preflight phase converts each file too, keeping only the answer to "can this
 convert at all?" — so markdown the converter refuses (two images in one document
 whose file names match, say) aborts the batch instead of leaving an empty page
-and a `page_id` behind. What can still leave a stub is a server or network
-failure while publishing, which no local check could have predicted; see S7 in
-[docs/guarantees.md](docs/guarantees.md).
+and a `page_id` behind. A stub can still be left by a failure while publishing:
+a server or network error, an attachment that turns out to be unreadable, or a
+frontmatter file that can't be written. See S7 in
+[docs/guarantees.md](docs/guarantees.md), which names all three.
 
-`--dry-run` validates every file (the same checks a real run makes, so it exits
+`--dry-run` checks every file (the same checks a real run makes, so it exits
 non-zero on the same failures) and previews what would be created — pages,
 attachment uploads, page widths, and frontmatter write-backs — without writing to
-Confluence or to any file. Because nothing is created, a previewed page has no id
+Confluence or to any file. Because it makes the same checks, one unpublishable
+file aborts the preview for the whole batch rather than previewing the rest; to
+lint several files independently, use [`check`](#check) instead. Because nothing is created, a previewed page has no id
 or URL yet; an in-set child's `parent` is unresolved, but its source file is
 reported in the `parent_file` output field (present in every run, in `--json`).
 

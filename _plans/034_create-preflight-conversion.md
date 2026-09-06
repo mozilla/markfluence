@@ -45,12 +45,19 @@ regression -- exactly the ordering dependency `_plans/026` removed. The extra
 cost is one local conversion per file over bytes already in memory: no network,
 no I/O.
 
-**The converse is what makes the preflight sound: no error path reads the
-index.** `MdToConfluence` returns exactly two errors -- `NameCollisionError`
-(images.go:121) and goldmark's own `Convert` failure (convert.go:103) -- and
-neither consults `index`. So phase 1's verdict is neither a false positive nor a
-false negative against phase 3's, and the error text is identical. That is the
-invariant the whole design rests on, so it gets a test rather than only a
+**The converse is what makes the preflight sound, and the reason is narrower
+than "the converter ignores the index".** `MdToConfluence` returns exactly two
+errors -- `NameCollisionError` (images.go:121) and goldmark's own `Convert`
+failure (convert.go:103). Neither reads `index` directly, but whether
+`renderImage` is *reached* does depend on it: `renderLink` returns
+`WalkSkipChildren` for a Broken target, and Broken is decided by
+`index.FileExists`. What actually holds is that reserve only ever calls
+`SetPage`, which writes `idx.pages` alone -- nothing in `idx.pages` can raise
+an error or change one's text -- while `FileExists` and `Anchor` read
+`idx.anchors`, fixed at `Build` time and identical in both phases. So phase 1's
+verdict is neither a false positive nor a false negative against phase 3's, and
+the error text is identical. A change making `SetPage` also mark a file as
+existing would break this, which is why it gets a test rather than only a
 comment.
 
 **Phase 1's `Broken` and `Warnings` are discarded.** They are *wrong* for any
@@ -83,7 +90,10 @@ defect reports `CodeConvert` from phase 3 today, so keeping it means a `--json`
 consumer's distinction between "the document did not convert" and "the server or
 the frontmatter said no" survives the move. `abort()` currently hardcodes
 `jsonout.CodeValidation` (json.go:203, json.go:210); `failure` gains a `code`
-field instead. The schema needs no change: its `code` enum is global (v1.json:159)
+field instead. Note what this does *not* buy: `newFailure` still defaults an
+HTTP error from the server checks to VALIDATION, so the distinction is between
+"did not convert" and "everything else", not a full code taxonomy -- see Out of
+scope. The schema needs no change: its `code` enum is global (v1.json:159)
 and already contains both, and nothing in the `create` branch constrains which
 appears.
 
@@ -99,7 +109,7 @@ converts in `publishOne` today, so a colliding file currently prints a per-file
 which is right, because a dry-run's job is to predict the real run, and the real
 run now aborts. This is a behavior change to note, not a regression.
 
-**Scope is the conversion only.** Two adjacent things stay out, below.
+**Scope is the conversion only.** Three adjacent things stay out, below.
 
 ## Implementation
 
@@ -112,15 +122,6 @@ run now aborts. This is a behavior change to note, not a regression.
 - `resolveFile` -- after `checkTitleFree`, before building the `record`:
 
   ```go
-  // Convert now, discarding everything but the error. A defect the converter
-  // finds is a property of the file on disk, so asking here -- before phase 2
-  // creates anything -- is what keeps #127's stub from being made at all.
-  //
-  // The page is thrown away rather than reused by publishOne, and its Broken
-  // and Warnings with it: this index has not been seeded with the batch's own
-  // page ids yet, so an in-set link renders unresolved here and resolves
-  // there. The *error* is the same either way -- neither NameCollisionError
-  // nor goldmark's Convert failure reads the index at all.
   if _, err := convert.MdToConfluence(
       mf, root, index, c.SiteURL(), spaceKey, buildinfo.Stamp(),
   ); err != nil {
@@ -128,15 +129,20 @@ run now aborts. This is a behavior change to note, not a regression.
   }
   ```
 
-- `failure` gains `code jsonout.Code`.
+  carrying a comment that states why the page is discarded and why the error
+  survives the phase boundary -- the two paragraphs under Decisions above.
+
+- `failure` gains `code jsonout.Code`, and `validationFailure(filename, message)`
+  is the constructor for a failure with no error value behind it (the two run()
+  diagnoses itself). Between it and `newFailure`, nothing sets `code` by hand,
+  which is what keeps a forgotten one from emitting `""` into a field whose enum
+  does not contain it.
 - `newFailure` sets `code: jsonout.CodeValidation` by default and
   `jsonout.CodeConvert` when `errors.As(err, &cf)` matches a `*convertFailure`,
   alongside the `pageIDFailure` field-carrying it already does.
 - The two bare `failure{...}` literals in `run` -- "parent page is not in the
-  target space" and the `"(hierarchy)"` topo-sort failure -- set
-  `code: jsonout.CodeValidation` explicitly. They must: `abortedResult` only
-  emits `code` when `message` is non-empty, so a zero-value `code` would put
-  `""` into a field whose enum does not contain it.
+  target space" and the `"(hierarchy)"` topo-sort failure -- go through
+  `validationFailure`.
 - `publishOne`'s doc comment: keep the stub-is-permanent paragraph, and add that
   a conversion failure no longer reaches it -- what survives here is a server or
   network condition no local check could have predicted (S7).
@@ -167,9 +173,9 @@ created nothing.
 - **End-to-end, `cmd/create/run_test.go`**: a fixture referencing
   `arch/diagram.png` and `deploy/diagram.png` through the existing
   `fakeConfluence`. Assert the batch aborted, `f.pages` is empty, and the file's
-  frontmatter still has no `page_id`. The fake's own constraint helps here --
-  it has no attachment support and `default`s to `t.Errorf("unexpected
-  request")`, so a fixture that reached phase 3 fails loudly on its own.
+  frontmatter still has no `page_id`. Not asserted on the fake refusing an
+  attachment request: reverting the fix fails the file at `MdToConfluence`
+  inside phase 3, which is before `SyncAttachments`, so the fake never sees one.
 - **The batch is refused, not just the bad file**: two files, one colliding.
   The clean one reports `not_created`, and no page exists for it either. This
   pins the actual behavioral change -- a conversion failure goes through
@@ -203,6 +209,14 @@ created nothing.
   open. Checking it in phase 1 duplicates work the upload does anyway and races
   the filesystem -- the check passes and the upload still fails -- and unlike
   the converter it is not network-free, since it needs the page's existing
-  attachments.
+  attachments. It is therefore one of S7's three named residuals, not something
+  this plan closes; anything claiming publish can only fail remotely is wrong.
+
+- **Routing a preflight HTTP error through `jsonout.CodeFor`.** `newFailure`
+  defaults to VALIDATION, so a rejected credential or a 5xx from `checkPageID`,
+  `ResolveSpaceID`, `checkTitleFree` or `checkParentInSpace` still reports
+  VALIDATION rather than AUTH/NETWORK/API. Pre-existing, and a real improvement
+  now that `failure` carries a code at all -- but it changes the code on
+  failures this issue is not about, so it wants its own decision.
 - **`update`.** It has no reserve phase, so a conversion failure already fails
   the file with nothing created. Nothing to fix.

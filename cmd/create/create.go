@@ -14,8 +14,8 @@
 // is wanted: a document the converter refuses is refused before anything is
 // created, rather than after the reserve phase has already made a page and put
 // its id in the file (#127). The result cannot be reused by publish, because
-// reserve seeds the batch's page ids into the shared link index in between --
-// see resolveFile.
+// reserve seeds the batch's page ids into the shared link index in between; why
+// the error survives that and the page does not is in resolveFile.
 package create
 
 import (
@@ -54,7 +54,8 @@ var Cmd = &cobra.Command{
 	Use:   "create FILE...",
 	Short: "Create new Confluence pages from markdown files",
 	Long: "Create new Confluence pages from markdown FILEs.\n\n" +
-		"All files are validated first; if any would fail, nothing is created.\n" +
+		"Every file is checked first -- including converting it -- and if any would\n" +
+		"fail, nothing is created.\n" +
 		"Otherwise a content-less stub is reserved for each, parents-first, before\n" +
 		"any of them is converted -- so a link between two files in the same batch\n" +
 		"resolves regardless of which direction it points, or whether the two link\n" +
@@ -138,8 +139,9 @@ type record struct {
 // used to hardcode VALIDATION for everything phase 1 rejected. It stopped being
 // true once phase 1 started converting: a conversion failure reports CONVERT,
 // the same code it reported from phase 3 before the check moved (see
-// convertFailure). Every literal building one of these must set code, since
-// abortedResult emits whatever is here and "" is not in the schema's enum.
+// convertFailure). Build one only through newFailure or validationFailure, both
+// of which set code -- abortedResult emits whatever is here whenever message is
+// non-empty, and "" is not in the schema's enum.
 type failure struct {
 	filename, message string
 	pageID, url       string
@@ -176,6 +178,13 @@ type convertFailure struct{ err error }
 
 func (e *convertFailure) Error() string { return e.err.Error() }
 func (e *convertFailure) Unwrap() error { return e.err }
+
+// validationFailure records a phase-1 failure that has no error value behind it
+// -- one run() diagnoses itself, over the batch rather than over a single file.
+// It exists so nothing has to remember to set code by hand.
+func validationFailure(filename, message string) failure {
+	return failure{filename: filename, message: message, code: jsonout.CodeValidation}
+}
 
 // newFailure records a phase-1 error against a file, carrying over the fields of
 // a page_id failure so abort() can report them without re-fetching anything,
@@ -323,17 +332,13 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 		for _, r := range records {
 			if r.parent.kind == parentInSet && byAbs[r.parent.abs].spaceID != r.spaceID {
-				errs = append(errs, failure{
-					filename: r.filename,
-					message:  "parent page is not in the target space",
-					code:     jsonout.CodeValidation,
-				})
+				errs = append(errs, validationFailure(r.filename, "parent page is not in the target space"))
 			}
 		}
 		if len(errs) == 0 {
 			ordered, err = topoSort(records, byAbs)
 			if err != nil {
-				errs = append(errs, failure{filename: "(hierarchy)", message: err.Error(), code: jsonout.CodeValidation})
+				errs = append(errs, validationFailure("(hierarchy)", err.Error()))
 			}
 		}
 	}
@@ -510,10 +515,12 @@ func reserveOne(
 // missing entirely -- uglier, but every id is already persisted, so a plain
 // `markfluence update` finishes the job).
 //
-// What can still fail here is a server or network condition -- and only that.
 // The conversion runs a second time, but it already ran in preflight against
-// the same file, so a document defect never reaches this point; that is the
-// residual S7 (no-partial-create) stays Partial for.
+// the same file, so a document defect never reaches this point. What can still
+// fail here is a server or network condition -- or a local read the converter
+// never made: SyncAttachments opens every asset to checksum and upload it, so
+// an image that Lstat'd fine in preflight can still be unreadable now. Those
+// are the residuals S7 (no-partial-create) stays Partial for.
 func publishOne(r record, res *createResult, pageID string, version int, c *client.ConfluenceClient) *createResult {
 	// SiteURL, not BaseURL: rewritten links are published into the page, so they
 	// must point at the site even when requests go through the gateway.
@@ -656,8 +663,16 @@ func resolveFile(
 	// Warnings with it. This index has not been seeded with the batch's own page
 	// ids yet, so an in-set link renders unresolved here and resolves there --
 	// reusing this result would publish the unresolved one, which is the ordering
-	// dependency _plans/026 removed. The *error* is the same in both phases,
-	// because no error path reads the index at all; that is pinned by
+	// dependency _plans/026 removed.
+	//
+	// The *error* is the same in both phases, and the reason is narrower than
+	// "the converter ignores the index": whether renderImage runs at all does
+	// depend on it, since renderLink skips a broken link's children and Broken
+	// is decided by index.FileExists. What holds is that reserve only ever calls
+	// SetPage, which writes idx.pages alone -- and nothing in idx.pages can
+	// raise an error or change one's text, while FileExists and Anchor read
+	// idx.anchors, fixed at Build time and identical in both phases. A change
+	// making SetPage also mark a file as existing would break this. Pinned by
 	// TestErrorDoesNotDependOnTheIndex in internal/convert.
 	if _, err := convert.MdToConfluence(mf, root, index, c.SiteURL(), spaceKey, buildinfo.Stamp()); err != nil {
 		return record{}, &convertFailure{err: err}
