@@ -1,6 +1,7 @@
 package convert_test
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -38,4 +39,19 @@ func testIndex(t *testing.T, root *project.Root) *linkindex.Index {
 		t.Fatal(err)
 	}
 	return idx
+}
+
+// writeImages creates a stub image file at root for each slash-separated
+// relative path, making the intermediate directories.
+func writeImages(t *testing.T, root string, images ...string) {
+	t.Helper()
+	for _, img := range images {
+		path := filepath.Join(root, filepath.FromSlash(img))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("PNG"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 }

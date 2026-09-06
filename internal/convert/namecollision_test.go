@@ -6,7 +6,6 @@ package convert_test
 // no correct way to publish it.
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,15 +18,7 @@ import (
 // convertBody renders body as root/main.md, returning the page or the error.
 func convertBody(t *testing.T, root, body string, images ...string) (*convert.ConfluencePage, error) {
 	t.Helper()
-	for _, img := range images {
-		path := filepath.Join(root, filepath.FromSlash(img))
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte("PNG"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	writeImages(t, root, images...)
 	md, err := frontmatter.Parse(filepath.Join(root, "main.md"), body)
 	if err != nil {
 		t.Fatal(err)
