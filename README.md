@@ -1072,15 +1072,23 @@ page_width: max
 
 ### Frontmatter
 
-Frontmatter is a block delimited by `---` lines containing flat `key: value` pairs
-(no nesting, lists, or multi-line values). Full-line `#` comments and trailing
-inline ` # ...` comments (whitespace, then `#`) are ignored.
+Frontmatter is a **YAML** block delimited by `---` lines, restricted to flat
+`key: value` pairs — no nesting, lists, or multi-line values. That restriction is
+enforced: a nested value, a `|` block, a duplicate key, or a tab indent is an
+error naming the key, not something read as blank. Full-line `#` comments and
+trailing inline ` # ...` comments are preserved when markfluence rewrites a
+block.
 
-To include a literal ` #` (or leading/trailing whitespace, or a leading quote) in a
-value, quote it with single or double quotes — e.g. `title: "Detect # Verify"`.
-Single quotes are literal (`''` escapes a quote); double quotes honor `\"` and `\\`.
-markfluence adds quotes automatically when it writes a value back if they're needed
-to round-trip.
+Because it is real YAML, a value that YAML would read as something other than a
+plain string has to be quoted — a colon-space (`title: "Deploy Runbook: Part 2"`),
+a leading `#`, `[`, `{`, `@`, `*`, `&`, `%`, `!`, `|`, `>`, `-`, or `?`, leading
+or trailing whitespace, and the words YAML types for you: `true`, `false`, `yes`,
+`no`, `null`, `~`, and anything that looks like a number. **markfluence quotes
+automatically whenever it writes a value**, so this only matters for frontmatter
+you hand-write.
+
+`null` in any spelling (`null`, `Null`, `~`, or an empty value) means *unset*.
+A page genuinely titled `null` is written `title: "null"`.
 
 | Field | Value domain | Notes |
 | --- | --- | --- |
