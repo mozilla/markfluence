@@ -156,9 +156,11 @@ func TestPlannedChangesUpdatesFieldsThatDiffer(t *testing.T) {
 }
 
 func TestPlannedChangesParentNullNormalizes(t *testing.T) {
-	// A top-level live page (no ParentID) already recorded as "null" must not be
-	// treated as a diff -- orNull("") and the frontmatter's "null" must compare equal.
-	fm := map[string]string{"parent": "null"}
+	// A top-level live page (no ParentID) already recorded as null must not be
+	// treated as a diff. The frontmatter side is "", not "null": every null
+	// spelling parses to "" now, so feeding "null" here would test a map the
+	// parser can no longer produce and would pass while fix looped forever.
+	fm := map[string]string{"parent": ""}
 	page := &client.Page{ID: "1", Links: client.Links{WebUI: "/spaces/ENG/pages/1/X"}}
 	got := plannedChanges(fm, page, "")
 	for _, ch := range got {
@@ -381,5 +383,19 @@ func TestOrNull(t *testing.T) {
 	}
 	if got := orNull("123"); got != "123" {
 		t.Errorf(`orNull("123") = %q, want "123"`, got)
+	}
+}
+
+// TestProcessFileTopLevelPageConverges is the regression for a fix that planned
+// `parent: (none) -> null` forever: a null parent parses to "", which the old
+// present-but-blank branch read as "no value" and re-wrote on every run.
+func TestProcessFileTopLevelPageConverges(t *testing.T) {
+	content := "---\ntitle: X\nspace: ENG\nparent: null\npage_id: 1\npage_width: max\n---\nbody\n"
+	path := writeFixture(t, content)
+	c := fixServer(t, pageJSON("1", "X", "", "/spaces/ENG/pages/1/X"), `"max"`)
+
+	r := processFile(path, c)
+	if r.status != statusConsistent {
+		t.Fatalf("status = %q with changes %+v, want consistent", r.status, r.changes)
 	}
 }

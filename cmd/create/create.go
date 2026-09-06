@@ -447,12 +447,10 @@ func reserveOne(
 
 	if persist {
 		parentValue, parentComment := parentField(r.parent, parentID)
-		content := r.mdfile.Content
-		content = frontmatter.UpdateField(content, "title", r.title, "")
-		content = frontmatter.UpdateField(content, "space", r.spaceKey, "")
-		content = frontmatter.UpdateField(content, "parent", parentValue, parentComment)
-		content = frontmatter.UpdateField(content, "page_id", pageID, "")
-		content = frontmatter.UpdateField(content, "page_width", string(r.width), "")
+		content, err := writeBackFrontmatter(r.mdfile.Content, r, pageID, parentValue, parentComment)
+		if err != nil {
+			return res.failKeepingPage(err, jsonout.CodeValidation), "", 0, false
+		}
 		if err := os.WriteFile(r.filename, []byte(content), 0o644); err != nil {
 			// The page above was already created; keep its id/url in the result or
 			// it becomes an orphan with no local trace at all.
@@ -784,6 +782,24 @@ func wantPersist(persist, noPersist bool) bool { return persist && !noPersist }
 // than exactly one FILE. --page-width and the persist toggle are batch-ok.
 func overrideNeedsSingleFile(cliTitle string, nFiles int) bool {
 	return cliTitle != "" && nFiles != 1
+}
+
+// writeBackFrontmatter sets every field create persists.
+func writeBackFrontmatter(content string, r record, pageID, parentValue, parentComment string) (string, error) {
+	fields := []struct{ key, value, comment string }{
+		{"title", r.title, ""},
+		{"space", r.spaceKey, ""},
+		{"parent", parentValue, parentComment},
+		{"page_id", pageID, ""},
+		{"page_width", string(r.width), ""},
+	}
+	var err error
+	for _, f := range fields {
+		if content, err = frontmatter.UpdateField(content, f.key, f.value, f.comment); err != nil {
+			return "", err
+		}
+	}
+	return content, nil
 }
 
 // resolveTitle returns the effective title: --title overrides the frontmatter.

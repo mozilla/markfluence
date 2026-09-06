@@ -36,7 +36,7 @@ func TestRenderFrontmatterOmitsEmptyFields(t *testing.T) {
 func TestRenderFrontmatterQuotesWhenNeeded(t *testing.T) {
 	// A title with a leading '#' would be read as a comment unless quoted.
 	got := RenderFrontmatter("# Sharp", "", "", "1", "")
-	want := "---\ntitle: '# Sharp'\npage_id: 1\n---\n"
+	want := "---\ntitle: \"# Sharp\"\npage_id: 1\n---\n"
 	if got != want {
 		t.Errorf("RenderFrontmatter =\n%q\nwant\n%q", got, want)
 	}
