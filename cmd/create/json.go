@@ -178,7 +178,7 @@ func abort(args []string, errs []failure, roots *project.Cache) error {
 		for _, e := range errs {
 			ui.Error(fmt.Sprintf("[%s] %s", e.filename, e.message))
 		}
-		ui.Error(fmt.Sprintf("Aborting: %d file(s) failed validation; nothing was created.", len(errs)))
+		ui.Error(fmt.Sprintf("Aborting: %d file(s) failed preflight; nothing was created.", len(errs)))
 		return ui.ErrSilent
 	}
 
@@ -200,14 +200,14 @@ func abort(args []string, errs []failure, roots *project.Cache) error {
 	failed := 0
 	for _, a := range args {
 		if f, bad := errMap[a]; bad {
-			items = append(items, abortedResult(a, statusFailed, f, jsonout.CodeValidation))
+			items = append(items, abortedResult(a, statusFailed, f))
 			failed++
 		} else {
-			items = append(items, abortedResult(a, statusNotCreated, failure{}, ""))
+			items = append(items, abortedResult(a, statusNotCreated, failure{}))
 		}
 	}
 	for _, e := range extra {
-		items = append(items, abortedResult(e.filename, statusFailed, e, jsonout.CodeValidation))
+		items = append(items, abortedResult(e.filename, statusFailed, e))
 		failed++
 	}
 
@@ -225,8 +225,11 @@ func abort(args []string, errs []failure, roots *project.Cache) error {
 //
 // f is this file's failure, or the zero value for a file that was never reached
 // (status not_created). A page_id failure fills page_id -- the id in the file, the
-// thing to go fix -- and, when a page is really at that id, url.
-func abortedResult(file, status string, f failure, code jsonout.Code) jsonCreateResult {
+// thing to go fix -- and, when a page is really at that id, url. The code comes
+// from f rather than from a parameter, so it cannot disagree with the failure it
+// describes: phase 1 rejects a file for more than one reason now, and only the
+// failure knows which.
+func abortedResult(file, status string, f failure) jsonCreateResult {
 	res := jsonCreateResult{
 		OK:          false,
 		Status:      status,
@@ -241,7 +244,7 @@ func abortedResult(file, status string, f failure, code jsonout.Code) jsonCreate
 	if f.message != "" {
 		msg := f.message
 		res.Error = &msg
-		c := code
+		c := f.code
 		res.Code = &c
 	}
 	return res

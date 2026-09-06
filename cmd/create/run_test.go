@@ -3,6 +3,7 @@ package create
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,8 +14,12 @@ import (
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/project"
+	"github.com/mozilla/markfluence/internal/schematest"
+	"github.com/mozilla/markfluence/internal/ui"
+	"github.com/spf13/cobra"
 )
 
 // fakeConfluence is a minimal in-memory double covering exactly what create's
@@ -483,4 +488,175 @@ func TestCreateBatchIgnoresDirectoryNesting(t *testing.T) {
 				"imply a parent relationship to the other files in this batch", r.filename, r.parent.kind)
 		}
 	}
+}
+
+// testCmd builds a bare *cobra.Command carrying the flags run() reads itself,
+// pointed at url. It doesn't go through the real root command tree, and
+// CONFLUENCE_TOKEN (never a flag) comes from the environment instead, as it
+// would in a real invocation. --root is pinned to the fixture directory so a
+// fixture's images resolve inside a root the test chose, rather than whatever
+// Discover's fallback happens to pick.
+func testCmd(t *testing.T, url, root string) *cobra.Command {
+	t.Helper()
+	t.Setenv("CONFLUENCE_TOKEN", "t")
+	c := &cobra.Command{}
+	c.Flags().String("url", url, "")
+	c.Flags().String("username", "u", "")
+	c.Flags().String("cloud-id", "", "")
+	c.Flags().String("env-file", "", "")
+	c.Flags().String("root", root, "")
+	return c
+}
+
+// writeCollidingImages plants the two assets whose base names agree, which is
+// what MdToConfluence refuses: an attachment name is unique per page, so one
+// upload would overwrite the other.
+func writeCollidingImages(t *testing.T, dir string) {
+	t.Helper()
+	for _, rel := range []string{"arch/diagram.png", "deploy/diagram.png"} {
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("PNG"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+const collidingBody = "---\ntitle: A\n---\n![arch](arch/diagram.png)\n\n![deploy](deploy/diagram.png)\n"
+
+// TestRunRefusesADocumentDefectBeforeCreatingAnything is #127: a defect the
+// converter refuses used to surface in the publish phase, after the reserve
+// phase had already created a page and written its id into the file -- leaving
+// a content-less page, a page_id nobody asked for, and a re-run that failed
+// with "a page already exists at page_id" instead. Preflight converts now, so
+// the file is refused with nothing created and nothing written.
+//
+// The fake has no attachment support and errors on an unexpected request, so a
+// fixture that reached the publish phase would fail here twice over.
+func TestRunRefusesADocumentDefectBeforeCreatingAnything(t *testing.T) {
+	resetOpts(t)
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	writeCollidingImages(t, dir)
+	path := write(t, dir, "a.md", collidingBody)
+
+	c, fake := newFakeConfluence(t)
+	err := run(testCmd(t, c.SiteURL(), dir), []string{path})
+
+	if err == nil {
+		t.Fatal("run should have failed: the file cannot convert")
+	}
+	if len(fake.pages) != 0 {
+		t.Errorf("pages created = %d, want 0 -- the defect is knowable before the reserve phase", len(fake.pages))
+	}
+	raw, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if strings.Contains(string(raw), "page_id") {
+		t.Errorf("a refused file must not gain a page_id:\n%s", raw)
+	}
+}
+
+// TestRunConversionFailureAbortsTheWholeBatch is the behavioral change, not
+// just the absence of a stub: a conversion failure goes through abort(), so a
+// clean file sharing the batch is not created either. Reporting the bad file
+// alone would leave the batch half-published, which is the state phase 1
+// exists to prevent.
+func TestRunConversionFailureAbortsTheWholeBatch(t *testing.T) {
+	resetOpts(t)
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	writeCollidingImages(t, dir)
+	bad := write(t, dir, "bad.md", collidingBody)
+	good := write(t, dir, "good.md", "---\ntitle: Good\n---\nbody\n")
+
+	c, fake := newFakeConfluence(t)
+	if err := run(testCmd(t, c.SiteURL(), dir), []string{bad, good}); err == nil {
+		t.Fatal("run should have failed")
+	}
+
+	if len(fake.pages) != 0 {
+		t.Errorf("pages created = %d, want 0 -- one bad file aborts the batch", len(fake.pages))
+	}
+	raw, err := os.ReadFile(good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "page_id") {
+		t.Errorf("the clean file must be left alone when the batch aborts:\n%s", raw)
+	}
+}
+
+// TestRunConversionFailureReportsCONVERT pins the code the failure carries.
+// abort() used to hardcode VALIDATION for everything phase 1 rejected; this
+// defect reported CONVERT from the publish phase before the check moved, and a
+// --json consumer's distinction between "the document did not convert" and
+// "the server or the frontmatter said no" has to survive the move. Asserted
+// against a VALIDATION failure in the same envelope, since a code that is
+// simply always CONVERT would pass the first half alone.
+func TestRunConversionFailureReportsCONVERT(t *testing.T) {
+	resetOpts(t)
+	ui.SetJSON(true)
+	t.Cleanup(func() { ui.SetJSON(false) })
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	writeCollidingImages(t, dir)
+	bad := write(t, dir, "bad.md", collidingBody)
+	untitled := write(t, dir, "untitled.md", "---\ntitle: \"\"\n---\nbody\n")
+
+	c, _ := newFakeConfluence(t)
+	out, runErr := captureStdout(t, func() error {
+		return run(testCmd(t, c.SiteURL(), dir), []string{bad, untitled})
+	})
+	if runErr == nil {
+		t.Fatal("run should have failed")
+	}
+	schematest.ValidateEnvelope(t, []byte(out))
+
+	var env struct {
+		Results []struct {
+			File  string  `json:"file"`
+			Code  *string `json:"code"`
+			Error *string `json:"error"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+	codes := map[string]string{}
+	for _, r := range env.Results {
+		if r.Code != nil {
+			codes[filepath.Base(r.File)] = *r.Code
+		}
+	}
+	if got := codes["bad.md"]; got != string(jsonout.CodeConvert) {
+		t.Errorf("bad.md code = %q, want CONVERT", got)
+	}
+	if got := codes["untitled.md"]; got != string(jsonout.CodeValidation) {
+		t.Errorf("untitled.md code = %q, want VALIDATION", got)
+	}
+}
+
+// captureStdout runs fn with os.Stdout redirected, returning what it printed.
+func captureStdout(t *testing.T, fn func() error) (string, error) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdout
+	os.Stdout = w
+	runErr := fn()
+	os.Stdout = old
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out), runErr
 }

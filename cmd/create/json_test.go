@@ -51,11 +51,11 @@ func TestSchemaConformance(t *testing.T) {
 	// The phase-1 abort envelope, including the one failure that names a page:
 	// a page_id already taken reports page_id and url on a result that is not ok.
 	abortItems := []any{
-		abortedResult("bad.md", statusFailed, failure{message: "no title given"}, jsonout.CodeValidation),
+		abortedResult("bad.md", statusFailed,
+			failure{message: "no title given", code: jsonout.CodeValidation}),
 		abortedResult("taken.md", statusFailed, newFailure("taken.md",
-			pageIDFailureFor(testClient(), "123", &client.Page{ID: "123", Title: "Runbook"})),
-			jsonout.CodeValidation),
-		abortedResult("ok.md", statusNotCreated, failure{}, ""),
+			pageIDFailureFor(testClient(), "123", &client.Page{ID: "123", Title: "Runbook"}))),
+		abortedResult("ok.md", statusNotCreated, failure{}),
 	}
 	abortEnv := jsonout.NewEnvelope("create", abortItems,
 		createSummary{Total: 3, Succeeded: 0, Failed: 2, Aborted: true})
@@ -173,13 +173,14 @@ func TestJSONResultDryRunInSetParent(t *testing.T) {
 
 func TestAbortedResultShapes(t *testing.T) {
 	// A validation-failed file.
-	failed := abortedResult("bad.md", statusFailed, failure{message: "no title given"}, jsonout.CodeValidation)
+	failed := abortedResult("bad.md", statusFailed,
+		failure{message: "no title given", code: jsonout.CodeValidation})
 	if failed.OK || failed.Status != "failed" || failed.Error == nil ||
 		failed.Code == nil || *failed.Code != jsonout.CodeValidation {
 		t.Errorf("failed abort result unexpected: %+v", failed)
 	}
 	// A file that simply wasn't created (batch aborted).
-	nc := abortedResult("ok.md", statusNotCreated, failure{}, "")
+	nc := abortedResult("ok.md", statusNotCreated, failure{})
 	if nc.OK || nc.Status != "not_created" || nc.Error != nil || nc.Code != nil {
 		t.Errorf("not_created abort result unexpected: %+v", nc)
 	}
@@ -192,8 +193,7 @@ func TestAbortedResultShapes(t *testing.T) {
 
 	// A page_id already taken: the result names the page in fields, not just prose.
 	taken := abortedResult("taken.md", statusFailed, newFailure("taken.md",
-		pageIDFailureFor(testClient(), "123", &client.Page{ID: "123", Title: "Runbook"})),
-		jsonout.CodeValidation)
+		pageIDFailureFor(testClient(), "123", &client.Page{ID: "123", Title: "Runbook"})))
 	if taken.PageID == nil || *taken.PageID != "123" {
 		t.Errorf("page_id = %v, want 123", taken.PageID)
 	}
@@ -204,7 +204,7 @@ func TestAbortedResultShapes(t *testing.T) {
 	// A page_id that resolves to nothing: the id is reported, but there is no page
 	// to link, so url stays null.
 	missing := abortedResult("gone.md", statusFailed, newFailure("gone.md",
-		pageIDFailureFor(testClient(), "999", nil)), jsonout.CodeValidation)
+		pageIDFailureFor(testClient(), "999", nil)))
 	if missing.PageID == nil || *missing.PageID != "999" {
 		t.Errorf("page_id = %v, want 999", missing.PageID)
 	}
@@ -258,7 +258,8 @@ func TestAbortReportsRoots(t *testing.T) {
 	}
 	old := os.Stdout
 	os.Stdout = w
-	err = abort([]string{"bad.md"}, []failure{{filename: "bad.md", message: "no title given"}}, roots)
+	bad := failure{filename: "bad.md", message: "no title given", code: jsonout.CodeValidation}
+	err = abort([]string{"bad.md"}, []failure{bad}, roots)
 	os.Stdout = old
 	if err := w.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
