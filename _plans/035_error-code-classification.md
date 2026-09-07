@@ -68,8 +68,8 @@ commands.
 method returns because *the request* failed is typed; an error that came from
 the caller's own data is not. So `send`'s transport returns, all of `doJSON`'s
 own returns (`json.Marshal`, `http.NewRequest`, `json.Unmarshal` of the
-response), the next-link parse in the pagination helpers, and the two other
-request builders (`DownloadAttachment`, the multipart upload) are typed --
+response), and the two other request builders (`DownloadAttachment`, the
+multipart upload) are typed --
 while `DownloadAttachment`'s `w.Write`, `os.Open` in the upload path, and
 `Resolve`'s config errors are left exactly as they are, for their callers to
 classify as `IO`/`CONFIG`. There is deliberately **no** claim that every error
@@ -135,11 +135,13 @@ fatal here would create a new inconsistency of exactly the kind #133 is about.
   false for anything else including nil. Its doc comment carries the rule above,
   including what is deliberately *not* typed and why.
 - Wrap sites: `send`'s transport returns; every non-status return in `doJSON`;
-  the next-link/URL parse in the pagination helpers; `DownloadAttachment`'s and
-  the multipart upload's `http.NewRequest`. `json.Marshal` of a request body
-  cannot fail for any body this code builds, but it is wrapped too, so the
-  invariant is statable as "`doJSON` returns only typed errors" rather than
-  "only typed errors except one".
+  `DownloadAttachment`'s and the multipart upload's `http.NewRequest`.
+  `json.Marshal` of a request body cannot fail for any body this code builds,
+  but it is wrapped too, so the invariant is statable as "`doJSON` returns only
+  typed errors" rather than "only typed errors except one". *(Amended during
+  implementation: the pagination helpers have no wrap site. `resolveNext`
+  swallows its own `url.Parse` failure and falls back to appending, so
+  `listV1`/`listV2`/`searchCQL` return nothing but what `doJSON` handed them.)*
 
 ### `internal/jsonout`
 
@@ -201,14 +203,24 @@ fatal here would create a new inconsistency of exactly the kind #133 is about.
   `AUTH` through `CodeOr(err, CodeIO)`, so the flipped fallback cannot swallow a
   server failure.
 
-**Not tested, deliberately.** The local-`IO` direction end to end. An asset that
-is missing at upload time never reaches `fileChecksum` -- the converter reports
-it `IMAGE BROKEN` and adds no attachment -- so provoking it needs a file
-readable at convert time and unreadable at upload time, which means either a
-`chmod 000` that behaves differently as root or a hook in the client existing
-only for a test. The `IO` classification is pinned by the `jsonout` table on a
-real `fs.PathError`, and the guard above pins the direction that can regress
-silently.
+**Not tested, deliberately.** The local-`IO` direction end to end *through the
+converter*, which is to say in `create` and `update`. An asset that is missing
+by upload time never reaches `fileChecksum` there -- the converter reports it
+`IMAGE BROKEN` and adds no attachment -- so provoking it needs a file readable
+at convert time and unreadable at upload time, which means either a `chmod 000`
+that behaves differently as root or a hook in the client existing only for a
+test.
+
+*Amended during implementation: `attachment-upload` has no converter in the
+way, so the local direction is testable there against a real missing file, and
+is tested -- which also made the guard worth restructuring. Asserting
+`CodeOr(err, CodeIO)` in the test would have re-derived the command's
+expression beside it rather than exercising it (the "validates a copy" trap
+`CLAUDE.md` names for conformance tests), so the decision is named `planCode`
+in the command, matching `localAttachmentsCode` one function below it, and the
+test calls that. The other three sites stay inline: the rule itself is pinned
+by the `jsonout` table, and one representative call site exercised end to end
+is what the guard is for.*
 
 ## Docs
 
@@ -247,6 +259,18 @@ silently.
   third error type or a `CodeOr` variant: it is one error on one path, its
   message says precisely what happened, and the reader's next move (look at the
   attachment record) is not changed by the code.
+- **A `page_id` that resolves to nothing being classified two ways.** Found
+  while writing `fix`'s test. All three commands phrase it identically through
+  `pageref.NotFoundMessage`, and it is a local error by origin -- `GetPageOrNil`
+  reports the page absent, so no `HTTPError` survives for `CodeOr` to read --
+  yet `update` reports `NOT_FOUND` (update.go:180) while `fix` and `create` take
+  the `VALIDATION` fallback. It is #133's complaint about a different failure,
+  but it is not the request-vs-local rule: it is a judgment about whether "the
+  id in your file points at nothing" is a defect in the file or a missing
+  target, and both readings have a case (`create` must not answer `NOT_FOUND`
+  for a stale `page_id`, which reads as "the page you asked for is gone"; for
+  `update` the page *is* the target). Aligning three commands on a judgment call
+  belongs in its own issue.
 - **A client-wide "every error is typed" invariant.** Ruled out above:
   `DownloadAttachment`'s `w.Write` and the upload's `os.Open` are local
   failures, and `Resolve` is config. The invariant is scoped to the request
