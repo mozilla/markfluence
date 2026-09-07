@@ -161,6 +161,50 @@ func loadEnvFile(envFile string, roots *project.Cache) (map[string]string, error
 	return env, nil
 }
 
+// securityWarner receives a credential-hygiene warning. Package-level and set
+// once from the command layer for the same reason SetRetryLogger is
+// (retrylog.go): twelve commands build a client through Resolve with an
+// identical literal, so anything passed per-call is something the thirteenth
+// silently forgets -- and internal/client deliberately produces no output and
+// imports no ui.
+var securityWarner func(string)
+
+// SetSecurityWarner installs fn as the credential-hygiene reporter, replacing
+// any previous one. Pass nil to silence it.
+func SetSecurityWarner(fn func(string)) { securityWarner = fn }
+
+// warnLoosePermissions reports a .env that anyone but its owner can reach,
+// when that file is the one holding the API token.
+//
+// The token gate is what keeps this worth reading. A .env carrying only
+// CONFLUENCE_URL and CONFLUENCE_USERNAME at 0644 leaks nothing -- neither is a
+// secret, and the cloud ID is documented as not one either -- and a warning
+// that fires on a file with no secret in it is how a security warning becomes
+// something people learn to scroll past.
+//
+// os.Stat, not Lstat: a .env symlinked to a 0600 file is perfectly safe, and
+// the link's own 0777 would cry wolf on every run. The user execute bit is
+// ignored for the same reason -- 0700 is odd, but it is not a leak.
+//
+// A stat failure is silent. The file was just read, so a failure here is
+// exotic, and a warning about the inability to warn is noise.
+func warnLoosePermissions(path string, env map[string]string) {
+	if securityWarner == nil || env[tokenEnv] == "" {
+		return
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	perm := fi.Mode().Perm()
+	if perm&0o077 == 0 {
+		return
+	}
+	securityWarner(fmt.Sprintf(
+		"%s is readable by others (mode %#o) and holds your API token; run: chmod 600 %s",
+		path, perm, path))
+}
+
 // loadDotenv reads a simple .env file into a map: KEY=value lines, with blank
 // lines and # comments skipped, an optional leading "export ", and optional
 // surrounding single or double quotes stripped. Values are taken verbatim (no
@@ -183,6 +227,10 @@ func loadDotenv(path string) (map[string]string, error) {
 		}
 		out[strings.TrimSpace(key)] = unquote(strings.TrimSpace(value))
 	}
+	// Here rather than in loadEnvFile: this is the one function both the
+	// discovered .env and an explicit --env-file go through, and the check
+	// needs the parsed contents to know whether a token is in there.
+	warnLoosePermissions(path, out)
 	return out, nil
 }
 

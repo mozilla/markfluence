@@ -67,6 +67,8 @@ var rootCmd = &cobra.Command{
 		ui.SetDebug(debugFlag)
 		ui.SetJSON(jsonFlag)
 		client.SetRetryLogger(logRetry)
+		// Not silenced under --json: see ui.SecurityWarn.
+		client.SetSecurityWarner(ui.SecurityWarn)
 		return nil
 	},
 	// Bare `markfluence` prints help; subcommands carry the work.
