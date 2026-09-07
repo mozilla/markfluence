@@ -5,12 +5,13 @@
   "description": "The single JSON document markfluence writes to stdout under --json. results holds one object per target (a single element for info/read; one per attachment for attachment-list); its item shape and the summary shape depend on command. The typed error object written to stderr on a fatal/pre-flight failure conforms to #/$defs/errorObject.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "markfluence_version", "command", "roots", "results", "summary"],
+  "required": ["schema_version", "markfluence_version", "command", "roots", "warnings", "results", "summary"],
   "properties": {
     "schema_version": { "const": 1 },
     "markfluence_version": { "type": "string" },
     "command": { "enum": ["info", "read", "update", "create", "fix", "check", "children", "find", "search", "attachment-list", "attachment-upload", "attachment-download", "export"] },
     "roots": { "type": "array", "items": { "type": "string" }, "description": "Every distinct documentation root the command resolved, sorted. Empty for a command with no per-file root concept, and for a pre-flight failure that never reached root resolution." },
+    "warnings": { "type": "array", "items": { "type": "string" }, "description": "Warnings about the invocation itself rather than about any page or file -- currently only the .env permission warning, raised when the .env that supplied the API token is reachable by anyone but its owner. Always present, [] when there is nothing to report, the same convention roots and results follow. Not per-result warnings: those live on the result." },
     "results": { "type": "array" },
     "summary": { "type": "object" }
   },
@@ -653,12 +654,13 @@
       "description": "The typed error object written to stderr on a fatal/pre-flight failure. command may be empty for a pre-parse (bad-flag) error.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema_version", "command", "error", "code"],
+      "required": ["schema_version", "command", "error", "code", "warnings"],
       "properties": {
         "schema_version": { "const": 1 },
         "command": { "type": "string" },
         "error": { "type": "string" },
-        "code": { "$ref": "#/$defs/code" }
+        "code": { "$ref": "#/$defs/code" },
+        "warnings": { "type": "array", "items": { "type": "string" }, "description": "As the envelope's warnings, carried here too because a fatal failure emits no envelope -- and a credential-resolution failure is exactly when a warning about the .env matters most." }
       }
     }
   }

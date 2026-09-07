@@ -48,9 +48,17 @@ type Envelope struct {
 	// pre-flight failure paths that never reached root resolution. Not
 	// omitted: every envelope carries this key, [] when there is nothing to
 	// report, the same convention Results already follows.
-	Roots   []string `json:"roots"`
-	Results []any    `json:"results"`
-	Summary any      `json:"summary"`
+	Roots []string `json:"roots"`
+	// Warnings is about the invocation rather than about any page or file --
+	// currently only the .env permission warning. It is filled from the
+	// package-level collector by NewEnvelope, not by the caller: the warning is
+	// raised deep inside credential resolution, before any command knows
+	// whether it will emit an envelope at all, and twelve commands would
+	// otherwise each have to remember to pass it through. Not omitted: every
+	// envelope carries the key, [] when empty, as Roots and Results do.
+	Warnings []string `json:"warnings"`
+	Results  []any    `json:"results"`
+	Summary  any      `json:"summary"`
 }
 
 // ErrorObject is the stderr document for a fatal/pre-flight failure in --json
@@ -60,6 +68,37 @@ type ErrorObject struct {
 	Command       string `json:"command"`
 	Error         string `json:"error"`
 	Code          Code   `json:"code"`
+	// Warnings is the envelope's Warnings, carried here for the same reason it
+	// exists there -- and it matters more here: a fatal failure emits no
+	// envelope, and a credential-resolution failure is exactly the run where a
+	// warning about the .env holding the token is worth reading.
+	Warnings []string `json:"warnings"`
+}
+
+// warnings collects invocation-level warnings raised before any document is
+// emitted. Package-level for the same reason client.SetRetryLogger is: the
+// warning comes out of credential resolution, far below the command that will
+// emit the document, and a value threaded through twelve commands is a value
+// the thirteenth forgets.
+//
+// It is deliberately not an output channel. internal/ui prints the warning for
+// a human; this is how the same text reaches the JSON documents, where stderr
+// is a schema-validated document and a stray line would break it.
+var warnings []string
+
+// AddWarning records an invocation-level warning for both output documents.
+func AddWarning(msg string) { warnings = append(warnings, msg) }
+
+// ResetWarnings clears the collector. For tests; a process emits one document.
+func ResetWarnings() { warnings = nil }
+
+// collectedWarnings returns the warnings as a non-nil slice, so the key
+// marshals as [] rather than null.
+func collectedWarnings() []string {
+	if warnings == nil {
+		return []string{}
+	}
+	return warnings
 }
 
 // NewEnvelope builds an envelope for a command, stamping the schema and build
@@ -76,6 +115,7 @@ func NewEnvelope(command string, results []any, summary any) Envelope {
 		MarkfluenceVersion: buildinfo.Version,
 		Command:            command,
 		Roots:              []string{},
+		Warnings:           collectedWarnings(),
 		Results:            results,
 		Summary:            summary,
 	}
@@ -95,6 +135,7 @@ func EmitError(w io.Writer, command, msg string, code Code) error {
 		Command:       command,
 		Error:         msg,
 		Code:          code,
+		Warnings:      collectedWarnings(),
 	})
 }
 
