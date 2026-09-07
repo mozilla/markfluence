@@ -139,9 +139,12 @@ fatal here would create a new inconsistency of exactly the kind #133 is about.
   `json.Marshal` of a request body cannot fail for any body this code builds,
   but it is wrapped too, so the invariant is statable as "`doJSON` returns only
   typed errors" rather than "only typed errors except one". *(Amended during
-  implementation: the pagination helpers have no wrap site. `resolveNext`
-  swallows its own `url.Parse` failure and falls back to appending, so
-  `listV1`/`listV2`/`searchCQL` return nothing but what `doJSON` handed them.)*
+  implementation: the next-link parse has no wrap site -- `resolveNext` swallows
+  its own `url.Parse` failure and falls back to appending -- but
+  `searchCQLBounded`'s page-count safety valve is a wrap site the plan missed:
+  it fires because the server kept handing back a next link, which is a request
+  failure by this rule. `listV1`/`listV2` return nothing but what `doJSON` gave
+  them.)*
 
 ### `internal/jsonout`
 

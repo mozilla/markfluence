@@ -147,6 +147,18 @@ func TestProcessFileClassifiesALocateFailureByOrigin(t *testing.T) {
 			jsonout.CodeAPI,
 		},
 		{
+			// The row that distinguishes CodeOr from the type check it
+			// replaced. An undecodable 200 is a request that produced no
+			// usable answer and carries no status to classify by, so the old
+			// rule took the VALIDATION fallback and blamed the file. Chosen
+			// over a dead server because a request failure on a GET spends the
+			// full retry budget in real time outside internal/client.
+			"a response that will not decode is NETWORK",
+			"---\ntitle: A\npage_id: 123\n---\nbody\n",
+			http.StatusOK, `not json at all`,
+			jsonout.CodeNetwork,
+		},
+		{
 			"nothing to locate by is VALIDATION",
 			"---\nspace: ENG\n---\nbody\n",
 			http.StatusOK, `{"results":[]}`,
