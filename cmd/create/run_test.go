@@ -41,6 +41,15 @@ type fakeConfluence struct {
 	// created under that title -- used to test a publish-phase failure after a
 	// successful reserve.
 	failUpdateForTitle string
+	// rejectCredential makes every route answer the way the API answers a
+	// revoked token: 404 with a title that names nothing. This is the shape
+	// #133 is about -- it is not a missing page, and reporting it as one (or as
+	// a defect in the file) sends the reader to check an id that was never the
+	// problem.
+	rejectCredential bool
+	// spacesStatus, when non-zero, is the status the space lookup answers with,
+	// for a preflight server failure that is not a credential rejection.
+	spacesStatus int
 }
 
 type fakePage struct {
@@ -60,8 +69,19 @@ func (f *fakeConfluence) handle(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	if f.rejectCredential {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = fmt.Fprint(w, `{"statusCode":404,"title":"Not Found"}`)
+		return
+	}
+
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/wiki/api/v2/spaces":
+		if f.spacesStatus != 0 {
+			w.WriteHeader(f.spacesStatus)
+			_, _ = fmt.Fprint(w, `{"statusCode":403,"message":"no"}`)
+			return
+		}
 		_, _ = fmt.Fprint(w, `{"results":[{"id":"space1"}]}`)
 
 	case r.Method == http.MethodGet && r.URL.Path == "/wiki/api/v2/pages":
@@ -640,6 +660,88 @@ func TestRunConversionFailureReportsCONVERT(t *testing.T) {
 	if got := codes["untitled.md"]; got != string(jsonout.CodeValidation) {
 		t.Errorf("untitled.md code = %q, want VALIDATION", got)
 	}
+}
+
+// TestRunPreflightRejectedCredentialReportsAUTH is #133's worst case. A revoked
+// token answers every v2 route with a 404 naming nothing, and GetPageOrNil
+// deliberately does not read that as "absent" -- so checkPageID hands back the
+// *HTTPError and preflight used to stamp it VALIDATION, blaming a file that is
+// perfectly fine. Asserted alongside a genuine VALIDATION failure in the same
+// envelope, since a code that were always AUTH would pass the first half alone.
+func TestRunPreflightRejectedCredentialReportsAUTH(t *testing.T) {
+	resetOpts(t)
+	ui.SetJSON(true)
+	t.Cleanup(func() { ui.SetJSON(false) })
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	withID := write(t, dir, "withid.md", "---\ntitle: With Id\npage_id: 123\n---\nbody\n")
+	untitled := write(t, dir, "untitled.md", "---\ntitle: \"\"\n---\nbody\n")
+
+	c, fake := newFakeConfluence(t)
+	fake.rejectCredential = true
+	out, runErr := captureStdout(t, func() error {
+		return run(testCmd(t, c.SiteURL(), dir), []string{withID, untitled})
+	})
+	if runErr == nil {
+		t.Fatal("run should have failed")
+	}
+	schematest.ValidateEnvelope(t, []byte(out))
+
+	codes := resultCodes(t, out)
+	if got := codes["withid.md"]; got != string(jsonout.CodeAuth) {
+		t.Errorf("withid.md code = %q, want AUTH -- a rejected credential is not a defect in the file", got)
+	}
+	if got := codes["untitled.md"]; got != string(jsonout.CodeValidation) {
+		t.Errorf("untitled.md code = %q, want VALIDATION", got)
+	}
+}
+
+// TestRunPreflightServerFailureIsNotVALIDATION covers the other three preflight
+// calls through the space lookup: a 403 there is the server refusing, and
+// nothing about it is knowable from the file.
+func TestRunPreflightServerFailureIsNotVALIDATION(t *testing.T) {
+	resetOpts(t)
+	ui.SetJSON(true)
+	t.Cleanup(func() { ui.SetJSON(false) })
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	path := write(t, dir, "a.md", "---\ntitle: A\n---\nbody\n")
+
+	c, fake := newFakeConfluence(t)
+	fake.spacesStatus = http.StatusForbidden
+	out, runErr := captureStdout(t, func() error {
+		return run(testCmd(t, c.SiteURL(), dir), []string{path})
+	})
+	if runErr == nil {
+		t.Fatal("run should have failed")
+	}
+	schematest.ValidateEnvelope(t, []byte(out))
+
+	if got := resultCodes(t, out)["a.md"]; got != string(jsonout.CodeAuth) {
+		t.Errorf("a.md code = %q, want AUTH", got)
+	}
+}
+
+// resultCodes maps each result's base filename to the code it reported,
+// skipping results that carry none (a file the batch never reached).
+func resultCodes(t *testing.T, out string) map[string]string {
+	t.Helper()
+	var env struct {
+		Results []struct {
+			File string  `json:"file"`
+			Code *string `json:"code"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+	codes := map[string]string{}
+	for _, r := range env.Results {
+		if r.Code != nil {
+			codes[filepath.Base(r.File)] = *r.Code
+		}
+	}
+	return codes
 }
 
 // captureStdout runs fn with os.Stdout redirected, returning what it printed.

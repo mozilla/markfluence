@@ -189,12 +189,25 @@ func validationFailure(filename, message string) failure {
 // newFailure records a phase-1 error against a file, carrying over the fields of
 // a page_id failure so abort() can report them without re-fetching anything,
 // and the code the error's type implies.
+//
+// The code defaults through jsonout.CodeOr rather than to VALIDATION, because
+// phase 1 makes four kinds of server call -- checkPageID, ResolveSpaceID,
+// checkParentInSpace, checkTitleFree -- and each can fail for reasons that have
+// nothing to do with the file. A hardcoded VALIDATION reported a revoked token
+// as a defect in a file that was perfectly fine, which is the worst case
+// because a rejected credential arrives as a 404 on every v2 route and
+// GetPageOrNil deliberately does not swallow that one (#133). Every local
+// error here -- no title, no space, a taken page_id, a title clash, a parent
+// conflict -- is not a client error, so it still takes the fallback.
 func newFailure(filename string, err error) failure {
-	f := failure{filename: filename, message: err.Error(), code: jsonout.CodeValidation}
+	f := failure{filename: filename, message: err.Error(), code: jsonout.CodeOr(err, jsonout.CodeValidation)}
 	var pf *pageIDFailure
 	if errors.As(err, &pf) {
 		f.pageID, f.url = pf.pageID, pf.url
 	}
+	// After CodeOr: a converter failure is neither a request nor a plain
+	// validation error, and CONVERT is what phase 3 reported for it before the
+	// check moved into preflight.
 	var cf *convertFailure
 	if errors.As(err, &cf) {
 		f.code = jsonout.CodeConvert
