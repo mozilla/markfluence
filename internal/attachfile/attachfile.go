@@ -222,7 +222,11 @@ func Write(c *client.ConfluenceClient, a client.Attachment, opts Options) Outcom
 		// masking a download that never actually completed.
 		_ = f.Close()
 		_ = rootFS.Remove(rel)
-		res.Status, res.Err, res.Code = StatusFailed, err, jsonout.CodeFor(err)
+		// CodeOr, not CodeFor: DownloadAttachment writes to f as it goes, so a
+		// full or unwritable destination fails here and is an IO failure. (An
+		// attachment record with no download link takes the same fallback,
+		// which is a known imprecision: it is neither request nor local.)
+		res.Status, res.Err, res.Code = StatusFailed, err, jsonout.CodeOr(err, jsonout.CodeIO)
 		return res
 	}
 	res.Status = StatusDownloaded

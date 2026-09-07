@@ -1,6 +1,7 @@
 package attachmentupload
 
 import (
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -8,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/clienttest"
+	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/project"
 )
 
@@ -249,5 +252,58 @@ func TestLocalAttachmentsUnusableNameReportsWhatWasTyped(t *testing.T) {
 		if !strings.Contains(err.Error(), name) {
 			t.Errorf("--name %q: error %q does not quote what was typed", name, err)
 		}
+	}
+}
+
+// TestPlanFailureCodeSeparatesServerFromLocal is the guard on the flipped
+// fallback. plan() checksums every local file, so an unreadable one is an IO
+// failure rather than the NETWORK that CodeFor answers for anything without an
+// HTTP status -- but the fallback must not swallow a real server failure on the
+// way: the attachment listing plan() makes first can be refused.
+func TestPlanFailureCodeSeparatesServerFromLocal(t *testing.T) {
+	dir := t.TempDir()
+	good := writeFile(t, dir, "img.png")
+
+	tests := []struct {
+		name    string
+		handler http.HandlerFunc
+		files   []string
+		want    jsonout.Code
+	}{
+		{
+			"a refused listing is AUTH",
+			func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"message":"caller cannot access Confluence"}`))
+			},
+			[]string{good},
+			jsonout.CodeAuth,
+		},
+		{
+			"a file the checksum cannot read is IO",
+			func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(`{"results":[]}`))
+			},
+			[]string{filepath.Join(dir, "gone.png")},
+			jsonout.CodeIO,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := clienttest.New(t, tt.handler)
+			atts := make([]client.LocalAttachment, 0, len(tt.files))
+			for _, f := range tt.files {
+				atts = append(atts, client.LocalAttachment{
+					Path: f, Filename: filepath.Base(f), Source: filepath.Base(f),
+				})
+			}
+			_, err := plan(c, "123", atts)
+			if err == nil {
+				t.Fatal("plan should have failed")
+			}
+			if got := planCode(err); got != tt.want {
+				t.Errorf("code = %q, want %q (error: %v)", got, tt.want, err)
+			}
+		})
 	}
 }
