@@ -135,3 +135,24 @@ func CodeFor(err error) Code {
 	}
 	return CodeAPI
 }
+
+// CodeOr classifies err the way CodeFor does when it came from a Confluence
+// request, and returns fallback when it did not.
+//
+// This is what most failure sites want, and CodeFor alone is not: CodeFor
+// answers NETWORK for any non-nil error that is not an *HTTPError, so a site
+// that mixes local and server failures -- create's preflight, fix's page
+// location, every attachment path -- would report "no title given" as a
+// network problem. Passing everything to a constant is the other half of the
+// same mistake, and is what reported a rejected credential as VALIDATION
+// against a file that was fine (#133).
+//
+// fallback is a parameter rather than a hardcoded VALIDATION so the call site
+// says which local meaning it is choosing: VALIDATION where a local failure
+// means the file is wrong, IO where it means the file could not be read.
+func CodeOr(err error, fallback Code) Code {
+	if client.FromRequest(err) {
+		return CodeFor(err)
+	}
+	return fallback
+}
