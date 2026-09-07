@@ -564,9 +564,13 @@ func publishOne(r record, res *createResult, pageID string, version int, c *clie
 	}
 	res.url = c.PageURL(result, pageID)
 
+	// CodeOr, not CodeFor: SyncAttachments opens every asset to checksum and
+	// upload it, so a file the converter saw but cannot now read fails here --
+	// the S7 residual named above -- and CodeFor would report a local read
+	// failure as NETWORK. A server failure still classifies by its status.
 	actions, err := c.SyncAttachments(pageID, pageContent.Attachments)
 	if err != nil {
-		return res.fail(err, jsonout.CodeFor(err))
+		return res.fail(err, jsonout.CodeOr(err, jsonout.CodeIO))
 	}
 	for _, a := range actions {
 		res.attachments = append(res.attachments, jsonout.Attachment{Action: a.Action, Filename: a.Filename})

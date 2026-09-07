@@ -101,7 +101,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	actions, err := plan(c, pageID, attachments)
 	if err != nil {
-		return operationalFail(pageID, err, jsonout.CodeFor(err), roots)
+		return operationalFail(pageID, err, planCode(err), roots)
 	}
 	return report(actions, roots)
 }
@@ -145,6 +145,19 @@ func forced(actions []client.SyncAction) []client.SyncAction {
 // than the filesystem's, so --json reports VALIDATION instead of IO for a
 // collision or a directory passed where a file was meant.
 type badInput struct{ error }
+
+// planCode maps a plan failure to its --json code. Not bare CodeFor: plan
+// checksums every local file, so an unreadable one fails here -- and this
+// command's whole input is local files. It already tells IO from VALIDATION
+// upstream (localAttachmentsCode) and used to lose the distinction one call
+// later, reporting a file it could not read as a network failure. A refused
+// listing still classifies by its status.
+//
+// Named rather than inlined so a test can assert the decision this command
+// actually makes, instead of re-deriving the same expression beside it.
+func planCode(err error) jsonout.Code {
+	return jsonout.CodeOr(err, jsonout.CodeIO)
+}
 
 // localAttachmentsCode maps a localAttachments failure to its --json code.
 func localAttachmentsCode(err error) jsonout.Code {

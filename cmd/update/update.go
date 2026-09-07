@@ -228,7 +228,7 @@ func processFile(
 	if dryRun {
 		actions, err := c.PlanAttachments(pageID, pageContent.Attachments)
 		if err != nil {
-			return r.fail(err, jsonout.CodeFor(err))
+			return r.fail(err, jsonout.CodeOr(err, jsonout.CodeIO))
 		}
 		for _, a := range actions {
 			r.attachments = append(r.attachments, jsonout.Attachment{Action: a.Action, Filename: a.Filename})
@@ -240,9 +240,12 @@ func processFile(
 		return r
 	}
 
+	// CodeOr, not CodeFor: planning an upload checksums every local asset, so
+	// a file that cannot be read fails here and is an IO failure, not a
+	// network one. Same for PlanAttachments in the dry-run above.
 	actions, err := c.SyncAttachments(pageID, pageContent.Attachments)
 	if err != nil {
-		return r.fail(err, jsonout.CodeFor(err))
+		return r.fail(err, jsonout.CodeOr(err, jsonout.CodeIO))
 	}
 	for _, a := range actions {
 		r.attachments = append(r.attachments, jsonout.Attachment{Action: a.Action, Filename: a.Filename})
