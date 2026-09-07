@@ -280,8 +280,11 @@ func (c *ConfluenceClient) searchCQLBounded(cql string, max int) ([]SearchResult
 
 	for page := 0; rawURL != ""; page++ {
 		if page >= maxSearchPages {
-			return nil, false, fmt.Errorf("CQL search did not terminate after %d pages (query: %s)",
-				maxSearchPages, cql)
+			// A request failure, not a local one: the server kept handing back a
+			// next link. Typed so a caller classifying by origin reports it as a
+			// server problem rather than a defect in the query.
+			return nil, false, wrapRequest(fmt.Errorf(
+				"CQL search did not terminate after %d pages (query: %s)", maxSearchPages, cql))
 		}
 		var out struct {
 			Results []SearchResult `json:"results"`

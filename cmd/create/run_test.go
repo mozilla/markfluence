@@ -50,6 +50,9 @@ type fakeConfluence struct {
 	// spacesStatus, when non-zero, is the status the space lookup answers with,
 	// for a preflight server failure that is not a credential rejection.
 	spacesStatus int
+	// malformedBody makes every route answer 200 with a body that will not
+	// decode: a request failure carrying no status to classify by.
+	malformedBody bool
 }
 
 type fakePage struct {
@@ -72,6 +75,10 @@ func (f *fakeConfluence) handle(w http.ResponseWriter, r *http.Request) {
 	if f.rejectCredential {
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = fmt.Fprint(w, `{"statusCode":404,"title":"Not Found"}`)
+		return
+	}
+	if f.malformedBody {
+		_, _ = fmt.Fprint(w, `not json at all`)
 		return
 	}
 
@@ -719,6 +726,36 @@ func TestRunPreflightServerFailureIsNotVALIDATION(t *testing.T) {
 
 	if got := resultCodes(t, out)["a.md"]; got != string(jsonout.CodeAuth) {
 		t.Errorf("a.md code = %q, want AUTH", got)
+	}
+}
+
+// TestRunPreflightRequestFailureWithNoStatusReportsNETWORK is the half a type
+// check on *client.HTTPError would still get wrong. doJSON builds an HTTPError
+// only once it has a status, so a dropped connection or an undecodable
+// response carries none -- and the old rule read "not an HTTPError" as "the
+// file is at fault". An undecodable 200 stands in for the whole class: a real
+// dial failure on a GET would spend the retry budget in real time, since only
+// internal/client can stub the backoff.
+func TestRunPreflightRequestFailureWithNoStatusReportsNETWORK(t *testing.T) {
+	resetOpts(t)
+	ui.SetJSON(true)
+	t.Cleanup(func() { ui.SetJSON(false) })
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	path := write(t, dir, "a.md", "---\ntitle: A\n---\nbody\n")
+
+	c, fake := newFakeConfluence(t)
+	fake.malformedBody = true
+	out, runErr := captureStdout(t, func() error {
+		return run(testCmd(t, c.SiteURL(), dir), []string{path})
+	})
+	if runErr == nil {
+		t.Fatal("run should have failed")
+	}
+	schematest.ValidateEnvelope(t, []byte(out))
+
+	if got := resultCodes(t, out)["a.md"]; got != string(jsonout.CodeNetwork) {
+		t.Errorf("a.md code = %q, want NETWORK", got)
 	}
 }
 
