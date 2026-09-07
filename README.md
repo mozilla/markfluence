@@ -84,6 +84,21 @@ CONFLUENCE_TOKEN=your-api-token
 > The API token is deliberately not accepted as a command-line flag; it comes
 > only from the environment or `.env`.
 
+Then restrict it, since it holds your API token:
+
+```
+chmod 600 .env
+```
+
+markfluence warns when the `.env` it read is readable or writable by anyone but
+you *and* contains `CONFLUENCE_TOKEN` — a `.env` holding only the URL and
+username is nobody's secret, so its mode is left alone. The warning names the
+file, its mode, and the `chmod` that fixes it. It goes to stderr and, unlike
+every other warning, is **not** silenced by `--json`: it concerns your
+credentials rather than any page or file, so there is nowhere in the JSON
+payload for it to live, and a CI run is exactly where a world-readable token
+file goes unnoticed.
+
 (Optional): `alias mf=markfluence`
 
 ### Scoped tokens and service accounts
