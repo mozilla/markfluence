@@ -308,6 +308,68 @@ func TestWarnLoosePermissionsMessage(t *testing.T) {
 	}
 }
 
+// TestWarnLoosePermissionsNamesWhatIsWrong: the predicate is one rule, but the
+// message is not, and a warning that says "readable" about a file nobody can
+// read is one a reader checks and stops trusting.
+func TestWarnLoosePermissionsNamesWhatIsWrong(t *testing.T) {
+	tests := []struct {
+		mode os.FileMode
+		want string
+	}{
+		{0o644, "readable by others"},
+		{0o640, "readable by others"},
+		{0o622, "writable by others"},
+		{0o611, "accessible to others"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want+"/"+tt.mode.String(), func(t *testing.T) {
+			got := captureSecurityWarnings(t)
+			path := filepath.Join(t.TempDir(), ".env")
+			if err := os.WriteFile(path, []byte("CONFLUENCE_TOKEN=secret\n"), tt.mode); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(path, tt.mode); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := loadDotenv(path); err != nil {
+				t.Fatalf("loadDotenv: %v", err)
+			}
+			if len(*got) != 1 {
+				t.Fatalf("warnings = %v, want exactly one", *got)
+			}
+			if !strings.Contains((*got)[0], tt.want) {
+				t.Errorf("message %q, want it to say %q", (*got)[0], tt.want)
+			}
+		})
+	}
+}
+
+// TestWarnLoosePermissionsRemedyIsPasteable: the chmod line is the point of the
+// message, so a path a shell would mangle has to come out runnable.
+func TestWarnLoosePermissionsRemedyIsPasteable(t *testing.T) {
+	got := captureSecurityWarnings(t)
+	dir := filepath.Join(t.TempDir(), "My Docs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, ".env")
+	if err := os.WriteFile(path, []byte("CONFLUENCE_TOKEN=secret\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadDotenv(path); err != nil {
+		t.Fatalf("loadDotenv: %v", err)
+	}
+	if len(*got) != 1 {
+		t.Fatalf("warnings = %v, want exactly one", *got)
+	}
+	if !strings.Contains((*got)[0], "chmod 600 '"+path+"'") {
+		t.Errorf("message %q, want a quoted chmod for a path with a space", (*got)[0])
+	}
+}
+
 // TestWarnLoosePermissionsFollowsASymlink is why the check stats rather than
 // lstats: a link's own mode is 0777 on every system that has them, so lstat
 // would warn about a target that is perfectly safe.

@@ -2,10 +2,16 @@ package cmd
 
 import (
 	"bytes"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/schematest"
+	"github.com/mozilla/markfluence/internal/ui"
 )
 
 // TestRootCommandWiring is the step-1 smoke test: it confirms the root command
@@ -137,5 +143,130 @@ func TestSubcommandsCompleteArgs(t *testing.T) {
 		if c.ValidArgsFunction == nil && len(c.ValidArgs) == 0 {
 			t.Errorf("subcommand %q registers no argument completion", c.Name())
 		}
+	}
+}
+
+// TestSecurityWarnerIsWired pins the one line that makes the .env permission
+// warning exist at runtime. Everything else about it is tested in
+// internal/client (the predicate) and internal/ui (the output), each against
+// its own double -- so deleting the SetSecurityWarner call in
+// PersistentPreRunE would leave every one of those tests passing and the
+// feature silently gone. A retry log going quiet is a debugging annoyance; a
+// security warning going quiet is the feature not existing.
+func TestSecurityWarnerIsWired(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	body := "CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { client.SetSecurityWarner(nil) })
+
+	if err := rootCmd.PersistentPreRunE(rootCmd, nil); err != nil {
+		t.Fatalf("PersistentPreRunE: %v", err)
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stderr
+	os.Stderr = w
+	_, resolveErr := client.Resolve(client.ResolveOptions{EnvFile: path})
+	os.Stderr = old
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolveErr != nil {
+		t.Fatalf("Resolve: %v", resolveErr)
+	}
+	if !strings.Contains(string(out), "holds your API token") {
+		t.Errorf("stderr = %q, want the .env permission warning: is SetSecurityWarner still wired?", out)
+	}
+}
+
+// TestSecurityWarningUnderJSONStaysOffStderr is the regression this design
+// exists for. Under --json, stderr is itself a schema-validated document
+// (#/$defs/errorObject, asserted in cmd/children's own tests), so a
+// human-readable warning line printed ahead of it would break any consumer
+// that parses stderr -- and the schema invites exactly that. The warning has
+// to travel inside the documents instead.
+func TestSecurityWarningUnderJSONStaysOffStderr(t *testing.T) {
+	jsonout.ResetWarnings()
+	t.Cleanup(jsonout.ResetWarnings)
+	ui.SetJSON(true)
+	t.Cleanup(func() { ui.SetJSON(false) })
+
+	const msg = "/tmp/.env is readable by others (mode 0644) and holds your API token; run: chmod 600 /tmp/.env"
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stderr
+	os.Stderr = w
+	reportSecurityWarning(msg)
+	os.Stderr = old
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	printed, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(printed) != 0 {
+		t.Errorf("stderr = %q under --json, want nothing: it would precede the error object", printed)
+	}
+
+	// Both documents carry it, and both still validate.
+	var buf bytes.Buffer
+	if err := jsonout.EmitError(&buf, "read", "missing Confluence username", jsonout.CodeConfig); err != nil {
+		t.Fatalf("EmitError: %v", err)
+	}
+	schematest.ValidateError(t, buf.Bytes())
+	if !strings.Contains(buf.String(), "holds your API token") {
+		t.Errorf("error object = %s, want the warning carried in it", buf.String())
+	}
+
+	buf.Reset()
+	env := jsonout.NewEnvelope("read", nil, map[string]int{"total": 0})
+	if err := jsonout.Emit(&buf, env); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	if !strings.Contains(buf.String(), "holds your API token") {
+		t.Errorf("envelope = %s, want the warning carried in it", buf.String())
+	}
+}
+
+// TestSecurityWarningInHumanModeGoesToStderr: the other half. Nothing structured
+// is emitted in human mode, so the line itself is the whole delivery.
+func TestSecurityWarningInHumanModeGoesToStderr(t *testing.T) {
+	jsonout.ResetWarnings()
+	t.Cleanup(jsonout.ResetWarnings)
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stderr
+	os.Stderr = w
+	reportSecurityWarning("mind the mode")
+	os.Stderr = old
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	printed, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(printed), "mind the mode") {
+		t.Errorf("stderr = %q, want the warning", printed)
 	}
 }

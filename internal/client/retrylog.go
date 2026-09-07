@@ -64,7 +64,7 @@ type RetryEvent struct {
 }
 
 // retryLogger receives every retry decision. It is package-level and set once
-// from the command layer, rather than a field on Config, because ten commands
+// from the command layer, rather than a field on Config, because twelve commands
 // build a client through Resolve with an identical literal: a new command that
 // forgot to pass it would silently lose retry visibility, and no test would
 // catch that -- retry logging is invisible until something is retrying.
