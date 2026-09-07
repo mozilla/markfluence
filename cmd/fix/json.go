@@ -1,10 +1,8 @@
 package fix
 
 import (
-	"errors"
 	"fmt"
 
-	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/ui"
 )
@@ -135,16 +133,6 @@ func summarize(results []*fixResult) map[string]int {
 		}
 	}
 	return s
-}
-
-// locateCode classifies a page-location failure: an HTTP status maps via CodeFor,
-// anything else is a frontmatter/target problem (VALIDATION).
-func locateCode(err error) jsonout.Code {
-	var he *client.HTTPError
-	if errors.As(err, &he) {
-		return jsonout.CodeFor(err)
-	}
-	return jsonout.CodeValidation
 }
 
 func nullableStr(s string) *string {

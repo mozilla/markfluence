@@ -3,9 +3,12 @@ package fix
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 
-	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/clienttest"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/schematest"
 )
@@ -108,12 +111,66 @@ func TestSummarize(t *testing.T) {
 	}
 }
 
-func TestLocateCode(t *testing.T) {
-	if got := locateCode(&client.HTTPError{StatusCode: 404}); got != jsonout.CodeNotFound {
-		t.Errorf("locateCode(404) = %q, want NOT_FOUND", got)
+// TestProcessFileClassifiesALocateFailureByOrigin is the consistency claim of
+// #133 asserted from fix's side: the same rejected credential that create's
+// preflight reports AUTH must report AUTH here too. It runs through processFile
+// rather than the classifier, so what is pinned is the wiring -- a genuine 404
+// still reports NOT_FOUND, and a file with nothing to locate by still reports
+// VALIDATION.
+func TestProcessFileClassifiesALocateFailureByOrigin(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		status   int
+		respBody string
+		want     jsonout.Code
+	}{
+		{
+			"a rejected credential is AUTH, not NOT_FOUND",
+			"---\ntitle: A\npage_id: 123\n---\nbody\n",
+			http.StatusNotFound, `{"statusCode":404,"title":"Not Found"}`,
+			jsonout.CodeAuth,
+		},
+		{
+			// A genuine 404 never reaches the classifier: GetPageOrNil reports
+			// the page as absent, and locatePage turns that into its own
+			// message about the id in the file.
+			"a genuine 404 is a local failure about the id",
+			"---\ntitle: A\npage_id: 123\n---\nbody\n",
+			http.StatusNotFound, `{"statusCode":404,"title":"Cannot find a page with id 123"}`,
+			jsonout.CodeValidation,
+		},
+		{
+			"a 500 is API",
+			"---\ntitle: A\npage_id: 123\n---\nbody\n",
+			http.StatusInternalServerError, `boom`,
+			jsonout.CodeAPI,
+		},
+		{
+			"nothing to locate by is VALIDATION",
+			"---\nspace: ENG\n---\nbody\n",
+			http.StatusOK, `{"results":[]}`,
+			jsonout.CodeValidation,
+		},
 	}
-	if got := locateCode(errString("no page_id or title")); got != jsonout.CodeValidation {
-		t.Errorf("locateCode(logic) = %q, want VALIDATION", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := clienttest.New(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.respBody))
+			})
+			path := filepath.Join(t.TempDir(), "a.md")
+			if err := os.WriteFile(path, []byte(tt.body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			r := processFile(path, c)
+			if r.ok {
+				t.Fatal("processFile should have failed")
+			}
+			if r.code != tt.want {
+				t.Errorf("code = %q, want %q (error: %s)", r.code, tt.want, r.errMsg)
+			}
+		})
 	}
 }
 

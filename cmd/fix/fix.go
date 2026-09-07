@@ -115,7 +115,12 @@ func processFile(filename string, c *client.ConfluenceClient) *fixResult {
 	}
 	page, err := locatePage(mf.Frontmatter, c)
 	if err != nil {
-		return r.fail(err, locateCode(err))
+		// locatePage mixes server failures (GetPageOrNil, SearchPagesByTitle)
+		// with local ones (no page_id or title, an ambiguous title), so the code
+		// comes from the error's origin. This was fix's own locateCode, lifted
+		// into jsonout when create needed the identical rule (#133); the
+		// transport case is what a bare type check got wrong here too.
+		return r.fail(err, jsonout.CodeOr(err, jsonout.CodeValidation))
 	}
 	r.pageID = page.ID
 
