@@ -134,24 +134,6 @@ func Hint(msg string) {
 	fmt.Fprintln(os.Stderr, "\n    "+msg)
 }
 
-// SecurityWarn prints a warning to stderr that is *not* silenced in JSON mode.
-//
-// Every other helper here goes quiet under --json on the premise stated at
-// jsonMode: the content is carried in the structured payload instead. That is
-// false for a warning about the caller's credentials -- it concerns neither a
-// file nor a page, so no results entry can carry it, and the envelope has no
-// top-level warnings field. Routed through Warn it would disappear in exactly
-// the automated runs most likely to have a world-readable .env.
-//
-// Deliberately narrow, and named to stay that way: this is a hole in the rule
-// that stdout is the payload and everything else is quiet under --json, so it
-// is for a credential-hygiene warning and nothing else. Ordinary warnings
-// belong in the payload, which is what Warn enforces. Stderr is never part of
-// the JSON contract, so nothing a consumer parses is affected.
-func SecurityWarn(msg string) {
-	fmt.Fprintln(os.Stderr, yellow.Render("  ! ")+msg)
-}
-
 // Dim prints a dimmed line. No-op in JSON mode.
 func Dim(msg string) {
 	if jsonMode {
