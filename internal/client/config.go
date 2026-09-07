@@ -201,8 +201,33 @@ func warnLoosePermissions(path string, env map[string]string) {
 		return
 	}
 	securityWarner(fmt.Sprintf(
-		"%s is readable by others (mode %#o) and holds your API token; run: chmod 600 %s",
-		path, perm, path))
+		"%s is %s (mode %#o) and holds your API token; run: chmod 600 %s",
+		path, accessDescription(perm), perm, shellArg(path)))
+}
+
+// accessDescription names what is actually wrong with a mode, rather than
+// assuming the readable case: 0622 is a real finding but nobody can read it,
+// and a message that says otherwise is one a reader can check and disbelieve.
+func accessDescription(perm os.FileMode) string {
+	switch {
+	case perm&0o044 != 0:
+		return "readable by others"
+	case perm&0o022 != 0:
+		return "writable by others"
+	default:
+		return "accessible to others"
+	}
+}
+
+// shellArg quotes a path that would not survive being pasted into a shell. The
+// remedy is the point of the warning, so a path with a space in it has to come
+// out runnable; a path without one stays unquoted, since that is every path
+// anyone actually has.
+func shellArg(path string) string {
+	if strings.ContainsAny(path, " \t\n'\"$`\\&;|<>()*?[]#~") {
+		return "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
+	}
+	return path
 }
 
 // loadDotenv reads a simple .env file into a map: KEY=value lines, with blank

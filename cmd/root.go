@@ -67,8 +67,7 @@ var rootCmd = &cobra.Command{
 		ui.SetDebug(debugFlag)
 		ui.SetJSON(jsonFlag)
 		client.SetRetryLogger(logRetry)
-		// Not silenced under --json: see ui.SecurityWarn.
-		client.SetSecurityWarner(ui.SecurityWarn)
+		client.SetSecurityWarner(reportSecurityWarning)
 		return nil
 	},
 	// Bare `markfluence` prints help; subcommands carry the work.
@@ -79,6 +78,20 @@ var rootCmd = &cobra.Command{
 	// usage and error echoing so failures aren't printed twice.
 	SilenceUsage:  true,
 	SilenceErrors: true,
+}
+
+// reportSecurityWarning delivers a credential-hygiene warning to both output
+// modes: a human sees it immediately on stderr, and --json carries it in the
+// documents rather than printing it, because stderr under --json is itself a
+// schema-validated document (#/$defs/errorObject) -- a stray human line ahead
+// of it would break a consumer that parses stderr, which the schema invites.
+//
+// Both, not either: the warning is raised during credential resolution, before
+// anything knows whether this run will emit an envelope, an error object, or
+// (on a --dry-run of nothing) neither.
+func reportSecurityWarning(msg string) {
+	jsonout.AddWarning(msg)
+	ui.Warn(msg)
 }
 
 // Execute runs the root command, exiting non-zero on error. A failure a command
