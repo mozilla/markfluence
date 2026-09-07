@@ -225,3 +225,135 @@ func TestSpaceKeyFromWebUI(t *testing.T) {
 		t.Errorf("space = %q, want empty for an empty webui", got)
 	}
 }
+
+// captureSecurityWarnings installs a recording warner for the duration of a
+// test, restoring whatever was there before -- the hook is package-level, so a
+// test that leaks one changes the next test's behavior.
+func captureSecurityWarnings(t *testing.T) *[]string {
+	t.Helper()
+	var got []string
+	prev := securityWarner
+	securityWarner = func(msg string) { got = append(got, msg) }
+	t.Cleanup(func() { securityWarner = prev })
+	return &got
+}
+
+// TestWarnLoosePermissions covers both halves of the rule: the mode, and the
+// token gate that keeps the warning off files with no secret in them.
+func TestWarnLoosePermissions(t *testing.T) {
+	const withToken = "CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n"
+	const noToken = "CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=bot\n"
+
+	tests := []struct {
+		name string
+		body string
+		mode os.FileMode
+		want bool
+	}{
+		{"world-readable with a token", withToken, 0o644, true},
+		{"group-readable with a token", withToken, 0o640, true},
+		{"world-writable with a token", withToken, 0o622, true},
+		{"wide open with a token", withToken, 0o666, true},
+		{"owner-only", withToken, 0o600, false},
+		// More restrictive than required, not less: warning here would be
+		// nonsense.
+		{"owner read-only", withToken, 0o400, false},
+		// The user execute bit is odd but leaks nothing.
+		{"owner rwx", withToken, 0o700, false},
+		// The gate: no secret in the file, so its mode is nobody's business.
+		{"world-readable without a token", noToken, 0o644, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := captureSecurityWarnings(t)
+			path := filepath.Join(t.TempDir(), ".env")
+			if err := os.WriteFile(path, []byte(tt.body), tt.mode); err != nil {
+				t.Fatal(err)
+			}
+			// WriteFile applies the umask, so set the mode explicitly.
+			if err := os.Chmod(path, tt.mode); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := loadDotenv(path); err != nil {
+				t.Fatalf("loadDotenv: %v", err)
+			}
+			if fired := len(*got) > 0; fired != tt.want {
+				t.Errorf("warned = %v, want %v (%v)", fired, tt.want, *got)
+			}
+		})
+	}
+}
+
+// TestWarnLoosePermissionsMessage pins what the reader is told: the path, the
+// mode in the form chmod takes, why it matters, and the exact remedy.
+func TestWarnLoosePermissionsMessage(t *testing.T) {
+	got := captureSecurityWarnings(t)
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(path, []byte("CONFLUENCE_TOKEN=secret\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadDotenv(path); err != nil {
+		t.Fatalf("loadDotenv: %v", err)
+	}
+	if len(*got) != 1 {
+		t.Fatalf("warnings = %v, want exactly one", *got)
+	}
+	for _, want := range []string{path, "mode 0644", "holds your API token", "chmod 600 " + path} {
+		if !strings.Contains((*got)[0], want) {
+			t.Errorf("message %q missing %q", (*got)[0], want)
+		}
+	}
+}
+
+// TestWarnLoosePermissionsFollowsASymlink is why the check stats rather than
+// lstats: a link's own mode is 0777 on every system that has them, so lstat
+// would warn about a target that is perfectly safe.
+func TestWarnLoosePermissionsFollowsASymlink(t *testing.T) {
+	got := captureSecurityWarnings(t)
+	dir := t.TempDir()
+	target := filepath.Join(dir, "real.env")
+	if err := os.WriteFile(target, []byte("CONFLUENCE_TOKEN=secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(target, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, ".env")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadDotenv(link); err != nil {
+		t.Fatalf("loadDotenv: %v", err)
+	}
+	if len(*got) != 0 {
+		t.Errorf("warnings = %v, want none: the link points at a 0600 file", *got)
+	}
+}
+
+// TestResolveWarnsThroughTheDiscoveredEnvFile exercises the real path a command
+// takes -- Resolve, not loadDotenv -- so the check cannot be wired only to the
+// explicit --env-file branch.
+func TestResolveWarnsThroughTheDiscoveredEnvFile(t *testing.T) {
+	clearConfluenceEnv(t)
+	got := captureSecurityWarnings(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	body := "CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+
+	if _, err := Resolve(ResolveOptions{}); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if len(*got) != 1 {
+		t.Errorf("warnings = %v, want exactly one", *got)
+	}
+}
