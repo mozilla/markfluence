@@ -90,14 +90,12 @@ Then restrict it, since it holds your API token:
 chmod 600 .env
 ```
 
-markfluence warns when the `.env` it read is readable or writable by anyone but
-you *and* contains `CONFLUENCE_TOKEN` — a `.env` holding only the URL and
-username is nobody's secret, so its mode is left alone. The warning names the
-file, its mode, and the `chmod` that fixes it. It goes to stderr and, unlike
-every other warning, is **not** silenced by `--json`: it concerns your
-credentials rather than any page or file, so there is nowhere in the JSON
-payload for it to live, and a CI run is exactly where a world-readable token
-file goes unnoticed.
+markfluence warns when the `.env` it read is reachable by anyone but you *and*
+contains `CONFLUENCE_TOKEN` — a `.env` holding only the URL and username is
+nobody's secret, so its mode is left alone. The warning names the file, what is
+wrong with its mode, and the `chmod` that fixes it. Under `--json` it is not
+printed but carried in the output document's `warnings` array (and on the
+stderr error object), because stderr in that mode is itself a JSON document.
 
 (Optional): `alias mf=markfluence`
 
@@ -880,6 +878,7 @@ target (a single element for `info`/`read`); `summary` carries batch counts:
   "markfluence_version": "1.4.0",
   "command": "update",
   "roots": ["/repo/docs"],
+  "warnings": [],
   "results": [
     {
       "ok": true,
@@ -922,6 +921,12 @@ Notes on the schema:
   concept (`find`, `search`, ...) or a pre-flight failure that never reached
   root resolution. `schema` emits no envelope at all, so it has no `roots` key
   to speak of.
+- **`warnings`** carries warnings about the *invocation* rather than about any
+  page or file — currently only the `.env` permission warning below. A result's
+  own warnings live on the result; this is for something that belongs to no
+  result. `[]` when there is nothing to report. It appears on the stderr error
+  object too, since a fatal failure emits no envelope and a credential failure
+  is exactly the run where a warning about your `.env` matters.
 - **Status verbs** are per-command: `published`/`skipped` (`update`),
   `created`/`not_created` (`create`), `changed`/`consistent` (`fix`),
   `clean`/`warnings`/`broken` (`check`),
@@ -971,7 +976,7 @@ Errors and exit codes:
   error object to **stderr** and exit `2`:
 
   ```json
-  { "schema_version": 1, "command": "update", "error": "…", "code": "CONFIG" }
+  { "schema_version": 1, "command": "update", "error": "…", "code": "CONFIG", "warnings": [] }
   ```
 
 - Error `code` values: `CONFIG`, `AUTH`, `NOT_FOUND`, `VALIDATION`, `CONVERT`,
