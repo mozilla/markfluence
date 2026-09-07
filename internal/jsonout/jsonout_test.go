@@ -3,6 +3,9 @@ package jsonout
 import (
 	"bytes"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -96,3 +99,80 @@ func TestCodeFor(t *testing.T) {
 }
 
 func errWrap(err error) error { return errors.Join(errors.New("context"), err) }
+
+// TestCodeOr covers both directions of #133: a server failure must not report a
+// local code, and a local failure must not report a server one.
+func TestCodeOr(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		fallback Code
+		want     Code
+	}{
+		// The failure #133 exists for. A revoked token answers every v2 route
+		// with a 404 that names nothing, so the code has to come from CodeFor
+		// (which asks RejectedCredential first) and not from the fallback.
+		{
+			"rejected credential 404",
+			&client.HTTPError{StatusCode: 404, Body: `{"title":"Not Found"}`},
+			CodeValidation, CodeAuth,
+		},
+		{"403", &client.HTTPError{StatusCode: 403}, CodeValidation, CodeAuth},
+		{
+			"genuine 404",
+			&client.HTTPError{StatusCode: 404, Body: `{"title":"Cannot find a page with id 1"}`},
+			CodeValidation, CodeNotFound,
+		},
+		{"500", &client.HTTPError{StatusCode: 500}, CodeValidation, CodeAPI},
+		{"wrapped 403", errWrap(&client.HTTPError{StatusCode: 403}), CodeValidation, CodeAuth},
+		// The hazard the issue names: routing everything through CodeFor would
+		// report a local defect as a network problem.
+		{"a local defect", errors.New("no title given"), CodeValidation, CodeValidation},
+		// The mirror hazard, on the attachment paths: a file the client could
+		// not open is not a network failure.
+		{"an unreadable file", missingFileErr(t), CodeIO, CodeIO},
+		{"a server failure under an IO fallback", &client.HTTPError{StatusCode: 403}, CodeIO, CodeAuth},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CodeOr(tt.err, tt.fallback); got != tt.want {
+				t.Errorf("CodeOr(%v, %q) = %q, want %q", tt.err, tt.fallback, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCodeOrOnATransportFailure uses a real unreachable server rather than a
+// hand-built error: the transport error type is unexported by design, and the
+// point of the assertion is that a caller who cannot see the type still gets
+// NETWORK rather than the local fallback.
+//
+// CreatePage, not a read: the client retries a transport failure only for an
+// idempotent method, so a GET here would spend the full retry budget (four
+// backoffs, ~15s) before reporting anything -- internal/client stubs the sleep
+// for its own suite, and no other package can.
+func TestCodeOrOnATransportFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	dead := srv.URL
+	srv.Close()
+	c := client.New(client.Config{SiteURL: dead, Username: "u", Token: "t"})
+
+	_, err := c.CreatePage("space1", "Title", "", "")
+	if err == nil {
+		t.Fatal("CreatePage against a closed server returned no error")
+	}
+	if got := CodeOr(err, CodeValidation); got != CodeNetwork {
+		t.Errorf("CodeOr(transport failure) = %q, want NETWORK", got)
+	}
+}
+
+// missingFileErr returns a real *fs.PathError, the shape a failed checksum of a
+// local attachment produces.
+func missingFileErr(t *testing.T) error {
+	t.Helper()
+	_, err := os.Open(t.TempDir() + "/does-not-exist")
+	if err == nil {
+		t.Fatal("opening a nonexistent file succeeded")
+	}
+	return err
+}
