@@ -250,6 +250,48 @@ func notFound(err error) bool {
 	return errors.As(err, &he) && he.StatusCode == http.StatusNotFound && !he.RejectedCredential()
 }
 
+// requestError marks an error as having come from a request that never
+// produced a usable answer: a transport failure, a request that could not be
+// built, or a response body that would not decode. It is a classification tag
+// and nothing else -- Error() returns the inner text verbatim, so a wrapped
+// error reads exactly as it did before -- which is what lets FromRequest
+// separate a server failure from a local one without changing any message.
+type requestError struct{ err error }
+
+func (e *requestError) Error() string { return e.err.Error() }
+func (e *requestError) Unwrap() error { return e.err }
+
+// wrapRequest tags err as a request failure, leaving nil alone.
+func wrapRequest(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &requestError{err: err}
+}
+
+// FromRequest reports whether err came from a Confluence request rather than
+// from the caller's own data. It is what a command asks before classifying a
+// failure for --json: a request failure classifies by CodeFor (AUTH, NOT_FOUND,
+// API, NETWORK), and anything else is a local problem the caller names itself
+// (VALIDATION for a bad file, IO for an unreadable one).
+//
+// The rule this package holds up: an error a method returns because *the
+// request* failed is typed -- an *HTTPError once there is a status, a
+// requestError when there is not. An error that came from the caller's own data
+// is deliberately left untyped, so it keeps whatever meaning its caller gives
+// it. That is why this is not "every error from internal/client is typed":
+// DownloadAttachment writing to the caller's writer, uploadAttachment opening
+// the caller's file, and Resolve reading the environment are local failures,
+// and calling them request errors would be the same misreport in a new place.
+func FromRequest(err error) bool {
+	var he *HTTPError
+	if errors.As(err, &he) {
+		return true
+	}
+	var re *requestError
+	return errors.As(err, &re)
+}
+
 // viaGateway reports whether the request went to the platform API gateway. The
 // URL already carries the answer, so the error needs no extra field and no
 // construction site has to change.
@@ -427,7 +469,7 @@ func (c *ConfluenceClient) doJSON(
 	if reqBody != nil {
 		b, err := json.Marshal(reqBody)
 		if err != nil {
-			return err
+			return wrapRequest(err)
 		}
 		body = bytes.NewReader(b)
 	}
@@ -438,20 +480,22 @@ func (c *ConfluenceClient) doJSON(
 	// the body on a retry.
 	req, err := http.NewRequest(method, rawURL, body)
 	if err != nil {
-		return err
+		return wrapRequest(err)
 	}
 	if reqBody != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	status, respBody, err := c.send(req, timeout)
 	if err != nil {
-		return err
+		return err // already tagged by send
 	}
 	if status >= 400 {
 		return &HTTPError{StatusCode: status, Method: method, URL: rawURL, Body: string(respBody)}
 	}
 	if out != nil && len(respBody) > 0 {
-		return json.Unmarshal(respBody, out)
+		// A body that will not decode is a request that produced no usable
+		// answer, not a defect in anything the caller passed in.
+		return wrapRequest(json.Unmarshal(respBody, out))
 	}
 	return nil
 }
@@ -478,7 +522,10 @@ func (c *ConfluenceClient) send(req *http.Request, timeout time.Duration) (int, 
 			ev.Retrying = attempt < maxRetries && isIdempotent(req.Method)
 			if !ev.Retrying {
 				logRetry(ev)
-				return 0, nil, err
+				// Tagged on the way out, after the retry event has recorded the
+				// raw error: a transport failure is a request failure, and every
+				// caller of send returns it unchanged.
+				return 0, nil, wrapRequest(err)
 			}
 			ev.Delay = backoff(attempt, 0)
 			logRetry(ev)
@@ -988,7 +1035,7 @@ func (c *ConfluenceClient) DownloadAttachment(att Attachment, w io.Writer) error
 	rawURL := c.baseURL + "/wiki" + att.Links.Download
 	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
 	if err != nil {
-		return err
+		return wrapRequest(err)
 	}
 	status, body, err := c.send(req, timeoutDownload)
 	if err != nil {
@@ -1200,7 +1247,7 @@ func (c *ConfluenceClient) uploadAttachment(rawURL, filename, comment, filePath,
 
 	req, err := http.NewRequest(http.MethodPost, rawURL, &buf)
 	if err != nil {
-		return err
+		return wrapRequest(err)
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	req.Header.Set("X-Atlassian-Token", "nocheck")

@@ -1759,3 +1759,89 @@ func TestHTTPErrorHint(t *testing.T) {
 		})
 	}
 }
+
+// TestFromRequestOnEveryRequestFailure pins the invariant the --json error codes
+// rest on: every way a request can fail arrives as one of this package's two
+// error types, so a caller can tell a server failure from a local one without
+// inspecting the message.
+func TestFromRequestOnEveryRequestFailure(t *testing.T) {
+	t.Run("a status is an HTTPError", func(t *testing.T) {
+		c, _ := newServer(t, resp{status: 500, body: `{"title":"boom"}`})
+		err := c.doJSON(http.MethodGet, c.baseURL+"/x", nil, nil, nil, timeoutRead)
+		var he *HTTPError
+		if !errors.As(err, &he) {
+			t.Fatalf("err = %v (%T), want *HTTPError", err, err)
+		}
+		if !FromRequest(err) {
+			t.Error("FromRequest = false, want true")
+		}
+	})
+
+	t.Run("a transport failure is a requestError", func(t *testing.T) {
+		// A server that is started and immediately closed: the address is
+		// well-formed and nothing is listening, which is what a dropped VPN
+		// looks like from here.
+		srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+		dead := srv.URL
+		srv.Close()
+		c := New(Config{SiteURL: dead, Username: "u", Token: "t"})
+		err := c.doJSON(http.MethodGet, dead+"/x", nil, nil, nil, timeoutRead)
+		var re *requestError
+		if !errors.As(err, &re) {
+			t.Fatalf("err = %v (%T), want *requestError", err, err)
+		}
+		if !FromRequest(err) {
+			t.Error("FromRequest = false, want true")
+		}
+	})
+
+	t.Run("an undecodable body is a requestError", func(t *testing.T) {
+		c, _ := newServer(t, resp{status: 200, body: `not json at all`})
+		var out struct {
+			ID string `json:"id"`
+		}
+		err := c.doJSON(http.MethodGet, c.baseURL+"/x", nil, nil, &out, timeoutRead)
+		var re *requestError
+		if !errors.As(err, &re) {
+			t.Fatalf("err = %v (%T), want *requestError", err, err)
+		}
+		if !FromRequest(err) {
+			t.Error("FromRequest = false, want true")
+		}
+	})
+}
+
+// TestFromRequestIsFalseForALocalError guards the direction that would turn an
+// unreadable file into a network problem.
+func TestFromRequestIsFalseForALocalError(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		err  error
+	}{
+		{"a plain error", errors.New("no title given")},
+		{"a wrapped plain error", fmt.Errorf("reading: %w", errors.New("permission denied"))},
+		{"nil", nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if FromRequest(tt.err) {
+				t.Errorf("FromRequest(%v) = true, want false", tt.err)
+			}
+		})
+	}
+}
+
+// TestRequestErrorIsTransparent is what makes the tagging invisible: the text a
+// reader sees, and every test asserting on it, is the inner error's own.
+func TestRequestErrorIsTransparent(t *testing.T) {
+	inner := errors.New("dial tcp 127.0.0.1:1: connect: connection refused")
+	wrapped := wrapRequest(inner)
+	if got := wrapped.Error(); got != inner.Error() {
+		t.Errorf("Error() = %q, want %q", got, inner.Error())
+	}
+	if !errors.Is(wrapped, inner) {
+		t.Error("errors.Is(wrapped, inner) = false, want true")
+	}
+	if wrapRequest(nil) != nil {
+		t.Error("wrapRequest(nil) != nil")
+	}
+}
