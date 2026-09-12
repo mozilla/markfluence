@@ -921,13 +921,6 @@ schema you get from a binary is the one its output was checked against.
 Nothing here talks to Confluence, so no credentials are needed. The output is
 already JSON; `--json` changes nothing.
 
-## Using with GitHub Actions
-
-markfluence runs in CI to keep Confluence pages in sync with the markdown in
-your repo. **[docs/github-actions.md](docs/github-actions.md)** has a working
-workflow, how to store credentials as secrets, and why a service account beats
-a personal token there.
-
 ## Markdown page structure
 
 Each Markdown file is one Confluence page: an optional YAML **frontmatter**
