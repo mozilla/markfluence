@@ -763,3 +763,43 @@ func TestRunPristineManifestFileIsClean(t *testing.T) {
 		t.Errorf("output = %q, want it reported clean", out)
 	}
 }
+
+// A width declared in this file's entry wins over the project default exactly
+// as one in its frontmatter does, so the project's bad value must not fail it.
+// Reading mf.Frontmatter instead of the resolved metadata produced the false
+// positive check's own rule forbids: update publishes this file fine.
+func TestRunInvalidProjectWidthNotReportedWhenAnEntryOverridesIt(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "markfluence.yaml"),
+		"page_width: huge\npages:\n  main.md:\n    page_id: 1\n    page_width: wide\n")
+	write(t, filepath.Join(dir, "main.md"), "# Main\n")
+
+	out, err := captureOutput(t, func() error {
+		return run(testCmd(t, ""), []string{filepath.Join(dir, "main.md")})
+	})
+	if err != nil {
+		t.Fatalf("run = %v, want success: the entry declares its own width\n%s", err, out)
+	}
+	if strings.Contains(out, "invalid page_width") {
+		t.Errorf("output = %q, want no complaint", out)
+	}
+}
+
+// D6 promises the soft-disagreement warning wherever metadata is resolved, not
+// only from update.
+func TestRunReportsASoftDisagreement(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "markfluence.yaml"),
+		"pages:\n  main.md:\n    title: Manifest\n    page_id: 1\n")
+	write(t, filepath.Join(dir, "main.md"), "---\ntitle: File\n---\n# Main\n")
+
+	out, err := captureOutput(t, func() error {
+		return run(testCmd(t, ""), []string{filepath.Join(dir, "main.md")})
+	})
+	if err != nil {
+		t.Fatalf("run = %v, want success: a soft disagreement is a warning\n%s", err, out)
+	}
+	if !strings.Contains(out, "overrides") {
+		t.Errorf("output = %q, want the title-override warning", out)
+	}
+}

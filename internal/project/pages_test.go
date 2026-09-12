@@ -240,3 +240,48 @@ func TestStructuralPageErrorsAreNotPerFile(t *testing.T) {
 
 func takesFrontmatter(map[string]string) {}
 func takesLists(map[string][]string)     {}
+
+// Separators are normalized before absoluteness is judged. Judging the raw
+// string let these through as keys that normalize to absolute paths KeyFor can
+// never produce -- a silently unreachable entry, which is worse than an error
+// because nothing says so.
+func TestNormalizePageKeyRefusesWindowsAbsoluteForms(t *testing.T) {
+	for _, in := range []string{`\foo.md`, `C:\foo.md`, `c:/foo.md`, `\\server\share\a.md`} {
+		t.Run(in, func(t *testing.T) {
+			if got, err := NormalizePageKey(in); err == nil {
+				t.Errorf("NormalizePageKey(%q) = %q, want an error", in, got)
+			}
+		})
+	}
+}
+
+// A `pages:` key with nothing after it is a mapping-shaped setting given no
+// mapping, which is refused rather than read as an empty block -- unlike a
+// scalar setting, where blank means unset. An author who typed the key and
+// stopped gets told, instead of silently having a project with no entries.
+func TestPagesWithNoValueIsRefused(t *testing.T) {
+	_, err := Discover(write(t, "pages:\n"))
+	if err == nil {
+		t.Fatal("Discover accepted a valueless pages:, want an error")
+	}
+	if !strings.Contains(err.Error(), `setting "pages" must be a mapping`) {
+		t.Errorf("error = %q, want the must-be-a-mapping message", err)
+	}
+}
+
+// IsPageField is entryFields[name] != 0, which is only sound because kind
+// starts at iota + 1. A zero-valued kind would make every unknown name look
+// known, so this pins the invariant rather than the lookup.
+func TestKindZeroValueIsNotAValidKind(t *testing.T) {
+	if kindScalar == 0 || kindList == 0 || kindMapping == 0 {
+		t.Fatal("a kind is zero; IsPageField and the settings lookups both read 0 as absent")
+	}
+	if IsPageField("titel") || IsPageField("") {
+		t.Error("an unknown name reported as a page field")
+	}
+	for _, name := range []string{"title", "space", "parent", "page_id", "page_width", "labels"} {
+		if !IsPageField(name) {
+			t.Errorf("%s is not reported as a page field", name)
+		}
+	}
+}

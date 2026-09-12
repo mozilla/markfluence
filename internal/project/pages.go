@@ -127,13 +127,24 @@ func readEntry(named string, fields []frontmatter.Item) (Entry, error) {
 	return e, nil
 }
 
+// volumeRelative reports whether p carries a Windows drive letter ("C:/x"),
+// which is absolute in meaning while not starting with a separator.
+func volumeRelative(p string) bool {
+	if len(p) < 2 || p[1] != ':' {
+		return false
+	}
+	c := p[0]
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
 // IsPageField reports whether name is a field markfluence understands on a
 // page, in frontmatter or in an entry.
 //
-// Exported because telling a markfluence key from a foreign one is not a
-// judgment a caller should make for itself: a docs tree carrying Jekyll's
-// layout:/date: frontmatter has said nothing about Confluence, and a caller
-// that counted any key at all would read every such file as claimed.
+// Exported because telling a markfluence key from one it merely preserves is
+// not a judgment a caller should make for itself. internal/frontmatter keeps
+// keys markfluence knows nothing about on purpose (a test there pins
+// `reviewers: [ana, bo]` surviving a write), so a caller that counted any key
+// at all would read a file carrying only those as claimed.
 func IsPageField(name string) bool { return entryFields[name] != 0 }
 
 // knownEntryFields lists the recognized field names, sorted so a message is
@@ -171,10 +182,15 @@ func NormalizePageKey(p string) (string, error) {
 	if p == "" {
 		return "", fmt.Errorf("a page key cannot be empty")
 	}
-	if path.IsAbs(p) || strings.HasPrefix(p, "/") {
+	// Separators first, then absoluteness: judging the raw string let
+	// "\\foo.md", "C:\\foo.md" and "\\\\server\\share\\a.md" through as keys, which
+	// normalize to absolute paths KeyFor can never produce -- a silently
+	// unreachable entry, which is worse than an error because nothing says so.
+	slashed := strings.ReplaceAll(p, "\\", "/")
+	if path.IsAbs(slashed) || strings.HasPrefix(slashed, "/") || volumeRelative(slashed) {
 		return "", fmt.Errorf("page %q must be relative to the project root, not absolute", p)
 	}
-	clean := path.Clean(strings.ReplaceAll(p, "\\", "/"))
+	clean := path.Clean(slashed)
 	if clean == ".." || strings.HasPrefix(clean, "../") {
 		return "", fmt.Errorf("page %q is outside the project root", p)
 	}

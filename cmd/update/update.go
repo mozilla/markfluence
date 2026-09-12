@@ -198,7 +198,6 @@ func processFile(
 		// means. Only this file fails; the rest of the batch proceeds.
 		return r.fail(err, jsonout.CodeValidation)
 	}
-	r.metadataSource = string(meta.MetadataSource())
 	r.warnings = append(r.warnings, meta.Warnings...)
 
 	// Nothing anywhere claims this file, so there is nothing to publish and
@@ -211,8 +210,15 @@ func processFile(
 		r.ok = true
 		r.status = statusSkipped
 		r.unmanaged = true
+		// metadata_source stays null, deliberately, even for a file whose
+		// frontmatter holds a known field: the question it answers is "which
+		// location supplied the metadata this page was published from", and
+		// nothing was published. Setting it before this check reported
+		// "frontmatter" on a skip, contradicting the schema and leaving
+		// --json unable to tell an unmanaged skip from an unchanged one.
 		return r
 	}
+	r.metadataSource = string(meta.MetadataSource())
 
 	title, titlePresent, pageID := resolveTitlePageID(meta.Fields)
 	// Before the request, like the page-id check below: an empty title is a

@@ -264,9 +264,11 @@ func abortedResult(file, status string, f failure) jsonCreateResult {
 		Attachments: []jsonout.Attachment{},
 		Warnings:    []string{},
 		Broken:      []string{},
-		// A file rejected in preflight may not have reached metadata
-		// resolution at all, so this is null rather than guessed at.
-		MetadataSource: nullableStr(f.metadataSource),
+		// Always null: a file rejected in preflight may not have reached
+		// metadata resolution at all, and one that did has no result of its
+		// own to carry it -- abortedResult is built from the failure, not from
+		// the record.
+		MetadataSource: nil,
 	}
 	if f.message != "" {
 		msg := f.message
