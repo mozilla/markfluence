@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/client"
@@ -59,6 +60,7 @@ func TestJSONResultFull(t *testing.T) {
     "value": "max",
     "default": true
   },
+  "labels": null,
   "created": {
     "at": "2026-07-01T00:00:00Z",
     "by": {
@@ -143,4 +145,81 @@ func TestSchemaConformance(t *testing.T) {
 		t.Fatalf("Emit: %v", err)
 	}
 	schematest.ValidateEnvelope(t, buf.Bytes())
+}
+
+// --- labels -------------------------------------------------------------------
+
+// TestHumanShowsLabelRows pins the two-row layout, and that the unmanaged row
+// appears only when there is something in it -- info's existing "empty fields
+// omitted" rule.
+func TestHumanShowsLabelRows(t *testing.T) {
+	r := report{
+		id: "1", title: "T", status: "current", space: "ENG", versionNum: 1,
+		labelsKnown: true,
+		labels: []client.Label{
+			{Name: "runbook", Prefix: "global"},
+			{Name: "ci/cd", Prefix: "global"},
+			{Name: "mine", Prefix: "my"},
+		},
+	}
+	out := r.human()
+	if !strings.Contains(out, "labels:") {
+		t.Errorf("output = %q, want a labels row", out)
+	}
+	if !strings.Contains(out, "ci/cd, runbook") {
+		t.Errorf("output = %q, want the managed labels sorted", out)
+	}
+	if !strings.Contains(out, "labels/unmanaged:") || !strings.Contains(out, "my:mine") {
+		t.Errorf("output = %q, want the unmanaged row naming my:mine", out)
+	}
+}
+
+func TestHumanOmitsUnmanagedRowWhenEmpty(t *testing.T) {
+	r := report{
+		id: "1", title: "T", status: "current", space: "ENG", versionNum: 1,
+		labelsKnown: true,
+		labels:      []client.Label{{Name: "runbook", Prefix: "global"}},
+	}
+	if out := r.human(); strings.Contains(out, "unmanaged") {
+		t.Errorf("output = %q, want no unmanaged row when there are none", out)
+	}
+}
+
+// TestJSONLabelsSeparateNoneFromUnknown: [] means the page has none, null means
+// the fetch failed. Collapsing them would make a transient failure
+// indistinguishable from a fact about the page.
+func TestJSONLabelsSeparateNoneFromUnknown(t *testing.T) {
+	none := report{labelsKnown: true}.jsonResult()
+	if none.Labels == nil {
+		t.Error("labels = null for a page with no labels, want []")
+	} else if len(*none.Labels) != 0 {
+		t.Errorf("labels = %v, want []", *none.Labels)
+	}
+
+	unknown := report{labelsKnown: false}.jsonResult()
+	if unknown.Labels != nil {
+		t.Errorf("labels = %v for a failed fetch, want null", *unknown.Labels)
+	}
+}
+
+// TestJSONLabelsReportManaged: a consumer should not have to know the prefix
+// rule to reproduce the split, so managed travels with each label.
+func TestJSONLabelsReportManaged(t *testing.T) {
+	r := report{
+		labelsKnown: true,
+		labels: []client.Label{
+			{Name: "mine", Prefix: "my"},
+			{Name: "runbook", Prefix: "global"},
+		},
+	}
+	got := r.jsonResult().Labels
+	if got == nil || len(*got) != 2 {
+		t.Fatalf("labels = %v, want two", got)
+	}
+	for _, l := range *got {
+		wantManaged := l.Prefix == "global"
+		if l.Managed != wantManaged {
+			t.Errorf("%s:%s managed = %v, want %v", l.Prefix, l.Name, l.Managed, wantManaged)
+		}
+	}
 }

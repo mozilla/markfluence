@@ -323,7 +323,7 @@
       "additionalProperties": false,
       "required": [
         "ok", "page_id", "title", "page_status", "space", "parent", "parent_type",
-        "version", "page_width", "created", "updated", "message", "url", "properties"
+        "version", "page_width", "labels", "created", "updated", "message", "url", "properties"
       ],
       "properties": {
         "ok": { "const": true },
@@ -340,6 +340,7 @@
           "properties": { "number": { "type": "integer" } }
         },
         "page_width": { "$ref": "#/$defs/pageWidthOrNull" },
+        "labels": { "$ref": "#/$defs/labelInfoListOrNull" },
         "created": { "$ref": "#/$defs/stampOrNull" },
         "updated": { "$ref": "#/$defs/stampOrNull" },
         "message": { "type": "string" },
