@@ -1441,6 +1441,12 @@ func (c *ConfluenceClient) ListLabels(pageID string) ([]Label, error) {
 // AddLabels adds labels to a page in one request, returning nil for an empty
 // list without calling anything.
 //
+// The path is /content/{id}/label, **not** /content/{id}/child/label. The
+// child/ collection is the one attachments, pages and comments hang off, and
+// for labels it is read-only: POST and DELETE there answer 405 with
+// "allow: HEAD,GET,OPTIONS", on the gateway and on the site domain alike.
+// Measured 2026-09-11; see docs/confluence/labels.md.
+//
 // The v1 route takes an array and is additive and idempotent: re-adding a name
 // the page already carries is a clean 200, and the response is the page's whole
 // label list. There is no bulk *set* route, so asserting an exact set is this
@@ -1459,26 +1465,31 @@ func (c *ConfluenceClient) AddLabels(pageID string, names []string) error {
 	for _, name := range names {
 		payload = append(payload, map[string]string{"prefix": "global", "name": name})
 	}
-	path := c.baseURL + "/wiki/rest/api/content/" + pageID + "/child/label"
+	path := c.baseURL + "/wiki/rest/api/content/" + pageID + "/label"
 	return c.doJSON(http.MethodPost, path, nil, payload, nil, timeoutWrite)
 }
 
 // RemoveLabel removes one label from a page. A label that is not there is
 // success: the desired state is "absent", and it already is.
 //
-// The name goes in the **query string**, never the path. The path form
-// (DELETE .../child/label/{name}) works until a name contains a "/", which
-// answers 400 with a Tomcat HTML error page no matter how the slash is encoded,
-// while ?name= answers 204 for the same label. That is not a hypothetical
-// shape: "ci/cd" is a real label in the SRE space. Measured both ways in
-// docs/confluence/labels.md.
+// Two things about this URL, both measured against the live API rather than
+// reasoned about (2026-09-11, docs/confluence/labels.md).
+//
+// The path is /content/{id}/label, not /content/{id}/child/label -- the child/
+// collection is read-only for labels and answers DELETE with a 405.
+//
+// The name goes in the **query string**, never as a path segment. The path form
+// works for a plain name, and 400s with a Tomcat HTML error page once the name
+// holds a "/" however it is encoded, while ?name= answers 204 for the same
+// label. That is not a hypothetical shape: "ci/cd" is a real label in this
+// instance, verified removable this way and not the other.
 //
 // The 404 check goes through notFound rather than comparing the status, because
 // a rejected credential is also a 404 -- on a whole batch of removals that
 // would otherwise report every label as "already gone" and the run as a
 // success.
 func (c *ConfluenceClient) RemoveLabel(pageID, name string) error {
-	path := c.baseURL + "/wiki/rest/api/content/" + pageID + "/child/label"
+	path := c.baseURL + "/wiki/rest/api/content/" + pageID + "/label"
 	err := c.doJSON(http.MethodDelete, path, url.Values{"name": {name}}, nil, nil, timeoutWrite)
 	if notFound(err) {
 		return nil

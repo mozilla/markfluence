@@ -5,7 +5,19 @@ actually organized and searched — the SRE space carries 94 distinct labels
 across 1123 pages — and `search --cql 'label = "runbook"'` is only useful for
 pages someone labeled.
 
-Reads are v2; **writes are v1**, exactly like attachments.
+Reads are v2; **writes are v1**, like attachments — but *not* at the path the
+attachment routes would lead you to guess. The one thing to read before touching
+any of this:
+
+| | route |
+|---|---|
+| read | `GET /wiki/api/v2/pages/{id}/labels` |
+| add | `POST /wiki/rest/api/content/{id}/label` |
+| remove | `DELETE /wiki/rest/api/content/{id}/label?name=…` |
+
+**Not `child/label`** — that collection is read-only for labels and answers a
+write with a 405. And **not** a name in the path — that breaks on `ci/cd`. Both
+are measured below.
 
 ## Verified 2026-09-08
 
@@ -75,31 +87,58 @@ Accepted verbatim: `/`, `"`, `'`, `+`, `_`, `-`, digits, non-ASCII
 (`héllo-wörld`), emoji. The character inventory in real use across the SRE
 space is lowercase alphanumerics, `-`, `_`, and a single `/`.
 
-### Adding is additive and idempotent; there is no bulk-set route
+### The write route is `/content/{id}/label` — **not** `child/label`
 
-`POST /wiki/rest/api/content/{id}/child/label` takes an array and returns the
-page's whole label list. Re-POSTing a name the page already carries is a clean
-200. Nothing sets a page's labels to a given set in one call, so "assert exactly
-this set" is add-the-missing plus remove-the-extra, computed client-side.
+This one cost a working implementation: the first version of markfluence's label
+support used `child/label`, passed every unit test against a fake, and failed on
+the first real page.
 
-### Removal is one DELETE per label, and must use the `?name=` form
+**Verified 2026-09-11.** The `child/` collection — the one attachments, pages
+and comments hang off — is **read-only for labels**:
 
 | request | result |
 |---|---|
-| `DELETE …/child/label/runbook` | 204 |
-| `DELETE …/child/label/a%2Fb` | **400**, and the body is Tomcat's HTML error page, not JSON |
-| `DELETE …/child/label?name=a/b` | 204 |
-| `DELETE …/child/label?name=absent` | 404 |
+| `POST …/content/{id}/child/label` | **405**, `allow: HEAD,GET,OPTIONS` |
+| `DELETE …/content/{id}/child/label?name=x` | **405**, same |
+| `POST …/content/{id}/label` | 200 |
+| `DELETE …/content/{id}/label?name=x` | 204 |
+
+Identical on the gateway (`api.atlassian.com/ex/confluence/{cloudId}`) and on
+the site domain, so it is the route and not the base URL. The 405 body is
+empty; the `allow` header is the only thing that says what happened.
+
+The attachment routes make the wrong guess an easy one — those really are
+`child/attachment`, and labels look like they should match.
+
+### Adding is additive and idempotent; there is no bulk-set route
+
+`POST /wiki/rest/api/content/{id}/label` takes an array and returns the page's
+whole label list. Re-POSTing a name the page already carries is a clean 200.
+Nothing sets a page's labels to a given set in one call, so "assert exactly this
+set" is add-the-missing plus remove-the-extra, computed client-side.
+
+### Removal is one DELETE per label, and must use the `?name=` form
+
+**Verified 2026-09-11** against a live page:
+
+| request | result |
+|---|---|
+| `DELETE …/label/plain-name` | 204 |
+| `DELETE …/label/ci%2Fcd` | **400**, and the body is Tomcat's HTML error page, not JSON |
+| `DELETE …/label?name=plain-name` | 204 |
+| `DELETE …/label?name=ci/cd` | 204 |
+| `DELETE …/label?name=never-existed` | 404, `No label found with name: never-existed` |
 
 The path form works right up until a name contains a `/`, which no amount of
 percent-encoding fixes. This is not hypothetical: **`ci/cd` is a real label in
-the SRE space**, so the path form would fail on a real page on a real run. Use
-the query form only.
+this instance**, verified removable by the query form and not by the path form.
+Use the query form only.
 
 A 404 means the label is already gone, which for a removal is the desired state
 — but only when it is a genuine 404. A rejected credential answers every v2
 route with a 404 too, so that check goes through `notFound` rather than
-comparing the status directly (see [api.md](api.md)).
+comparing the status directly (see [api.md](api.md)). That works here because
+this 404 *names the label* it could not find, which is what distinguishes it.
 
 ### v2 is read-only for labels
 
@@ -139,10 +178,44 @@ never written and never removed.
 author's behalf, in the course of asserting a frontmatter field that has no
 syntax for them, would be deleting data the file could not have expressed.
 
+## End-to-end, against the live instance
+
+**Verified 2026-09-11**, with markfluence itself against a scratch page in a
+personal space through the gateway, using an **unscoped personal token**. Every
+case below was observed, and the page was purged afterward:
+
+- `create` and `update` apply a declared set, including `ci/cd`.
+- `update` asserting a smaller set **removes** the surplus, `ci/cd` included —
+  the case the path form cannot do.
+- A `my:` label added by hand **survives** every one of those runs.
+- `labels: []` removes both managed labels and leaves `my:mine` alone.
+- A file with **no** `labels:` key publishes without touching the two labels
+  applied by hand, and reports `labels: null`.
+- `info` shows `labels:` and `labels/unmanaged:` as separate rows.
+- `read` emits `labels: [howto, runbook]` — global-only, sorted, between
+  `page_id` and `page_width`.
+- `fix` adopts hand-applied labels into a file with no key, and the second run
+  reports `already consistent`.
+- A block-style list rewritten by `fix` comes back as a block-style list.
+- Re-running `update` with an unchanged set makes no label change.
+
 ## What is not verified
 
-- **The OAuth scope for the v1 label routes.** Presumably
-  `write:confluence-content`, which [api.md](api.md#scopes) already records as
-  unlookupable for v1 routes. A scoped-token run will settle it.
+- **The OAuth scope for the v1 label routes.** An unscoped personal token works
+  through the gateway, which says nothing about what scope a scoped token would
+  need; [api.md](api.md#scopes) records that v1 scopes cannot be looked up. A
+  scoped-token run will settle it.
 - **Whether the 255-unit cap is enforced on the v2 read path.** Irrelevant
   unless a label was created by some other client that bypassed it.
+
+## Unrelated bug found while testing this
+
+A **purged** page's v2 404 body is
+`{"errors":[{"status":404,"code":"NOT_FOUND","title":"Not Found","detail":null}]}`
+— a bare title naming nothing, which is exactly the shape `RejectedCredential`
+uses to identify a revoked token. So `info` on a purged page reports "the
+credentials were rejected" against credentials that are fine.
+
+`client.go`'s comment claims "every genuine v2 404 *names* what it could not
+find". That holds for a page that never existed and for a trashed one; it does
+not hold for a purged one. Not a label bug and not fixed here.
