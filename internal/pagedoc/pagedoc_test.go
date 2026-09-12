@@ -234,3 +234,67 @@ func TestNilUserCacheResolvesNothing(t *testing.T) {
 		t.Errorf("lookups = %v, want none", asked)
 	}
 }
+
+// TestMentionWarningsNamesAnUnresolvableID is the only signal that a mention
+// reaches nobody. Confluence accepts any account id and renders it as
+// "@Unlicensed user", and the profile URL 200s for a real id and a nonsense one
+// alike -- both verified against the live instance -- so if markfluence stays
+// quiet, nothing downstream ever speaks up.
+func TestMentionWarningsNamesAnUnresolvableID(t *testing.T) {
+	c, _ := userServer(t, map[string]string{mentionB: "Bo Peep"})
+	got := MentionWarnings(c, NewUserCache(), []string{mentionA, mentionB})
+
+	if len(got) != 1 {
+		t.Fatalf("warnings = %q, want one (only the unresolvable id)", got)
+	}
+	if !strings.Contains(got[0], mentionA) {
+		t.Errorf("warning = %q, want it to name the id", got[0])
+	}
+	if !strings.Contains(got[0], "Unlicensed user") {
+		t.Errorf("warning = %q, want it to say what the reader will see", got[0])
+	}
+}
+
+// TestMentionWarningsDedupe: a rotation table mentioning one person in twelve
+// rows should say so once. resolve dedupes the *requests* via the cache, which
+// is a different thing from deduping the warnings.
+func TestMentionWarningsDedupe(t *testing.T) {
+	c, asked := userServer(t, map[string]string{})
+	ids := []string{mentionA, mentionA, mentionA}
+	if got := MentionWarnings(c, NewUserCache(), ids); len(got) != 1 {
+		t.Errorf("warnings = %q, want one for three mentions of one person", got)
+	}
+	if asked[mentionA] != 1 {
+		t.Errorf("lookups = %v, want one", asked)
+	}
+}
+
+// TestMentionWarningsSilentWhenEverythingResolves, and silent with nothing to
+// check -- a document with no mention must not cost a request.
+func TestMentionWarningsSilentWhenEverythingResolves(t *testing.T) {
+	c, asked := userServer(t, map[string]string{mentionA: "Ada Lovelace"})
+	if got := MentionWarnings(c, NewUserCache(), []string{mentionA}); got != nil {
+		t.Errorf("warnings = %q, want none", got)
+	}
+	if got := MentionWarnings(c, NewUserCache(), nil); got != nil {
+		t.Errorf("warnings = %q, want none for a document with no mention", got)
+	}
+	if asked[mentionA] != 1 {
+		t.Errorf("lookups = %v, want exactly one", asked)
+	}
+}
+
+// TestMentionWarningsShareTheCacheWithRendering is what makes the warning
+// affordable at all: publishing needs no display names, so this lookup exists
+// purely for the warning, and one cache across a batch means one request per
+// person rather than one per file.
+func TestMentionWarningsShareTheCacheWithRendering(t *testing.T) {
+	c, asked := userServer(t, map[string]string{})
+	users := NewUserCache()
+	for range 6 {
+		MentionWarnings(c, users, []string{mentionA})
+	}
+	if asked[mentionA] != 1 {
+		t.Errorf("lookups = %v, want one across six files", asked)
+	}
+}

@@ -18,6 +18,7 @@ import (
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/linkindex"
+	"github.com/mozilla/markfluence/internal/pagedoc"
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/project"
@@ -93,11 +94,14 @@ func run(cmd *cobra.Command, args []string) error {
 		ui.Warn("DRY RUN — no changes will be written.")
 	}
 	indexes := linkindex.NewCache()
+	// One cache for the batch: a batch of files mentioning the same on-call
+	// rotation resolves each person once, not once per file.
+	users := pagedoc.NewUserCache()
 
 	failures := 0
 	results := make([]*updateResult, 0, len(args))
 	for _, filename := range args {
-		r := processFile(filename, c, roots, indexes)
+		r := processFile(filename, c, roots, indexes, users)
 		results = append(results, r)
 		if !ui.IsJSON() {
 			r.renderHuman()
@@ -137,6 +141,7 @@ func run(cmd *cobra.Command, args []string) error {
 // performs no output itself; the caller renders the result (human lines or JSON).
 func processFile(
 	filename string, c *client.ConfluenceClient, roots *project.Cache, indexes *linkindex.Cache,
+	users *pagedoc.UserCache,
 ) *updateResult {
 	r := &updateResult{file: filename, dryRun: dryRun}
 	mf, err := frontmatter.ParseFile(filename)
@@ -230,6 +235,11 @@ func processFile(
 	}
 	r.broken = append(r.broken, pageContent.Broken...)
 	r.warnings = append(r.warnings, pageContent.Warnings...)
+	// Publishing needs no display names -- the account id is already in the
+	// markdown -- so this lookup exists only to catch an id that names nobody,
+	// which Confluence will not: it renders any id as "@Unlicensed user". The
+	// cache makes it one request per distinct person across the whole batch.
+	r.warnings = append(r.warnings, pagedoc.MentionWarnings(c, users, pageContent.Mentions)...)
 
 	next := page.Version.Number + 1
 
