@@ -9,16 +9,20 @@ byte-for-byte equality, so a construct listed here round-trips in meaning rather
 than in markup. What Confluence itself does with the results — and the traps
 behind several of these — is in [docs/confluence/](confluence/).
 
-## Supported constructs
+## Fenced code blocks
 
-**Fenced code blocks** are rendered as Confluence code macros and support the
-syntax highlighting, but only the languages Confluence supports.
-[GFM fenced code](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-and-highlighting-code-blocks)
+[GFM fenced code blocks](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-and-highlighting-code-blocks)
+are rendered as Confluence code macros, with syntax highlighting for the
+languages Confluence supports.
 
-**Tables** use GFM syntax and are rendered as Confluence tables.
+## Tables
+
 [GFM tables](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/organizing-information-with-tables)
+are rendered as Confluence tables.
 
-**Table cell background colors** can be specified using an HTML comment at the
+### Cell background colors
+
+Cell background colors can be specified using an HTML comment at the
 start of the cell. They will be invisible in Markdown preview, but will have
 the specified background color in Confluence.
 
@@ -56,7 +60,9 @@ Details:
 - An unknown color name is dropped with a warning and the cell publishes
   uncolored.
 
-**Multi-line table cells** use a literal `<br>` to break a cell onto more than
+### Multi-line cells
+
+Multi-line table cells use a literal `<br>` to break a cell onto more than
 one line. A real newline can't be used instead, since a GFM table row has to
 stay on one physical line.
 
@@ -70,7 +76,9 @@ Confluence's own editor represents a multi-line cell as separate paragraphs
 rather than `<br>`; `read`/`export` converts that back to the `<br>` form
 shown above, which is what publishes back to the same paragraphs.
 
-**Lists in table cells** use HTML list tags — `<ul>`, `<ol>`, and `<li>` —
+### Lists in cells
+
+Lists in table cells use HTML list tags — `<ul>`, `<ol>`, and `<li>` —
 directly in the cell, the same way `<br>` is used for a plain line break.
 Markdown's own list syntax needs each item on its own line, which a table row
 can't do, so it isn't an option here.
@@ -84,7 +92,9 @@ can't do, so it isn't an option here.
 `read`/`export` recovers the same tags rather than converting them to
 anything else.
 
-**GitHub alerts** — `> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`,
+## GitHub alerts
+
+GitHub alerts — `> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`,
 `[!CAUTION]` — become Confluence panels in the colour GitHub draws them in:
 
 | alert | colour | published as |
@@ -95,8 +105,8 @@ anything else.
 | `WARNING` | orange | `note` macro |
 | `CAUTION` | red | `warning` macro |
 
-The mapping is one-to-one, so `read`/`export` recover the original alert.
-[GFM alerts](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts)
+The mapping is one-to-one, so `read`/`export` recover the original
+[GFM alert](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts).
 
 Example:
 
@@ -105,7 +115,9 @@ Example:
 > This is a note.
 ```
 
-**Images** — `![alt](./path.png)` uploads a local file as an attachment (or
+## Images
+
+`![alt](./path.png)` uploads a local file as an attachment (or
 references a remote URL); a missing/unsupported image becomes
 `line N: IMAGE BROKEN: …` text (`N` is the line it's on in the file).
 
@@ -119,7 +131,7 @@ docs/                      ← needs a markfluence.yaml here for this to work
   guide/page.md            → ![logo](../assets/logo.png)
 ```
 
-That layout needs a [documentation root](#the-documentation-root) declared at
+That layout needs a [documentation root](../README.md#the-documentation-root) declared at
 `docs/` — without one, each page's root defaults to its own directory, and
 `guide/page.md` reaching above itself for `assets/` is out of bounds.
 
@@ -137,7 +149,7 @@ That layout needs a [documentation root](#the-documentation-root) declared at
 > `markfluence read` and `markfluence export` write the encoded form, so a page
 > round-trips back to Markdown that still renders.
 
-Every image is bounded by the [documentation root](#the-documentation-root):
+Every image is bounded by the [documentation root](../README.md#the-documentation-root):
 one resolving outside it (`../../secrets/x.png`) is reported as
 `line N: IMAGE BROKEN: … (outside the documentation root)` rather than
 uploaded, and a symlink is refused even when it resolves inside the root.
@@ -179,7 +191,9 @@ Examples:
 ![alt text](./path.png '{"title":"sometitle","width":100}')
 ```
 
-**Links to sibling `.md` files** are rewritten to the target page's Confluence
+## Links to other pages
+
+Links to sibling `.md` files are rewritten to the target page's Confluence
 URL; **heading anchors** are rewritten to Confluence's anchor scheme.
 
 As with image paths, a link destination is a URL: a sibling whose filename has a
@@ -210,13 +224,16 @@ Whether an unresolved link is reported — and how badly — depends on why:
 A mention, an attachment link, or an external URL was never meant to resolve
 here and stays silent either way.
 
-**Comment directives:**
+## Comment directives
+
 - `<!-- confluence-toc -->` — replaced with Confluence table-of-contents macro.
 - `<!-- markfluence-version -->` — replaced with the build stamp,
   `markfluence VERSION (SHA, DATE)` (the same string `markfluence --version`
   prints).
 
-**Raw Confluence storage format.** You can paste Confluence
+## Raw Confluence storage format
+
+You can paste Confluence
 [storage format](https://confluence.atlassian.com/doc/confluence-storage-format-790796544.html)
 markup (`<ac:…>` / `<ri:…>` elements — any macro, layout, etc.) straight from a
 page's **⋯ → View storage format** into your markdown, and it's emitted verbatim.
