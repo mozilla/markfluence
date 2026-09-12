@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/project"
 	"github.com/mozilla/markfluence/internal/ui"
 )
@@ -19,19 +20,23 @@ const (
 
 // createResult captures the outcome of creating one page.
 type createResult struct {
-	file        string
-	ok          bool
-	status      string
-	dryRun      bool
-	pageID      string
-	title       string
-	space       string
-	parent      *string
-	parentType  *string
-	parentFile  *string
-	url         string
-	width       *jsonout.PageWidth
-	widthSet    bool
+	file       string
+	ok         bool
+	status     string
+	dryRun     bool
+	pageID     string
+	title      string
+	space      string
+	parent     *string
+	parentType *string
+	parentFile *string
+	url        string
+	width      *jsonout.PageWidth
+	widthSet   bool
+	// labels is nil when the file declares no labels key -- the same "not
+	// asserted this run" convention page_width uses, and load-bearing here
+	// because an empty declared set is itself a declaration.
+	labels      []jsonout.Label
 	persisted   bool
 	attachments []jsonout.Attachment
 	broken      []string
@@ -90,6 +95,11 @@ func (r *createResult) renderHuman() {
 	if r.widthSet && r.width != nil {
 		ui.Info(prefix + " page width: " + r.width.Value)
 	}
+	for _, l := range r.labels {
+		if l.Action != labels.ActionUnchanged {
+			ui.Info(fmt.Sprintf("%s label %s: %s", prefix, l.Action, l.Name))
+		}
+	}
 	// A dry-run has created no page, so there is no id or URL to print; name the
 	// title and space instead. Every other line above is identical to a real run.
 	if r.dryRun {
@@ -113,6 +123,7 @@ type jsonCreateResult struct {
 	ParentFile  *string              `json:"parent_file"`
 	URL         *string              `json:"url"`
 	PageWidth   *jsonout.PageWidth   `json:"page_width"`
+	Labels      *[]jsonout.Label     `json:"labels"`
 	Persisted   bool                 `json:"persisted"`
 	Attachments []jsonout.Attachment `json:"attachments"`
 	Warnings    []string             `json:"warnings"`
@@ -135,6 +146,7 @@ func (r *createResult) jsonResult() jsonCreateResult {
 		ParentFile:  r.parentFile,
 		URL:         nullableStr(r.url),
 		PageWidth:   r.width,
+		Labels:      labelsOrNil(r.labels),
 		Persisted:   r.persisted,
 		Attachments: nonNilAttachments(r.attachments),
 		Warnings:    nonNilStrings(r.warnings),
@@ -279,4 +291,24 @@ func fatalFail(msg string, code jsonout.Code) error {
 		ui.Error(msg)
 	}
 	return ui.SilentExit(2)
+}
+
+// labelsOrNil renders the labels field: an array when the file declared the
+// key, null when it did not. A pointer to a slice, because an empty declared
+// set and an absent key are different answers and a nil slice cannot say which.
+func labelsOrNil(l []jsonout.Label) *[]jsonout.Label {
+	if l == nil {
+		return nil
+	}
+	return &l
+}
+
+// toJSONLabels converts label actions to the reported shape, always non-nil so
+// a declared-but-empty set renders as [] rather than null.
+func toJSONLabels(actions []labels.Action) []jsonout.Label {
+	out := make([]jsonout.Label, 0, len(actions))
+	for _, a := range actions {
+		out = append(out, jsonout.Label{Action: a.Action, Name: a.Name})
+	}
+	return out
 }

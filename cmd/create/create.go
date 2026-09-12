@@ -31,6 +31,7 @@ import (
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
@@ -122,6 +123,11 @@ type record struct {
 	spaceID  string
 	parent   parentInfo
 	width    pagewidth.Width
+	// labels is the validated label set the file declares. Validated in
+	// preflight so a name Confluence would mangle never reaches a created page,
+	// and carried rather than re-read so publish cannot disagree with what was
+	// checked.
+	labels labels.Set
 	// root bounds this file's image/parent reads and is what its attachments'
 	// names and recorded Source are relative to. Discovered from the file's own
 	// directory, cached across the batch by internal/project.Cache.
@@ -553,6 +559,12 @@ func publishOne(r record, res *createResult, pageID string, version int, c *clie
 		}
 		res.width = &jsonout.PageWidth{Value: string(r.width), Default: false}
 		res.widthSet = true
+		// No request for the live set, unlike update's dry run: the page does
+		// not exist, so every declared label is an add and there is nothing to
+		// remove. Asking would be a request against an id that is not there.
+		if r.labels.Declared {
+			res.labels = toJSONLabels(labels.Actions(r.labels.Names, nil, nil))
+		}
 		res.ok = true
 		res.status = statusCreated
 		return res
@@ -589,6 +601,18 @@ func publishOne(r record, res *createResult, pageID string, version int, c *clie
 		}
 	}
 
+	// Non-fatal, like the width and for the same reason: the page exists and
+	// carries its content by now, so failing the result would report that it
+	// does not. The names were validated in preflight, so anything that fails
+	// here is the server or the network rather than the file.
+	if r.labels.Declared {
+		if acts, err := labels.Apply(c, pageID, r.labels); err != nil {
+			res.warnings = append(res.warnings, "could not set labels: "+err.Error())
+		} else {
+			res.labels = toJSONLabels(acts)
+		}
+	}
+
 	res.ok = true
 	res.status = statusCreated
 	return res
@@ -621,6 +645,20 @@ func resolveFile(
 		return record{}, errors.New("no title given (pass --title or add a 'title:' frontmatter field)")
 	}
 	width, err := resolveWidth(pageWidthOpt, mf.Frontmatter)
+	if err != nil {
+		return record{}, err
+	}
+	// Beside the width rather than beside the conversion at the end of this
+	// function, though both are there for #127's reason -- a defect in the file
+	// must not leave a created page behind. The width check is the closer
+	// precedent: both are offline reads of one frontmatter field, so neither
+	// spends a request to find out. The conversion is last only because it is
+	// expensive and because the page_id precedence below had to be preserved.
+	//
+	// Fatal here, and it has to be: a label Confluence splits on a space
+	// publishes *successfully*, so unlike almost anything else phase 1 rejects,
+	// there is no later run that can repair it.
+	labelSet, err := labels.Declared(mf.Lists, mf.Frontmatter)
 	if err != nil {
 		return record{}, err
 	}
@@ -695,7 +733,10 @@ func resolveFile(
 		return record{}, &convertFailure{err: err}
 	}
 
-	return record{filename, abs, mf, title, spaceKey, spaceID, parent, width, root, index}, nil
+	return record{
+		filename: filename, absPath: abs, mdfile: mf, title: title, spaceKey: spaceKey,
+		spaceID: spaceID, parent: parent, width: width, labels: labelSet, root: root, index: index,
+	}, nil
 }
 
 // resolveParent resolves a file's parent: reference. A ".md" reference is read

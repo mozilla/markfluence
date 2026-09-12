@@ -418,7 +418,7 @@
       "additionalProperties": false,
       "required": [
         "ok", "status", "dry_run", "file", "page_id", "title", "space", "parent", "parent_type", "parent_file", "url",
-        "page_width", "persisted", "attachments", "warnings", "broken", "error", "code"
+        "page_width", "labels", "persisted", "attachments", "warnings", "broken", "error", "code"
       ],
       "properties": {
         "ok": { "type": "boolean" },
@@ -433,6 +433,7 @@
         "parent_file": { "$ref": "#/$defs/stringOrNull" },
         "url": { "$ref": "#/$defs/stringOrNull" },
         "page_width": { "$ref": "#/$defs/pageWidthOrNull" },
+        "labels": { "$ref": "#/$defs/labelActionsOrNull" },
         "persisted": { "type": "boolean" },
         "attachments": { "type": "array", "items": { "$ref": "#/$defs/attachment" } },
         "warnings": { "type": "array", "items": { "type": "string" } },

@@ -41,6 +41,10 @@ type fakeConfluence struct {
 	// created under that title -- used to test a publish-phase failure after a
 	// successful reserve.
 	failUpdateForTitle string
+	// labelCalls records every label request, so a test can assert on one that
+	// was not made; labelsAdded records the names POSTed.
+	labelCalls  []string
+	labelsAdded []string
 	// rejectCredential makes every route answer the way the API answers a
 	// revoked token: 404 with a title that names nothing. This is the shape
 	// #133 is about -- it is not a missing page, and reporting it as one (or as
@@ -100,6 +104,22 @@ func (f *fakeConfluence) handle(w http.ResponseWriter, r *http.Request) {
 
 	case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/wiki/api/v2/pages/"):
 		f.updatePage(w, r)
+
+	case strings.Contains(r.URL.Path, "label"):
+		f.labelCalls = append(f.labelCalls, r.Method+" "+r.URL.Path+"?"+r.URL.RawQuery)
+		if r.Method == http.MethodGet {
+			// A freshly created page carries no labels.
+			_, _ = fmt.Fprint(w, `{"results":[]}`)
+			return
+		}
+		if r.Method == http.MethodPost {
+			var body []map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			for _, l := range body {
+				f.labelsAdded = append(f.labelsAdded, l["name"])
+			}
+		}
+		w.WriteHeader(http.StatusOK)
 
 	case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/properties"):
 		_, _ = fmt.Fprint(w, `{"results":[]}`)
@@ -800,4 +820,160 @@ func captureStdout(t *testing.T, fn func() error) (string, error) {
 		t.Fatal(err)
 	}
 	return string(out), runErr
+}
+
+// --- labels -------------------------------------------------------------------
+
+// TestRunInvalidLabelCreatesNothing is #127's guarantee applied to labels, and
+// the reason validating them in preflight rather than at publish matters. A
+// label Confluence splits on a space publishes *successfully*, so a page
+// created before the check would carry labels no later run can remove -- and
+// the author would have a page_id written into their file to undo by hand.
+func TestRunInvalidLabelCreatesNothing(t *testing.T) {
+	resetOpts(t)
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	bad := write(t, dir, "bad.md", "---\ntitle: Bad\nlabels: [Runbook Two]\n---\nbody\n")
+
+	c, f := newFakeConfluence(t)
+	_, runErr := captureStdout(t, func() error {
+		return run(testCmd(t, c.SiteURL(), dir), []string{bad})
+	})
+	if runErr == nil {
+		t.Fatal("run should have failed for an invalid label")
+	}
+	if len(f.pages) != 0 {
+		t.Errorf("pages = %v, want none created", f.pages)
+	}
+	if len(f.labelCalls) != 0 {
+		t.Errorf("label requests = %v, want none", f.labelCalls)
+	}
+	raw, err := os.ReadFile(bad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "page_id") {
+		t.Error("a page_id was written back for a file that never published")
+	}
+}
+
+// TestRunInvalidLabelReportsVALIDATION: a bad label is a defect in the file, so
+// it takes newFailure's fallback code rather than CONVERT (the converter never
+// saw it) or a request code (no request was made).
+func TestRunInvalidLabelReportsVALIDATION(t *testing.T) {
+	resetOpts(t)
+	ui.SetJSON(true)
+	t.Cleanup(func() { ui.SetJSON(false) })
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	bad := write(t, dir, "bad.md", "---\ntitle: Bad\nlabels: [a,b c]\n---\nbody\n")
+
+	c, _ := newFakeConfluence(t)
+	out, runErr := captureStdout(t, func() error {
+		return run(testCmd(t, c.SiteURL(), dir), []string{bad})
+	})
+	if runErr == nil {
+		t.Fatal("run should have failed")
+	}
+	schematest.ValidateEnvelope(t, []byte(out))
+
+	var env struct {
+		Results []struct {
+			Code *string `json:"code"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+	if len(env.Results) != 1 || env.Results[0].Code == nil {
+		t.Fatalf("results = %+v, want one coded failure", env.Results)
+	}
+	if got := *env.Results[0].Code; got != string(jsonout.CodeValidation) {
+		t.Errorf("code = %q, want VALIDATION", got)
+	}
+}
+
+// TestRunAppliesDeclaredLabels: the happy path, plus the shape of the reported
+// actions -- every declared label is an add on a page that did not exist.
+func TestRunAppliesDeclaredLabels(t *testing.T) {
+	resetOpts(t)
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	path := write(t, dir, "ok.md", "---\ntitle: Ok\nlabels: [runbook, ci/cd]\n---\nbody\n")
+
+	c, f := newFakeConfluence(t)
+	if _, err := captureStdout(t, func() error {
+		return run(testCmd(t, c.SiteURL(), dir), []string{path})
+	}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	want := map[string]bool{"runbook": true, "ci/cd": true}
+	for _, name := range f.labelsAdded {
+		delete(want, name)
+	}
+	if len(want) != 0 {
+		t.Errorf("labels added = %v, missing %v", f.labelsAdded, want)
+	}
+}
+
+// TestRunAbsentLabelsMakesNoRequest: absent means untouched here too, and on a
+// freshly created page that means no label traffic at all.
+func TestRunAbsentLabelsMakesNoRequest(t *testing.T) {
+	resetOpts(t)
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	path := write(t, dir, "ok.md", "---\ntitle: Ok\n---\nbody\n")
+
+	c, f := newFakeConfluence(t)
+	if _, err := captureStdout(t, func() error {
+		return run(testCmd(t, c.SiteURL(), dir), []string{path})
+	}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(f.labelCalls) != 0 {
+		t.Errorf("label requests = %v, want none", f.labelCalls)
+	}
+}
+
+// TestRunDryRunPreviewsLabelsWithoutAsking: the page does not exist in a dry
+// run, so every declared label is an add and there is nothing to look up --
+// asking would be a request against an id that is not there.
+func TestRunDryRunPreviewsLabelsWithoutAsking(t *testing.T) {
+	resetOpts(t)
+	ui.SetJSON(true)
+	t.Cleanup(func() { ui.SetJSON(false) })
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	dryRunOpt = true
+	path := write(t, dir, "ok.md", "---\ntitle: Ok\nlabels: [runbook]\n---\nbody\n")
+
+	c, f := newFakeConfluence(t)
+	out, err := captureStdout(t, func() error {
+		return run(testCmd(t, c.SiteURL(), dir), []string{path})
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	schematest.ValidateEnvelope(t, []byte(out))
+	if len(f.labelCalls) != 0 {
+		t.Errorf("label requests = %v, want none in a dry run", f.labelCalls)
+	}
+
+	var env struct {
+		Results []struct {
+			Labels []struct {
+				Action string `json:"action"`
+				Name   string `json:"name"`
+			} `json:"labels"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("unmarshal %q: %v", out, err)
+	}
+	if len(env.Results) != 1 || len(env.Results[0].Labels) != 1 {
+		t.Fatalf("labels = %+v, want one previewed action", env.Results)
+	}
+	if got := env.Results[0].Labels[0]; got.Action != "added" || got.Name != "runbook" {
+		t.Errorf("previewed label = %+v, want runbook added", got)
+	}
 }

@@ -130,6 +130,7 @@ func TestJSONResultCreated(t *testing.T) {
     "value": "max",
     "default": false
   },
+  "labels": null,
   "persisted": true,
   "attachments": [],
   "warnings": [],
