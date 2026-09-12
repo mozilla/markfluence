@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/mozilla/markfluence/internal/client"
@@ -14,8 +15,10 @@ import (
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/labels"
+	"github.com/mozilla/markfluence/internal/pagemeta"
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
+	"github.com/mozilla/markfluence/internal/project"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -64,8 +67,15 @@ func run(cmd *cobra.Command, args []string) error {
 	username, _ := cmd.Flags().GetString("username")
 	cloudID, _ := cmd.Flags().GetString("cloud-id")
 	envFile, _ := cmd.Flags().GetString("env-file")
+	rootOverride, _ := cmd.Flags().GetString("root")
+	// fix had no project concept at all, being the one verb that reads the
+	// page and writes the file. It needs one now: a file's metadata may live in
+	// markfluence.yaml's pages: block, so locating the page at all requires
+	// resolving through the root (#139).
+	roots := project.NewCache(rootOverride)
+	defer roots.Close()
 	c, err := client.Resolve(client.ResolveOptions{
-		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile,
+		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile, Roots: roots,
 	})
 	if err != nil {
 		if ui.IsJSON() {
@@ -83,7 +93,7 @@ func run(cmd *cobra.Command, args []string) error {
 	failures := 0
 	results := make([]*fixResult, 0, len(args))
 	for _, filename := range args {
-		r := processFile(filename, c)
+		r := processFile(filename, c, roots)
 		results = append(results, r)
 		if !ui.IsJSON() {
 			r.renderHuman()
@@ -129,13 +139,49 @@ type change struct {
 
 // processFile reconciles one file and returns a result. It performs no output;
 // the caller renders the result.
-func processFile(filename string, c *client.ConfluenceClient) *fixResult {
+func processFile(filename string, c *client.ConfluenceClient, roots *project.Cache) *fixResult {
 	r := &fixResult{file: filename, dryRun: dryRun}
 	mf, err := frontmatter.ParseFile(filename)
 	if err != nil {
 		return r.fail(err, jsonout.CodeValidation)
 	}
-	page, err := locatePage(mf.Frontmatter, c)
+	abs, err := filepath.Abs(filename)
+	if err != nil {
+		return r.fail(err, jsonout.CodeIO)
+	}
+	root, err := roots.Resolve(filepath.Dir(abs))
+	if err != nil {
+		code := jsonout.CodeIO
+		if project.IsConfigError(err) {
+			code = jsonout.CodeValidation
+		}
+		return r.fail(project.RootError(err), code)
+	}
+	key, _ := pagemeta.KeyFor(root, abs)
+	meta, err := pagemeta.Resolve(key, mf, root)
+	if err != nil {
+		return r.fail(err, jsonout.CodeValidation)
+	}
+	r.warnings = append(r.warnings, meta.Warnings...)
+
+	// A file whose metadata lives *only* in markfluence.yaml has nothing fix
+	// can write: reconciling it means editing its pages: entry, and #139's
+	// write half is not here yet. Refused rather than attempted, because the
+	// alternative is what create was doing before review caught it -- writing
+	// frontmatter into a pristine file, which turns every later update and
+	// check of it into a coordinate disagreement.
+	//
+	// A file that carries *some* inline keys as well is still fixable, and
+	// usefully so: those keys exist already, and the two locations agreed about
+	// the coordinates or Resolve would have failed above.
+	if meta.InManifest() && !meta.InFile() {
+		return r.fail(fmt.Errorf(
+			"this file's metadata lives in %s; fix cannot reconcile a pages: entry yet, "+
+				"so there is nothing here to correct", project.Filename),
+			jsonout.CodeValidation)
+	}
+
+	page, err := locatePage(meta.Fields, c)
 	if err != nil {
 		// locatePage mixes server failures (GetPageOrNil, SearchPagesByTitle)
 		// with local ones (no page_id or title, an ambiguous title), so the code
@@ -168,7 +214,7 @@ func processFile(filename string, c *client.ConfluenceClient) *fixResult {
 		}
 	}
 
-	r.changes = plannedChanges(mf, page, liveWidth, liveLabels)
+	r.changes = plannedChanges(meta.Fields, meta.Lists, page, liveWidth, liveLabels)
 	// Field order is reconciled too, and counts as a change: reporting a
 	// jumbled file "consistent" would mean running fix, being told there is
 	// nothing to do, and still having a jumbled file. Computed before any edit,
@@ -260,9 +306,9 @@ func locatePage(fm map[string]string, c *client.ConfluenceClient) (*client.Page,
 // plannedChanges computes the field edits needed to reconcile mf to page. Only
 // fields that actually differ are returned.
 func plannedChanges(
-	mf *frontmatter.MarkdownFile, page *client.Page, liveWidth string, liveLabels []string,
+	fm map[string]string, lists map[string][]string,
+	page *client.Page, liveWidth string, liveLabels []string,
 ) []change {
-	fm := mf.Frontmatter
 	live := []struct{ field, value string }{
 		{"page_id", page.ID},
 		{"space", client.SpaceKeyFromWebUI(page.Links.WebUI)},
@@ -308,7 +354,7 @@ func plannedChanges(
 		}
 	}
 
-	if ch, ok := labelChange(mf, liveLabels); ok {
+	if ch, ok := labelChange(fm, lists, liveLabels); ok {
 		changes = append(changes, ch)
 	}
 	return changes
@@ -331,19 +377,21 @@ func plannedChanges(
 // set is what is about to be written, and it came from the server, so it is
 // valid by construction. That is the one place fix repairs a file check would
 // have failed.
-func labelChange(mf *frontmatter.MarkdownFile, liveLabels []string) (change, bool) {
+func labelChange(
+	fm map[string]string, lists map[string][]string, liveLabels []string,
+) (change, bool) {
 	// nil means the read failed. Planning nothing is right: a change here would
 	// propose the file's own labels be replaced by a set nobody could see.
 	if liveLabels == nil {
 		return change{}, false
 	}
-	declared, present := mf.Lists[labels.Field]
+	declared, present := lists[labels.Field]
 	// A scalar labels: value is a file every other verb refuses, so fix has to
 	// offer a way out of it whatever the page's labels are -- including none,
 	// where the repair is "labels: []". Reading it as absent meant fix reported
 	// "already consistent" for a file check, update and create all reject, and
 	// only repaired it when the page happened to carry labels.
-	scalar := !present && hasKey(mf.Frontmatter, labels.Field)
+	scalar := !present && hasKey(fm, labels.Field)
 
 	if present {
 		// Compared raw, not normalized. Normalizing first made a case mismatch
@@ -366,7 +414,7 @@ func labelChange(mf *frontmatter.MarkdownFile, liveLabels []string) (change, boo
 	case present:
 		old = renderLabelList(declared)
 	case scalar:
-		old = strings.TrimSpace(mf.Frontmatter[labels.Field])
+		old = strings.TrimSpace(fm[labels.Field])
 		if old == "" {
 			old = noneDisplay
 		}
