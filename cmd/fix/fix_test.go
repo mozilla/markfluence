@@ -10,6 +10,7 @@ import (
 
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/clienttest"
+	"github.com/mozilla/markfluence/internal/frontmatter"
 )
 
 // --- locatePage --------------------------------------------------------------
@@ -113,7 +114,7 @@ func TestPlannedChangesNoneWhenConsistent(t *testing.T) {
 		"page_id": "123", "space": "ENG", "parent": "null", "title": "Runbook", "page_width": "max",
 	}
 	page := &client.Page{ID: "123", Title: "Runbook", Links: client.Links{WebUI: "/spaces/ENG/pages/123/Runbook"}}
-	got := plannedChanges(fm, page, "max")
+	got := plannedChangesFM(fm, page, "max")
 	if len(got) != 0 {
 		t.Errorf("changes = %+v, want none", got)
 	}
@@ -121,7 +122,7 @@ func TestPlannedChangesNoneWhenConsistent(t *testing.T) {
 
 func TestPlannedChangesFillsMissingFields(t *testing.T) {
 	page := &client.Page{ID: "123", Title: "Runbook", Links: client.Links{WebUI: "/spaces/ENG/pages/123/Runbook"}}
-	got := plannedChanges(map[string]string{}, page, "")
+	got := plannedChangesFM(map[string]string{}, page, "")
 	want := map[string]string{"page_id": "123", "space": "ENG", "parent": "null", "title": "Runbook"}
 	if len(got) != len(want) {
 		t.Fatalf("changes = %+v, want %d entries", got, len(want))
@@ -139,7 +140,7 @@ func TestPlannedChangesFillsMissingFields(t *testing.T) {
 func TestPlannedChangesUpdatesFieldsThatDiffer(t *testing.T) {
 	fm := map[string]string{"page_id": "999", "space": "OLD", "parent": "1"}
 	page := &client.Page{ID: "123", ParentID: "2", Links: client.Links{WebUI: "/spaces/ENG/pages/123/Runbook"}}
-	got := plannedChanges(fm, page, "")
+	got := plannedChangesFM(fm, page, "")
 	byField := map[string]change{}
 	for _, ch := range got {
 		byField[ch.field] = ch
@@ -162,7 +163,7 @@ func TestPlannedChangesParentNullNormalizes(t *testing.T) {
 	// parser can no longer produce and would pass while fix looped forever.
 	fm := map[string]string{"parent": ""}
 	page := &client.Page{ID: "1", Links: client.Links{WebUI: "/spaces/ENG/pages/1/X"}}
-	got := plannedChanges(fm, page, "")
+	got := plannedChangesFM(fm, page, "")
 	for _, ch := range got {
 		if ch.field == "parent" {
 			t.Errorf("parent change = %+v, want none (both sides are null)", ch)
@@ -173,7 +174,7 @@ func TestPlannedChangesParentNullNormalizes(t *testing.T) {
 func TestPlannedChangesTitlePresentIsUntouched(t *testing.T) {
 	fm := map[string]string{"page_id": "1", "space": "ENG", "parent": "null", "title": "Kept"}
 	page := &client.Page{ID: "1", Title: "Live Title", Links: client.Links{WebUI: "/spaces/ENG/pages/1/X"}}
-	got := plannedChanges(fm, page, "")
+	got := plannedChangesFM(fm, page, "")
 	for _, ch := range got {
 		if ch.field == "title" {
 			t.Errorf("title change = %+v, want none: an existing title is never overwritten", ch)
@@ -184,7 +185,7 @@ func TestPlannedChangesTitlePresentIsUntouched(t *testing.T) {
 func TestPlannedChangesSkipsWidthWhenLiveWidthUnknown(t *testing.T) {
 	fm := map[string]string{"page_id": "1", "space": "ENG", "parent": "null", "title": "X"}
 	page := &client.Page{ID: "1", Title: "X", Links: client.Links{WebUI: "/spaces/ENG/pages/1/X"}}
-	got := plannedChanges(fm, page, "")
+	got := plannedChangesFM(fm, page, "")
 	for _, ch := range got {
 		if ch.field == "page_width" {
 			t.Errorf("page_width change = %+v, want none when liveWidth is unknown", ch)
@@ -197,7 +198,7 @@ func TestPlannedChangesWidthDefaultsToMaxWhenUnset(t *testing.T) {
 	page := &client.Page{ID: "1", Title: "X", Links: client.Links{WebUI: "/spaces/ENG/pages/1/X"}}
 
 	t.Run("live width already max: no change", func(t *testing.T) {
-		got := plannedChanges(fm, page, "max")
+		got := plannedChangesFM(fm, page, "max")
 		for _, ch := range got {
 			if ch.field == "page_width" {
 				t.Errorf("page_width change = %+v, want none: unset frontmatter defaults to max", ch)
@@ -205,7 +206,7 @@ func TestPlannedChangesWidthDefaultsToMaxWhenUnset(t *testing.T) {
 		}
 	})
 	t.Run("live width differs: filled from (none)", func(t *testing.T) {
-		got := plannedChanges(fm, page, "narrow")
+		got := plannedChangesFM(fm, page, "narrow")
 		var found *change
 		for i, ch := range got {
 			if ch.field == "page_width" {
@@ -223,7 +224,7 @@ func TestPlannedChangesWidthCaseInsensitive(t *testing.T) {
 		"page_id": "1", "space": "ENG", "parent": "null", "title": "X", "page_width": " Wide ",
 	}
 	page := &client.Page{ID: "1", Title: "X", Links: client.Links{WebUI: "/spaces/ENG/pages/1/X"}}
-	got := plannedChanges(fm, page, "wide")
+	got := plannedChangesFM(fm, page, "wide")
 	for _, ch := range got {
 		if ch.field == "page_width" {
 			t.Errorf("page_width change = %+v, want none: %q normalizes to wide", ch, fm["page_width"])
@@ -236,7 +237,7 @@ func TestPlannedChangesWidthDiffers(t *testing.T) {
 		"page_id": "1", "space": "ENG", "parent": "null", "title": "X", "page_width": "narrow",
 	}
 	page := &client.Page{ID: "1", Title: "X", Links: client.Links{WebUI: "/spaces/ENG/pages/1/X"}}
-	got := plannedChanges(fm, page, "max")
+	got := plannedChangesFM(fm, page, "max")
 	var found *change
 	for i, ch := range got {
 		if ch.field == "page_width" {
@@ -425,5 +426,212 @@ func TestProcessFileTopLevelPageConverges(t *testing.T) {
 	r := processFile(path, c)
 	if r.status != statusConsistent {
 		t.Fatalf("status = %q with changes %+v, want consistent", r.status, r.changes)
+	}
+}
+
+// plannedChangesFM adapts plannedChanges for the tests that predate labels:
+// no list fields, and a nil liveLabels meaning the label read failed, which
+// plans no label change at all. That is exactly what a width or title test
+// wants -- one field under test and nothing else moving.
+func plannedChangesFM(fm map[string]string, page *client.Page, liveWidth string) []change {
+	mf := &frontmatter.MarkdownFile{Frontmatter: fm, Lists: map[string][]string{}}
+	return plannedChanges(mf, page, liveWidth, nil)
+}
+
+// --- labels -------------------------------------------------------------------
+
+// mdFile parses a frontmatter block into the MarkdownFile plannedChanges takes,
+// so a label test exercises the real reader rather than a hand-built Lists map.
+func mdFile(t *testing.T, block string) *frontmatter.MarkdownFile {
+	t.Helper()
+	mf, err := frontmatter.Parse("doc.md", "---\n"+block+"\n---\nbody\n")
+	if err != nil {
+		t.Fatalf("Parse(%q) = %v", block, err)
+	}
+	return mf
+}
+
+func labelChangeIn(changes []change) (change, bool) {
+	for _, ch := range changes {
+		if ch.field == "labels" {
+			return ch, true
+		}
+	}
+	return change{}, false
+}
+
+// TestFixAdoptsHandLabels is the reason fix reconciles labels at all: it is the
+// only way to take over a page somebody labeled in the UI. Note the direction
+// -- update leaves an absent key alone, fix fills it in, because fix reconciles
+// the file to the page and update the page to the file.
+func TestFixAdoptsHandLabels(t *testing.T) {
+	page := &client.Page{ID: "1", Title: "T"}
+	got := plannedChanges(mdFile(t, "page_id: 1"), page, "", []string{"ci/cd", "runbook"})
+
+	ch, ok := labelChangeIn(got)
+	if !ok {
+		t.Fatalf("changes = %+v, want a labels change", got)
+	}
+	if ch.oldDisplay != noneDisplay {
+		t.Errorf("old = %q, want %q", ch.oldDisplay, noneDisplay)
+	}
+	if ch.newValue != "[ci/cd, runbook]" {
+		t.Errorf("new = %q, want [ci/cd, runbook]", ch.newValue)
+	}
+	if len(ch.newList) != 2 {
+		t.Errorf("newList = %v, want the two names to write", ch.newList)
+	}
+}
+
+// TestFixLeavesAMatchingSetAlone: compared as sets, so a file that merely
+// orders its labels differently or repeats one is not rewritten, and the
+// author's own ordering survives.
+func TestFixLeavesAMatchingSetAlone(t *testing.T) {
+	page := &client.Page{ID: "1", Title: "T"}
+	for _, block := range []string{
+		"page_id: 1\nlabels: [ci/cd, runbook]",
+		"page_id: 1\nlabels: [runbook, ci/cd]",
+		"page_id: 1\nlabels: [runbook, ci/cd, runbook]",
+		"page_id: 1\nlabels: [Runbook, CI/CD]",
+	} {
+		got := plannedChanges(mdFile(t, block), page, "", []string{"ci/cd", "runbook"})
+		if ch, ok := labelChangeIn(got); ok {
+			t.Errorf("%q planned %+v, want no labels change", block, ch)
+		}
+	}
+}
+
+// TestFixPlansNothingWhenNeitherHasLabels: a file with no key and a page with
+// no labels must not gain a "labels: []" that says nothing.
+func TestFixPlansNothingWhenNeitherHasLabels(t *testing.T) {
+	page := &client.Page{ID: "1", Title: "T"}
+	got := plannedChanges(mdFile(t, "page_id: 1"), page, "", []string{})
+	if ch, ok := labelChangeIn(got); ok {
+		t.Errorf("planned %+v, want no labels change", ch)
+	}
+}
+
+// TestFixPlansNothingWhenTheReadFailed is the distinction nil carries. A failed
+// read must not look like "the page has no labels", or a transient failure
+// would propose stripping every label from the file.
+func TestFixPlansNothingWhenTheReadFailed(t *testing.T) {
+	page := &client.Page{ID: "1", Title: "T"}
+	got := plannedChanges(mdFile(t, "page_id: 1\nlabels: [runbook]"), page, "", nil)
+	if ch, ok := labelChangeIn(got); ok {
+		t.Errorf("planned %+v, want no labels change when the read failed", ch)
+	}
+}
+
+// TestFixRemovesLabelsThePageNoLongerHas: reconciling downward too, including
+// to the empty set, which is a real state a page can be in.
+func TestFixRemovesLabelsThePageNoLongerHas(t *testing.T) {
+	page := &client.Page{ID: "1", Title: "T"}
+	got := plannedChanges(mdFile(t, "page_id: 1\nlabels: [runbook, gone]"), page, "", []string{})
+
+	ch, ok := labelChangeIn(got)
+	if !ok {
+		t.Fatalf("changes = %+v, want a labels change", got)
+	}
+	if ch.newValue != "[]" {
+		t.Errorf("new = %q, want []", ch.newValue)
+	}
+	if ch.newList == nil || len(ch.newList) != 0 {
+		t.Errorf("newList = %v, want a non-nil empty list", ch.newList)
+	}
+}
+
+// TestFixReconcilesAnInvalidLabel: the live set is what gets written and it
+// came from the server, so it is valid by construction. This is the one place
+// fix repairs a file check would have refused.
+func TestFixReconcilesAnInvalidLabel(t *testing.T) {
+	page := &client.Page{ID: "1", Title: "T"}
+	got := plannedChanges(mdFile(t, `page_id: 1
+labels: ["Runbook Two"]`), page, "", []string{"runbook", "two"})
+
+	ch, ok := labelChangeIn(got)
+	if !ok {
+		t.Fatalf("changes = %+v, want the invalid label reconciled", got)
+	}
+	if ch.newValue != "[runbook, two]" {
+		t.Errorf("new = %q, want [runbook, two]", ch.newValue)
+	}
+}
+
+// labelFixServer answers the page, the width property, and a label list.
+func labelFixServer(t *testing.T, page string, liveLabels ...string) *client.ConfluenceClient {
+	t.Helper()
+	rows := make([]string, 0, len(liveLabels))
+	for i, n := range liveLabels {
+		rows = append(rows, fmt.Sprintf(`{"id":"%d","name":%q,"prefix":"global"}`, i+1, n))
+	}
+	body := `{"results":[` + strings.Join(rows, ",") + `]}`
+	return clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "label"):
+			_, _ = w.Write([]byte(body))
+		case strings.HasSuffix(r.URL.Path, "/properties"):
+			_, _ = w.Write([]byte(`{"results":[{"value":"max"}]}`))
+		default:
+			_, _ = w.Write([]byte(page))
+		}
+	})
+}
+
+// TestProcessFileKeepsBlockLabelStyle is the end-to-end form-preservation
+// contract. A set large enough to be written as a block list is exactly the set
+// whose flow spelling is an unreadable single line, so converting it on the
+// first fix that changes one label would defeat the reason block form is
+// accepted at all.
+func TestProcessFileKeepsBlockLabelStyle(t *testing.T) {
+	content := "---\ntitle: X\nspace: ENG\nparent: null\npage_id: 1\n" +
+		"labels:\n  - runbook\n  - stale\npage_width: max\n---\nbody\n"
+	path := writeFixture(t, content)
+	c := labelFixServer(t, pageJSON("1", "X", "", "/spaces/ENG/pages/1/X"), "runbook", "howto")
+
+	r := processFile(path, c)
+	if !r.ok || r.status != statusChanged {
+		t.Fatalf("result = %+v, want ok/changed", r)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(got), "labels: [") {
+		t.Errorf("a block list was converted to flow:\n%s", got)
+	}
+	for _, want := range []string{"- howto", "- runbook"} {
+		if !strings.Contains(string(got), want) {
+			t.Errorf("file = %q, want a %q item", got, want)
+		}
+	}
+	if strings.Contains(string(got), "stale") {
+		t.Errorf("file = %q, want the dropped label gone", got)
+	}
+}
+
+// TestProcessFileLabelFixConverges is the property the "continuous"/"delivery"
+// pair in the SRE space is the absence of: reconcile once, and the second run
+// has nothing to do. A file that never converges means running fix, being told
+// it changed something, and getting the same change forever.
+func TestProcessFileLabelFixConverges(t *testing.T) {
+	content := "---\ntitle: X\nspace: ENG\nparent: null\npage_id: 1\npage_width: max\n---\nbody\n"
+	path := writeFixture(t, content)
+	c := labelFixServer(t, pageJSON("1", "X", "", "/spaces/ENG/pages/1/X"), "ci/cd", "runbook")
+
+	first := processFile(path, c)
+	if !first.ok || first.status != statusChanged {
+		t.Fatalf("first run = %+v, want ok/changed", first)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "labels: [ci/cd, runbook]") {
+		t.Errorf("file = %q, want a sorted flow list for a newly added key", got)
+	}
+
+	second := processFile(path, c)
+	if !second.ok || second.status != statusConsistent {
+		t.Fatalf("second run = %+v (changes %+v), want ok/consistent", second, second.changes)
 	}
 }

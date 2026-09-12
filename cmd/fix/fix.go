@@ -13,6 +13,7 @@ import (
 	"github.com/mozilla/markfluence/internal/completion"
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/ui"
@@ -101,8 +102,15 @@ func run(cmd *cobra.Command, args []string) error {
 }
 
 // change is a planned frontmatter edit.
+//
+// newList, when non-nil, makes this a list-valued field: newValue is then the
+// display rendering ("[a, b]") that both the human line and --json's `new`
+// string carry, and newList is what actually gets written. Keeping the display
+// a string means the reported shape of a change does not vary by field, so the
+// schema needs no new case for one list field.
 type change struct {
 	field, oldDisplay, newValue string
+	newList                     []string
 }
 
 // processFile reconciles one file and returns a result. It performs no output;
@@ -132,7 +140,21 @@ func processFile(filename string, c *client.ConfluenceClient) *fixResult {
 		liveWidth = string(w)
 	}
 
-	r.changes = plannedChanges(mf.Frontmatter, page, liveWidth)
+	// The live labels, likewise best-effort. nil means "not known", which is
+	// distinct from an empty slice: a page with no labels and a page whose
+	// labels could not be read must not plan the same change, or a failed read
+	// would write `labels: []` and silently propose stripping the page.
+	var liveLabels []string
+	if live, err := labels.Read(c, page.ID); err != nil {
+		r.warnings = append(r.warnings, "could not read labels: "+err.Error())
+	} else {
+		liveLabels = labels.Global(live)
+		if liveLabels == nil {
+			liveLabels = []string{}
+		}
+	}
+
+	r.changes = plannedChanges(mf, page, liveWidth, liveLabels)
 	// Field order is reconciled too, and counts as a change: reporting a
 	// jumbled file "consistent" would mean running fix, being told there is
 	// nothing to do, and still having a jumbled file. Computed before any edit,
@@ -158,7 +180,12 @@ func processFile(filename string, c *client.ConfluenceClient) *fixResult {
 	content := mf.Content
 	for _, ch := range r.changes {
 		var err error
-		if content, err = frontmatter.UpdateField(content, ch.field, ch.newValue, ""); err != nil {
+		if ch.newList != nil {
+			content, err = frontmatter.UpdateListField(content, ch.field, ch.newList)
+		} else {
+			content, err = frontmatter.UpdateField(content, ch.field, ch.newValue, "")
+		}
+		if err != nil {
 			return r.fail(err, jsonout.CodeValidation)
 		}
 	}
@@ -216,9 +243,12 @@ func locatePage(fm map[string]string, c *client.ConfluenceClient) (*client.Page,
 	}
 }
 
-// plannedChanges computes the field edits needed to reconcile fm to page. Only
+// plannedChanges computes the field edits needed to reconcile mf to page. Only
 // fields that actually differ are returned.
-func plannedChanges(fm map[string]string, page *client.Page, liveWidth string) []change {
+func plannedChanges(
+	mf *frontmatter.MarkdownFile, page *client.Page, liveWidth string, liveLabels []string,
+) []change {
+	fm := mf.Frontmatter
 	live := []struct{ field, value string }{
 		{"page_id", page.ID},
 		{"space", client.SpaceKeyFromWebUI(page.Links.WebUI)},
@@ -233,7 +263,7 @@ func plannedChanges(fm map[string]string, page *client.Page, liveWidth string) [
 		current, present := fm[lv.field]
 		switch {
 		case !present:
-			changes = append(changes, change{lv.field, "(none)", lv.value})
+			changes = append(changes, change{field: lv.field, oldDisplay: "(none)", newValue: lv.value})
 		case norm(current) != norm(lv.value):
 			// A present-but-blank value goes through norm, not straight to
 			// "(none)": every null spelling now parses to "", so a top-level
@@ -241,12 +271,12 @@ func plannedChanges(fm map[string]string, page *client.Page, liveWidth string) [
 			// orNull("null") the live side reports. Short-circuiting on blank
 			// would plan `parent: (none) -> null` on every run, write it, read
 			// "" again, and never converge.
-			changes = append(changes, change{lv.field, orNone(current), lv.value})
+			changes = append(changes, change{field: lv.field, oldDisplay: orNone(current), newValue: lv.value})
 		}
 	}
 
 	if strings.TrimSpace(fm["title"]) == "" {
-		changes = append(changes, change{"title", "(none)", page.Title})
+		changes = append(changes, change{field: "title", oldDisplay: "(none)", newValue: page.Title})
 	}
 
 	if liveWidth != "" {
@@ -260,10 +290,71 @@ func plannedChanges(fm map[string]string, page *client.Page, liveWidth string) [
 			if present && strings.TrimSpace(raw) != "" {
 				old = raw
 			}
-			changes = append(changes, change{"page_width", old, liveWidth})
+			changes = append(changes, change{field: "page_width", oldDisplay: old, newValue: liveWidth})
 		}
 	}
+
+	if ch, ok := labelChange(mf, liveLabels); ok {
+		changes = append(changes, ch)
+	}
 	return changes
+}
+
+// labelChange plans the labels edit, if one is needed.
+//
+// This is the only way to adopt a page somebody labeled by hand, so it runs
+// even for a file with no labels key at all -- unlike update and create, where
+// an absent key means "leave the page alone". The directions are not symmetric
+// and should not be: fix reconciles the *file* to the page, so the page is the
+// authority here in exactly the way the file is there.
+//
+// Compared as sets, so a file whose list is merely reordered or holds a
+// duplicate is left alone and keeps the author's own ordering. When a write is
+// needed the list is emitted sorted and deduplicated, since neither label GET
+// returns a useful order and anything else would be unstable across runs.
+//
+// A file whose labels are invalid is reconciled rather than refused: the live
+// set is what is about to be written, and it came from the server, so it is
+// valid by construction. That is the one place fix repairs a file check would
+// have failed.
+func labelChange(mf *frontmatter.MarkdownFile, liveLabels []string) (change, bool) {
+	// nil means the read failed. Planning nothing is right: a change here would
+	// propose the file's own labels be replaced by a set nobody could see.
+	if liveLabels == nil {
+		return change{}, false
+	}
+	declared, present := mf.Lists[labels.Field]
+	normalized := make([]string, 0, len(declared))
+	for _, d := range declared {
+		n, _ := labels.Normalize(d)
+		normalized = append(normalized, n)
+	}
+	if present {
+		if add, remove, _ := labels.Diff(normalized, liveLabels); len(add) == 0 && len(remove) == 0 {
+			return change{}, false
+		}
+	} else if len(liveLabels) == 0 {
+		// No key and no labels: nothing to adopt, and writing "labels: []"
+		// would add a field that says nothing to every file fix touches.
+		return change{}, false
+	}
+
+	old := noneDisplay
+	if present {
+		old = renderLabelList(declared)
+	}
+	return change{
+		field:      labels.Field,
+		oldDisplay: old,
+		newValue:   renderLabelList(liveLabels),
+		newList:    liveLabels,
+	}, true
+}
+
+// renderLabelList renders a label list the way the frontmatter writes it, for
+// the human line and --json's `new` string.
+func renderLabelList(names []string) string {
+	return "[" + strings.Join(names, ", ") + "]"
 }
 
 // norm treats "", whitespace-only, and the literal "null" all as no value.
