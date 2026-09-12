@@ -889,9 +889,17 @@ func (r *mdRenderer) renderInline(n *snode) string {
 }
 
 // renderLink renders an <a> as a markdown link, falling back to the href as text.
+//
+// The text goes through inlineTextForLink, which escapes it when it is plain
+// text. This is the most common link element of all, and without the escaping
+// the round trip lost a link one cycle later rather than immediately: a page
+// titled "Q1 Draft]" exported correctly as "[Q1 Draft\]](url)", republished as
+// an <a> holding "Q1 Draft]", and *that* read back as "[Q1 Draft]](url)" --
+// literal text with no link in it. Found in review, after the escaping had been
+// applied to two of the four sites that needed it.
 func (r *mdRenderer) renderLink(n *snode) string {
 	href := n.attrs["href"]
-	text := r.renderInlineChildren(n)
+	text := r.inlineTextForLink(n)
 	if text == "" {
 		text = href
 	}

@@ -141,7 +141,7 @@ The scopes markfluence needs:
 | Resolving a space key to an id | `create`, `find`, `search`, `children --space` | `read:space:confluence` |
 | Looking up a folder (a folder can be a page's parent) | `create` | `read:folder:confluence` |
 | CQL queries | `find`, `search` | `search:confluence` |
-| Author names | `info` | `read:confluence-user` |
+| Author names, and mention display names | `info`, `read`, `export`, `update`, `create` | `read:confluence-user` |
 | Uploading image attachments | `create`, `update`, `attachment-upload` | `write:confluence-file` |
 | Downloading attachments | `export`, `attachment-download` | `readonly:content.attachment:confluence` |
 | Listing attachments and child pages/folders | `children`, `export`, `read`, `attachment-list`, `attachment-download` | `read:confluence-content.summary` |

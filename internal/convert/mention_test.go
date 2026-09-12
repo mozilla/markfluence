@@ -178,10 +178,14 @@ func TestMentionRoundTripIsAFixedPoint(t *testing.T) {
 	}
 }
 
-// TestMentionRoundTripSurvivesAnUnresolvedName: when the name cannot be
-// resolved the mention stays raw storage, and *that* has to be a fixed point
-// too -- it is the common case for a deactivated account, and a page full of
-// them must not churn on every export.
+// TestMentionRoundTripSurvivesAnUnresolvedName: a mention whose name could not
+// be *looked up* stays raw storage, and that has to be a fixed point too, or a
+// tree exported while the network was flaky would churn on the next run.
+//
+// Note what this is not: a deactivated account. Those resolve normally and keep
+// their name (see TestDeactivatedAccountKeepsItsName) -- an earlier version of
+// this comment called them "the common case" here, which the live survey
+// refuted.
 func TestMentionRoundTripSurvivesAnUnresolvedName(t *testing.T) {
 	editor := `<p>Ping <ac:link><ri:user ri:account-id="` + mentionID + `" /></ac:link> about it.</p>`
 	first, err := convert.StorageToMarkdown(editor, convert.StorageOptions{})
@@ -198,5 +202,41 @@ func TestMentionRoundTripSurvivesAnUnresolvedName(t *testing.T) {
 	}
 	if !strings.Contains(first, "ri:user") {
 		t.Errorf("markdown = %q, want the storage passed through", first)
+	}
+}
+
+// TestRelativeLinkIsNeverAMention is a review finding, and the damage was
+// bigger than a missed mention. mentionAccountID searched for "/people/"
+// anywhere in the destination, and renderLink consults it *before*
+// rewriteHref -- so "[@ada](../people/ada.md)" in a tree with a people/
+// directory published as a mention of account "ada.md", destroying a real doc
+// link and skipping rewriteDocLink's LINK BROKEN and not-yet-published checks
+// entirely. `check` reported nothing, having no client and so no mention
+// warning.
+func TestRelativeLinkIsNeverAMention(t *testing.T) {
+	for _, dest := range []string{"../people/ada.md", "docs/people/ada.md", "people/ada.md"} {
+		_, mentions := mentioned(t, "Ping [@ada]("+dest+") now.\n")
+		if len(mentions) != 0 {
+			t.Errorf("dest %q: Mentions = %q, want none for a relative path", dest, mentions)
+		}
+	}
+}
+
+// TestForeignHostPathIsNotAMention: the path shapes are anchored now, not
+// searched for. A LastIndex of "/people/" turned any host's arbitrary path
+// into a mention.
+func TestForeignHostPathIsNotAMention(t *testing.T) {
+	for _, dest := range []string{
+		"https://github.com/orgs/mozilla/people/willkg",
+		"https://example.com/a/b/people/someone",
+		"https://home.atlassian.com/teams/x/people/someone",
+	} {
+		html, mentions := mentioned(t, "Ping [@x]("+dest+") now.\n")
+		if len(mentions) != 0 {
+			t.Errorf("dest %q: Mentions = %q, want none", dest, mentions)
+		}
+		if !strings.Contains(html, "<a href") {
+			t.Errorf("dest %q: html = %q, want a plain link", dest, html)
+		}
 	}
 }

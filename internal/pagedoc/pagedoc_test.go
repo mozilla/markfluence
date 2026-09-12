@@ -303,3 +303,34 @@ func TestMentionWarningsShareTheCacheWithRendering(t *testing.T) {
 		t.Errorf("lookups = %v, want one across six files", asked)
 	}
 }
+
+// TestBlankDisplayNameIsNotAConfirmedAbsence is a review finding, and it is the
+// exact failure the three-state design exists to prevent. A 200 carrying no
+// display name was cached as "", the value reserved for "genuinely nobody", so
+// read/export wrote "@Unlicensed user" over a real person's mention on every
+// page and update/create warned that an id which resolved fine names nobody.
+//
+// The account plainly exists; the API just did not name it. That belongs in the
+// third state -- unanswerable -- which renders the mention untouched.
+func TestBlankDisplayNameIsNotAConfirmedAbsence(t *testing.T) {
+	asked := 0
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		asked++
+		_, _ = w.Write([]byte(`{"accountId":"x","displayName":""}`))
+	})
+	users := NewUserCache()
+	page := mentionPage("1", mentionA)
+
+	names := Options(c, page, Placement{}, users).UserNames
+	if _, settled := names[mentionA]; settled {
+		t.Errorf("names = %v, want the id absent (unanswerable), not a confirmed absence", names)
+	}
+	if got := MentionWarnings(c, users, []string{mentionA}); got != nil {
+		t.Errorf("warnings = %q, want none: nobody established that this id names nobody", got)
+	}
+	// Not cached either, since it is not an answer -- a later page asks again.
+	Options(c, page, Placement{}, users)
+	if asked < 2 {
+		t.Errorf("asked = %d, want the unanswerable lookup retried rather than remembered", asked)
+	}
+}
