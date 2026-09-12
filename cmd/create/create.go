@@ -373,6 +373,10 @@ func run(cmd *cobra.Command, args []string) error {
 	for _, dir := range roots.Roots() {
 		ui.Info("root: " + dir)
 	}
+	// Under --debug only, and beside the root it belongs to: a project-wide
+	// default takes effect for a file that says nothing about it, so it has no
+	// answer anywhere in the file a reader would open.
+	project.ReportSettings(roots)
 
 	var ordered []record
 	if len(errs) == 0 {

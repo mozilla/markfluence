@@ -102,7 +102,12 @@ func loadConfig(path string) (Config, error) {
 		// established, which is the case that must not be guessed at.
 		return Config{}, &ConfigError{File: path, Err: errors.New(readFailure(err))}
 	}
-	items, err := dialect.ReadMapping(string(data))
+	// A leading BOM is not a setting name. Without stripping it, a file a
+	// Windows editor wrote reports an unknown setting whose name begins U+FEFF, advising
+	// upgrading markfluence, which is the wrong remedy for the wrong problem.
+	// Only at the start of the file, and only one: anywhere else it really is
+	// content markfluence should not silently discard.
+	items, err := dialect.ReadMapping(strings.TrimPrefix(string(data), "\ufeff"))
 	if err != nil {
 		return Config{}, &ConfigError{File: path, Err: err}
 	}
@@ -128,15 +133,6 @@ func loadConfig(path string) (Config, error) {
 			cfg.PageWidth = value
 		}
 	}
-	// A project-wide default is invisible by construction: it takes effect for
-	// a file that says nothing about it, so "why did this publish to ENG?" has
-	// no answer in the file the reader is looking at. --debug is where that
-	// answer goes. Only a file that declares something is worth a line; the
-	// marker that ships declares nothing, and a line for every root in a batch
-	// would be noise. The root itself is already reported unconditionally.
-	if settings := cfg.declared(); len(settings) > 0 {
-		ui.Debug(fmt.Sprintf("project file %s: %s", path, strings.Join(settings, ", ")))
-	}
 	return cfg, nil
 }
 
@@ -150,6 +146,32 @@ func (c Config) declared() []string {
 		out = append(out, "page_width="+c.PageWidth)
 	}
 	return out
+}
+
+// ReportSettings logs, under --debug, the settings every project file this
+// cache resolved declares.
+//
+// A project-wide default is invisible by construction: it takes effect for a
+// file that says nothing about it, so "why did this publish to ENG?" has no
+// answer in the file the reader is looking at. This is where that answer goes.
+//
+// It is an explicit call from the command layer rather than a side effect of
+// loading, and that placement is the point. Loading happens once per root for
+// two unrelated reasons -- a markdown file's root, and the separate walk from
+// the working directory that only locates .env -- so printing during a load
+// described whichever root came first and fired for commands that read no
+// settings at all (`info`, `search`). A command calls this when it has a cache
+// whose roots are the ones it actually used, beside where it already reports
+// `root:`.
+//
+// Only a file declaring something earns a line: the marker that ships declares
+// nothing, and a line per root in a batch would be noise.
+func ReportSettings(c *Cache) {
+	for _, root := range c.resolved() {
+		if settings := root.Config.declared(); len(settings) > 0 {
+			ui.Debug(fmt.Sprintf("project file %s: %s", root.File, strings.Join(settings, ", ")))
+		}
+	}
 }
 
 // unknownSetting is the message #100 exists for. One line, because it lands
