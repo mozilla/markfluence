@@ -177,6 +177,7 @@ stated so a property test can generate trees and assert it.
 | **L6** | `roundtrip-from-disk` | Publishing a file, then exporting it, yields markdown that publishes to the same page. | Partial |
 | **L7** | `output-is-valid-markdown` | Anything markfluence writes to disk is markdown that renders. | Holds |
 | **L8** | `no-layout-inference` | Page identity and hierarchy are never inferred from disk layout. | Holds |
+| **L9** | `declared-metadata-is-asserted` | A metadata field a file declares is made true of the page; a field it omits leaves the page alone. | Partial |
 
 **L1** is about correctness, not cardinality. A basename lookup used to
 resolve to exactly one file — just not the one the reference named, which was
@@ -245,12 +246,30 @@ One exception to the fixed point is expected and converges: a Confluence-native
 attachment is unmanaged, so the first republish restamps its comment. The second
 cycle is stable.
 
+**L9** is what makes a frontmatter field safe to add. Without it, every new
+field is a choice between two bad defaults: assert it always, and a page
+configured by hand is silently reverted by a run that never mentioned the
+field; assert it never, and the field cannot be used to manage anything.
+Declaring it is the signal.
+
+It is **Partial**, and the gap is `page_width` rather than `labels`. `update`
+honours the law exactly -- a `page_width` line is asserted, an absent one leaves
+the live width alone -- but `create` asserts a *default* width of `max` for a
+file that declares none, so an omitted field is not left alone there. `labels`
+holds in both verbs: absent means no label request is made at all, which is
+stronger than "no write" and is pinned by a test in `cmd/update`.
+
+`fix` is deliberately outside the law rather than a violation of it. It
+reconciles the *file* to the page, so the page is the authority and an absent
+field gets filled in -- which is the only way to adopt a page somebody labeled
+or resized by hand. The law constrains the direction that writes to Confluence.
+
 ## Conformance
 
 | | label | guarantee | status |
 |---|---|---|---|
 | **C1** | `preview-compatible-resolution` | A reference resolves the way a Markdown preview resolves it, GitHub's included. | Holds |
-| **C2** | `frontmatter-is-valid-yaml` | Frontmatter markfluence writes parses as YAML, and reads back as the values it wrote. | Holds |
+| **C2** | `frontmatter-is-valid-yaml` | Frontmatter markfluence writes parses as YAML, and reads back as the values it wrote. A value is a single-line scalar, or a sequence (in either YAML style) whose every element is one. | Holds |
 
 Not an internal property: agreement with an external specification. It always
 held for images, which resolve page-relative; links now resolve the same way
@@ -285,12 +304,49 @@ makes the `.inf` case work. An earlier version compared text alone and passed:
 back as `.inf` and the round-trip looked clean while the file said "float" to
 everyone else. Comparing text is comparing the wrong thing.
 
-The flat contract is enforced on **read**, not assumed: a scalar whose source
-spans more than one line is refused. It has to be, because an untouched key is
-re-emitted from the node the parser produced and goccy's re-emission of a parsed
-node is not identity — a continued plain scalar comes back as a `|-` block that
-the parser then rejects, so a write would produce a file markfluence could not
-read, and in `create` only after the page had been made.
+The single-line contract is enforced on **read**, not assumed: a scalar whose
+source spans more than one line is refused. It has to be, because an untouched
+key is re-emitted from the node the parser produced and goccy's re-emission of a
+parsed node is not identity. Measured against the pinned goccy: a `|` or `>`
+block re-emits as a block, which the reader's node-kind whitelist then refuses,
+so a write would produce a file markfluence cannot read — in `create` only after
+the page had been made. A continued plain scalar and a multi-line quoted one are
+milder: both re-emit folded onto one line, which parses but silently rewrites
+the author's file. Neither is a thing to do on the way past while setting an
+unrelated field.
+
+Sequences extended this without weakening it. A value may now be a list, in
+either YAML style, and the rule became "a *sequence* may span lines; every
+element must be a single-line scalar" — so a block list and a flow list wrapped
+across lines are both fine and an element continued onto the next line is not.
+The element check trims its origin at both ends, because a leading newline in an
+element's origin is structure (the item began on a new line) rather than
+content.
+
+The write-side self-check had to grow a second context, and finding out why is
+the closest thing to a repeat of #130. The scalar check verifies a value as a
+*mapping* value, and two shapes pass it and then corrupt a list: emitted bare
+into a flow sequence, `x,y` becomes two elements and `has]bracket` ends the
+sequence outright. Block style has its own, different trap — `? q` is YAML's
+explicit-key indicator there and parses as a mapping. So verification runs in
+the style about to be written. Flow is the stricter context, which means
+verifying there is always *safe*; the style parameter buys minimal quoting, and
+what it protects against is a block-context check standing in for a flow write.
+
+markfluence now emits both styles, because a rewrite keeps the style it found: a
+set large enough to be written as a block list is exactly the set whose flow
+spelling is an unreadable single line. Style is preserved, formatting is not —
+block items are re-emitted at this package's own indent rather than the
+author's, since valid YAML in the right style is the guarantee and
+byte-preservation is not.
+
+One consequence worth naming, because a comment used to justify itself with the
+old rule: `Normalize` drops blank lines with a **textual** filter, which was
+safe "because nothing this package emits spans more than one line". A
+passed-through block list makes that false. The accurate statement is that no
+value markfluence can emit carries a *meaningful* blank line — a blank line
+between two list items is inert in YAML, and the shape where one is content is a
+`|` block, which is refused on read.
 
 Two limits, stated rather than papered over. Quoting is goccy's, but **typing is
 ours**: `page_id` and `parent` are written as YAML integers and nulls, because
