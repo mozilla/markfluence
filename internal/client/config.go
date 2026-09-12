@@ -133,6 +133,13 @@ func resolveValue(flagVal, envKey string, dotenv map[string]string) string {
 // runs once before any file is touched, and doesn't bound anything -- it
 // only answers "where is .env." A missing .env, wherever it lands, is fine
 // and yields an empty map, matching prior behavior.
+//
+// A discovery *failure* is not fine, and used to be swallowed. Since the
+// project file is parsed (#100), one that cannot be understood makes discovery
+// fail -- and degrading to the working directory there would read a different
+// .env than the project's, silently, and would leave a command with no
+// per-file root of its own (read, search, info) never reporting the malformed
+// file at all. #100 settles that as: abort immediately.
 func loadEnvFile(envFile string, roots *project.Cache) (map[string]string, error) {
 	if envFile != "" {
 		env, err := loadDotenv(envFile)
@@ -144,14 +151,11 @@ func loadEnvFile(envFile string, roots *project.Cache) (map[string]string, error
 
 	dir := "."
 	if cwd, err := os.Getwd(); err == nil {
-		if roots != nil {
-			if root, err := roots.Resolve(cwd); err == nil {
-				dir = root.Dir
-			}
-		} else if root, err := project.Discover(cwd); err == nil {
-			dir = root.Dir
-			_ = root.FS.Close()
+		found, err := dotenvDir(cwd, roots)
+		if err != nil {
+			return nil, err
 		}
+		dir = found
 	}
 
 	env, err := loadDotenv(filepath.Join(dir, dotenvPath))
@@ -159,6 +163,26 @@ func loadEnvFile(envFile string, roots *project.Cache) (map[string]string, error
 		return map[string]string{}, nil // a missing .env is fine
 	}
 	return env, nil
+}
+
+// dotenvDir reports the directory .env is read from: the caller's own cache
+// when it has one, so a --root override and the walk it already paid for both
+// apply here too, and a fresh walk otherwise. The cache owns closing its
+// handle; the fresh walk's is ours.
+func dotenvDir(cwd string, roots *project.Cache) (string, error) {
+	if roots != nil {
+		root, err := roots.Resolve(cwd)
+		if err != nil {
+			return "", err
+		}
+		return root.Dir, nil
+	}
+	root, err := project.Discover(cwd)
+	if err != nil {
+		return "", err
+	}
+	defer root.FS.Close()
+	return root.Dir, nil
 }
 
 // securityWarner receives a credential-hygiene warning. Package-level and set
