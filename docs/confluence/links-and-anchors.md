@@ -132,6 +132,39 @@ three, and this file's own warning is that storage proves only what was stored;
 a `mention` node in ADF is what proves Confluence understood it as a mention
 rather than inert markup it happened to keep.
 
+### The profile URL cannot be validated server-side — verified 2026-09-12
+
+#91 records the profile URL as `{site}/wiki/people/{accountId}`, "**verified**
+… which answers 200". The URL is right; the 200 proves nothing, and it is worth
+saying why before anyone leans on it again.
+
+| request | bytes | requested id in body | authenticated id in body |
+|---|---|---|---|
+| own real profile | 29451 | 5 | 5 |
+| another real user's profile | 29451 | **0** | 5 |
+| `/wiki/people/utter-nonsense` | 29451 | 0 | 5 |
+
+Every response is the same static SPA shell. The **requested** id never appears
+in it — the only id present is the *authenticated* user's, which is what makes
+a careless grep look like a hit. The profile is fetched and rendered entirely
+client-side, so a real profile and a nonexistent one are indistinguishable from
+the server: same status, same length, same bytes but for the viewer's own
+context.
+
+This is the `body-format=view` trap in another costume, and the tell was the
+identical byte count across a real id and a nonsense one.
+
+What *can* be checked is the account, not the page:
+`GET /wiki/rest/api/user?accountId=…` answers 200 with a `displayName` for a
+real id and 404 for a bogus one. That is the only available signal that a
+mention points at somebody, and it is why the outbound warning is load-bearing
+rather than a nicety — the profile link will 200 either way, so nothing
+downstream will ever report it.
+
+One part of #91's claim does hold: the legacy `{site}/wiki/display/~{accountId}`
+form 302s to `{site}/wiki/people/{accountId}?ref=confluence`, so only the latter
+is worth emitting.
+
 ### Two things the same probe turned up
 
 **ADF names every mention, for free.** Each node carries

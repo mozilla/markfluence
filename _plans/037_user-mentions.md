@@ -160,7 +160,11 @@ the mapping table's `ri:user` row now has two rows rather than one.
 
 **A mangled id is reported, not published silently.** Confluence accepts any
 id and renders `@Unlicensed user`, so the server will never tell an author that
-the id they hand-edited is wrong. The forward path therefore resolves the id
+the id they hand-edited is wrong. Nor will the profile link: verified
+2026-09-12, `{site}/wiki/people/{id}` returns the same static SPA shell for a
+real account and for `utter-nonsense`, so a dead mention link is
+indistinguishable from a live one by anything but a human clicking it. The
+`GetUser` check is the only signal available. The forward path therefore resolves the id
 before publishing (`GetUser`) and, when it does not resolve, emits a
 **warning** — not a `Broken`, since the mention still publishes and still
 names a person to anyone who can see the account; and not silence, since a
