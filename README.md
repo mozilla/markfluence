@@ -229,23 +229,78 @@ And [`schema`](docs/commands/markfluence_schema.md) prints the `--json` schema.
 
 Every command takes `--json`; `create`, `update` and `fix` take `--dry-run`.
 
-### A typical workflow
+### Common workflows
+
+Edit a page that already exists:
 
 ```sh
-markfluence check docs/*.md                    # no network: does this convert?
-markfluence create docs/*.md --space ENG       # first publish; writes page_id back
-# ...edit...
-markfluence update docs/*.md                   # republish what changed
+# what is its page id?
+markfluence find --space SRE "Deploy runbook"
+# download it and all attachments
+markfluence export 1234567890
+
+# ...edit the file it wrote...
+
+# is this valid markdown?
+markfluence check deploy-runbook.md
+# publish changes to Confluence
+markfluence update deploy-runbook.md
 ```
 
-Going the other way, to take over pages that already exist:
+Create a new page:
 
 ```sh
-markfluence find "Deploy runbook"              # what is its page id?
-markfluence export 1234567890 --depth all --dest docs
-# ...edit the files it wrote...
-markfluence update docs/**/*.md
+vi deploy_runbook.md
+
+# ...create the file...
+
+# verify markdown is correct
+markfluence check deploy-runbook.md
+# create the page in the ENG space at the top level
+markfluence create --space ENG deploy-runbook.md
+
+# ...make some edits...
+
+# verify markdown is correct
+markfluence check deploy-runbook.md
+# publish edits
+markfluence update deploy-runbook.md
 ```
+
+Export an entire tree of pages and edit them:
+
+```sh
+# export an entire tree of pages and referenced attachments
+markfluence export --depth all --dest docs 1234567890
+
+# ...make edits...
+
+# verify markdown is correct
+markfluence check docs/*.md docs/**/*.md
+# update any pages that changed
+markfluence update docs/*.md docs/**/*.md
+```
+
+Pick up changes somebody made in Confluence. This is the one command that
+writes *to* your files *from* Confluence — every other one goes the other way:
+
+```sh
+# what disagrees? nothing is written
+markfluence fix docs/*.md --dry-run
+
+# reconcile page_id, space, parent, page_width, labels and a missing title
+markfluence fix docs/*.md
+```
+
+`fix` never creates, updates or moves pages — it is read-only on the server.
+Note the asymmetry it settles: `update` leaves a field alone when your file does
+not mention it, while `fix` fills that field in from the page. It is how you
+adopt a page somebody labeled in the UI, or one you published by hand and want
+a file for.
+
+One thing it does *not* do: a `title` you have already set is left alone, so a
+page renamed in Confluence does not rename your frontmatter. Only a missing or
+blank `title` is filled in.
 
 ### What the output looks like
 
@@ -443,7 +498,7 @@ For the reasoning behind this model — why a bare marker file, what it fixes,
 what it costs — see [docs/root-model.md](docs/root-model.md) and
 [_plans/025_file-organization.md](_plans/025_file-organization.md).
 
-## Common tasks
+### Moving files and assets
 
 **Moving or renaming a markdown file.** Just move it. Links to it resolve by
 where it actually is, via the root-relative link index — nothing elsewhere
@@ -462,12 +517,6 @@ shared directory is the free move instead.
 same way: every page referencing it records a new attachment name on its next
 publish. Identity follows the asset's location, not any particular page's
 (this is L3 in [docs/guarantees.md](docs/guarantees.md) — `identity-from-asset-location`).
-
-**Setting up a shared assets directory across many pages** needs a
-`markfluence.yaml` at the directory that should be the shared root. Without
-one, each page's root defaults to its own directory, and an asset above any
-one of them is `IMAGE BROKEN` — the layout in [docs/markdown_file.md](docs/markdown_file.md) needs
-this to work at all.
 
 ## Inspirations
 
