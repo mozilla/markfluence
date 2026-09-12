@@ -5,10 +5,17 @@
 // flat -- no nesting -- but a value may be a scalar or a sequence of scalars,
 // in either YAML spelling: the flow form "[a, b]" or the block form of "- a"
 // lines. Every scalar, including a sequence's elements, must occupy a single
-// line; that is enforced by scalarValue and elementValue rather than assumed by
-// a line-splitting parser that could not see a violation. Scalars land in
+// line; that is enforced at read time rather than assumed by a line-splitting
+// parser that could not see a violation. Scalars land in
 // MarkdownFile.Frontmatter and sequences in MarkdownFile.Lists, so a key
 // appears in exactly one map and nothing here knows which keys are lists.
+//
+// What this package owns is markfluence's YAML *dialect* -- the node-kind
+// whitelist, the single-line rule, every null spelling reading as "" -- and the
+// fenced block is one use of it rather than the only one. dialect.go holds the
+// reader, and ReadMapping exposes it for a whole document: internal/project
+// reads markfluence.yaml through it (#100), so the two files cannot come to
+// disagree about what YAML markfluence understands.
 //
 // Writes go through valueNodeFor and elementNodeFor, which verify their own
 // output: they emit with goccy's chosen style, re-read the result, and fall
@@ -123,198 +130,6 @@ func emptyMapping() *ast.MappingNode {
 	return ast.Mapping(token.New("", "", pos()), false)
 }
 
-// parseBlock parses a frontmatter block's inner text. An empty block, and one
-// holding only comments, are empty mappings rather than errors -- neither is
-// invalid YAML. Any other shape (a bare scalar, a top-level list) is an error.
-func parseBlock(fmText string) (*block, error) {
-	f, err := parser.ParseBytes([]byte(fmText), parser.ParseComments)
-	if err != nil {
-		return nil, formatParseError(err)
-	}
-	// A "..." line inside the block starts a second document, and reading only
-	// the first would drop every key after it without a word: `update` would
-	// then report "no page id" about a file that visibly has one.
-	if len(f.Docs) > 1 {
-		return nil, errors.New(`frontmatter must be a single document: remove the "..." line`)
-	}
-	if len(f.Docs) == 0 || f.Docs[0].Body == nil {
-		return &block{mapping: emptyMapping()}, nil
-	}
-	switch b := f.Docs[0].Body.(type) {
-	case *ast.MappingNode:
-		return &block{mapping: b}, nil
-	case *ast.MappingValueNode:
-		m := emptyMapping()
-		m.Values = append(m.Values, b)
-		return &block{mapping: m}, nil
-	case *ast.CommentGroupNode:
-		return &block{mapping: emptyMapping(), orphan: b}, nil
-	default:
-		return nil, fmt.Errorf("frontmatter must be a flat mapping of key: value pairs, found %s",
-			b.Type())
-	}
-}
-
-// formatParseError reduces a goccy error to a single line and corrects its
-// position for the "---" opener, which the block text does not include.
-//
-// goccy's default Error() renders a multi-line source excerpt with ASCII
-// pointer art, which would land verbatim in check --json's error string.
-// Known limit: a duplicate-key message embeds a second position ("already
-// defined at [1:1]") that stays block-relative.
-func formatParseError(err error) error {
-	msg := yaml.FormatError(err, false, false)
-	return errors.New(shiftLeadingPosition(msg))
-}
-
-// positionRE matches a leading "[line:col] " position stamp.
-var positionRE = regexp.MustCompile(`^\[(\d+):(\d+)\] `)
-
-// shiftLeadingPosition rewrites a leading [line:col] to account for the "---"
-// line that opens the block.
-func shiftLeadingPosition(msg string) string {
-	m := positionRE.FindStringSubmatch(msg)
-	if m == nil {
-		return msg
-	}
-	var line, col int
-	if _, err := fmt.Sscanf(m[1]+" "+m[2], "%d %d", &line, &col); err != nil {
-		return msg
-	}
-	return fmt.Sprintf("[%d:%d] %s", line+1, col, msg[len(m[0]):])
-}
-
-// scalarValue reads a mapping value as a string, rejecting anything that spans
-// more than one line.
-//
-// Every spelling of null -- an absent value, "null", "~", "Null" -- reads as
-// "", so a null is unset whatever the author wrote. The old parser mapped only
-// the literal "null", which meant "parent: ~" read as though it were a page id.
-func scalarValue(key string, n ast.Node) (string, error) {
-	if spansLines(n.GetToken().Origin) {
-		return "", fmt.Errorf("frontmatter %q must be a single-line scalar; "+
-			"a value split over several lines is not supported", key)
-	}
-	return plainScalar(key, n)
-}
-
-// plainScalar is the node-kind whitelist shared by scalarValue and
-// elementValue. It is a whitelist because every other node kind -- an anchor,
-// an alias, a tag, a "|" literal block -- reports GetToken().Value as its
-// indicator character rather than its content, so a blacklist of sequences and
-// mappings would silently read "&" or "|". A "- |-" sequence element is the
-// case that makes this load-bearing twice over: its token does not span lines,
-// so the whitelist is the only thing that catches it.
-func plainScalar(key string, n ast.Node) (string, error) {
-	switch v := n.(type) {
-	case *ast.NullNode:
-		return "", nil
-	case *ast.StringNode, *ast.IntegerNode, *ast.FloatNode, *ast.BoolNode,
-		*ast.InfinityNode, *ast.NanNode:
-		return v.GetToken().Value, nil
-	default:
-		return "", fmt.Errorf("frontmatter %q must be a single scalar value, found %s",
-			key, n.Type())
-	}
-}
-
-// elementValue reads one sequence element. It shares scalarValue's whitelist
-// but applies the line rule to the origin trimmed at *both* ends, because a
-// leading newline in an element's origin is structure rather than content: it
-// means the element began on a new line, which is true of every block item and
-// of a flow sequence wrapped across lines. Trimming only the right, as
-// scalarValue does, would refuse "[a,\n  b]" for no reason.
-//
-// What it still refuses is an element whose own value runs past its line -- a
-// plain scalar continued on the next line, or a multi-line quoted one -- for
-// the same reason scalarValue does.
-func elementValue(key string, n ast.Node) (string, error) {
-	if strings.Contains(strings.TrimSpace(n.GetToken().Origin), "\n") {
-		return "", fmt.Errorf("frontmatter %q must be a single-line scalar; "+
-			"a list element split over several lines is not supported", key)
-	}
-	return plainScalar(key, n)
-}
-
-// sequenceValue reads a mapping value as a list of strings. Both YAML spellings
-// are accepted -- the flow form "[a, b]" and the block form of "- a" lines --
-// since goccy parses both correctly and a block list survives Normalize intact,
-// so refusing one would mean rejecting a file that was understood perfectly.
-// What the style does decide is how a rewrite is emitted; see setField.
-//
-// The element index is carried into the key so a message points at the item
-// that is wrong rather than at the field.
-func sequenceValue(key string, n *ast.SequenceNode) ([]string, error) {
-	out := make([]string, 0, len(n.Values))
-	for i, e := range n.Values {
-		s, err := elementValue(fmt.Sprintf("%s[%d]", key, i), e)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, s)
-	}
-	return out, nil
-}
-
-// spansLines reports whether a token's source text runs past its own line.
-//
-// This is what enforces the single-line half of the contract, and it has to be
-// enforced at read time rather than trusted: an untouched key is re-emitted
-// from the node the parser produced, and goccy's re-emission of a parsed node
-// is not identity.
-//
-// What that costs differs by shape, measured against the pinned goccy rather
-// than assumed. A "|" or ">" block is the one that breaks outright -- it
-// re-emits as a block, which plainScalar's whitelist then refuses, so a write
-// would produce a file markfluence cannot read, in create only after the page
-// had been made. A plain scalar continued on the next line and a multi-line
-// quoted one both re-emit folded onto one line, which parses but silently
-// rewrites the author's file. Neither is something to do on the way past while
-// setting some unrelated field, so both are refused up front.
-//
-// Trailing newlines and spaces are stripped first because a token's origin runs
-// up to the next one, so even `title: T` carries the line break that follows it.
-// A value markfluence wrote is never affected: a newline inside one is emitted
-// as a two-character \n escape inside a double-quoted scalar, which occupies a
-// single physical line.
-func spansLines(origin string) bool {
-	return strings.Contains(strings.TrimRight(origin, "\n\t "), "\n")
-}
-
-// toMaps reads a mapping into the two maps every caller uses: scalars by key,
-// and sequences by key.
-//
-// A sequence-valued key is absent from the scalar map rather than present in
-// some flattened spelling. Leaving it there would be worse than absent --
-// MarkdownFile.field would hand update a title of "[a, b]" -- and re-typing the
-// scalar map to hold both would touch every caller for no gain. The parser
-// learns a kind, not a name: nothing here knows which keys are lists.
-func toMaps(m *ast.MappingNode) (map[string]string, map[string][]string, error) {
-	fm := make(map[string]string, len(m.Values))
-	lists := map[string][]string{}
-	for _, v := range m.Values {
-		key := v.Key.GetToken().Value
-		if seq, ok := v.Value.(*ast.SequenceNode); ok {
-			if scalarFields[key] {
-				return nil, nil, fmt.Errorf(
-					"frontmatter %q must be a single value, not a list", key)
-			}
-			l, err := sequenceValue(key, seq)
-			if err != nil {
-				return nil, nil, err
-			}
-			lists[key] = l
-			continue
-		}
-		s, err := scalarValue(key, v.Value)
-		if err != nil {
-			return nil, nil, err
-		}
-		fm[key] = s
-	}
-	return fm, lists, nil
-}
-
 // --- writing ------------------------------------------------------------------
 
 // isDigits reports whether s is one or more ASCII digits. Local rather than
@@ -391,7 +206,7 @@ func readsBackAs(n ast.Node, want string) bool {
 	if _, ok := parsed.Values[0].Value.(*ast.StringNode); !ok {
 		return false
 	}
-	got, err := scalarValue("v", parsed.Values[0].Value)
+	got, err := blockReader.scalar("v", parsed.Values[0].Value)
 	return err == nil && got == want
 }
 
@@ -472,7 +287,7 @@ func readsBackInSeqAs(n ast.Node, want string, flow bool) bool {
 	if _, ok := parsed.Values[0].(*ast.StringNode); !ok {
 		return false
 	}
-	got, err := elementValue("v[0]", parsed.Values[0])
+	got, err := blockReader.element("v[0]", parsed.Values[0])
 	return err == nil && got == want
 }
 
@@ -606,7 +421,7 @@ func updateField(content string, f Field) (string, error) {
 	if loc == nil {
 		return Render([]Field{f}) + content, nil
 	}
-	b, err := parseBlock(content[loc[2]:loc[3]])
+	b, err := blockReader.parse(content[loc[2]:loc[3]])
 	if err != nil {
 		return "", err
 	}
@@ -669,7 +484,7 @@ func Normalize(content string) (string, bool, error) {
 	if loc == nil {
 		return content, false, nil
 	}
-	b, err := parseBlock(content[loc[2]:loc[3]])
+	b, err := blockReader.parse(content[loc[2]:loc[3]])
 	if err != nil {
 		return "", false, err
 	}
@@ -749,11 +564,11 @@ func Parse(filename, content string) (*MarkdownFile, error) {
 			Frontmatter: map[string]string{}, Lists: map[string][]string{}, Body: content,
 		}, nil
 	}
-	b, err := parseBlock(content[loc[2]:loc[3]])
+	b, err := blockReader.parse(content[loc[2]:loc[3]])
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", filename, err)
 	}
-	fm, lists, err := toMaps(b.mapping)
+	fm, lists, err := blockReader.maps(b.mapping)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", filename, err)
 	}
