@@ -12,7 +12,7 @@ GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
 
 COMPLETIONS_DIR ?= completions
 
-.PHONY: help all build build-linux install completions lint vet fmt fmt-check test check regen-regressions clean
+.PHONY: help all build build-linux install completions lint vet fmt fmt-check test check regen-regressions docs docs-check clean
 
 help:  ## Show this help
 	@echo "Available rules:"
@@ -62,12 +62,27 @@ check:  ## Run every check CI runs, in CI's order -- the pre-flight before calli
 	@# lint would otherwise race to populate ./bin.
 	$(MAKE) vet
 	$(MAKE) fmt-check
+	$(MAKE) docs-check
 	$(MAKE) test
 	$(MAKE) build
 	$(MAKE) lint
 
 regen-regressions:  ## Regenerate the converter regression goldens
 	go test ./internal/convert -run TestRegression -update
+
+docs:  ## Regenerate docs/commands/ from each command's --help
+	go run ./tools/gendocs
+
+docs-check:  ## Fail if docs/commands/ disagrees with the binary's --help
+	@# docs/commands/ is generated and checked in, so the command reference is
+	@# browsable on GitHub without installing anything. A checked-in copy of
+	@# help text is only safe if it cannot drift, which is what this is for --
+	@# the same role fmt-check plays for formatting.
+	@tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; \
+	  go run ./tools/gendocs "$$tmp" >/dev/null 2>&1; \
+	  if ! diff -rq docs/commands "$$tmp" >/dev/null 2>&1; then \
+	    echo "docs/commands/ is out of date; run: make docs"; \
+	    diff -ru docs/commands "$$tmp" | head -40; exit 1; fi
 
 clean:  ## Remove build artifacts (bin/, dist/, completions/, ./markfluence)
 	rm -rf $(LOCALBIN) dist $(COMPLETIONS_DIR) markfluence

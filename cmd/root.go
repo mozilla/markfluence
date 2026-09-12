@@ -99,6 +99,15 @@ func reportSecurityWarning(msg string) {
 // carried code (1 operational, 2 config/usage). Any other error is
 // cobra-generated (bad args/flags): a usage error, printed as a human line or a
 // JSON error object under --json, exiting 2.
+// Root returns the root command, for tooling that needs to walk the command
+// tree rather than run it -- currently only the docs generator, which renders
+// every command's --help into docs/commands/.
+//
+// Exported for that one caller rather than left unexported with the generator
+// living inside this package: a main() in here would be built into the binary,
+// and a _test.go that writes files into the repo is not a test.
+func Root() *cobra.Command { return rootCmd }
+
 func Execute() {
 	// Detect --json before parsing so that even a flag-parse failure (which
 	// short-circuits PersistentPreRunE, where SetJSON normally runs) is reported
