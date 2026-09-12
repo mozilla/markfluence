@@ -62,6 +62,14 @@ var Cmd = &cobra.Command{
 		"Neither are folders, which have no text to match -- use `find` for\n" +
 		"both of those.\n\n" +
 		"Finding nothing is a success: the command says so and exits 0.",
+	Example: "  # Full-text search; every word must appear somewhere\n" +
+		"  markfluence search \"deploy runbook\"\n\n" +
+		"  # Scoped, with a bigger page of results\n" +
+		"  markfluence search \"deploy runbook\" --space ENG --limit 25\n\n" +
+		"  # Every match, ids only\n" +
+		"  markfluence search deploy --limit all --json | jq -r '.results[].id'\n\n" +
+		"  # Raw CQL, passed through untouched\n" +
+		"  markfluence search 'type = page and label = \"runbook\"' --cql\n",
 	Args: cobra.ExactArgs(1),
 	// A query is free text and a space key lives on the server, which completion
 	// may not go ask for.

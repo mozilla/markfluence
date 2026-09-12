@@ -33,6 +33,10 @@ var Cmd = &cobra.Command{
 		"SOURCE is a dash when no source path is recorded: the attachment was\n" +
 		"uploaded by hand, or it was published before markfluence recorded one.\n" +
 		"Use --json, whose managed field tells those two apart.",
+	Example: "  # Every attachment on a page\n" +
+		"  markfluence attachment-list 1234567890\n\n" +
+		"  # By the file that publishes to it\n" +
+		"  markfluence attachment-list docs/foo.md\n",
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
 	RunE:              run,

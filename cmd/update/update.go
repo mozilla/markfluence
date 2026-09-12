@@ -42,9 +42,35 @@ var Cmd = &cobra.Command{
 	Long: "Publish one or more markdown FILEs to Confluence pages.\n\n" +
 		"Title and page id are read from each file's YAML frontmatter; --title and\n" +
 		"--page-id override the frontmatter (and require a single FILE). A page id is\n" +
-		"required (from --page-id or frontmatter). Page width is asserted only when\n" +
-		"set via --page-width or a page_width frontmatter line. Each file is processed\n" +
-		"independently; the command exits non-zero if any file failed.",
+		"required (from --page-id or frontmatter); update errors if none is set.\n\n" +
+		"Page width is asserted only when set via --page-width or a page_width\n" +
+		"frontmatter line -- otherwise the live page's width is left untouched.\n" +
+		"Labels work the same way: a labels: line is asserted exactly (anything on\n" +
+		"the page the file does not list is removed), and no labels: line means the\n" +
+		"page's labels are left alone, not even read.\n\n" +
+		"update never writes back to the file, so fixing a wrong page_id is always\n" +
+		"safe: the file is exactly as you left it. A page_id that no longer resolves\n" +
+		"fails that file and says what to do about it; one that is not a numeric id\n" +
+		"at all is reported without asking Confluence.\n\n" +
+		"A file that has not changed since the page's last version is skipped,\n" +
+		"compared by mtime, unless --force is given. Each file is processed\n" +
+		"independently; the command exits non-zero if any file failed.\n\n" +
+		"--dry-run previews the version bump, attachment uploads and any width or\n" +
+		"label change without writing to Confluence. It honours the mtime skip and\n" +
+		"--force exactly as a real run does, so its forecast matches.",
+	Example: "  # Publish a file, taking the page id from its frontmatter\n" +
+		"  markfluence update docs/managing_an_incident.md\n\n" +
+		"  # Publish a batch with a version message\n" +
+		"  markfluence update docs/*.md --message \"Bulk update\"\n\n" +
+		"  # Republish even though the file has not changed\n" +
+		"  markfluence update docs/foo.md --force\n\n" +
+		"  # Override the target page, or rename it\n" +
+		"  markfluence update page.md --page-id 123456\n" +
+		"  markfluence update page.md --title \"New Title\"\n\n" +
+		"  # Set the width across a batch\n" +
+		"  markfluence update docs/*.md --page-width wide\n\n" +
+		"  # Preview, write nothing\n" +
+		"  markfluence update docs/*.md --dry-run",
 	Args:              cobra.MinimumNArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
 	RunE:              run,

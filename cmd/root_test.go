@@ -146,6 +146,35 @@ func TestSubcommandsCompleteArgs(t *testing.T) {
 	}
 }
 
+// TestSubcommandsDocumentThemselves is what makes `--help` usable as the
+// reference. The README used to carry a per-command section explaining each
+// command's reasoning and showing worked invocations; that moved into the
+// commands themselves (#102), so the README could stop being a second copy
+// that drifts.
+//
+// The cost of that move is a new way to regress: a command added with a
+// one-line Long and no Example leaves its behaviour documented nowhere at all,
+// and nothing else would notice. A length floor rather than a non-empty check,
+// because "Create pages." satisfies non-empty and explains nothing.
+func TestSubcommandsDocumentThemselves(t *testing.T) {
+	rootCmd.InitDefaultCompletionCmd()
+	for _, c := range rootCmd.Commands() {
+		// Cobra's own commands document themselves.
+		if c.Name() == "help" || c.Name() == "completion" {
+			continue
+		}
+		if len(c.Long) < 120 {
+			t.Errorf("subcommand %q has a Long of %d chars; it is the reference for "+
+				"what the command does and why, so it needs more than a restated Short",
+				c.Name(), len(c.Long))
+		}
+		if c.Example == "" {
+			t.Errorf("subcommand %q has no Example; a worked invocation is what a "+
+				"reader wants first, and the README no longer carries one", c.Name())
+		}
+	}
+}
+
 // TestSecurityWarnerIsWired pins the one line that makes the .env permission
 // warning exist at runtime. Everything else about it is tested in
 // internal/client (the predicate) and internal/ui (the output), each against

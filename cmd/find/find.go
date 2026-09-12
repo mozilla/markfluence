@@ -33,6 +33,12 @@ var Cmd = &cobra.Command{
 		"A folder does not reserve a title, so a folder hit is never a reason\n" +
 		"a page cannot be created -- it is there to be found, not to warn.\n\n" +
 		"Finding nothing is a success: the command says so and exits 0.",
+	Example: "  # Every page, archived page and folder with this exact title\n" +
+		"  markfluence find \"Deploy runbook\"\n\n" +
+		"  # Scoped to one space\n" +
+		"  markfluence find \"Deploy runbook\" --space ENG\n\n" +
+		"  # Just the current page ids\n" +
+		"  markfluence find \"Deploy runbook\" --json | jq -r '.results[] | select(.type==\"page\") | .id'\n",
 	Args: cobra.ExactArgs(1),
 	// Nothing here is completable: a title is free text and a space key lives
 	// on the server, which completion may not go ask for.

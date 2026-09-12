@@ -55,6 +55,10 @@ var Cmd = &cobra.Command{
 		"resolves to a real heading in the current file, but can't be turned into\n" +
 		"an absolute URL until this file itself has a page_id -- resolved by this\n" +
 		"file's own first publish, nothing to fix.",
+	Example: "  # Validate a batch of files\n" +
+		"  markfluence check docs/*.md\n\n" +
+		"  # Show the storage HTML a publish would send\n" +
+		"  markfluence check --show-html docs/one-page.md\n",
 	Args:              cobra.MinimumNArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
 	RunE:              run,

@@ -51,6 +51,12 @@ var Cmd = &cobra.Command{
 		"attachment, since the path comes from an attachment comment anyone who\n" +
 		"can edit the page controls.\n\n" +
 		"A file that already exists is skipped unless --force.",
+	Example: "  # Every attachment, to the paths they were published from\n" +
+		"  markfluence attachment-download 1234567890 --dest ./out\n\n" +
+		"  # Just one, by its stored name\n" +
+		"  markfluence attachment-download 1234567890 diagram.png --dest ./out\n\n" +
+		"  # Ignore recorded paths and write everything flat\n" +
+		"  markfluence attachment-download 1234567890 --dest ./out --flat\n",
 	Args:              cobra.MinimumNArgs(1),
 	ValidArgsFunction: completion.PageThenNames,
 	RunE:              run,
