@@ -120,11 +120,11 @@ chmod 600 .env
 ```
 
 markfluence warns when the `.env` it read is reachable by anyone but you *and*
-contains `CONFLUENCE_TOKEN` — a `.env` holding only the URL and username is
-nobody's secret, so its mode is left alone. The warning names the file, what is
-wrong with its mode, and the `chmod` that fixes it. Under `--json` it is not
-printed but carried in the output document's `warnings` array (and on the
-stderr error object), because stderr in that mode is itself a JSON document.
+contains `CONFLUENCE_TOKEN`. The warning names the file, what is wrong with its
+mode, and the `chmod` that fixes it. When markfluence is run with `--json`, the
+warning is not printed but carried in the output document's `warnings` array
+(and on the stderr error object), because stderr in that mode is itself a JSON
+document.
 
 (Optional): `alias mf=markfluence`
 
@@ -132,12 +132,10 @@ stderr error object), because stderr in that mode is itself a JSON document.
 
 For a normal personal API token, leave `CONFLUENCE_CLOUD_ID` unset.
 
-A **scoped** API token — the kind an Atlassian [service account][svcacct] gets,
-for publishing from CI — needs it. Scoped tokens are rejected with a **401**
-against your site domain, so markfluence must use Atlassian's
-`api.atlassian.com` gateway, and the cloud ID is required there. `CONFLUENCE_URL`
-still holds the site URL: markfluence uses it to write correct links into the
-pages it publishes.
+For a **scoped** API token — the kind an Atlassian [service account][svcacct] gets,
+for publishing from CI — you must set `CONFLUENCE_CLOUD_ID`. Scoped tokens are
+rejected with a **401** against your site domain, so markfluence must use
+Atlassian's `api.atlassian.com` gateway, and the cloud ID is required there.
 
 To find your cloud ID (it is not a secret):
 
@@ -161,14 +159,15 @@ read:confluence-content.summary
 ```
 
 > [!NOTE]
-> Scopes are fixed when a token is issued. A missing one needs a **new** token,
-> not an edit to the existing one.
+> Scopes are fixed when a token is issued. A missing scope requires a **new**
+> token to be created.
 
-**The mixture of naming styles is correct, not a copy-paste error.** Atlassian
-has two scope vocabularies — *classic* (`read:confluence-user`) and *granular*
-(`read:page:confluence`) — granted independently, so holding one does **not**
-imply the other. markfluence talks to both API versions and each accepts only
-one vocabulary.
+> [!NOTE]
+> **The mixture of naming styles is correct, not a copy-paste error.** Atlassian
+> has two scope vocabularies — *classic* (`read:confluence-user`) and *granular*
+> (`read:page:confluence`) — granted independently, so holding one does **not**
+> imply the other. markfluence talks to both API versions and each accepts only
+> one vocabulary.
 
 Diagnosing a failure:
 
@@ -1159,21 +1158,10 @@ this to work at all.
 
 ## Development
 
-Requires Go 1.25+.
-
-```sh
-make build   # build ./bin/markfluence
-make test    # go test ./...
-make check   # everything CI runs, in CI's order -- the pre-flight before a PR
-```
-
-Run `make` with no target for the full list of rules. Run the built binary
-against Confluence by putting a `.env` in the working directory (see
-[Configure](#configure)).
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for filing issues, the converter's
-golden-file regression suite, commit conventions, and what to run before opening
-a pull request.
+**[CONTRIBUTING.md](CONTRIBUTING.md)** has it all: development setup, what to
+run before opening a pull request, the converter's golden-file regression suite,
+commit conventions, how to file a bug, and what to read before changing
+anything that talks to Confluence.
 
 ## Inspirations
 
