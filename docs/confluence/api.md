@@ -276,8 +276,8 @@ below.
 | `ListChildPages` | v1 | `GET /content/{id}/child/page` | **undocumented, see below** |
 | `ListChildFolders` | v1 | `GET /content/{id}/child/folder` | **undocumented, see below** |
 | `ListLabels` | v2 | `GET /pages/{id}/labels` | `read:page:confluence` |
-| `AddLabels` | v1 | `POST /content/{id}/label` | **unverified**, presumably `write:confluence-content` |
-| `RemoveLabel` | v1 | `DELETE /content/{id}/label?name=…` | **unverified**, presumably `write:confluence-content` |
+| `AddLabels` | v1 | `POST /content/{id}/label` | `write:confluence-content` |
+| `RemoveLabel` | v1 | `DELETE /content/{id}/label?name=…` | `write:confluence-content` |
 
 Union, which is what a token needs:
 
@@ -291,7 +291,15 @@ read:confluence-user
 write:confluence-file
 readonly:content.attachment:confluence
 read:confluence-content.summary
+write:confluence-content
 ```
+
+`write:confluence-content` is the newest entry and the one most likely to be
+missing from a token granted before labels existed (#138). It buys nothing but
+the two label writes: reading a page's labels is covered by
+`read:page:confluence`, which a token doing anything at all already has. So the
+failure mode is narrow and recognizable — every command works, and only the
+label half of `create`/`update` 401s.
 
 ### The list is deliberately mixed, and that is the whole trap
 
@@ -397,9 +405,19 @@ absent one in a single pass.
 
 The v1 rows also carry `Beta`-state granular scopes:
 `read:content-details:confluence` (user lookup, search, attachment writes),
-`write:attachment:confluence` (attachment writes) and
-`read:attachment:confluence` (download). They are not used above, since
+`write:attachment:confluence` (attachment writes),
+`read:attachment:confluence` (download), and for the label writes
+`write:label:confluence` — plus `read:label:confluence` on the POST, which asks
+for both halves the way the property writes do. They are not used above, since
 `Current` is what Atlassian recommends, but they are what a granular-only token
 would need if Atlassian ever retires the v1 classic names.
 
-No delete scope appears because (currently) markfluence never deletes anything.
+Labels are the one place where the granular name already exists on the **read**
+side as `Current`: v2 has `read:label:confluence`, used by `GET /labels` and the
+space-label routes. markfluence does not need it, because the route it actually
+calls is `GET /pages/{id}/labels`, which asks for `read:page:confluence`
+instead. Worth knowing before "labels need a label scope" gets assumed from the
+name.
+
+No delete scope appears because (currently) markfluence never deletes anything —
+removing a *label* is a v1 content write, not a delete scope.
