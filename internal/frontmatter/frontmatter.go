@@ -2,17 +2,22 @@
 // markfluence markdown files carry, and models a parsed file as a MarkdownFile.
 //
 // The block is real YAML, parsed and emitted by goccy/go-yaml. It is still
-// restricted to flat key: value pairs -- no nesting, lists, or multiline
-// values -- but that restriction is now enforced by scalarValue rather than
-// assumed by a line-splitting parser that could not see a violation.
+// flat -- no nesting -- but a value may be a scalar or a sequence of scalars,
+// in either YAML spelling: the flow form "[a, b]" or the block form of "- a"
+// lines. Every scalar, including a sequence's elements, must occupy a single
+// line; that is enforced by scalarValue and elementValue rather than assumed by
+// a line-splitting parser that could not see a violation. Scalars land in
+// MarkdownFile.Frontmatter and sequences in MarkdownFile.Lists, so a key
+// appears in exactly one map and nothing here knows which keys are lists.
 //
-// Writes go through valueNodeFor, which verifies its own output: it emits with
-// goccy's chosen style, re-reads the result, and falls back to a double-quoted
-// scalar when the two disagree. goccy's default is wrong for a handful of
-// shapes -- a tab is dropped, a value starting "? " produces a document goccy
-// itself refuses to parse -- and a hand-written predicate listing them would be
-// incomplete, since those cases turned up only by probing. Checking beats
-// predicting.
+// Writes go through valueNodeFor and elementNodeFor, which verify their own
+// output: they emit with goccy's chosen style, re-read the result, and fall
+// back to a double-quoted scalar when the two disagree. goccy's default is
+// wrong for a handful of shapes -- a tab is dropped, a value starting "? "
+// produces a document goccy itself refuses to parse, and a bare comma or "]"
+// inside a flow sequence silently changes the list -- and a hand-written
+// predicate listing them would be incomplete, since those cases turned up only
+// by probing. Checking beats predicting.
 package frontmatter
 
 import (
@@ -160,10 +165,8 @@ func shiftLeadingPosition(msg string) string {
 	return fmt.Sprintf("[%d:%d] %s", line+1, col, msg[len(m[0]):])
 }
 
-// scalarValue reads a mapping value as a string. It is a whitelist: every other
-// node kind, including an anchor, an alias, a tag, and a "|" literal block,
-// reports GetToken().Value as the indicator character rather than the content,
-// so a blacklist of sequences and mappings would silently read "&" or "|".
+// scalarValue reads a mapping value as a string, rejecting anything that spans
+// more than one line.
 //
 // Every spelling of null -- an absent value, "null", "~", "Null" -- reads as
 // "", so a null is unset whatever the author wrote. The old parser mapped only
@@ -173,6 +176,17 @@ func scalarValue(key string, n ast.Node) (string, error) {
 		return "", fmt.Errorf("frontmatter %q must be a single-line scalar; "+
 			"a value split over several lines is not supported", key)
 	}
+	return plainScalar(key, n)
+}
+
+// plainScalar is the node-kind whitelist shared by scalarValue and
+// elementValue. It is a whitelist because every other node kind -- an anchor,
+// an alias, a tag, a "|" literal block -- reports GetToken().Value as its
+// indicator character rather than its content, so a blacklist of sequences and
+// mappings would silently read "&" or "|". A "- |-" sequence element is the
+// case that makes this load-bearing twice over: its token does not span lines,
+// so the whitelist is the only thing that catches it.
+func plainScalar(key string, n ast.Node) (string, error) {
 	switch v := n.(type) {
 	case *ast.NullNode:
 		return "", nil
@@ -185,16 +199,59 @@ func scalarValue(key string, n ast.Node) (string, error) {
 	}
 }
 
+// elementValue reads one sequence element. It shares scalarValue's whitelist
+// but applies the line rule to the origin trimmed at *both* ends, because a
+// leading newline in an element's origin is structure rather than content: it
+// means the element began on a new line, which is true of every block item and
+// of a flow sequence wrapped across lines. Trimming only the right, as
+// scalarValue does, would refuse "[a,\n  b]" for no reason.
+//
+// What it still refuses is an element whose own value runs past its line -- a
+// plain scalar continued on the next line, or a multi-line quoted one -- for
+// the same reason scalarValue does.
+func elementValue(key string, n ast.Node) (string, error) {
+	if strings.Contains(strings.TrimSpace(n.GetToken().Origin), "\n") {
+		return "", fmt.Errorf("frontmatter %q must be a single-line scalar; "+
+			"a list element split over several lines is not supported", key)
+	}
+	return plainScalar(key, n)
+}
+
+// sequenceValue reads a mapping value as a list of strings. Both YAML spellings
+// are accepted -- the flow form "[a, b]" and the block form of "- a" lines --
+// since goccy parses both correctly and a block list survives Normalize intact,
+// so refusing one would mean rejecting a file that was understood perfectly.
+// What the style does decide is how a rewrite is emitted; see setField.
+//
+// The element index is carried into the key so a message points at the item
+// that is wrong rather than at the field.
+func sequenceValue(key string, n *ast.SequenceNode) ([]string, error) {
+	out := make([]string, 0, len(n.Values))
+	for i, e := range n.Values {
+		s, err := elementValue(fmt.Sprintf("%s[%d]", key, i), e)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
 // spansLines reports whether a token's source text runs past its own line.
 //
-// This is what enforces the "no multiline values" half of the flat contract,
-// and it has to be enforced at read time rather than trusted: an untouched key
-// is re-emitted from the node the parser produced, and goccy's re-emission of a
-// parsed node is not identity. A plain scalar continued on the next line comes
-// back as a "|-" block, which Parse then refuses -- so UpdateField would write a
-// file it cannot read, after create had already made the page. A multi-line
-// single-quoted scalar is worse: it re-emits on one line, silently turning
-// "sq\nline" into "sq line".
+// This is what enforces the single-line half of the contract, and it has to be
+// enforced at read time rather than trusted: an untouched key is re-emitted
+// from the node the parser produced, and goccy's re-emission of a parsed node
+// is not identity.
+//
+// What that costs differs by shape, measured against the pinned goccy rather
+// than assumed. A "|" or ">" block is the one that breaks outright -- it
+// re-emits as a block, which plainScalar's whitelist then refuses, so a write
+// would produce a file markfluence cannot read, in create only after the page
+// had been made. A plain scalar continued on the next line and a multi-line
+// quoted one both re-emit folded onto one line, which parses but silently
+// rewrites the author's file. Neither is something to do on the way past while
+// setting some unrelated field, so both are refused up front.
 //
 // Trailing newlines and spaces are stripped first because a token's origin runs
 // up to the next one, so even `title: T` carries the line break that follows it.
@@ -205,18 +262,34 @@ func spansLines(origin string) bool {
 	return strings.Contains(strings.TrimRight(origin, "\n\t "), "\n")
 }
 
-// toMap reads a mapping into the flat key->value map every caller uses.
-func toMap(m *ast.MappingNode) (map[string]string, error) {
+// toMaps reads a mapping into the two maps every caller uses: scalars by key,
+// and sequences by key.
+//
+// A sequence-valued key is absent from the scalar map rather than present in
+// some flattened spelling. Leaving it there would be worse than absent --
+// MarkdownFile.field would hand update a title of "[a, b]" -- and re-typing the
+// scalar map to hold both would touch every caller for no gain. The parser
+// learns a kind, not a name: nothing here knows which keys are lists.
+func toMaps(m *ast.MappingNode) (map[string]string, map[string][]string, error) {
 	fm := make(map[string]string, len(m.Values))
+	lists := map[string][]string{}
 	for _, v := range m.Values {
 		key := v.Key.GetToken().Value
+		if seq, ok := v.Value.(*ast.SequenceNode); ok {
+			l, err := sequenceValue(key, seq)
+			if err != nil {
+				return nil, nil, err
+			}
+			lists[key] = l
+			continue
+		}
 		s, err := scalarValue(key, v.Value)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		fm[key] = s
 	}
-	return fm, nil
+	return fm, lists, nil
 }
 
 // --- writing ------------------------------------------------------------------
@@ -299,33 +372,144 @@ func readsBackAs(n ast.Node, want string) bool {
 	return err == nil && got == want
 }
 
+// seqIndentColumn is the column block sequence items are emitted at, which
+// renders them as "  - item". A parsed node's own indentation is not
+// reproduced: valid YAML in the right style is the contract, matching an
+// author's byte-for-byte indent is not.
+const seqIndentColumn = 3
+
+// sequenceNodeFor builds the node to write for a list-valued key, in the given
+// style. Block items are emitted at seqIndentColumn; with a default position
+// they would render flush against the margin, which is valid YAML but not the
+// convention anyone writes.
+func sequenceNodeFor(values []string, flow bool) ast.Node {
+	at := pos()
+	if !flow {
+		at = &token.Position{Line: 1, Column: seqIndentColumn}
+	}
+	seq := ast.Sequence(token.New("", "", at), flow)
+	for _, v := range values {
+		seq.Values = append(seq.Values, elementNodeFor(v, flow))
+	}
+	return seq
+}
+
+// elementNodeFor builds one sequence element: goccy's chosen style when it
+// reads back, else a double-quoted scalar. valueNodeFor's sibling, minus the
+// typed-field rule, which is confined to page_id and parent and neither is a
+// list.
+func elementNodeFor(value string, flow bool) ast.Node {
+	n, err := yaml.ValueToNode(value)
+	if err != nil || !readsBackInSeqAs(n, value, flow) {
+		return doubleQuoted(value)
+	}
+	return n
+}
+
+// readsBackInSeqAs emits n as the only element of a sequence in the style about
+// to be written, re-parses it, and reports whether it survived as a string
+// holding want.
+//
+// A sequence needs its own check rather than readsBackAs': a value can read
+// back perfectly as a *mapping* value and still be wrong in a list. Measured
+// against the pinned goccy, "x,y" and "has]bracket" both pass readsBackAs, but
+// emitted bare into a flow sequence the first becomes two elements and the
+// second ends the sequence outright. For labels that means publishing two
+// labels where the author wrote one -- the exact defect #138's validation
+// exists to prevent, arriving from the writer instead of the server.
+//
+// The style parameter is about minimal quoting, not correctness. Flow is the
+// stricter of the two contexts -- a comma and a bracket are significant there
+// and inert in block form -- so verifying in flow would be safe for both and
+// merely over-quote a block list. Verifying in *block* while writing flow is
+// the direction that corrupts, and is what TestSequenceWriteThenReadRoundTrips
+// pins by running the hazard corpus through both styles.
+//
+// Requiring a *string* back is the same point readsBackAs makes: comparing text
+// alone says ".inf" round-trips, and block style hands it back as an Infinity
+// node that every conforming reader sees as a float.
+func readsBackInSeqAs(n ast.Node, want string, flow bool) bool {
+	m := emptyMapping()
+	seq := ast.Sequence(token.New("", "", pos()), flow)
+	seq.Values = append(seq.Values, n)
+	m.Values = append(m.Values, ast.MappingValue(token.New("", "", pos()),
+		ast.String(token.New("v", "v", pos())), seq))
+	f, err := parser.ParseBytes([]byte(m.String()+"\n"), 0)
+	if err != nil || len(f.Docs) == 0 {
+		return false
+	}
+	pair := soleMappingPair(f.Docs[0].Body)
+	if pair == nil {
+		return false
+	}
+	parsed, ok := pair.Value.(*ast.SequenceNode)
+	if !ok || len(parsed.Values) != 1 {
+		return false
+	}
+	if _, ok := parsed.Values[0].(*ast.StringNode); !ok {
+		return false
+	}
+	got, err := elementValue("v[0]", parsed.Values[0])
+	return err == nil && got == want
+}
+
+// soleMappingPair returns the one key/value pair of a single-pair document, or
+// nil. goccy renders a one-key mapping as a MappingValueNode in some shapes and
+// a MappingNode in others, so a type assertion on either alone silently reports
+// "did not read back" and demotes every value to double quotes.
+func soleMappingPair(n ast.Node) *ast.MappingValueNode {
+	switch b := n.(type) {
+	case *ast.MappingValueNode:
+		return b
+	case *ast.MappingNode:
+		if len(b.Values) == 1 {
+			return b.Values[0]
+		}
+	}
+	return nil
+}
+
 // commentGroup builds a trailing "# text" comment.
 func commentGroup(text string) *ast.CommentGroupNode {
 	return ast.CommentGroup([]*token.Token{token.New(" "+text, "# "+text, pos())})
 }
 
+// nodeFor builds f's value node: a sequence when f is a list, else a scalar.
+func nodeFor(f Field, flow bool) ast.Node {
+	if f.List != nil {
+		return sequenceNodeFor(f.List, flow)
+	}
+	return valueNodeFor(f.Key, f.Value)
+}
+
 // valueWithComment builds a value node carrying an optional trailing comment.
 // The comment goes on the value node: set on the enclosing pair it renders as a
 // full-line comment above the key instead.
-func valueWithComment(key, value, comment string) ast.Node {
-	v := valueNodeFor(key, value)
-	if comment != "" {
-		_ = v.SetComment(commentGroup(comment))
+func valueWithComment(f Field, flow bool) ast.Node {
+	v := nodeFor(f, flow)
+	if f.Comment != "" {
+		_ = v.SetComment(commentGroup(f.Comment))
 	}
 	return v
 }
 
 // mappingValue builds one `key: value` pair.
-func mappingValue(key, value, comment string) *ast.MappingValueNode {
+func mappingValue(f Field, flow bool) *ast.MappingValueNode {
 	return ast.MappingValue(token.New("", "", pos()),
-		ast.String(token.New(key, key, pos())), valueWithComment(key, value, comment))
+		ast.String(token.New(f.Key, f.Key, pos())), valueWithComment(f, flow))
 }
 
 // Field is one frontmatter entry for Render.
+//
+// List, when non-nil, makes the field a YAML sequence and Value is ignored.
+// Non-nil rather than non-empty, so an empty list renders "key: []" -- which is
+// a meaningful declaration for a field like labels, where it means "remove
+// them all" -- while a nil list stays a scalar.
 type Field struct {
 	Key     string
 	Value   string
 	Comment string
+	List    []string
 }
 
 // Render builds a frontmatter block from scratch, in canonical order,
@@ -355,7 +539,9 @@ func Render(fields []Field) string {
 
 	m := emptyMapping()
 	for _, f := range ordered {
-		m.Values = append(m.Values, mappingValue(f.Key, f.Value, f.Comment))
+		// Flow style for a block built from scratch: there is no author choice
+		// to honour here, and a generated list is short.
+		m.Values = append(m.Values, mappingValue(f, true))
 	}
 	if len(m.Values) == 0 {
 		return "---\n---\n"
@@ -377,32 +563,48 @@ func Render(fields []Field) string {
 // token's value re-emits it unquoted whatever it now contains, which is exactly
 // the bug this package was rewritten to fix.
 func UpdateField(content, key, value, comment string) (string, error) {
+	return updateField(content, Field{Key: key, Value: value, Comment: comment})
+}
+
+// UpdateListField adds or updates key in content's frontmatter as a YAML
+// sequence, returning the new content.
+//
+// A key that already holds a sequence keeps its style: rewriting a block list
+// emits a block list. That is a deliberate contract -- a set large enough to be
+// written as a block list is exactly the set whose flow spelling is an
+// unreadable single line -- but it is style only, not formatting: the items are
+// re-emitted at the package's own indent rather than the author's.
+func UpdateListField(content, key string, values []string) (string, error) {
+	return updateField(content, Field{Key: key, List: values})
+}
+
+func updateField(content string, f Field) (string, error) {
 	loc := frontmatterRE.FindStringSubmatchIndex(content)
 	if loc == nil {
-		return Render([]Field{{Key: key, Value: value, Comment: comment}}) + content, nil
+		return Render([]Field{f}) + content, nil
 	}
 	b, err := parseBlock(content[loc[2]:loc[3]])
 	if err != nil {
 		return "", err
 	}
-	setField(b, key, value, comment)
+	setField(b, f)
 	return "---\n" + b.mapping.String() + "\n---\n" + content[loc[1]:], nil
 }
 
-// setField replaces or inserts key in b's mapping.
-func setField(b *block, key, value, comment string) {
+// setField replaces or inserts f's key in b's mapping.
+func setField(b *block, f Field) {
 	// An existing key keeps its own key node, not just its position: a blank
 	// line before it lives in that node's token origin, so swapping the whole
 	// pair would silently delete it. Only the value is replaced -- and replaced,
 	// never mutated, since mutating a plain token re-emits it unquoted whatever
 	// it now holds.
 	for _, v := range b.mapping.Values {
-		if v.Key.GetToken().Value == key {
-			v.Value = valueWithComment(key, value, comment)
+		if v.Key.GetToken().Value == f.Key {
+			v.Value = valueWithComment(f, existingSeqIsFlow(v.Value))
 			return
 		}
 	}
-	mv := mappingValue(key, value, comment)
+	mv := mappingValue(f, true)
 	// A comment that had no key to attach to rides along with the first key
 	// added, rather than being dropped on the first write.
 	if b.orphan != nil && len(b.mapping.Values) == 0 {
@@ -411,7 +613,7 @@ func setField(b *block, key, value, comment string) {
 	}
 	at := len(b.mapping.Values)
 	for i, v := range b.mapping.Values {
-		if keyLess(key, v.Key.GetToken().Value) {
+		if keyLess(f.Key, v.Key.GetToken().Value) {
 			at = i
 			break
 		}
@@ -419,6 +621,16 @@ func setField(b *block, key, value, comment string) {
 	b.mapping.Values = append(b.mapping.Values, nil)
 	copy(b.mapping.Values[at+1:], b.mapping.Values[at:])
 	b.mapping.Values[at] = mv
+}
+
+// existingSeqIsFlow reports the style to write a replacement sequence in: the
+// style the value being replaced already had, defaulting to flow for anything
+// that was not a sequence (a new list, or one replacing a scalar).
+func existingSeqIsFlow(current ast.Node) bool {
+	if seq, ok := current.(*ast.SequenceNode); ok {
+		return seq.IsFlowStyle
+	}
+	return true
 }
 
 // Normalize rewrites content's frontmatter in canonical field order, reporting
@@ -462,9 +674,15 @@ func isCanonical(m *ast.MappingNode) bool {
 //
 // Textual rather than structural because a blank line is not a node: it lives in
 // the preceding value's token origin, so reordering carries it to a position
-// that means nothing. Safe as a text filter because nothing this package emits
-// spans more than one line -- a value containing a newline is written as a
-// double-quoted scalar with an escape, never as a "|" block.
+// that means nothing.
+//
+// Safe as a text filter because no value this package can emit carries a
+// *meaningful* blank line. A scalar holding a newline is written as a
+// double-quoted scalar with an escape, on one physical line. A block sequence
+// does span lines, and a blank line between two of its items is inert in YAML,
+// so dropping it changes nothing but the diff. The shape this would corrupt is
+// a "|" block, where a blank line is content -- and that is refused on read,
+// which is what keeps this filter honest.
 func dropBlankLines(s string) string {
 	lines := strings.Split(s, "\n")
 	kept := lines[:0]
@@ -479,16 +697,19 @@ func dropBlankLines(s string) string {
 // --- MarkdownFile ---------------------------------------------------------------
 
 // MarkdownFile is a markdown source file parsed once: its path, raw text,
-// frontmatter map, and body (content with the frontmatter block stripped).
+// frontmatter maps, and body (content with the frontmatter block stripped).
 //
-// Frontmatter is exported so callers that must distinguish absent from
-// present-but-blank (e.g. the fix command) can read it directly. The accessor
-// methods provide normalized reads: every null spelling and a blank value alike
-// read as "".
+// Frontmatter holds the scalar fields and Lists the sequence-valued ones; a key
+// appears in exactly one of them. Both are exported, and both are non-nil even
+// for a file with no frontmatter at all, so callers that must distinguish
+// absent from present-but-blank (e.g. the fix command) can read them directly.
+// The accessor methods provide normalized reads: every null spelling and a
+// blank value alike read as "".
 type MarkdownFile struct {
 	Filename    string
 	Content     string
 	Frontmatter map[string]string
+	Lists       map[string][]string
 	Body        string
 }
 
@@ -502,19 +723,20 @@ func Parse(filename, content string) (*MarkdownFile, error) {
 		}
 		return &MarkdownFile{
 			Filename: filename, Content: content,
-			Frontmatter: map[string]string{}, Body: content,
+			Frontmatter: map[string]string{}, Lists: map[string][]string{}, Body: content,
 		}, nil
 	}
 	b, err := parseBlock(content[loc[2]:loc[3]])
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", filename, err)
 	}
-	fm, err := toMap(b.mapping)
+	fm, lists, err := toMaps(b.mapping)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", filename, err)
 	}
 	return &MarkdownFile{
-		Filename: filename, Content: content, Frontmatter: fm, Body: content[loc[1]:],
+		Filename: filename, Content: content, Frontmatter: fm, Lists: lists,
+		Body: content[loc[1]:],
 	}, nil
 }
 

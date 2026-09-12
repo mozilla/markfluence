@@ -97,16 +97,26 @@ func TestUnterminatedFrontmatter(t *testing.T) {
 	}
 }
 
-// TestRejectedShapes covers everything the flat-scalar contract refuses. Four of
+// TestRejectedShapes covers everything the frontmatter contract refuses. Four of
 // these were accepted-and-mangled by the hand-rolled parser rather than
 // reported; the anchor, alias, tag and literal cases matter because each reports
 // its indicator character as its token value, so a whitelist is the only safe
-// way to read a scalar.
+// way to read a scalar or a list element.
+//
+// A sequence value is not here: both YAML spellings of a list are accepted now,
+// and land in Lists rather than Frontmatter. What is still refused is an
+// element that is not a single-line scalar.
 func TestRejectedShapes(t *testing.T) {
 	tests := []struct{ name, content, wantSubstr string }{
 		{"colon unquoted", "---\ntitle: a: b\n---\nx\n", "mapping value"},
-		{"nested list", "---\ntitle:\n  - a\n  - b\n---\nx\n", "scalar"},
 		{"nested map", "---\ntitle:\n  a: b\n---\nx\n", "scalar"},
+		{"list element literal", "---\nlabels:\n  - |\n    lit\n---\nx\n", "labels[0]"},
+		{"list element anchor", "---\nlabels: [&a foo]\n---\nx\n", "labels[0]"},
+		{"list element tag", "---\nlabels: [!!str 12]\n---\nx\n", "labels[0]"},
+		{"list element continued", "---\nlabels:\n  - a plain\n    continued\n---\nx\n",
+			"single-line scalar"},
+		{"list element multiline quoted", "---\nlabels:\n  - 'sq\n    folded'\n---\nx\n",
+			"single-line scalar"},
 		{"literal block", "---\ntitle: |\n  lit\n---\nx\n", "scalar"},
 		{"anchor", "---\ntitle: &a foo\n---\nx\n", "scalar"},
 		{"tag", "---\ntitle: !!str 12\n---\nx\n", "scalar"},
@@ -502,6 +512,248 @@ func TestNullPageWidthIsUnset(t *testing.T) {
 		}
 		if got := mf.Frontmatter["page_width"]; got != "" {
 			t.Errorf("page_width for %q = %q, want empty", spelling, got)
+		}
+	}
+}
+
+// --- sequences ----------------------------------------------------------------
+
+// list parses content and returns one sequence field.
+func list(t *testing.T, content, key string) []string {
+	t.Helper()
+	mf, err := frontmatter.Parse("doc.md", content)
+	if err != nil {
+		t.Fatalf("Parse(%q) = %v", content, err)
+	}
+	return mf.Lists[key]
+}
+
+func updateList(t *testing.T, content, key string, values []string) string {
+	t.Helper()
+	got, err := frontmatter.UpdateListField(content, key, values)
+	if err != nil {
+		t.Fatalf("UpdateListField(%q, %q, %q) = %v", content, key, values, err)
+	}
+	return got
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// TestBothSequenceStylesReadTheSame pins the decision to accept either YAML
+// spelling. A block list is valid YAML that goccy parses correctly, so refusing
+// it would mean rejecting a file that was understood perfectly -- and a long
+// list genuinely reads better as a block list.
+//
+// The wrapped flow case is the one that distinguishes the element line check
+// from scalarValue's: element "b" carries a *leading* newline in its origin,
+// which spansLines reports as multi-line even though the element itself is one
+// line.
+func TestBothSequenceStylesReadTheSame(t *testing.T) {
+	want := []string{"runbook", "howto", "ci/cd"}
+	tests := []struct{ name, content string }{
+		{"flow", "---\nlabels: [runbook, howto, ci/cd]\n---\nx\n"},
+		{"block", "---\nlabels:\n  - runbook\n  - howto\n  - ci/cd\n---\nx\n"},
+		{"block unindented", "---\nlabels:\n- runbook\n- howto\n- ci/cd\n---\nx\n"},
+		{"flow wrapped", "---\nlabels: [runbook,\n  howto,\n  ci/cd]\n---\nx\n"},
+		{"block with a comment", "---\nlabels:\n  # why\n  - runbook\n  - howto\n  - ci/cd\n---\nx\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := list(t, tt.content, "labels"); !equalStrings(got, want) {
+				t.Errorf("labels = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+// TestEmptySequenceIsPresentAndEmpty pins the distinction a destructive field
+// depends on: "labels: []" is a declaration meaning "remove them all", not an
+// absent key. A non-nil empty slice is how Lists says so.
+func TestEmptySequenceIsPresentAndEmpty(t *testing.T) {
+	mf, err := frontmatter.Parse("doc.md", "---\nlabels: []\n---\nx\n")
+	if err != nil {
+		t.Fatalf("Parse = %v", err)
+	}
+	got, present := mf.Lists["labels"]
+	if !present {
+		t.Fatal("labels absent from Lists, want present")
+	}
+	if len(got) != 0 {
+		t.Errorf("labels = %q, want empty", got)
+	}
+}
+
+// TestSequenceKeyIsAbsentFromScalars pins that a key lands in exactly one map.
+// Leaving it in both, with the sequence flattened to some spelling, is how
+// MarkdownFile.field would hand update a title of "[a, b]".
+func TestSequenceKeyIsAbsentFromScalars(t *testing.T) {
+	mf, err := frontmatter.Parse("doc.md", "---\ntitle: T\nlabels: [a, b]\n---\nx\n")
+	if err != nil {
+		t.Fatalf("Parse = %v", err)
+	}
+	if raw, ok := mf.Frontmatter["labels"]; ok {
+		t.Errorf("Frontmatter[labels] = %q, want absent", raw)
+	}
+	if mf.Title() != "T" {
+		t.Errorf("Title() = %q, want T", mf.Title())
+	}
+}
+
+// TestSequenceWriteThenReadRoundTrips is the sequence half of C2, and it runs
+// the hazard corpus in *both* styles because the two contexts quote
+// differently. Neither covers the other: "a,b" and a "]" read back fine as a
+// mapping value but a flow sequence splits the first and the second ends the
+// sequence, while block style takes "? q" as YAML's explicit-key indicator.
+//
+// A single fixed verification context would be a check that passes while the
+// write is wrong, which for labels means publishing two labels where the author
+// wrote one.
+func TestSequenceWriteThenReadRoundTrips(t *testing.T) {
+	seqHazards := append([]string{"a]b", "[a", "a, b", "x,y", "has]bracket", "a: b"}, hazards...)
+	styles := []struct {
+		name  string
+		start string
+	}{
+		{"into flow", "---\nlabels: [old]\n---\nbody\n"},
+		{"into block", "---\nlabels:\n  - old\n---\nbody\n"},
+		{"new key", "---\nk: v\n---\nbody\n"},
+	}
+	for _, st := range styles {
+		for _, v := range seqHazards {
+			t.Run(st.name+"/"+v, func(t *testing.T) {
+				out := updateList(t, st.start, "labels", []string{v, "after"})
+				got := list(t, out, "labels")
+				if !equalStrings(got, []string{v, "after"}) {
+					t.Errorf("round-trip of %q in %s = %q\nwrote:\n%s", v, st.name, got, out)
+				}
+			})
+		}
+	}
+}
+
+// TestUpdateListFieldKeepsTheStyle pins the contract that a block list stays a
+// block list through a rewrite. A set large enough to be written as a block
+// list is exactly the set whose flow spelling is an unreadable single line, so
+// converting it on the first fix that changes a label would defeat the reason
+// block form is accepted at all.
+//
+// Indentation is deliberately not asserted beyond "it is a block list that
+// parses": re-emitting an author's 4-space list at 2 spaces is accepted.
+func TestUpdateListFieldKeepsTheStyle(t *testing.T) {
+	tests := []struct {
+		name, start string
+		wantFlow    bool
+	}{
+		{"flow stays flow", "---\nlabels: [a, b]\n---\nbody\n", true},
+		{"block stays block", "---\nlabels:\n  - a\n  - b\n---\nbody\n", false},
+		{"block at four spaces stays block", "---\nlabels:\n    - a\n---\nbody\n", false},
+		{"new key is flow", "---\ntitle: T\n---\nbody\n", true},
+		{"replacing a scalar is flow", "---\nlabels: single\n---\nbody\n", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := updateList(t, tt.start, "labels", []string{"runbook", "howto", "ci/cd"})
+			gotFlow := strings.Contains(out, "labels: [")
+			if gotFlow != tt.wantFlow {
+				t.Errorf("wrote flow=%v, want %v:\n%s", gotFlow, tt.wantFlow, out)
+			}
+			if got := list(t, out, "labels"); !equalStrings(got, []string{"runbook", "howto", "ci/cd"}) {
+				t.Errorf("labels = %q after write:\n%s", got, out)
+			}
+		})
+	}
+}
+
+// TestBlockListSurvivesNormalize is what dropBlankLines' safety comment now
+// claims. It is a textual filter over the emitted block, and a passed-through
+// block list is the first multi-line value it has ever run over: the blank line
+// it removes between two items means nothing in YAML, unlike one inside a "|"
+// block, which is content and is refused on read.
+func TestBlockListSurvivesNormalize(t *testing.T) {
+	src := "---\nlabels:\n  - runbook\n\n  - howto\ntitle: T\npage_id: 5\n---\nbody\n"
+	got, reordered, err := frontmatter.Normalize(src)
+	if err != nil {
+		t.Fatalf("Normalize = %v", err)
+	}
+	if !reordered {
+		t.Fatal("reordered = false, want true")
+	}
+	if l := list(t, got, "labels"); !equalStrings(l, []string{"runbook", "howto"}) {
+		t.Errorf("labels = %q after Normalize, want [runbook howto]\n%s", l, got)
+	}
+	if strings.Contains(got, "labels: [") {
+		t.Errorf("Normalize converted a block list to flow:\n%s", got)
+	}
+}
+
+// TestUnknownListKeySurvivesAWrite pins the generality of sequence support.
+// markfluence knows nothing about "reviewers", and nothing may make it care:
+// the parser learns a kind, not a name. Without this, an implementation that
+// special-cased "labels" in toMaps would satisfy every other test here and
+// still break the moment #21 or #100 adds a second list field.
+func TestUnknownListKeySurvivesAWrite(t *testing.T) {
+	src := "---\ntitle: T\nreviewers: [ana, bo]\n---\nbody\n"
+	out := update(t, src, "page_id", "12345", "")
+	if got := list(t, out, "reviewers"); !equalStrings(got, []string{"ana", "bo"}) {
+		t.Errorf("reviewers = %q, want [ana bo]\n%s", got, out)
+	}
+	if !strings.Contains(out, "reviewers: [ana, bo]") {
+		t.Errorf("reviewers was re-emitted rather than passed through:\n%s", out)
+	}
+}
+
+// TestRenderListField pins Render's list form against UpdateListField's, the
+// same way TestRenderAndUpdateFieldAgree does for scalars: two writers that can
+// disagree are two writers that will.
+func TestRenderListField(t *testing.T) {
+	rendered := frontmatter.Render([]frontmatter.Field{
+		{Key: "title", Value: "T"},
+		{Key: "labels", List: []string{"runbook", "howto"}},
+		{Key: "page_id", Value: "5"},
+	})
+	updated := updateList(t, "---\ntitle: T\npage_id: 5\n---\n", "labels",
+		[]string{"runbook", "howto"})
+	if !strings.Contains(rendered, "labels: [runbook, howto]") {
+		t.Errorf("Render wrote:\n%s", rendered)
+	}
+	if !strings.Contains(updated, "labels: [runbook, howto]") {
+		t.Errorf("UpdateListField wrote:\n%s", updated)
+	}
+	// Both order labels after page_id: it is not in fieldOrder, so it sorts
+	// alphabetically among the trailing keys.
+	if strings.Index(rendered, "labels:") < strings.Index(rendered, "page_id:") {
+		t.Errorf("Render put labels before page_id:\n%s", rendered)
+	}
+}
+
+// TestEmptyListIsWrittenAsFlowEmpty pins that an empty list writes "[]" rather
+// than a bare key, which would read back as a null scalar and so as an absent
+// field -- turning "remove every label" into "do not touch the labels".
+func TestEmptyListIsWrittenAsFlowEmpty(t *testing.T) {
+	for _, start := range []string{
+		"---\nlabels: [a, b]\n---\nbody\n",
+		"---\nlabels:\n  - a\n---\nbody\n",
+	} {
+		out := updateList(t, start, "labels", []string{})
+		if !strings.Contains(out, "labels: []") {
+			t.Errorf("wrote:\n%s\nwant a \"labels: []\" line", out)
+		}
+		mf, err := frontmatter.Parse("doc.md", out)
+		if err != nil {
+			t.Fatalf("Parse = %v", err)
+		}
+		if got, present := mf.Lists["labels"]; !present || len(got) != 0 {
+			t.Errorf("labels = %q present=%v, want present and empty", got, present)
 		}
 	}
 }
