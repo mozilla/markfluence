@@ -607,7 +607,44 @@ which is a scenario nobody here has. The grounded version is inside markfluence
 pinned by a test on `reviewers: [ana, bo]` — so a file carrying only such keys
 is a shape markfluence explicitly supports, with no third-party tool involved.
 
-## Follow-ups
+## The seam the review's *pattern* revealed — 2026-09-12
+
+Every one of the nine findings was at a seam: a call site updated incompletely,
+an ordering, or old code receiving new inputs. Not one was in the new core,
+which fable checked and cleared. That shape is enumerable, so it was enumerated
+— one grep over every place page metadata is read from a file outside
+`internal/pagemeta` — and it found a whole class the review had not, because the
+review was scoped to the diff.
+
+**`internal/pageref.Resolve` read `mf.PageID()` and nothing else**, so seven
+commands could not name a file `update` could publish: `info`, `read`,
+`children`, `export`, `attachment-list`, `attachment-upload`,
+`attachment-download`. They failed with `no page_id in frontmatter of docs/a.md`
+— safely, but the page argument meant one thing to `update` and another to
+everything else, which is exactly what the package exists to prevent.
+
+Fixed there rather than at seven call sites. `Resolve` already stats the file,
+so it discovers the root from the file's own directory — the same per-file
+discovery every other read does — and resolves through `pagemeta`. No signature
+change and no call-site churn. One deliberate asymmetry: a *malformed*
+`markfluence.yaml` is not fatal here, because this function answers "which page
+does this argument name" and a project file it never consults should not fail
+that; the commands that bound reads by the root report it themselves.
+
+**`fix` had no project concept at all** — the one verb that reads the page and
+writes the file. It now resolves through the root too, which is what lets it
+locate a pristine registered page. And it **refuses to write** into a file whose
+metadata lives only in the manifest: reconciling that means editing a `pages:`
+entry, which needs the write half, and attempting it would be finding 2 all over
+again in a second command. A file carrying *some* inline keys is still fixable,
+usefully so — those keys exist already, and the two locations agreed about the
+coordinates or resolution would have failed first.
+
+So PR 1's real scope is three seams wide, not two: read, consume, and *name*.
+What is left for PR 2 is the writer, plus `fix` reconciling an entry once there
+is something to reconcile it with.
+
+
 
 - **`markfluence status`: the local tree, plus what `update` would do** (filed
   as #148). Three

@@ -10,6 +10,7 @@ import (
 
 	"github.com/mozilla/markfluence/internal/clienttest"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/project"
 	"github.com/mozilla/markfluence/internal/schematest"
 )
 
@@ -175,7 +176,7 @@ func TestProcessFileClassifiesALocateFailureByOrigin(t *testing.T) {
 			if err := os.WriteFile(path, []byte(tt.body), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			r := processFile(path, c)
+			r := processFile(path, c, project.NewCache(""))
 			if r.ok {
 				t.Fatal("processFile should have failed")
 			}

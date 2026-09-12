@@ -11,6 +11,7 @@ import (
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/clienttest"
 	"github.com/mozilla/markfluence/internal/frontmatter"
+	"github.com/mozilla/markfluence/internal/project"
 )
 
 // --- locatePage --------------------------------------------------------------
@@ -283,7 +284,7 @@ func TestProcessFileConsistentDoesNotWrite(t *testing.T) {
 	path := writeFixture(t, content)
 	c := fixServer(t, pageJSON("1", "X", "", "/spaces/ENG/pages/1/X"), `"max"`)
 
-	r := processFile(path, c)
+	r := processFile(path, c, project.NewCache(""))
 	if !r.ok || r.status != statusConsistent {
 		t.Fatalf("result = %+v, want ok/consistent", r)
 	}
@@ -304,7 +305,7 @@ func TestProcessFileDryRunDoesNotWrite(t *testing.T) {
 	dryRun = true
 	t.Cleanup(func() { dryRun = false })
 
-	r := processFile(path, c)
+	r := processFile(path, c, project.NewCache(""))
 	if !r.ok || r.status != statusChanged || len(r.changes) == 0 {
 		t.Fatalf("result = %+v, want ok/changed with a nonempty diff", r)
 	}
@@ -322,7 +323,7 @@ func TestProcessFileWritesOnRealChange(t *testing.T) {
 	path := writeFixture(t, content)
 	c := fixServer(t, pageJSON("123", "X", "", "/spaces/ENG/pages/123/X"), `"max"`)
 
-	r := processFile(path, c)
+	r := processFile(path, c, project.NewCache(""))
 	if !r.ok || r.status != statusChanged {
 		t.Fatalf("result = %+v, want ok/changed", r)
 	}
@@ -346,7 +347,7 @@ func TestProcessFileFailsWhenPageNotFound(t *testing.T) {
 		_, _ = w.Write([]byte(`{"errors":[{"status":404,"title":"Cannot find a page with id 999"}]}`))
 	})
 
-	r := processFile(path, c)
+	r := processFile(path, c, project.NewCache(""))
 	if r.ok {
 		t.Fatal("want a failure when the page_id resolves to nothing")
 	}
@@ -395,7 +396,7 @@ func TestProcessFileNormalizesFieldOrder(t *testing.T) {
 	path := writeFixture(t, content)
 	c := fixServer(t, pageJSON("1", "X", "", "/spaces/ENG/pages/1/X"), `"max"`)
 
-	r := processFile(path, c)
+	r := processFile(path, c, project.NewCache(""))
 	if !r.ok || r.status != statusChanged {
 		t.Fatalf("result = %+v, want ok/changed", r)
 	}
@@ -423,7 +424,7 @@ func TestProcessFileTopLevelPageConverges(t *testing.T) {
 	path := writeFixture(t, content)
 	c := fixServer(t, pageJSON("1", "X", "", "/spaces/ENG/pages/1/X"), `"max"`)
 
-	r := processFile(path, c)
+	r := processFile(path, c, project.NewCache(""))
 	if r.status != statusConsistent {
 		t.Fatalf("status = %q with changes %+v, want consistent", r.status, r.changes)
 	}
@@ -435,7 +436,7 @@ func TestProcessFileTopLevelPageConverges(t *testing.T) {
 // wants -- one field under test and nothing else moving.
 func plannedChangesFM(fm map[string]string, page *client.Page, liveWidth string) []change {
 	mf := &frontmatter.MarkdownFile{Frontmatter: fm, Lists: map[string][]string{}}
-	return plannedChanges(mf, page, liveWidth, nil)
+	return plannedChanges(mf.Frontmatter, mf.Lists, page, liveWidth, nil)
 }
 
 // --- labels -------------------------------------------------------------------
@@ -466,7 +467,8 @@ func labelChangeIn(changes []change) (change, bool) {
 // the file to the page and update the page to the file.
 func TestFixAdoptsHandLabels(t *testing.T) {
 	page := &client.Page{ID: "1", Title: "T"}
-	got := plannedChanges(mdFile(t, "page_id: 1"), page, "", []string{"ci/cd", "runbook"})
+	fm, lists := mapsOf(t, "page_id: 1")
+	got := plannedChanges(fm, lists, page, "", []string{"ci/cd", "runbook"})
 
 	ch, ok := labelChangeIn(got)
 	if !ok {
@@ -493,7 +495,8 @@ func TestFixLeavesAMatchingSetAlone(t *testing.T) {
 		"page_id: 1\nlabels: [runbook, ci/cd]",
 		"page_id: 1\nlabels: [runbook, ci/cd, runbook]",
 	} {
-		got := plannedChanges(mdFile(t, block), page, "", []string{"ci/cd", "runbook"})
+		fm, lists := mapsOf(t, block)
+		got := plannedChanges(fm, lists, page, "", []string{"ci/cd", "runbook"})
 		if ch, ok := labelChangeIn(got); ok {
 			t.Errorf("%q planned %+v, want no labels change", block, ch)
 		}
@@ -504,7 +507,8 @@ func TestFixLeavesAMatchingSetAlone(t *testing.T) {
 // no labels must not gain a "labels: []" that says nothing.
 func TestFixPlansNothingWhenNeitherHasLabels(t *testing.T) {
 	page := &client.Page{ID: "1", Title: "T"}
-	got := plannedChanges(mdFile(t, "page_id: 1"), page, "", []string{})
+	fm, lists := mapsOf(t, "page_id: 1")
+	got := plannedChanges(fm, lists, page, "", []string{})
 	if ch, ok := labelChangeIn(got); ok {
 		t.Errorf("planned %+v, want no labels change", ch)
 	}
@@ -515,7 +519,8 @@ func TestFixPlansNothingWhenNeitherHasLabels(t *testing.T) {
 // would propose stripping every label from the file.
 func TestFixPlansNothingWhenTheReadFailed(t *testing.T) {
 	page := &client.Page{ID: "1", Title: "T"}
-	got := plannedChanges(mdFile(t, "page_id: 1\nlabels: [runbook]"), page, "", nil)
+	fm, lists := mapsOf(t, "page_id: 1\nlabels: [runbook]")
+	got := plannedChanges(fm, lists, page, "", nil)
 	if ch, ok := labelChangeIn(got); ok {
 		t.Errorf("planned %+v, want no labels change when the read failed", ch)
 	}
@@ -525,7 +530,8 @@ func TestFixPlansNothingWhenTheReadFailed(t *testing.T) {
 // to the empty set, which is a real state a page can be in.
 func TestFixRemovesLabelsThePageNoLongerHas(t *testing.T) {
 	page := &client.Page{ID: "1", Title: "T"}
-	got := plannedChanges(mdFile(t, "page_id: 1\nlabels: [runbook, gone]"), page, "", []string{})
+	fm, lists := mapsOf(t, "page_id: 1\nlabels: [runbook, gone]")
+	got := plannedChanges(fm, lists, page, "", []string{})
 
 	ch, ok := labelChangeIn(got)
 	if !ok {
@@ -544,8 +550,8 @@ func TestFixRemovesLabelsThePageNoLongerHas(t *testing.T) {
 // fix repairs a file check would have refused.
 func TestFixReconcilesAnInvalidLabel(t *testing.T) {
 	page := &client.Page{ID: "1", Title: "T"}
-	got := plannedChanges(mdFile(t, `page_id: 1
-labels: ["Runbook Two"]`), page, "", []string{"runbook", "two"})
+	fm, lists := mapsOf(t, "page_id: 1\nlabels: [\"Runbook Two\"]")
+	got := plannedChanges(fm, lists, page, "", []string{"runbook", "two"})
 
 	ch, ok := labelChangeIn(got)
 	if !ok {
@@ -587,7 +593,7 @@ func TestProcessFileKeepsBlockLabelStyle(t *testing.T) {
 	path := writeFixture(t, content)
 	c := labelFixServer(t, pageJSON("1", "X", "", "/spaces/ENG/pages/1/X"), "runbook", "howto")
 
-	r := processFile(path, c)
+	r := processFile(path, c, project.NewCache(""))
 	if !r.ok || r.status != statusChanged {
 		t.Fatalf("result = %+v, want ok/changed", r)
 	}
@@ -617,7 +623,7 @@ func TestProcessFileLabelFixConverges(t *testing.T) {
 	path := writeFixture(t, content)
 	c := labelFixServer(t, pageJSON("1", "X", "", "/spaces/ENG/pages/1/X"), "ci/cd", "runbook")
 
-	first := processFile(path, c)
+	first := processFile(path, c, project.NewCache(""))
 	if !first.ok || first.status != statusChanged {
 		t.Fatalf("first run = %+v, want ok/changed", first)
 	}
@@ -629,7 +635,7 @@ func TestProcessFileLabelFixConverges(t *testing.T) {
 		t.Errorf("file = %q, want a sorted flow list for a newly added key", got)
 	}
 
-	second := processFile(path, c)
+	second := processFile(path, c, project.NewCache(""))
 	if !second.ok || second.status != statusConsistent {
 		t.Fatalf("second run = %+v (changes %+v), want ok/consistent", second, second.changes)
 	}
@@ -643,7 +649,8 @@ func TestProcessFileLabelFixConverges(t *testing.T) {
 // on every run and no command that would silence it.
 func TestFixCorrectsALabelCaseMismatch(t *testing.T) {
 	page := &client.Page{ID: "1", Title: "T"}
-	got := plannedChanges(mdFile(t, "page_id: 1\nlabels: [Runbook]"), page, "", []string{"runbook"})
+	fm, lists := mapsOf(t, "page_id: 1\nlabels: [Runbook]")
+	got := plannedChanges(fm, lists, page, "", []string{"runbook"})
 
 	ch, ok := labelChangeIn(got)
 	if !ok {
@@ -676,7 +683,8 @@ func TestFixRepairsAScalarLabelsValue(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := plannedChanges(mdFile(t, tt.block), page, "", tt.live)
+			fm, lists := mapsOf(t, tt.block)
+			got := plannedChanges(fm, lists, page, "", tt.live)
 			ch, ok := labelChangeIn(got)
 			if !ok {
 				t.Fatalf("changes = %+v, want the scalar value repaired", got)
@@ -688,5 +696,110 @@ func TestFixRepairsAScalarLabelsValue(t *testing.T) {
 				t.Error("newList = nil, want a list to write")
 			}
 		})
+	}
+}
+
+// mapsOf gives a test block's two maps, the shapes the planners take now that
+// fix reconciles resolved metadata rather than a file's own frontmatter.
+func mapsOf(t *testing.T, block string) (map[string]string, map[string][]string) {
+	t.Helper()
+	mf := mdFile(t, block)
+	return mf.Frontmatter, mf.Lists
+}
+
+// --- pristine files ----------------------------------------------------------
+
+// projectDir writes a markfluence.yaml plus a markdown file and returns the
+// file's path.
+func projectDir(t *testing.T, manifest, md string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, project.Filename), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "a.md")
+	if err := os.WriteFile(path, []byte(md), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// A file whose metadata lives only in markfluence.yaml has nothing fix can
+// write: reconciling it means editing its pages: entry, which needs #139's
+// write half. Refused rather than attempted -- the alternative is writing
+// frontmatter into a pristine file, which turns every later update and check
+// of it into a coordinate disagreement.
+func TestProcessFileRefusesAManifestOnlyFile(t *testing.T) {
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	path := projectDir(t, "pages:\n  a.md:\n    title: A\n    page_id: 1\n", "# A\n")
+	roots := project.NewCache("")
+	defer roots.Close()
+
+	r := processFile(path, c, roots)
+	if r.ok {
+		t.Fatalf("result = %+v, want a refusal", r)
+	}
+	if !strings.Contains(r.errMsg, "cannot reconcile a pages: entry yet") {
+		t.Errorf("errMsg = %q, want the not-yet message", r.errMsg)
+	}
+	// And the file is untouched, which is the property that matters.
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "# A\n" {
+		t.Errorf("file was rewritten:\n%s", body)
+	}
+}
+
+// A file carrying *some* inline keys is still fixable, and usefully so: those
+// keys exist already, and the two locations agreed about the coordinates or
+// resolution would have failed first.
+func TestProcessFileFixesAHalfAndHalfFile(t *testing.T) {
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "properties") {
+			_, _ = w.Write([]byte(`{"results":[]}`))
+			return
+		}
+		if strings.Contains(r.URL.Path, "label") {
+			_, _ = w.Write([]byte(`{"results":[]}`))
+			return
+		}
+		_, _ = w.Write([]byte(pageJSON("1", "Live Title", "", "/spaces/ENG/pages/1/Live")))
+	})
+	// page_id inline and agreeing with the entry; no title, which fix fills in.
+	path := projectDir(t, "pages:\n  a.md:\n    page_id: 1\n", "---\npage_id: 1\n---\n# A\n")
+	roots := project.NewCache("")
+	defer roots.Close()
+
+	r := processFile(path, c, roots)
+	if !r.ok {
+		t.Fatalf("result = %+v, want success", r)
+	}
+	if len(r.changes) == 0 {
+		t.Error("no changes planned; the live title should have been adopted")
+	}
+}
+
+// A pristine file with no entry either is the case fix has always reported:
+// nothing locates the page. The message should not have regressed.
+func TestProcessFileUnmanagedFileStillReportsNoID(t *testing.T) {
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	path := projectDir(t, "space: ENG\n", "# A\n")
+	roots := project.NewCache("")
+	defer roots.Close()
+
+	r := processFile(path, c, roots)
+	if r.ok {
+		t.Fatalf("result = %+v, want a failure", r)
+	}
+	if !strings.Contains(r.errMsg, "no page_id or title") {
+		t.Errorf("errMsg = %q, want the locate message", r.errMsg)
 	}
 }
