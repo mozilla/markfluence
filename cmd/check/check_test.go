@@ -354,7 +354,7 @@ func TestRunEmptyTitleIsBroken(t *testing.T) {
 	if !ui.IsSilent(err) || ui.ExitCode(err) != 1 {
 		t.Fatalf("run = %v, want a silent exit-1 error", err)
 	}
-	if !strings.Contains(out, "empty 'title:'") {
+	if !strings.Contains(out, "title is present but empty") {
 		t.Errorf("output = %q, want the empty-title message", out)
 	}
 }
@@ -388,7 +388,7 @@ func TestRunEmptyTitleReportedEvenWhenConversionFails(t *testing.T) {
 	if !ui.IsSilent(err) || ui.ExitCode(err) != 1 {
 		t.Fatalf("run = %v, want a silent exit-1 error", err)
 	}
-	if !strings.Contains(out, "empty 'title:'") {
+	if !strings.Contains(out, "title is present but empty") {
 		t.Errorf("output = %q, want the empty-title message alongside the collision", out)
 	}
 }
@@ -627,5 +627,139 @@ func TestRunInvalidProjectPageWidthIsNotReportedForAFileThatOverridesIt(t *testi
 	}
 	if strings.Contains(out, "invalid page_width") {
 		t.Errorf("output = %q, want no complaint: the file's own width wins", out)
+	}
+}
+
+// --- pages: entries -----------------------------------------------------------
+
+// An entry's values are validated exactly as a file's own are -- and only for
+// a file the invocation names, which is #139's scoping made real.
+func TestRunValidatesAnEntrysValues(t *testing.T) {
+	tests := map[string]struct{ project, want string }{
+		"invalid page_width": {
+			"pages:\n  main.md:\n    page_id: 1\n    page_width: huge\n",
+			"invalid page_width",
+		},
+		"non-numeric page_id": {
+			"pages:\n  main.md:\n    page_id: TODO\n",
+			"not a numeric page id",
+		},
+		"invalid label": {
+			"pages:\n  main.md:\n    page_id: 1\n    labels: [\"has space\"]\n",
+			"label",
+		},
+		"empty title": {
+			"pages:\n  main.md:\n    page_id: 1\n    title: \"\"\n",
+			"title is present but empty",
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			write(t, filepath.Join(dir, "markfluence.yaml"), tc.project)
+			write(t, filepath.Join(dir, "main.md"), "# Main\n")
+
+			out, err := captureOutput(t, func() error {
+				return run(testCmd(t, ""), []string{filepath.Join(dir, "main.md")})
+			})
+			if !ui.IsSilent(err) || ui.ExitCode(err) != 1 {
+				t.Fatalf("run = %v, want a silent exit-1 error\n%s", err, out)
+			}
+			if !strings.Contains(out, tc.want) {
+				t.Errorf("output = %q, want it to contain %q", out, tc.want)
+			}
+		})
+	}
+}
+
+// One bad entry must not block checking an unrelated file: the diagnostic is
+// scoped to the file it belongs to, not to the run.
+func TestRunEntryDefectIsScopedToItsOwnFile(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "markfluence.yaml"),
+		"pages:\n  bad.md:\n    page_id: TODO\n  good.md:\n    page_id: 2\n")
+	write(t, filepath.Join(dir, "bad.md"), "# Bad\n")
+	write(t, filepath.Join(dir, "good.md"), "# Good\n")
+
+	if _, err := captureOutput(t, func() error {
+		return run(testCmd(t, ""), []string{filepath.Join(dir, "good.md")})
+	}); err != nil {
+		t.Fatalf("checking good.md = %v, want success: bad.md's entry is not its business", err)
+	}
+}
+
+// The two locations naming different pages is offline-visible and exactly what
+// check exists to catch before a publish does.
+func TestRunReportsACoordinateDisagreement(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "markfluence.yaml"), "pages:\n  main.md:\n    page_id: 1\n")
+	write(t, filepath.Join(dir, "main.md"), "---\npage_id: 999\n---\n# Main\n")
+
+	out, err := captureOutput(t, func() error {
+		return run(testCmd(t, ""), []string{filepath.Join(dir, "main.md")})
+	})
+	if !ui.IsSilent(err) || ui.ExitCode(err) != 1 {
+		t.Fatalf("run = %v, want a silent exit-1 error\n%s", err, out)
+	}
+	if !strings.Contains(out, "disagree about where this page is") {
+		t.Errorf("output = %q, want the disagreement message", out)
+	}
+}
+
+// "No half-and-half" is a warning, never an error -- agreement between the two
+// locations is legal, so this has to be sayable without becoming a wall
+// somebody hits halfway through a migration.
+func TestRunWarnsAboutHalfAndHalf(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "markfluence.yaml"),
+		"pages:\n  other.md:\n    page_id: 2\n")
+	write(t, filepath.Join(dir, "main.md"), "---\ntitle: Main\npage_id: 1\n---\n# Main\n")
+	write(t, filepath.Join(dir, "other.md"), "# Other\n")
+
+	out, err := captureOutput(t, func() error {
+		return run(testCmd(t, ""), []string{filepath.Join(dir, "main.md")})
+	})
+	if err != nil {
+		t.Fatalf("run = %v, want success: half-and-half is a warning\n%s", err, out)
+	}
+	if !strings.Contains(out, "keeps page metadata in markfluence.yaml") {
+		t.Errorf("output = %q, want the half-and-half warning", out)
+	}
+}
+
+// A project with no pages: block has not chosen the manifest, so a file's own
+// frontmatter is simply how it works -- no warning.
+func TestRunNoHalfAndHalfWarningWithoutAManifest(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "markfluence.yaml"), "space: ENG\n")
+	write(t, filepath.Join(dir, "main.md"), "---\ntitle: Main\npage_id: 1\n---\n# Main\n")
+
+	out, err := captureOutput(t, func() error {
+		return run(testCmd(t, ""), []string{filepath.Join(dir, "main.md")})
+	})
+	if err != nil {
+		t.Fatalf("run = %v, want success\n%s", err, out)
+	}
+	if strings.Contains(out, "keeps page metadata") {
+		t.Errorf("output = %q, want no half-and-half warning", out)
+	}
+}
+
+// A pristine file in a manifest project is the shape #139 exists for, and
+// check must have nothing to say about it.
+func TestRunPristineManifestFileIsClean(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "markfluence.yaml"),
+		"pages:\n  main.md:\n    title: Main\n    page_id: 1\n")
+	write(t, filepath.Join(dir, "main.md"), "# Main\n")
+
+	out, err := captureOutput(t, func() error {
+		return run(testCmd(t, ""), []string{filepath.Join(dir, "main.md")})
+	})
+	if err != nil {
+		t.Fatalf("run = %v, want success\n%s", err, out)
+	}
+	if !strings.Contains(out, "clean") {
+		t.Errorf("output = %q, want it reported clean", out)
 	}
 }

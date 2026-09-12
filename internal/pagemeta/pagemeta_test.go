@@ -280,3 +280,26 @@ func TestResolveNilRoot(t *testing.T) {
 		t.Errorf("source = %q managed = %v", r.Source, r.Managed())
 	}
 }
+
+func TestKeyFor(t *testing.T) {
+	root := rootWith(t, "pages: {}\n")
+	got, ok := KeyFor(root, filepath.Join(root.Dir, "docs", "a.md"))
+	if !ok || got != "docs/a.md" {
+		t.Errorf("= %q/%v, want docs/a.md", got, ok)
+	}
+	if got, ok := KeyFor(root, filepath.Join(root.Dir, "a.md")); !ok || got != "a.md" {
+		t.Errorf("= %q/%v, want a.md", got, ok)
+	}
+}
+
+// A batch may span more than one project, so a file outside the root being
+// consulted has no key there -- and that is not an error, just no entry.
+func TestKeyForOutsideTheRoot(t *testing.T) {
+	root := rootWith(t, "pages: {}\n")
+	if got, ok := KeyFor(root, filepath.Join(filepath.Dir(root.Dir), "elsewhere.md")); ok {
+		t.Errorf("= %q/%v, want no key for a file outside the root", got, ok)
+	}
+	if _, ok := KeyFor(nil, "/tmp/a.md"); ok {
+		t.Error("want no key for a nil root")
+	}
+}

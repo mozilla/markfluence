@@ -23,6 +23,7 @@ package pagemeta
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -83,6 +84,15 @@ func (r Resolved) MetadataSource() Source {
 	}
 	return r.Source
 }
+
+// InFile reports whether the file's own frontmatter contributed any field
+// markfluence understands. It is what check's half-and-half lint asks: a file
+// carrying inline keys in a project that has chosen the manifest is the shape
+// "no half-and-half" is about.
+func (r Resolved) InFile() bool { return r.Source == FromFrontmatter || r.Source == FromBoth }
+
+// InManifest reports whether a pages: entry claimed this file.
+func (r Resolved) InManifest() bool { return r.Source == FromManifest || r.Source == FromBoth }
 
 // Managed reports whether this file is claimed: it has a manifest entry, or its
 // frontmatter names a page_id. A file nothing claims is skipped rather than
@@ -305,4 +315,29 @@ func sameList(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// KeyFor returns the manifest key for a file: its path relative to the root, in
+// the normalized slash form pages: is keyed by.
+//
+// One copy, used by every command that looks a file up, because the manifest
+// side and the argument side must agree exactly -- a mismatch is a silent skip
+// (Managed), not an error, so there is nothing to notice if they drift.
+//
+// A file outside the root has no key and is not an error: a batch may span more
+// than one project (docs/root-model.md), and a file belonging to a different
+// root than the one being consulted simply has no entry there.
+func KeyFor(root *project.Root, absPath string) (string, bool) {
+	if root == nil {
+		return "", false
+	}
+	rel, err := filepath.Rel(root.Dir, absPath)
+	if err != nil {
+		return "", false
+	}
+	key, err := project.NormalizePageKey(filepath.ToSlash(rel))
+	if err != nil {
+		return "", false
+	}
+	return key, true
 }
