@@ -275,6 +275,9 @@ below.
 | `ListAttachments` | v1 | `GET /content/{id}/child/attachment` | **undocumented, see below** |
 | `ListChildPages` | v1 | `GET /content/{id}/child/page` | **undocumented, see below** |
 | `ListChildFolders` | v1 | `GET /content/{id}/child/folder` | **undocumented, see below** |
+| `ListLabels` | v2 | `GET /pages/{id}/labels` | `read:page:confluence` |
+| `AddLabels` | v1 | `POST /content/{id}/child/label` | **unverified**, presumably `write:confluence-content` |
+| `RemoveLabel` | v1 | `DELETE /content/{id}/child/label?name=…` | **unverified**, presumably `write:confluence-content` |
 
 Union, which is what a token needs:
 
