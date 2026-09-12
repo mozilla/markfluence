@@ -170,12 +170,16 @@ This is what the `@` marker buys that plain-URL recognition could not: without
 it, every plain link to a profile would earn the same lookup and the same
 warning, and most of them are not mentions at all.
 
-**The forward path needs a client, which `internal/convert` does not have.**
-Same shape as the inverse: the converter reports what it needs, the caller
-resolves it. `MdToConfluence` gains nothing client-shaped; instead the mention
-ids in a document are gathered and resolved by the caller the way the link index
-already is. Deliberately **not** the same as `StorageOptions.PageLinks`, since
-this is the forward direction and has its own options type to extend.
+**The forward path needs no new input at all, and the validation lives in the
+caller.** Emitting a mention needs only the account id, which is in the URL,
+and the base URL, which `MdToConfluence` already takes — so the converter needs
+neither a client nor an options struct, and its signature does not change. That
+also keeps the regression suite client-free.
+
+Only the *warning* needs a lookup, so `ConfluencePage` gains
+`Mentions []string` — the ids the conversion emitted — and `update`/`create`
+resolve and warn. That is the `Attachments` shape exactly: the converter
+discovers, the caller acts.
 
 **The profile URL is emitted for the site, never the gateway.** `SiteURL()`
 already, for the same reason rewritten links use it: the URL is published into
@@ -183,8 +187,61 @@ a page.
 
 **The legacy profile form is not emitted.** `{site}/wiki/display/~{accountId}`
 302s to `{site}/wiki/people/{accountId}` (verified 2026-08-21, per #91), so only
-the latter is worth writing — but the forward path should *recognise* both, or a
-page whose profile links predate the change stops round-tripping.
+the latter is worth writing — but the forward path *recognises* both, or a page
+whose profile links predate the change stops round-tripping.
+
+**Matching ignores the host.** A file always carries a concrete host — nothing
+writes a wildcard — but the forward path keys off the `/wiki/people/{id}` path
+alone and does not care which host precedes it.
+
+The reason is that **the host is decoration, exactly like the display name**.
+`<ri:user ri:account-id="…"/>` records no host at all, so both the host and the
+name in a markdown mention are regenerated from whatever site was last read
+from, and only the account id is durable. Requiring the file's host to match
+would invent a constraint the stored data does not have: there is nothing for a
+mismatch to contradict.
+
+What it buys is that **`check` agrees with `update`**. `check` runs without a
+client, against a hardcoded `https://wiki.example.net`, so host-sensitive
+matching would make it recognise no real mention at all — it would report a
+file as publishing an `<a href>` while `update` publishes a mention, and
+`--show-html` would print HTML that is not what ships. Two commands disagreeing
+about the same file is worse than the offline gap it was meant to avoid.
+
+What it costs is that a link to *another* Confluence instance's profile
+publishes as a mention here. Defensible on its own terms: an Atlassian account
+id is global rather than per-site, so the id names the same human either way.
+They may lack access to this site, in which case Confluence renders
+`@Unlicensed user` — the same outcome as any id this site cannot resolve, and
+the warning below covers it.
+
+A consequence to state rather than discover: the fixed point is **per site**.
+Export → publish → export is identical against one site, which is what
+`TestRoundTripMarkdownIsAFixedPoint` covers. Across sites the host changes,
+which is correct rather than drift.
+
+**A root-relative `/wiki/people/{id}` is recognised too.** Ignoring the host and
+then refusing a URL that has none would be arbitrary. It is a separate branch
+from the absolute case, since that href currently flows down the doc-link path
+as a non-`.md` relative link, so it gets its own test.
+
+**The account id is not pattern-validated.** Ids come in at least two shapes —
+`60c36d0718e9f60071326951` (24 hex characters, no prefix) and
+`712020:0e5f8a21-3c4d-4e5f-a6b7-c8d9e0f1a2b3` (prefix, colon, UUID), both
+observed on the live instance. So the id is "the last path segment, non-empty,
+no slash" and nothing narrower; a shape check would reject real ids. The only
+real validation is the `GetUser` lookup, which is what the warning reports.
+
+**`mdLink` escapes its text, which fixes a bug older than this issue.**
+`mdLink` is a bare `fmt.Sprintf("[%s](%s)")` with no escaping, so a page title
+containing `]` already emits a broken link today, on the page-link and
+space-link paths. Mentions turn that from theoretical into likely: display names
+carry brackets, and a `|` inside a table cell breaks the row — with a mention in
+a table being the case this issue is named for. Fixed here rather than filed
+separately, because the feature is not correct without it.
+
+Parens need no escaping (`(she/her)` is fine in link text); `[`, `]`, `\` do,
+and `|` does inside a table cell.
 
 ## Implementation
 
@@ -200,7 +257,10 @@ page whose profile links predate the change stops round-tripping.
   rendering `[@Name](SITE/wiki/people/{id})` when the name is known and
   `serialize(n)` when it is not. `ri:attachment`/`ri:blog-post` keep the
   default.
-- The `@` is part of the *text*, not the URL, so `mdLink` needs nothing.
+- The `@` is part of the *text*, not the URL.
+- `mdLink` gains text escaping (see the decision above), which changes the
+  page-link and space-link paths too — so the regression goldens may move for a
+  title that needs it, and that movement is the fix rather than a surprise.
 
 ### `internal/convert` — forward (`links.go`)
 
@@ -244,6 +304,12 @@ since "check validates offline" and "a mention needs the server" do not compose.
 - **A mangled id warns** and still publishes, since Confluence accepts it.
 - **The legacy URL is recognised** on the forward path and not emitted on the
   inverse.
+- **The host is ignored**: the same mention publishes from a file naming this
+  site, another site, and no host at all (root-relative). This is the decision,
+  so it is the test that states it.
+- **Both account-id shapes** round-trip: bare 24-hex and `prefix:uuid`.
+- **A name needing escapes** survives a round trip: a display name holding `]`
+  or `|`, the second inside a table cell.
 - **No mention, no request** — the `pagedoc` guard.
 - **One request per distinct id across a whole walk**, not per page: an export
   of several pages mentioning the same person resolves them once. Asserted on a
