@@ -132,7 +132,18 @@ func Declared(lists map[string][]string, frontmatter map[string]string) (Set, er
 	seen := make(map[string]bool, len(declared))
 	set := Set{Declared: true, Names: make([]string, 0, len(declared))}
 	for _, raw := range declared {
+		// Validated as written *first*, so the message quotes the label the
+		// author can actually find in their file. Lowercasing before validating
+		// reported `label "runbook two"` for a file that says "Runbook Two",
+		// which sends them searching for a string that is not there.
+		if err := Validate(raw); err != nil {
+			return Set{}, err
+		}
 		name, changed := Normalize(raw)
+		// Re-checked after normalizing because case folding can change length
+		// in UTF-16 units: "İ" (U+0130) lowercases to two code points. Nothing
+		// realistic reaches this, and a label that passed as written and fails
+		// lowercased would otherwise be refused by the server instead.
 		if err := Validate(name); err != nil {
 			return Set{}, err
 		}

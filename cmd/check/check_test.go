@@ -392,3 +392,105 @@ func TestRunEmptyTitleReportedEvenWhenConversionFails(t *testing.T) {
 		t.Errorf("output = %q, want the empty-title message alongside the collision", out)
 	}
 }
+
+// --- labels -------------------------------------------------------------------
+
+// TestRunInvalidLabelIsFailed pins the worst label defect as a failure rather
+// than a warning. "Runbook Two" publishes *successfully* as two labels that
+// read back as neither, so no later run can remove them -- catching it offline
+// is the only cheap place to catch it at all.
+func TestRunInvalidLabelIsFailed(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "bad.md"),
+		"---\ntitle: T\nlabels: [Runbook Two]\n---\n# T\n\nBody.\n")
+
+	out, err := captureOutput(t, func() error {
+		return run(testCmd(t, ""), []string{filepath.Join(dir, "bad.md")})
+	})
+	if err == nil {
+		t.Fatal("run = nil error, want a failure for an invalid label")
+	}
+	if !strings.Contains(out, "separator") {
+		t.Errorf("output = %q, want it to explain that a space is a separator", out)
+	}
+}
+
+// TestRunLabelCaseIsAWarning: lowercasing is the one repair, so the file still
+// publishes -- but silently rewriting an author's label without telling them is
+// how a file stays permanently out of step with its page.
+func TestRunLabelCaseIsAWarning(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "case.md"),
+		"---\ntitle: T\nlabels: [Runbook]\n---\n# T\n\nBody.\n")
+
+	out, err := captureOutput(t, func() error {
+		return run(testCmd(t, ""), []string{filepath.Join(dir, "case.md")})
+	})
+	if err != nil {
+		t.Fatalf("run = %v, want a warning rather than a failure", err)
+	}
+	if !strings.Contains(out, "Runbook") || !strings.Contains(out, "runbook") {
+		t.Errorf("output = %q, want both spellings named", out)
+	}
+}
+
+// TestRunValidLabelsAreClean covers the shapes that must *not* be refused: a
+// slash (ci/cd is a real label in the SRE space), an underscore, and non-ASCII.
+// Mirroring the server's reject set rather than an allowlist is what makes
+// these pass.
+func TestRunValidLabelsAreClean(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "ok.md"),
+		"---\ntitle: T\nlabels: [ci/cd, dataops_reports, héllo-wörld]\n---\n# T\n\nBody.\n")
+
+	out, err := captureOutput(t, func() error {
+		return run(testCmd(t, ""), []string{filepath.Join(dir, "ok.md")})
+	})
+	if err != nil {
+		t.Fatalf("run = %v, want clean", err)
+	}
+	if !strings.Contains(out, "clean") {
+		t.Errorf("output = %q, want a clean line", out)
+	}
+}
+
+// TestRunBothLabelStylesCheckTheSame closes the loop through the real file
+// reader: check is the command an author runs before publishing, so it must
+// accept the spelling they chose.
+func TestRunBothLabelStylesCheckTheSame(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "flow.md"),
+		"---\ntitle: T\nlabels: [Runbook]\n---\n# T\n\nBody.\n")
+	write(t, filepath.Join(dir, "block.md"),
+		"---\ntitle: T\nlabels:\n  - Runbook\n---\n# T\n\nBody.\n")
+
+	for _, name := range []string{"flow.md", "block.md"} {
+		out, err := captureOutput(t, func() error {
+			return run(testCmd(t, ""), []string{filepath.Join(dir, name)})
+		})
+		if err != nil {
+			t.Fatalf("%s: run = %v", name, err)
+		}
+		if !strings.Contains(out, "not lowercase") {
+			t.Errorf("%s: output = %q, want the case warning", name, out)
+		}
+	}
+}
+
+// TestRunScalarLabelsIsFailed: the field removes every label not listed, so
+// "labels:" with nothing after it must not be read as "strip this page".
+func TestRunScalarLabelsIsFailed(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "scalar.md"),
+		"---\ntitle: T\nlabels: runbook\n---\n# T\n\nBody.\n")
+
+	out, err := captureOutput(t, func() error {
+		return run(testCmd(t, ""), []string{filepath.Join(dir, "scalar.md")})
+	})
+	if err == nil {
+		t.Fatal("run = nil error, want a failure for a scalar labels field")
+	}
+	if !strings.Contains(out, "must be a list") {
+		t.Errorf("output = %q, want it to name the list form", out)
+	}
+}
