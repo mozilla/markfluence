@@ -86,6 +86,13 @@ var imageDestRE = regexp.MustCompile(`!\[[^\]]*\]\(([^) ]+)`)
 // image it references materialized under a throwaway root.
 func publish(t *testing.T, md string) string {
 	t.Helper()
+	return publishPage(t, md).HTML
+}
+
+// publishPage is publish with the whole converted page, for a test that needs
+// more than the storage -- the mention ids it reported, say.
+func publishPage(t *testing.T, md string) *convert.ConfluencePage {
+	t.Helper()
 	root := t.TempDir()
 	for _, m := range imageDestRE.FindAllStringSubmatch(md, -1) {
 		dest := m[1]
@@ -115,5 +122,5 @@ func publish(t *testing.T, md string) string {
 	if err != nil {
 		t.Fatalf("markdown -> storage: %v", err)
 	}
-	return page.HTML
+	return page
 }

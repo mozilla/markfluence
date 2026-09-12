@@ -14,6 +14,14 @@ type ConfluencePage struct {
 	HTML string `json:"html"`
 	// Warnings holds image-property warnings (e.g. a bad width/align).
 	Warnings []string `json:"warnings"`
+	// Mentions are the account ids the body publishes as user mentions.
+	//
+	// Reported rather than validated here, because validating means a lookup
+	// and this package holds no client -- the Attachments arrangement exactly.
+	// The caller resolves them and warns about one that does not exist, which
+	// it has to do because nothing else will: Confluence accepts any account id
+	// and renders it as "@Unlicensed user" rather than failing.
+	Mentions []string `json:"mentions"`
 }
 
 // Attachment is a local image the body references, to be uploaded to the page.

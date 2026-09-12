@@ -24,16 +24,25 @@ func (r *storageRenderer) renderLink(
 ) (ast.WalkStatus, error) {
 	n := node.(*ast.Link)
 	if !entering {
-		if r.linkBrokenText != "" {
-			// entering wrote the replacement text and skipped children; no
+		if r.linkReplaced {
+			// entering wrote a replacement element and skipped children; no
 			// <a> was opened, so there is nothing to close.
 			return ast.WalkContinue, nil
 		}
 		_, _ = w.WriteString("</a>")
 		return ast.WalkContinue, nil
 	}
+	// Before anything else: a mention replaces the whole element, and its
+	// destination must not go through the doc-link rewriting below, which would
+	// see an absolute URL and pass it through as an href.
+	if id := mentionFor(n, source); id != "" {
+		r.linkReplaced = true
+		r.mentions = append(r.mentions, id)
+		_, _ = w.WriteString(mentionElement(id))
+		return ast.WalkSkipChildren, nil
+	}
 	href, rewritten, brokenText := r.rewriteHref(string(n.Destination), node, source)
-	r.linkBrokenText = brokenText
+	r.linkReplaced = brokenText != ""
 	if brokenText != "" {
 		_, _ = w.WriteString(html.EscapeString(brokenText))
 		return ast.WalkSkipChildren, nil

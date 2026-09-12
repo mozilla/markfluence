@@ -5,5 +5,6 @@
   "warnings": [
     "line 17: table cell \"nope\": ignoring bg:chartreuse (unknown color: use a swatch name or a #rrggbb hex)",
     "line 18: table cell \"trailing\": ignoring bg:green (a bg marker must come first in the cell)"
-  ]
+  ],
+  "mentions": []
 }

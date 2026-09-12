@@ -111,6 +111,7 @@ func MdToConfluence(
 		Attachments: r.attachments,
 		Broken:      r.broken,
 		Warnings:    r.warnings,
+		Mentions:    r.mentions,
 	}
 	// Emit empty JSON arrays (not null) for the absent cases.
 	if page.Attachments == nil {
@@ -121,6 +122,9 @@ func MdToConfluence(
 	}
 	if page.Warnings == nil {
 		page.Warnings = []string{}
+	}
+	if page.Mentions == nil {
+		page.Mentions = []string{}
 	}
 	return page, nil
 }

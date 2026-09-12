@@ -11,5 +11,6 @@
   "warnings": [
     "line 13: assets/shot.png: ignoring width='wide' (must be a number)",
     "line 13: assets/shot.png: ignoring align='middle' (must be left, center, or right)"
-  ]
+  ],
+  "mentions": []
 }
