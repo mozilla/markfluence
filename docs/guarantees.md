@@ -242,9 +242,19 @@ through markfluence it stops moving. That test found real drift on its first run
 for having it, and answers the note this file added when #125 showed L5 had no
 property test at all.
 
-One exception to the fixed point is expected and converges: a Confluence-native
-attachment is unmanaged, so the first republish restamps its comment. The second
-cycle is stable.
+Two exceptions to the fixed point are expected, and both converge on the second
+cycle. A Confluence-native attachment is unmanaged, so the first republish
+restamps its comment. And a mention written by Confluence's editor carries an
+`ri:local-id` that markfluence does not emit (#91), so the first republish drops
+it — verified harmless, since a mention carrying only the account id resolves to
+the same person ([links-and-anchors.md](confluence/links-and-anchors.md)).
+
+**L5/L6 narrow with #91 rather than closing.** A mention was the single most
+common thing an `<ac:link>` could be — 80% of all usage — and it used to survive
+the round trip only as raw storage. It now converts in both directions, so the
+*readable* half of the round trip covers the case that dominates real pages. The
+laws stay **Partial** for the reasons already given above: the wording asks for
+byte-for-byte equivalence, which the converter deliberately does not target.
 
 **L9** is what makes a frontmatter field safe to add. Without it, every new
 field is a choice between two bad defaults: assert it always, and a page

@@ -479,9 +479,9 @@ composes with shell redirection.
   gracefully — any macro markfluence doesn't map (panels, expand, status, …) and
   column layouts pass through as raw storage tags, with a macro/cell body kept as
   readable markdown, so they round-trip back through `create`/`update`. A page or
-  space link converts back to a markdown link; a mention, an attachment link, and
-  a blog-post link stay as raw storage, since a markdown link would republish to
-  something else or nothing at all. Some other transforms are lossy (e.g. a table
+  space link converts back to a markdown link, and so does a **mention** (see
+  below); an attachment link and a blog-post link stay as raw storage, since a
+  markdown link would republish to something else or nothing at all. Some other transforms are lossy (e.g. a table
   cell background color outside the named swatches comes back as a literal hex),
   so this is a reading aid, not a guaranteed source round-trip.
 - `storage` — the page's raw storage-format XHTML, exactly as stored.
@@ -1162,6 +1162,32 @@ A page genuinely titled `null` is written `title: "null"`.
 | `page_width` | `narrow`, `wide`, or `max` | The published page width (the UI's "Adjust width" options; `narrow`/`wide`/`max` map to the `default`/`full-width`/`max` appearance properties). Absent or blank defaults to `max`. `create`/`update` assert it on every publish (so a width set in the Confluence UI is overwritten unless the frontmatter matches); `fix` writes back the live page's width. |
 
 To create a page, you only need to specify the `title` in the frontmatter.
+
+### Mentions
+
+A Confluence mention round-trips as an ordinary markdown link to the person's
+profile, with an `@` on the link text:
+
+```markdown
+Ping [@Ada Lovelace](https://home.atlassian.com/people/712020:0e5f8a21-3c4d-4e5f-a6b7-c8d9e0f1a2b3) about the deploy.
+```
+
+`read` and `export` write that; `create` and `update` publish it back as a real
+mention. Three things worth knowing:
+
+- **The `@` is what makes it a mention.** A link to the same URL whose text does
+  not start with `@` publishes as a plain link, so you can still link to
+  somebody's profile without pinging them.
+- **The account id is the only durable part.** The display name is regenerated
+  on every `read`/`export`, so it goes stale harmlessly when somebody changes
+  their name, and the host is regenerated too — nothing site-specific survives
+  into the markdown.
+- **An id that names nobody is a warning, not an error.** Confluence accepts any
+  account id and renders it as `@Unlicensed user` rather than failing, so
+  markfluence looks the id up and says so; nothing else will.
+
+A mention whose account cannot be resolved to a name stays raw storage, which is
+the usual outcome for a deactivated person.
 
 ### Body
 
