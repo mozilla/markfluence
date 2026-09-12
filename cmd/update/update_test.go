@@ -763,3 +763,132 @@ func TestProcessFileDoesNotWarnAboutAResolvableMention(t *testing.T) {
 		t.Errorf("published body = %q, want a mention", published)
 	}
 }
+
+// --- project-wide settings ----------------------------------------------------
+
+// propertyServer answers a publish plus any content-property traffic, recording
+// every property path so a test can assert on a request that was *not* made.
+// Width lives in two content properties (docs/confluence/page-width.md).
+func propertyServer(t *testing.T, paths *[]string) *client.ConfluenceClient {
+	t.Helper()
+	return clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "properties") {
+			*paths = append(*paths, r.Method+" "+r.URL.Path)
+			if r.Method == http.MethodGet {
+				_, _ = w.Write([]byte(`{"results":[]}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"id":"p1","version":{"number":1}}`))
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			_, _ = w.Write([]byte(pageWithVersion("1", 3, "2020-01-01T00:00:00Z")))
+		case http.MethodPut:
+			_, _ = w.Write([]byte(pageWithVersion("1", 4, "2026-01-01T00:00:00Z")))
+		default:
+			t.Errorf("unexpected method: %s %s", r.Method, r.URL.Path)
+		}
+	})
+}
+
+// writeProject writes a markfluence.yaml and a markdown file under one root,
+// returning the file's path.
+func writeProject(t *testing.T, projectFile, md string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, project.Filename), []byte(projectFile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "f.md")
+	if err := os.WriteFile(path, []byte(md), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// The behavior change #100 makes to update, asserted on the wire rather than
+// through resolveWidth's bool: a project-wide page_width makes update write the
+// width for a file that declares none, where before it made no width request.
+func TestProcessFileAppliesProjectWidth(t *testing.T) {
+	var paths []string
+	c := propertyServer(t, &paths)
+	path := writeProject(t, "page_width: narrow\n", "---\npage_id: 1\n---\nHello.\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	if !r.ok {
+		t.Fatalf("result not ok: %+v", r)
+	}
+	if len(paths) == 0 {
+		t.Fatal("no content-property requests: the project width was not applied")
+	}
+	writes := 0
+	for _, p := range paths {
+		if strings.HasPrefix(p, http.MethodPost) || strings.HasPrefix(p, http.MethodPut) {
+			writes++
+		}
+	}
+	// Both the published and draft appearance properties, or the reader and the
+	// editor disagree about the width.
+	if writes != 2 {
+		t.Errorf("property writes = %d (%v), want 2", writes, paths)
+	}
+}
+
+// The escape hatch, asserted the same way: a project that declares no width
+// makes no width *request* at all, which is what keeps "absent means untouched"
+// a property rather than an implementation detail.
+func TestProcessFileNoProjectWidthMakesNoWidthRequest(t *testing.T) {
+	var paths []string
+	c := propertyServer(t, &paths)
+	path := writeProject(t, "space: ENG\n", "---\npage_id: 1\n---\nHello.\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	if !r.ok {
+		t.Fatalf("result not ok: %+v", r)
+	}
+	if len(paths) != 0 {
+		t.Errorf("content-property requests = %v, want none", paths)
+	}
+}
+
+// A file declaring its own width wins over the project file, and the value on
+// the wire is the file's.
+func TestProcessFileFrontmatterWidthBeatsProjectWidth(t *testing.T) {
+	var bodies []string
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "properties") {
+			if r.Method == http.MethodGet {
+				_, _ = w.Write([]byte(`{"results":[]}`))
+				return
+			}
+			buf := make([]byte, 512)
+			n, _ := r.Body.Read(buf)
+			bodies = append(bodies, string(buf[:n]))
+			_, _ = w.Write([]byte(`{"id":"p1","version":{"number":1}}`))
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			_, _ = w.Write([]byte(pageWithVersion("1", 3, "2020-01-01T00:00:00Z")))
+		default:
+			_, _ = w.Write([]byte(pageWithVersion("1", 4, "2026-01-01T00:00:00Z")))
+		}
+	})
+	path := writeProject(t, "page_width: narrow\n",
+		"---\npage_id: 1\npage_width: wide\n---\nHello.\n")
+
+	if r := processFile(path, c, project.NewCache(""), linkindex.NewCache(),
+		pagedoc.NewUserCache()); !r.ok {
+		t.Fatalf("result not ok: %+v", r)
+	}
+	if len(bodies) == 0 {
+		t.Fatal("no width written")
+	}
+	for _, b := range bodies {
+		// wide -> "full-width"; narrow -> "default".
+		if !strings.Contains(b, "full-width") {
+			t.Errorf("property body = %q, want the file's own width (full-width)", b)
+		}
+	}
+}
