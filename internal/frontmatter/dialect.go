@@ -9,7 +9,8 @@ package frontmatter
 // about, which is why a second copy of them for a second file would be a
 // second set of the same bugs: the scalar node-kind whitelist (plainScalar),
 // the single-line rule (spansLines), every null spelling reading as "", and
-// the refusal of anything that is not a flat mapping.
+// the refusal of anything that is not a flat mapping -- or, where a dialect
+// asks for depth (Dialect.MaxDepth, #139), of anything past it.
 
 import (
 	"errors"
@@ -38,20 +39,37 @@ import (
 type Dialect struct {
 	Doc  string
 	Item string
+	// MaxDepth is how many levels of nested mapping a value may hold. Zero --
+	// the default, and what the fenced block keeps -- means flat: a mapping
+	// value is refused exactly as any other non-scalar is.
+	//
+	// A depth rather than a list of keys allowed to nest, so the reader still
+	// learns a kind and not a name: markfluence.yaml's `pages:` needs two
+	// levels (pages -> path -> fields) and says so by asking for two, and a
+	// mapping under a key whose own table says scalar is refused by that table
+	// with its own message rather than by the reader (#139).
+	MaxDepth int
 }
 
 // Item is one key/value pair of a mapping, in source order.
 //
-// List is nil for a scalar value and non-nil (possibly empty) for a sequence,
-// which is what distinguishes `labels: []` from an absent key. Line is
-// 1-based within the text passed to ReadMapping, and is carried because a
-// caller rejecting a key -- an unknown setting in a project file -- has to be
-// able to say where it is.
+// Exactly one of Value, List and Map describes the value, and the nil-ness of
+// the latter two is what says which: List is nil for a scalar and non-nil
+// (possibly empty) for a sequence, which is what distinguishes `labels: []`
+// from an absent key, and Map is non-nil (possibly empty) for a nested
+// mapping, which only arrives within Dialect.MaxDepth. A caller reading
+// len(List) or len(Map) instead of testing for nil cannot tell an empty
+// collection from a scalar.
+//
+// Line is 1-based within the text passed to ReadMapping, and is carried
+// because a caller rejecting a key -- an unknown setting in a project file --
+// has to be able to say where it is.
 type Item struct {
 	Key   string
 	Line  int
 	Value string
 	List  []string
+	Map   []Item
 }
 
 // ReadMapping reads text as a single flat YAML mapping, applying every rule
@@ -67,7 +85,7 @@ func (d Dialect) ReadMapping(text string) ([]Item, error) {
 	if err != nil {
 		return nil, err
 	}
-	return r.items(b.mapping)
+	return r.items(b.mapping, 0)
 }
 
 // reader is the dialect plus the two things that differ per document and are
@@ -259,7 +277,13 @@ func spansLines(origin string) bool {
 }
 
 // items reads a mapping into its key/value pairs, in source order.
-func (r reader) items(m *ast.MappingNode) ([]Item, error) {
+//
+// depth is how far down this mapping already is, so a nested mapping is read
+// only while there is allowance left. Past the allowance a mapping value falls
+// through to r.scalar and is refused there, which is what keeps a flat dialect
+// (MaxDepth 0) behaving exactly as it did before nesting existed -- including
+// the message.
+func (r reader) items(m *ast.MappingNode, depth int) ([]Item, error) {
 	out := make([]Item, 0, len(m.Values))
 	for _, v := range m.Values {
 		key := v.Key.GetToken().Value
@@ -277,6 +301,17 @@ func (r reader) items(m *ast.MappingNode) ([]Item, error) {
 			out = append(out, it)
 			continue
 		}
+		if depth < r.MaxDepth {
+			nested, ok, err := r.nested(v.Value, depth)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				it.Map = nested
+				out = append(out, it)
+				continue
+			}
+		}
 		s, err := r.scalar(key, v.Value)
 		if err != nil {
 			return nil, err
@@ -285,6 +320,33 @@ func (r reader) items(m *ast.MappingNode) ([]Item, error) {
 		out = append(out, it)
 	}
 	return out, nil
+}
+
+// nested reads a mapping value one level down, reporting whether the value was
+// a mapping at all. It is not an error for it not to be: a nesting-capable
+// dialect still holds plain scalars at every level, so a non-mapping falls back
+// to the scalar path rather than being refused for the shape it does have.
+//
+// goccy renders a one-key mapping as a MappingValueNode and a multi-key one as
+// a MappingNode, the same split soleMappingPair exists for on the write side,
+// so both have to be accepted -- treating only the plural form as nesting would
+// read a single-field entry as a broken scalar.
+func (r reader) nested(n ast.Node, depth int) ([]Item, bool, error) {
+	var m *ast.MappingNode
+	switch v := n.(type) {
+	case *ast.MappingNode:
+		m = v
+	case *ast.MappingValueNode:
+		m = emptyMapping()
+		m.Values = append(m.Values, v)
+	default:
+		return nil, false, nil
+	}
+	items, err := r.items(m, depth+1)
+	if err != nil {
+		return nil, false, err
+	}
+	return items, true, nil
 }
 
 // maps reads a mapping into the two maps frontmatter's own callers use: scalars
@@ -296,7 +358,7 @@ func (r reader) items(m *ast.MappingNode) ([]Item, error) {
 // scalar map to hold both would touch every caller for no gain. The parser
 // learns a kind, not a name: nothing here knows which keys are lists.
 func (r reader) maps(m *ast.MappingNode) (map[string]string, map[string][]string, error) {
-	items, err := r.items(m)
+	items, err := r.items(m, 0)
 	if err != nil {
 		return nil, nil, err
 	}

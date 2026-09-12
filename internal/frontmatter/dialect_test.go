@@ -176,3 +176,140 @@ func TestReadMappingDoesNotApplyFrontmattersScalarOnlyKeys(t *testing.T) {
 		t.Error("frontmatter accepted a list-valued parent; scalarFields must still apply there")
 	}
 }
+
+// nestedDialect is what internal/project uses for markfluence.yaml: two levels,
+// for pages -> path -> fields.
+var nestedDialect = Dialect{Doc: "a project file", Item: "setting", MaxDepth: 2}
+
+func TestReadMappingReadsNestedMappings(t *testing.T) {
+	items, err := nestedDialect.ReadMapping(
+		"space: ENG\npages:\n  docs/a.md:\n    title: A\n    page_id: 1\n    labels: [x]\n")
+	if err != nil {
+		t.Fatalf("ReadMapping: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("items = %#v, want two", items)
+	}
+	if items[0].Key != "space" || items[0].Value != "ENG" || items[0].Map != nil {
+		t.Errorf("items[0] = %#v, want the scalar space", items[0])
+	}
+	pages := items[1]
+	if pages.Key != "pages" || pages.Map == nil {
+		t.Fatalf("items[1] = %#v, want pages as a mapping", pages)
+	}
+	if len(pages.Map) != 1 || pages.Map[0].Key != "docs/a.md" {
+		t.Fatalf("pages.Map = %#v, want one entry keyed by path", pages.Map)
+	}
+	entry := pages.Map[0]
+	if entry.Map == nil {
+		t.Fatalf("entry = %#v, want its fields as a mapping", entry)
+	}
+	got := map[string]string{}
+	lists := map[string][]string{}
+	for _, f := range entry.Map {
+		if f.List != nil {
+			lists[f.Key] = f.List
+			continue
+		}
+		got[f.Key] = f.Value
+	}
+	if got["title"] != "A" || got["page_id"] != "1" {
+		t.Errorf("entry fields = %#v, want title=A page_id=1", got)
+	}
+	if len(lists["labels"]) != 1 || lists["labels"][0] != "x" {
+		t.Errorf("entry lists = %#v, want labels=[x]", lists)
+	}
+}
+
+// goccy renders a one-key mapping as a MappingValueNode and a multi-key one as
+// a MappingNode. Treating only the plural form as nesting would read a
+// single-field entry as a broken scalar.
+func TestReadMappingReadsASingleFieldNestedMapping(t *testing.T) {
+	items, err := nestedDialect.ReadMapping("pages:\n  docs/a.md:\n    page_id: 1\n")
+	if err != nil {
+		t.Fatalf("ReadMapping: %v", err)
+	}
+	if len(items) != 1 || items[0].Map == nil || len(items[0].Map) != 1 {
+		t.Fatalf("items = %#v, want pages with one entry", items)
+	}
+	entry := items[0].Map[0]
+	if entry.Map == nil || len(entry.Map) != 1 || entry.Map[0].Key != "page_id" {
+		t.Fatalf("entry = %#v, want one page_id field", entry)
+	}
+}
+
+// An empty nested mapping is non-nil, the same way an empty list is: `pages: {}`
+// is a project that has chosen the manifest and registered nothing yet, which
+// is not the same as having no pages: key at all.
+func TestReadMappingDistinguishesEmptyMapFromAbsent(t *testing.T) {
+	items, err := nestedDialect.ReadMapping("pages: {}\n")
+	if err != nil {
+		t.Fatalf("ReadMapping: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("items = %#v, want one", items)
+	}
+	if items[0].Map == nil {
+		t.Error("pages: {} read with a nil Map; an empty mapping must stay a mapping")
+	}
+	if len(items[0].Map) != 0 {
+		t.Errorf("Map = %#v, want empty", items[0].Map)
+	}
+}
+
+// Depth is an allowance, not a requirement: a nesting-capable dialect still
+// holds plain scalars at every level.
+func TestReadMappingNestingIsOptionalAtEveryLevel(t *testing.T) {
+	items, err := nestedDialect.ReadMapping("space: ENG\npage_width: wide\n")
+	if err != nil {
+		t.Fatalf("ReadMapping: %v", err)
+	}
+	for _, it := range items {
+		if it.Map != nil {
+			t.Errorf("%s read as a mapping, want a scalar", it.Key)
+		}
+	}
+}
+
+// Past the allowance a mapping is refused by the scalar path, with the scalar
+// path's own message -- which is what keeps MaxDepth 0 behaving exactly as the
+// reader did before nesting existed.
+func TestReadMappingRefusesNestingPastMaxDepth(t *testing.T) {
+	_, err := nestedDialect.ReadMapping(
+		"pages:\n  docs/a.md:\n    title:\n      deeper: nope\n")
+	if err == nil {
+		t.Fatal("ReadMapping accepted three levels under MaxDepth 2, want an error")
+	}
+	if want := `setting "title" must be a single scalar value, found Mapping`; err.Error() != want {
+		t.Errorf("error = %q, want %q", err, want)
+	}
+}
+
+// The flat dialect is the fenced block's, and its refusal must be untouched by
+// nesting support existing at all.
+func TestReadMappingFlatDialectStillRefusesAMapping(t *testing.T) {
+	_, err := testDialect.ReadMapping("space:\n  key: ENG\n")
+	if err == nil {
+		t.Fatal("the flat dialect accepted a nested mapping, want an error")
+	}
+	if want := `setting "space" must be a single scalar value, found Mapping`; err.Error() != want {
+		t.Errorf("error = %q, want %q", err, want)
+	}
+}
+
+// A nested key's line is its own, so a caller rejecting a field inside an entry
+// can point at the field rather than at the pages: key.
+func TestReadMappingNestedLinesAreTheirOwn(t *testing.T) {
+	items, err := nestedDialect.ReadMapping(
+		"pages:\n  docs/a.md:\n    title: A\n    page_id: 1\n")
+	if err != nil {
+		t.Fatalf("ReadMapping: %v", err)
+	}
+	entry := items[0].Map[0]
+	if entry.Line != 2 {
+		t.Errorf("entry line = %d, want 2", entry.Line)
+	}
+	if got := entry.Map[1]; got.Key != "page_id" || got.Line != 4 {
+		t.Errorf("page_id at line %d, want 4", got.Line)
+	}
+}
