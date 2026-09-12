@@ -7,10 +7,17 @@ Validate markdown files against the converter and frontmatter rules, offline
 Validate one or more markdown FILEs against the converter and frontmatter
 rules, with no network access and no credentials -- fast, safe, and
 CI/agent-friendly. Reports conversion warnings and broken image/link
-references, and frontmatter sanity (parseable, page_width valid, page_id
+references, and metadata sanity (parseable, page_width valid, page_id
 numeric when present). Each file is processed independently; the command
 exits non-zero if any file is broken or failed outright. Warnings alone do
 not fail.
+
+A file's metadata is checked wherever it lives -- its own frontmatter or a
+'pages:' entry for it in markfluence.yaml -- and an entry is reported only
+when its file is one of the FILEs given, so one bad entry never blocks
+checking the rest of a repository. Two locations naming different pages is
+an error; a file keeping its own keys in a project that uses 'pages:' is a
+warning, since both work.
 
 "link not resolved: TARGET" means TARGET is a sibling .md file that exists
 under the documentation root but has no page_id yet -- the normal state of

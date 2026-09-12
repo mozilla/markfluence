@@ -18,6 +18,7 @@ import (
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/linkindex"
+	"github.com/mozilla/markfluence/internal/pagemeta"
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/project"
@@ -45,10 +46,16 @@ var Cmd = &cobra.Command{
 	Long: "Validate one or more markdown FILEs against the converter and frontmatter\n" +
 		"rules, with no network access and no credentials -- fast, safe, and\n" +
 		"CI/agent-friendly. Reports conversion warnings and broken image/link\n" +
-		"references, and frontmatter sanity (parseable, page_width valid, page_id\n" +
+		"references, and metadata sanity (parseable, page_width valid, page_id\n" +
 		"numeric when present). Each file is processed independently; the command\n" +
 		"exits non-zero if any file is broken or failed outright. Warnings alone do\n" +
 		"not fail.\n\n" +
+		"A file's metadata is checked wherever it lives -- its own frontmatter or a\n" +
+		"'pages:' entry for it in markfluence.yaml -- and an entry is reported only\n" +
+		"when its file is one of the FILEs given, so one bad entry never blocks\n" +
+		"checking the rest of a repository. Two locations naming different pages is\n" +
+		"an error; a file keeping its own keys in a project that uses 'pages:' is a\n" +
+		"warning, since both work.\n\n" +
 		"\"link not resolved: TARGET\" means TARGET is a sibling .md file that exists\n" +
 		"under the documentation root but has no page_id yet -- the normal state of\n" +
 		"a tree that hasn't been published, not a defect. \"same-page anchor not\n" +
@@ -130,23 +137,11 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 		return r.fail(err, jsonout.CodeValidation)
 	}
 
-	if _, err := pagewidth.Declared(mf.Frontmatter); err != nil {
-		return r.fail(err, jsonout.CodeValidation)
-	}
-	// An invalid label is a guaranteed publish defect that needs no network to
-	// see, the same class as an invalid page_width -- and worse in one way: a
-	// name Confluence splits on a space publishes successfully, as the wrong
-	// labels, and then cannot be removed by any spelling of the file (see
-	// docs/confluence/labels.md). Catching it offline is the cheapest place it
-	// can be caught.
-	labelSet, err := labels.Declared(mf.Lists, mf.Frontmatter)
-	if err != nil {
-		return r.fail(err, jsonout.CodeValidation)
-	}
-	if pageID := mf.PageID(); pageID != "" && !pageref.IsDigits(pageID) {
-		return r.fail(errors.New(pageref.NotNumericMessage(pageID)), jsonout.CodeValidation)
-	}
-
+	// The root first, because a file's metadata may live in the project file's
+	// pages: block rather than in the file -- and then everything below
+	// validates the *resolved* metadata, so an entry's values are checked
+	// exactly as a file's own are. That is #139's per-file scoping made real:
+	// an entry is diagnosed when its file is named, and never otherwise.
 	abs, err := filepath.Abs(filename)
 	if err != nil {
 		return r.fail(err, jsonout.CodeIO)
@@ -162,6 +157,30 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 			code = jsonout.CodeValidation
 		}
 		return r.fail(project.RootError(err), code)
+	}
+	key, _ := pagemeta.KeyFor(root, abs)
+	meta, err := pagemeta.Resolve(key, mf, root)
+	if err != nil {
+		// The two locations name different pages. Offline-visible, and exactly
+		// the kind of defect check exists to catch before a publish does.
+		return r.fail(err, jsonout.CodeValidation)
+	}
+
+	if _, err := pagewidth.Declared(meta.Fields); err != nil {
+		return r.fail(err, jsonout.CodeValidation)
+	}
+	// An invalid label is a guaranteed publish defect that needs no network to
+	// see, the same class as an invalid page_width -- and worse in one way: a
+	// name Confluence splits on a space publishes successfully, as the wrong
+	// labels, and then cannot be removed by any spelling of the file (see
+	// docs/confluence/labels.md). Catching it offline is the cheapest place it
+	// can be caught.
+	labelSet, err := labels.Declared(meta.Lists, meta.Fields)
+	if err != nil {
+		return r.fail(err, jsonout.CodeValidation)
+	}
+	if pageID := strings.TrimSpace(meta.Fields["page_id"]); pageID != "" && !pageref.IsDigits(pageID) {
+		return r.fail(errors.New(pageref.NotNumericMessage(pageID)), jsonout.CodeValidation)
 	}
 	index, err := indexes.Get(root)
 	if err != nil {
@@ -204,9 +223,21 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 			localBroken = append(localBroken, fmt.Sprintf("%s: %s", root.File, err))
 		}
 	}
-	if title, present := mf.TitleField(); present && title == "" {
+	if title, present := meta.Fields["title"]; present && strings.TrimSpace(title) == "" {
 		localBroken = append(localBroken,
-			"frontmatter has an empty 'title:'; give it a value or remove it")
+			"the title is present but empty; give it a value or remove it")
+	}
+
+	// "No half-and-half" (#139): a file carrying its own markfluence keys in a
+	// project that has chosen the manifest. A *warning*, never an error, and
+	// that is the whole point -- agreement between the two locations is legal,
+	// so this has to be sayable without becoming a wall somebody hits halfway
+	// through a migration. `fix` moving the keys is the remedy.
+	if pagemeta.HasManifest(root) && meta.InFile() {
+		r.warnings = append(r.warnings, fmt.Sprintf(
+			"this file carries markfluence frontmatter in a project that keeps page "+
+				"metadata in %s; both work, but keeping it in one place is clearer",
+			project.Filename))
 	}
 
 	page, err := convert.MdToConfluence(mf, root, index, checkBaseURL, checkSpaceKey, buildinfo.Stamp())
@@ -232,9 +263,12 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 		return r.fail(err, jsonout.CodeConvert)
 	}
 	r.broken = append(localBroken, page.Broken...)
-	// Label warnings lead: they are a property of the frontmatter, so they hold
-	// whatever the converter went on to find in the body.
-	r.warnings = append(labelSet.Warnings, page.Warnings...)
+	// Appended rather than assigned: the half-and-half lint above has already
+	// put a warning here, and assigning discarded it. Label warnings still
+	// lead the converter's -- they are a property of the declared metadata, so
+	// they hold whatever the converter went on to find in the body.
+	r.warnings = append(r.warnings, labelSet.Warnings...)
+	r.warnings = append(r.warnings, page.Warnings...)
 	if showHTML {
 		r.debugHTML = page.HTML
 		r.debugAttachments = page.Attachments
