@@ -113,40 +113,23 @@ stderr error object), because stderr in that mode is itself a JSON document.
 
 ### Scoped tokens and service accounts
 
-For a normal personal API token, you can leave `CONFLUENCE_CLOUD_ID` unset.
+For a normal personal API token, leave `CONFLUENCE_CLOUD_ID` unset.
 
-For a **scoped** API token for an Atlassian [service account][svcacct], you
-need to set `CONFLUENCE_CLOUD_ID`. You would use a scoped API token for a
-service account to publish from CI or other automated system. Scoped tokens are
-rejected with a **401** against your site domain--markfluence must use
-Atlassian's `api.atlassian.com` gateway, and the cloud ID is required there.
-`CONFLUENCE_URL` still holds the site URL: markfluence uses it to write correct
-links into the pages it publishes.
+A **scoped** API token — the kind an Atlassian [service account][svcacct] gets,
+for publishing from CI — needs it. Scoped tokens are rejected with a **401**
+against your site domain, so markfluence must use Atlassian's
+`api.atlassian.com` gateway, and the cloud ID is required there. `CONFLUENCE_URL`
+still holds the site URL: markfluence uses it to write correct links into the
+pages it publishes.
 
-To find your cloud ID, you can do this:
+To find your cloud ID (it is not a secret):
 
 ```console
 $ curl -s https://your-org.atlassian.net/_edge/tenant_info
 {"cloudId":"d8febd08-5555-5555-5555-db37c2369ce5"}
 ```
 
-The cloud ID is not a secret.
-
-The scopes markfluence needs:
-
-| Used for | Commands | Scope |
-| --- | --- | --- |
-| Reading pages, and reading/writing page width | `create`, `update`, `fix`, `info`, `read`, `export`, `find` | `read:page:confluence` |
-| Creating and updating pages, and setting page width | `create`, `update`, `fix` | `write:page:confluence` |
-| Resolving a space key to an id | `create`, `find`, `search`, `children --space` | `read:space:confluence` |
-| Looking up a folder (a folder can be a page's parent) | `create` | `read:folder:confluence` |
-| CQL queries | `find`, `search` | `search:confluence` |
-| Author names, and mention display names | `info`, `read`, `export`, `update`, `create` | `read:confluence-user` |
-| Uploading image attachments | `create`, `update`, `attachment-upload` | `write:confluence-file` |
-| Downloading attachments | `export`, `attachment-download` | `readonly:content.attachment:confluence` |
-| Listing attachments and child pages/folders | `children`, `export`, `read`, `attachment-list`, `attachment-download` | `read:confluence-content.summary` |
-
-Copy-pasteable:
+The scopes markfluence needs, copy-pasteable:
 
 ```
 read:page:confluence
@@ -166,40 +149,22 @@ read:confluence-content.summary
 
 **The mixture of naming styles is correct, not a copy-paste error.** Atlassian
 has two scope vocabularies — *classic* (`read:confluence-user`) and *granular*
-(`read:page:confluence`) — and they are granted independently: holding one does
-**not** imply the other. markfluence talks to both API versions, and each
-version accepts only one vocabulary, so the list above is genuinely mixed.
+(`read:page:confluence`) — granted independently, so holding one does **not**
+imply the other. markfluence talks to both API versions and each accepts only
+one vocabulary.
 
-A token granted the classic names alone fails with
-`401 Unauthorized; scope does not match` on almost every command, which is what
-makes this an easy list to get wrong. The measurements behind that are in
-[docs/confluence/api.md](docs/confluence/api.md#scopes).
-If you get a `401 Unauthorized; scope does not match` error, you need additional
-scopes.
+Diagnosing a failure:
 
-A **403** (rather than the 401 above) means the opposite problem: the token is
-scoped for the call, but the service account lacks Confluence permission on that
-space or page. Grant the account access; a new token will not help.
+| symptom | meaning |
+|---|---|
+| `401 Unauthorized; scope does not match` | a scope is **missing** — issue a new token |
+| **403** | the token is scoped for the call, but the account lacks Confluence permission on that space or page — grant access; a new token will not help |
 
-#### Checking which scopes a token actually has
-
-Atlassian offers no way to introspect a token, but the scope gate runs before
-routing and validation, so one request per scope tells you. Aim it at an id that
-does not exist — it reads nothing and creates nothing:
-
-```console
-$ CID=your-cloud-id
-$ curl -s -o /dev/null -w '%{http_code}\n' -u "$CONFLUENCE_USERNAME:$CONFLUENCE_TOKEN" \
-    "https://api.atlassian.com/ex/confluence/$CID/wiki/api/v2/pages/999999999999"
-401
-```
-
-- **401** — the scope is **missing**.
-- **any other 4xx** (400/403/404/415) — the request got past the scope gate, so
-  the scope is **present**; it failed later for an unrelated reason.
-
-Swap the path for the one whose scope you want to test, using the table above to
-map scope to route.
+**[docs/confluence/api.md](docs/confluence/api.md#scopes) is the reference**: which
+scope each API call needs and how that was established, why the list is mixed,
+the three calls Atlassian no longer documents, and how to probe a token for the
+scopes it actually holds (there is no introspection endpoint, but the scope gate
+runs before routing, so one request per scope answers it).
 
 [svcacct]: https://support.atlassian.com/user-management/docs/understand-service-accounts/
 
