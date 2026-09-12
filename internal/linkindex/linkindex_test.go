@@ -156,3 +156,111 @@ func TestSetPageOverridesAndInjects(t *testing.T) {
 		t.Errorf("Page(b.md) = %+v, %v; want the injected entry", got, ok)
 	}
 }
+
+// writeProjectFile puts a markfluence.yaml at dir.
+func writeProjectFile(t *testing.T, dir, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, project.Filename), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The regression #139 names: a file whose coordinates live only in
+// markfluence.yaml must be in the index, or every link to it degrades to the
+// "exists on disk, not published yet" warning and republishes as plain text.
+func TestBuildFindsAManifestOnlyPage(t *testing.T) {
+	dir := t.TempDir()
+	writeProjectFile(t, dir, "pages:\n  target.md:\n    title: Target\n    page_id: 4242\n")
+	// Pristine: no frontmatter at all.
+	if err := os.WriteFile(filepath.Join(dir, "target.md"), []byte("# Target\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root, err := project.Discover(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.FS.Close() }()
+
+	idx, err := Build(root)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	e, ok := idx.Page("target.md")
+	if !ok {
+		t.Fatal("target.md is not in the index; a manifest-only page must be")
+	}
+	if e.PageID != "4242" || e.Title != "Target" {
+		t.Errorf("entry = %#v, want 4242/Target", e)
+	}
+}
+
+// A half-migrated tree resolves correctly per file: one page declaring its own
+// coordinates, one leaving them to the manifest.
+func TestBuildHandlesAMixedTree(t *testing.T) {
+	dir := t.TempDir()
+	writeProjectFile(t, dir, "pages:\n  manifest.md:\n    title: M\n    page_id: 2\n")
+	if err := os.WriteFile(filepath.Join(dir, "inline.md"),
+		[]byte("---\ntitle: I\npage_id: 1\n---\n# I\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "manifest.md"), []byte("# M\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root, err := project.Discover(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.FS.Close() }()
+
+	idx, err := Build(root)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	for path, wantID := range map[string]string{"inline.md": "1", "manifest.md": "2"} {
+		e, ok := idx.Page(path)
+		if !ok {
+			t.Errorf("%s missing from the index", path)
+			continue
+		}
+		if e.PageID != wantID {
+			t.Errorf("%s page_id = %q, want %q", path, e.PageID, wantID)
+		}
+	}
+}
+
+// A disagreement is the processing command's business, per file. One bad entry
+// elsewhere in the tree must not stop an unrelated file from converting, so
+// Build skips it exactly as it skips a malformed sibling.
+func TestBuildSkipsAFileWhoseMetadataDisagrees(t *testing.T) {
+	dir := t.TempDir()
+	writeProjectFile(t, dir, "pages:\n  bad.md:\n    page_id: 2\n")
+	if err := os.WriteFile(filepath.Join(dir, "bad.md"),
+		[]byte("---\npage_id: 999\n---\n# Bad\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "good.md"),
+		[]byte("---\npage_id: 1\n---\n# Good\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root, err := project.Discover(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.FS.Close() }()
+
+	idx, err := Build(root)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if _, ok := idx.Page("bad.md"); ok {
+		t.Error("bad.md is in the index; a file whose two locations disagree has no resolved id")
+	}
+	if _, ok := idx.Page("good.md"); !ok {
+		t.Error("good.md is missing; one bad entry must not affect an unrelated file")
+	}
+	// Its anchors are still walked -- a link *to* it resolves as an
+	// unpublished file rather than as a missing one.
+	if !idx.FileExists("bad.md") {
+		t.Error("bad.md is not even known to exist; the walk must still record it")
+	}
+}

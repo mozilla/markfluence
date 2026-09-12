@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/mozilla/markfluence/internal/frontmatter"
+	"github.com/mozilla/markfluence/internal/pagemeta"
 	"github.com/mozilla/markfluence/internal/project"
 )
 
@@ -43,7 +44,8 @@ type Index struct {
 }
 
 // Build walks root's tree once, via root.FS, collecting every *.md file's
-// page_id/title (when it has one) and heading anchors. Walking through
+// page_id/title (from either location it may live in -- see pagemeta) and
+// heading anchors. Walking through
 // root.FS is what keeps the walk from ever descending a symlinked directory:
 // a symlink's directory entry reports its own type (a link, not a
 // directory), so fs.WalkDir calls the visit function for it once and does
@@ -72,8 +74,28 @@ func Build(root *project.Root) (*Index, error) {
 			// converting an unrelated one.
 			return nil
 		}
-		if id := mf.PageID(); id != "" {
-			idx.pages[path] = PageEntry{PageID: id, Title: mf.Title()}
+		// Through pagemeta, not from mf alone: a file whose coordinates live in
+		// markfluence.yaml's pages: block (#139) has no page_id in its own
+		// frontmatter, and reading only the file would leave it out of this
+		// index -- so every link to it would degrade to the "exists on disk,
+		// not published yet" warning and republish as plain text. Resolving per
+		// path is also what makes a half-migrated tree correct throughout, with
+		// some files declaring their own coordinates and some not.
+		//
+		// A disagreement is not this walk's business: it is reported, per file,
+		// by the command processing that file. Here it costs the file its
+		// *page entry* and nothing else -- one broken entry elsewhere in the
+		// tree must not block converting an unrelated file.
+		//
+		// Deliberately not a skip of the whole file, which is what an
+		// unreadable or malformed one gets. The anchors below must still be
+		// recorded, or FileExists goes false for it and every link *to* it
+		// becomes LINK BROKEN across the whole tree, where the right answer is
+		// the ordinary "exists on disk, not published yet" warning.
+		if meta, err := pagemeta.Resolve(path, mf, root); err == nil {
+			if id := strings.TrimSpace(meta.Fields["page_id"]); id != "" {
+				idx.pages[path] = PageEntry{PageID: id, Title: meta.Fields["title"]}
+			}
 		}
 		anchors := map[string]string{}
 		for _, h := range extractHeadings(mf.Body) {
