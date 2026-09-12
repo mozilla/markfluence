@@ -197,8 +197,13 @@ func TestUserCacheDoesNotRetryAMiss(t *testing.T) {
 
 	for i := range 4 {
 		page := mentionPage(fmt.Sprint(i), mentionA)
-		if names := Options(c, page, Placement{}, users).UserNames; len(names) != 0 {
-			t.Fatalf("page %d: names = %v, want none resolved", i, names)
+		names := Options(c, page, Placement{}, users).UserNames
+		// Present with an empty value: a *confirmed* absence, which is a
+		// settled answer and renders a placeholder. Distinct from absent,
+		// which means the lookup could not be made.
+		name, settled := names[mentionA]
+		if !settled || name != "" {
+			t.Fatalf("page %d: names = %v, want a confirmed absence", i, names)
 		}
 	}
 	if asked[mentionA] != 1 {

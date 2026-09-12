@@ -52,11 +52,19 @@ type StorageOptions struct {
 	// into a page. Empty passes space links through.
 	SiteURL string
 
-	// UserNames maps a mentioned account id to that person's display name, as
-	// gathered by MentionTargets and resolved by the caller. An id missing from
-	// it passes the mention through as raw storage: there is no name to render,
-	// and a link whose text is a bare account id shows a reader nothing the
-	// storage did not.
+	// UserNames carries what the caller learned about each mentioned account
+	// id, in three states:
+	//
+	//   - id -> a name: render the mention as a link to that person
+	//   - id -> "": the account genuinely does not resolve, so render a
+	//     placeholder (see unknownUserName) -- still a link, because the id is
+	//     the useful part and a reader should not have to read XML to find it
+	//   - id absent: nothing is known, because the lookup could not be made, so
+	//     pass the storage through untouched
+	//
+	// The last two have to stay distinct. Rendering a placeholder for a lookup
+	// that merely failed would write a fabricated name over a real one across
+	// every page of an export, in a file that then looks authoritative.
 	//
 	// Note what is *not* here: a site. The profile URL a mention renders to
 	// lives on Atlassian Home rather than on the Confluence site, so it needs
@@ -282,6 +290,34 @@ func MentionURL(accountID string) string {
 	return mentionHost + "/people/" + accountID
 }
 
+// unknownUserName is the display name rendered for a mention whose account
+// genuinely does not resolve.
+//
+// Rendered as a link rather than passed through as storage, because the
+// alternative is worse for a reader: passthrough puts a wall of XML in one
+// table cell and a name in every other, and the unresolvable id -- the one
+// useful thing left -- becomes the hardest part to find.
+//
+// It mirrors what Confluence itself renders, and the reason is a measurement
+// that overturned the first choice here. A *deactivated* account resolves
+// perfectly well: surveying every mention on a real page (18 of them, six
+// departed) the user lookup answered 200 for all 18, returning names like
+// "Mark Reid (Deactivated)" -- Confluence appends the suffix itself. So a
+// departed colleague keeps their name and this branch is never reached for
+// them.
+//
+// What does reach it is an id that genuinely does not exist: a typo, a
+// hand-edited URL. That is exactly the case Confluence renders as
+// "@Unlicensed user", verified via ADF. Since the only ids that land here are
+// the ones the page will label that way, matching the wording means the
+// markdown and the rendered page agree instead of offering a reader two
+// different words for one thing.
+//
+// The earlier value was "Unknown user", argued on the premise that a
+// deactivated account would take this path and "unlicensed" would assert a
+// reason nobody checked. The premise was false.
+const unknownUserName = "Unlicensed user"
+
 // renderUserMention renders a mention as a link to the person's profile, with
 // their display name as the text and an "@" marking it as a mention.
 //
@@ -290,15 +326,20 @@ func MentionURL(accountID string) string {
 // spellings point at the same place. So it is load-bearing rather than
 // decoration, even though recognition is by URL.
 //
-// An id the caller could not resolve passes through as storage. That is not a
-// degraded rendering to apologise for -- the account id is the only thing the
-// storage holds, and "[@712020:0e5f…](…)" tells a reader strictly less than the
-// raw element does while looking like it tells them more.
+// The three UserNames states map to three outcomes -- a name, the placeholder,
+// or untouched storage. See StorageOptions.UserNames for why the last two are
+// not the same thing.
 func (r *mdRenderer) renderUserMention(n, target *snode) string {
 	id := target.attrs["ri:account-id"]
-	name := r.userNames[id]
-	if id == "" || name == "" {
+	if id == "" {
 		return serialize(n)
+	}
+	name, known := r.userNames[id]
+	if !known {
+		return serialize(n)
+	}
+	if name == "" {
+		name = unknownUserName
 	}
 	return mdLink("@"+escapeLinkText(name), MentionURL(id))
 }

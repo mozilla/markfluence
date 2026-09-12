@@ -13,6 +13,7 @@
 package pagedoc
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"strings"
@@ -105,11 +106,15 @@ func Render(c *client.ConfluenceClient, page *client.Page, pl Placement, users *
 // id never changes, which is why it is the identity here, but the id-to-name
 // mapping does, with no invalidation signal to hang anything on.
 type UserCache struct {
-	// names holds every id already asked about. A present key means "asked",
-	// and an empty value means "asked and could not resolve" -- that
-	// distinction is the whole point, or a page mentioning three deactivated
-	// people would cost three requests per page, forever, to learn the same
-	// three failures.
+	// names holds every id whose answer is settled. A non-empty value is the
+	// display name; an empty value means the account genuinely does not resolve
+	// (a 404). An id whose lookup *failed for another reason* is deliberately
+	// absent, so it is asked again rather than remembered as an answer.
+	//
+	// Caching the 404 is what stops a page mentioning three departed people
+	// from costing three requests per page, forever, to learn the same three
+	// facts. Not caching a transport failure is the other half: it is not an
+	// answer, and remembering it would turn one bad moment into a whole export.
 	names map[string]string
 }
 
@@ -146,7 +151,11 @@ func MentionWarnings(c *client.ConfluenceClient, users *UserCache, ids []string)
 	var out []string
 	seen := map[string]bool{}
 	for _, id := range ids {
-		if names[id] != "" || seen[id] {
+		name, settled := names[id]
+		// Only a *confirmed* absence is worth a warning. An id the lookup could
+		// not reach is absent from the map, and claiming it names nobody would
+		// be asserting something nobody checked.
+		if !settled || name != "" || seen[id] {
 			continue
 		}
 		seen[id] = true
@@ -157,8 +166,23 @@ func MentionWarnings(c *client.ConfluenceClient, users *UserCache, ids []string)
 	return out
 }
 
-// resolve returns display names for ids, asking the server only about ids it
-// has not seen. A nil cache resolves nothing, which renders every mention as
+// resolve answers what is known about ids, asking the server only about those
+// whose answer is not settled.
+//
+// The returned map carries three states, which is the contract
+// convert.StorageOptions.UserNames reads:
+//
+//   - id -> a name: resolved
+//   - id -> "": the account genuinely does not resolve, so a placeholder is
+//     honest
+//   - id absent: nothing is known, because the lookup could not be made
+//
+// The third case has to stay distinguishable from the second. Flattening them
+// would put a fabricated name over a real one in somebody's markdown the moment
+// a VPN dropped mid-export -- across every page, in a file that then looks
+// authoritative.
+//
+// A nil cache knows nothing about anything, which renders every mention as
 // passthrough rather than failing.
 func (u *UserCache) resolve(c *client.ConfluenceClient, ids []string) map[string]string {
 	if u == nil || len(ids) == 0 {
@@ -166,16 +190,20 @@ func (u *UserCache) resolve(c *client.ConfluenceClient, ids []string) map[string
 	}
 	out := make(map[string]string, len(ids))
 	for _, id := range ids {
-		name, asked := u.names[id]
-		if !asked {
-			// GetUser is best-effort and answers "" for an id that does not
-			// resolve, which is cached as the miss it is.
-			name = c.GetUser(id)
-			u.names[id] = name
+		name, settled := u.names[id]
+		if !settled {
+			var err error
+			name, err = c.LookupUser(id)
+			switch {
+			case err == nil, errors.Is(err, client.ErrNoSuchUser):
+				u.names[id] = name // a name, or a confirmed absence
+			default:
+				// Unaskable rather than unanswered: leave it out of both the
+				// cache and the result, so a later page tries again.
+				continue
+			}
 		}
-		if name != "" {
-			out[id] = name
-		}
+		out[id] = name
 	}
 	return out
 }
