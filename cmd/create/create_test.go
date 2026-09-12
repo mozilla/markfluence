@@ -94,22 +94,20 @@ func TestCheckPageIDLocalCases(t *testing.T) {
 }
 
 func TestResolveTitle(t *testing.T) {
-	mf, err := frontmatter.Parse("f.md", "---\ntitle: FM Title\n---\nb\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := resolveTitle("CLI Title", mf); got != "CLI Title" {
+	// Reads resolved metadata now, which may have come from the file's
+	// frontmatter or from its pages: entry -- create cannot tell, by design.
+	declared := map[string]string{"title": "FM Title"}
+	if got := resolveTitle("CLI Title", declared); got != "CLI Title" {
 		t.Errorf("flag override = %q, want CLI Title", got)
 	}
-	if got := resolveTitle("", mf); got != "FM Title" {
-		t.Errorf("frontmatter = %q, want FM Title", got)
+	if got := resolveTitle("", declared); got != "FM Title" {
+		t.Errorf("declared = %q, want FM Title", got)
 	}
-	empty, err := frontmatter.Parse("f.md", "body, no frontmatter\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := resolveTitle("", empty); got != "" {
+	if got := resolveTitle("", map[string]string{}); got != "" {
 		t.Errorf("absent = %q, want empty", got)
+	}
+	if got := resolveTitle("", map[string]string{"title": "  "}); got != "" {
+		t.Errorf("whitespace = %q, want empty", got)
 	}
 }
 

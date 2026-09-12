@@ -43,6 +43,11 @@ type createResult struct {
 	warnings    []string
 	errMsg      string
 	code        jsonout.Code
+	// metadataSource is which location supplied this file's page metadata
+	// ("frontmatter", "manifest", or empty when nothing claimed it, which for
+	// create is the ordinary case -- a new page's metadata often comes from
+	// flags alone).
+	metadataSource string
 }
 
 // newResult seeds a result with the fields known before creation is attempted.
@@ -50,6 +55,7 @@ func newResult(r record) *createResult {
 	return &createResult{
 		file: r.filename, title: r.title, space: r.spaceKey,
 		dryRun: dryRunOpt, parentFile: nullableStr(r.parent.display),
+		metadataSource: r.metadataSource,
 	}
 }
 
@@ -128,8 +134,12 @@ type jsonCreateResult struct {
 	Attachments []jsonout.Attachment `json:"attachments"`
 	Warnings    []string             `json:"warnings"`
 	Broken      []string             `json:"broken"`
-	Error       *string              `json:"error"`
-	Code        *jsonout.Code        `json:"code"`
+	// MetadataSource is null when nothing in the file or the manifest claimed
+	// this page -- a pointer rather than "" so null and a source named "" are
+	// not the same value.
+	MetadataSource *string       `json:"metadata_source"`
+	Error          *string       `json:"error"`
+	Code           *jsonout.Code `json:"code"`
 }
 
 func (r *createResult) jsonResult() jsonCreateResult {
@@ -151,6 +161,8 @@ func (r *createResult) jsonResult() jsonCreateResult {
 		Attachments: nonNilAttachments(r.attachments),
 		Warnings:    nonNilStrings(r.warnings),
 		Broken:      nonNilStrings(r.broken),
+
+		MetadataSource: nullableStr(r.metadataSource),
 	}
 	if !r.ok {
 		res.Error = &r.errMsg
@@ -252,6 +264,9 @@ func abortedResult(file, status string, f failure) jsonCreateResult {
 		Attachments: []jsonout.Attachment{},
 		Warnings:    []string{},
 		Broken:      []string{},
+		// A file rejected in preflight may not have reached metadata
+		// resolution at all, so this is null rather than guessed at.
+		MetadataSource: nullableStr(f.metadataSource),
 	}
 	if f.message != "" {
 		msg := f.message

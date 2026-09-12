@@ -43,8 +43,9 @@ func TestJSONResultPublished(t *testing.T) {
 		pageID: "123", title: "Foo", space: "ENG",
 		url:         "https://wiki.example.net/wiki/spaces/ENG/pages/123/Foo",
 		versionPrev: 3, versionNew: 4,
-		width:       &jsonout.PageWidth{Value: "max", Default: false},
-		attachments: []jsonout.Attachment{{Action: "updated", Filename: "d.png"}},
+		width:          &jsonout.PageWidth{Value: "max", Default: false},
+		attachments:    []jsonout.Attachment{{Action: "updated", Filename: "d.png"}},
+		metadataSource: "frontmatter",
 	}
 	got, err := json.MarshalIndent(r.jsonResult(), "", "  ")
 	if err != nil {
@@ -76,6 +77,7 @@ func TestJSONResultPublished(t *testing.T) {
   ],
   "warnings": [],
   "broken": [],
+  "metadata_source": "frontmatter",
   "error": null,
   "code": null
 }`

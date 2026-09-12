@@ -5,359 +5,896 @@
   "description": "The single JSON document markfluence writes to stdout under --json. results holds one object per target (a single element for info/read; one per attachment for attachment-list); its item shape and the summary shape depend on command. The typed error object written to stderr on a fatal/pre-flight failure conforms to #/$defs/errorObject.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "markfluence_version", "command", "roots", "warnings", "results", "summary"],
+  "required": [
+    "schema_version",
+    "markfluence_version",
+    "command",
+    "roots",
+    "warnings",
+    "results",
+    "summary"
+  ],
   "properties": {
-    "schema_version": { "const": 1 },
-    "markfluence_version": { "type": "string" },
-    "command": { "enum": ["info", "read", "update", "create", "fix", "check", "children", "find", "search", "attachment-list", "attachment-upload", "attachment-download", "export"] },
-    "roots": { "type": "array", "items": { "type": "string" }, "description": "Every distinct documentation root the command resolved, sorted. Empty for a command with no per-file root concept, and for a pre-flight failure that never reached root resolution." },
-    "warnings": { "type": "array", "items": { "type": "string" }, "description": "Warnings about the invocation itself rather than about any page or file -- currently only the .env permission warning, raised when the .env that supplied the API token is reachable by anyone but its owner. Always present, [] when there is nothing to report, the same convention roots and results follow. Not per-result warnings: those live on the result." },
-    "results": { "type": "array" },
-    "summary": { "type": "object" }
+    "schema_version": {
+      "const": 1
+    },
+    "markfluence_version": {
+      "type": "string"
+    },
+    "command": {
+      "enum": [
+        "info",
+        "read",
+        "update",
+        "create",
+        "fix",
+        "check",
+        "children",
+        "find",
+        "search",
+        "attachment-list",
+        "attachment-upload",
+        "attachment-download",
+        "export"
+      ]
+    },
+    "roots": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Every distinct documentation root the command resolved, sorted. Empty for a command with no per-file root concept, and for a pre-flight failure that never reached root resolution."
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Warnings about the invocation itself rather than about any page or file -- currently only the .env permission warning, raised when the .env that supplied the API token is reachable by anyone but its owner. Always present, [] when there is nothing to report, the same convention roots and results follow. Not per-result warnings: those live on the result."
+    },
+    "results": {
+      "type": "array"
+    },
+    "summary": {
+      "type": "object"
+    }
   },
   "allOf": [
     {
-      "if": { "properties": { "command": { "const": "info" } }, "required": ["command"] },
-      "then": {
+      "if": {
         "properties": {
-          "results": { "items": { "oneOf": [{ "$ref": "#/$defs/infoResult" }, { "$ref": "#/$defs/singleOpFailure" }] } },
-          "summary": { "$ref": "#/$defs/basicSummary" }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "command": { "const": "read" } }, "required": ["command"] },
-      "then": {
-        "properties": {
-          "results": { "items": { "oneOf": [{ "$ref": "#/$defs/readResult" }, { "$ref": "#/$defs/singleOpFailure" }] } },
-          "summary": { "$ref": "#/$defs/basicSummary" }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "command": { "const": "update" } }, "required": ["command"] },
-      "then": {
-        "properties": {
-          "results": { "items": { "$ref": "#/$defs/updateResult" } },
-          "summary": { "$ref": "#/$defs/updateSummary" }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "command": { "const": "create" } }, "required": ["command"] },
-      "then": {
-        "properties": {
-          "results": { "items": { "$ref": "#/$defs/createResult" } },
-          "summary": { "$ref": "#/$defs/createSummary" }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "command": { "const": "fix" } }, "required": ["command"] },
-      "then": {
-        "properties": {
-          "results": { "items": { "$ref": "#/$defs/fixResult" } },
-          "summary": { "$ref": "#/$defs/fixSummary" }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "command": { "const": "check" } }, "required": ["command"] },
-      "then": {
-        "properties": {
-          "results": { "items": { "$ref": "#/$defs/checkResult" } },
-          "summary": { "$ref": "#/$defs/checkSummary" }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "command": { "const": "attachment-upload" } }, "required": ["command"] },
-      "then": {
-        "properties": {
-          "results": {
-            "items": {
-              "oneOf": [{ "$ref": "#/$defs/attachmentUploadResult" }, { "$ref": "#/$defs/singleOpFailure" }]
-            }
-          },
-          "summary": { "$ref": "#/$defs/attachmentSummary" }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "command": { "const": "export" } }, "required": ["command"] },
-      "then": {
-        "properties": {
-          "results": {
-            "items": { "oneOf": [{ "$ref": "#/$defs/exportResult" }, { "$ref": "#/$defs/singleOpFailure" }] }
-          },
-          "summary": { "$ref": "#/$defs/exportSummary" }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "command": { "const": "attachment-download" } }, "required": ["command"] },
-      "then": {
-        "properties": {
-          "results": {
-            "items": {
-              "oneOf": [{ "$ref": "#/$defs/attachmentDownloadResult" }, { "$ref": "#/$defs/singleOpFailure" }]
-            }
-          },
-          "summary": { "$ref": "#/$defs/attachmentSummary" }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "command": { "const": "children" } }, "required": ["command"] },
+          "command": {
+            "const": "info"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
       "then": {
         "properties": {
           "results": {
             "items": {
               "oneOf": [
-                { "$ref": "#/$defs/childrenResult" },
-                { "$ref": "#/$defs/singleOpFailure" }
+                {
+                  "$ref": "#/$defs/infoResult"
+                },
+                {
+                  "$ref": "#/$defs/singleOpFailure"
+                }
               ]
             }
           },
-          "summary": { "$ref": "#/$defs/basicSummary" }
+          "summary": {
+            "$ref": "#/$defs/basicSummary"
+          }
         }
       }
     },
     {
-      "if": { "properties": { "command": { "const": "find" } }, "required": ["command"] },
-      "then": {
+      "if": {
         "properties": {
-          "results": { "items": { "$ref": "#/$defs/findResult" } },
-          "summary": { "$ref": "#/$defs/basicSummary" }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "command": { "const": "search" } }, "required": ["command"] },
-      "then": {
-        "properties": {
-          "results": { "items": { "$ref": "#/$defs/searchResult" } },
-          "summary": { "$ref": "#/$defs/searchSummary" }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "command": { "const": "attachment-list" } }, "required": ["command"] },
+          "command": {
+            "const": "read"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
       "then": {
         "properties": {
           "results": {
             "items": {
-              "oneOf": [{ "$ref": "#/$defs/attachmentListResult" }, { "$ref": "#/$defs/singleOpFailure" }]
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/readResult"
+                },
+                {
+                  "$ref": "#/$defs/singleOpFailure"
+                }
+              ]
             }
           },
-          "summary": { "$ref": "#/$defs/basicSummary" }
+          "summary": {
+            "$ref": "#/$defs/basicSummary"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "update"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/$defs/updateResult"
+            }
+          },
+          "summary": {
+            "$ref": "#/$defs/updateSummary"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "create"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/$defs/createResult"
+            }
+          },
+          "summary": {
+            "$ref": "#/$defs/createSummary"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "fix"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/$defs/fixResult"
+            }
+          },
+          "summary": {
+            "$ref": "#/$defs/fixSummary"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "check"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/$defs/checkResult"
+            }
+          },
+          "summary": {
+            "$ref": "#/$defs/checkSummary"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "attachment-upload"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "results": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/attachmentUploadResult"
+                },
+                {
+                  "$ref": "#/$defs/singleOpFailure"
+                }
+              ]
+            }
+          },
+          "summary": {
+            "$ref": "#/$defs/attachmentSummary"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "export"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "results": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/exportResult"
+                },
+                {
+                  "$ref": "#/$defs/singleOpFailure"
+                }
+              ]
+            }
+          },
+          "summary": {
+            "$ref": "#/$defs/exportSummary"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "attachment-download"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "results": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/attachmentDownloadResult"
+                },
+                {
+                  "$ref": "#/$defs/singleOpFailure"
+                }
+              ]
+            }
+          },
+          "summary": {
+            "$ref": "#/$defs/attachmentSummary"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "children"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "results": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/childrenResult"
+                },
+                {
+                  "$ref": "#/$defs/singleOpFailure"
+                }
+              ]
+            }
+          },
+          "summary": {
+            "$ref": "#/$defs/basicSummary"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "find"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/$defs/findResult"
+            }
+          },
+          "summary": {
+            "$ref": "#/$defs/basicSummary"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "search"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/$defs/searchResult"
+            }
+          },
+          "summary": {
+            "$ref": "#/$defs/searchSummary"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "attachment-list"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "then": {
+        "properties": {
+          "results": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/attachmentListResult"
+                },
+                {
+                  "$ref": "#/$defs/singleOpFailure"
+                }
+              ]
+            }
+          },
+          "summary": {
+            "$ref": "#/$defs/basicSummary"
+          }
         }
       }
     }
   ],
   "$defs": {
     "code": {
-      "enum": ["CONFIG", "AUTH", "NOT_FOUND", "VALIDATION", "CONVERT", "IO", "NETWORK", "API"]
+      "enum": [
+        "CONFIG",
+        "AUTH",
+        "NOT_FOUND",
+        "VALIDATION",
+        "CONVERT",
+        "IO",
+        "NETWORK",
+        "API"
+      ]
     },
     "codeOrNull": {
-      "oneOf": [{ "$ref": "#/$defs/code" }, { "type": "null" }]
+      "oneOf": [
+        {
+          "$ref": "#/$defs/code"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "childrenResult": {
       "description": "One page or folder under the requested node, or under the requested space's root. The results array is flat and in walk order (depth-first, siblings in the order Confluence displays them); parent_id and depth carry the hierarchy. parent_id is null for a page at the root of a space, which hangs off no node -- under --space, that is every depth-1 row. space and url are both derived from the row's webui link, so a row missing one is missing both.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["ok", "id", "type", "title", "status", "parent_id", "depth", "space", "url"],
+      "required": [
+        "ok",
+        "id",
+        "type",
+        "title",
+        "status",
+        "parent_id",
+        "depth",
+        "space",
+        "url"
+      ],
       "properties": {
-        "ok": { "const": true },
-        "id": { "type": "string" },
-        "type": { "enum": ["page", "folder"] },
-        "title": { "type": "string" },
-        "status": { "type": "string" },
-        "parent_id": { "$ref": "#/$defs/stringOrNull" },
-        "depth": { "type": "integer", "minimum": 1 },
-        "space": { "$ref": "#/$defs/stringOrNull" },
-        "url": { "$ref": "#/$defs/stringOrNull" }
+        "ok": {
+          "const": true
+        },
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "page",
+            "folder"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "parent_id": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "space": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "url": {
+          "$ref": "#/$defs/stringOrNull"
+        }
       }
     },
     "findResult": {
       "description": "One page or folder whose title matches exactly. There is no failure variant: find names no page to fail about, so a failed search is an error object on stderr with no envelope. status may be \"archived\" -- such a page is absent from the page tree but still reserves its title, so it blocks creating a page with that title in the same space. A folder reserves nothing, so a folder match is discovery only and never explains a creation conflict. space and url are both derived from the match's link, so a row missing one is missing both.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["ok", "id", "type", "title", "space", "status", "url"],
+      "required": [
+        "ok",
+        "id",
+        "type",
+        "title",
+        "space",
+        "status",
+        "url"
+      ],
       "properties": {
-        "ok": { "const": true },
-        "id": { "type": "string" },
-        "type": { "enum": ["page", "folder"] },
-        "title": { "type": "string" },
-        "space": { "$ref": "#/$defs/stringOrNull" },
-        "status": { "type": "string" },
-        "url": { "$ref": "#/$defs/stringOrNull" }
+        "ok": {
+          "const": true
+        },
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "page",
+            "folder"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "space": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "status": {
+          "type": "string"
+        },
+        "url": {
+          "$ref": "#/$defs/stringOrNull"
+        }
       }
     },
     "searchResult": {
       "description": "One full-text match. The array is in Confluence's relevance order, best first; that order is the only ranking available (the API reports score as 0.0 on every row), so re-sorting results discards it. The ordering is stable in membership but not in position: two identical searches return the same set of hits, but equally-ranked neighbours can trade places, so do not diff two runs expecting the same sequence or treat a position as an identifier. There is no failure variant and no status field: search names no page to fail about, so a failed search is an error object on stderr with no envelope, and the search index cannot see archived content, so every hit is current -- use find to discover an archived page. type is an open string rather than an enum because --type all and --cql can return whiteboard, database, or any content type Atlassian adds. space and url are both derived from the hit's link, so a result missing one is missing both; excerpt is null when the match was in the title alone, and is always a single line with Confluence's highlight markers removed and entities unescaped.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["ok", "id", "type", "title", "space", "url", "excerpt"],
+      "required": [
+        "ok",
+        "id",
+        "type",
+        "title",
+        "space",
+        "url",
+        "excerpt"
+      ],
       "properties": {
-        "ok": { "const": true },
-        "id": { "type": "string" },
-        "type": { "type": "string" },
-        "title": { "type": "string" },
-        "space": { "$ref": "#/$defs/stringOrNull" },
-        "url": { "$ref": "#/$defs/stringOrNull" },
-        "excerpt": { "$ref": "#/$defs/stringOrNull" }
+        "ok": {
+          "const": true
+        },
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "space": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "url": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "excerpt": {
+          "$ref": "#/$defs/stringOrNull"
+        }
       }
     },
     "searchSummary": {
       "description": "search's summary. failed is always 0, since a failed search is an error object with no envelope rather than a failed result. truncated says --limit was reached with matches left over; it is a flag and not a count because the API's totalSize is an estimate that has been observed both to drift between pages and to be nonzero against an empty results array. skipped counts index rows that carried no addressable content object -- a `type = space` hit, for example -- which is reachable only via --cql or --type all; it is reported rather than dropped quietly, because otherwise such a query yields total 0 and reads as a genuine miss.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["total", "succeeded", "failed", "truncated", "skipped"],
+      "required": [
+        "total",
+        "succeeded",
+        "failed",
+        "truncated",
+        "skipped"
+      ],
       "properties": {
-        "total": { "type": "integer" },
-        "succeeded": { "type": "integer" },
-        "failed": { "type": "integer" },
-        "truncated": { "type": "boolean" },
-        "skipped": { "type": "integer", "minimum": 0 }
+        "total": {
+          "type": "integer"
+        },
+        "succeeded": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "skipped": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "stringOrNull": {
-      "type": ["string", "null"]
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "parentTypeOrNull": {
       "description": "What kind of object the parent id names. A folder is a Cloud-only content type that can parent a page; null when the page is top-level.",
-      "enum": ["page", "folder", null]
+      "enum": [
+        "page",
+        "folder",
+        null
+      ]
     },
     "pageWidth": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["value", "default"],
+      "required": [
+        "value",
+        "default"
+      ],
       "properties": {
-        "value": { "type": "string" },
-        "default": { "type": "boolean" }
+        "value": {
+          "type": "string"
+        },
+        "default": {
+          "type": "boolean"
+        }
       }
     },
     "pageWidthOrNull": {
-      "oneOf": [{ "$ref": "#/$defs/pageWidth" }, { "type": "null" }]
+      "oneOf": [
+        {
+          "$ref": "#/$defs/pageWidth"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "author": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["account_id", "name"],
+      "required": [
+        "account_id",
+        "name"
+      ],
       "properties": {
-        "account_id": { "type": "string" },
-        "name": { "type": "string" }
+        "account_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
       }
     },
     "stamp": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["at", "by"],
+      "required": [
+        "at",
+        "by"
+      ],
       "properties": {
-        "at": { "type": "string" },
-        "by": { "oneOf": [{ "$ref": "#/$defs/author" }, { "type": "null" }] }
+        "at": {
+          "type": "string"
+        },
+        "by": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/author"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
       }
     },
     "stampOrNull": {
-      "oneOf": [{ "$ref": "#/$defs/stamp" }, { "type": "null" }]
+      "oneOf": [
+        {
+          "$ref": "#/$defs/stamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "attachment": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["action", "filename"],
+      "required": [
+        "action",
+        "filename"
+      ],
       "properties": {
-        "action": { "type": "string" },
-        "filename": { "type": "string" }
+        "action": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        }
       }
     },
     "labelAction": {
       "description": "What happened to one label in an asserted set.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["action", "name"],
+      "required": [
+        "action",
+        "name"
+      ],
       "properties": {
         "action": {
           "description": "kept means a surplus label was left on the page because an unmanaged label shares its name: Confluence's removal takes a name with no prefix and deletes the personal label first, so there is no request that removes the intended one.",
-          "enum": ["added", "removed", "unchanged", "kept"]
+          "enum": [
+            "added",
+            "removed",
+            "unchanged",
+            "kept"
+          ]
         },
-        "name": { "type": "string" }
+        "name": {
+          "type": "string"
+        }
       }
     },
     "labelActionsOrNull": {
       "description": "The full label set asserted this run, or null when the file declares no labels key and the page's labels were left alone.",
       "oneOf": [
-        { "type": "array", "items": { "$ref": "#/$defs/labelAction" } },
-        { "type": "null" }
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/labelAction"
+          }
+        },
+        {
+          "type": "null"
+        }
       ]
     },
     "labelInfo": {
       "description": "One label a page carries. managed is true for the global prefix, the only one markfluence writes or removes.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "prefix", "managed"],
+      "required": [
+        "name",
+        "prefix",
+        "managed"
+      ],
       "properties": {
-        "name": { "type": "string" },
-        "prefix": { "type": "string" },
-        "managed": { "type": "boolean" }
+        "name": {
+          "type": "string"
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "managed": {
+          "type": "boolean"
+        }
       }
     },
     "labelInfoListOrNull": {
       "description": "Every label on a page, or null when the fetch failed. An empty array means the page genuinely has none.",
       "oneOf": [
-        { "type": "array", "items": { "$ref": "#/$defs/labelInfo" } },
-        { "type": "null" }
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/labelInfo"
+          }
+        },
+        {
+          "type": "null"
+        }
       ]
     },
     "singleOpFailure": {
       "description": "An operational failure for a single-target command (info/read): page not found, fetch error, etc.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["ok", "page_id", "error", "code"],
+      "required": [
+        "ok",
+        "page_id",
+        "error",
+        "code"
+      ],
       "properties": {
-        "ok": { "const": false },
-        "page_id": { "type": "string" },
-        "error": { "type": "string" },
-        "code": { "$ref": "#/$defs/code" }
+        "ok": {
+          "const": false
+        },
+        "page_id": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "code": {
+          "$ref": "#/$defs/code"
+        }
       }
     },
     "infoResult": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "ok", "page_id", "title", "page_status", "space", "parent", "parent_type",
-        "version", "page_width", "labels", "created", "updated", "message", "url", "properties"
+        "ok",
+        "page_id",
+        "title",
+        "page_status",
+        "space",
+        "parent",
+        "parent_type",
+        "version",
+        "page_width",
+        "labels",
+        "created",
+        "updated",
+        "message",
+        "url",
+        "properties"
       ],
       "properties": {
-        "ok": { "const": true },
-        "page_id": { "type": "string" },
-        "title": { "type": "string" },
-        "page_status": { "type": "string" },
-        "space": { "type": "string" },
-        "parent": { "$ref": "#/$defs/stringOrNull" },
-        "parent_type": { "$ref": "#/$defs/parentTypeOrNull" },
+        "ok": {
+          "const": true
+        },
+        "page_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "page_status": {
+          "type": "string"
+        },
+        "space": {
+          "type": "string"
+        },
+        "parent": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "parent_type": {
+          "$ref": "#/$defs/parentTypeOrNull"
+        },
         "version": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["number"],
-          "properties": { "number": { "type": "integer" } }
+          "required": [
+            "number"
+          ],
+          "properties": {
+            "number": {
+              "type": "integer"
+            }
+          }
         },
-        "page_width": { "$ref": "#/$defs/pageWidthOrNull" },
-        "labels": { "$ref": "#/$defs/labelInfoListOrNull" },
-        "created": { "$ref": "#/$defs/stampOrNull" },
-        "updated": { "$ref": "#/$defs/stampOrNull" },
-        "message": { "type": "string" },
-        "url": { "type": "string" },
+        "page_width": {
+          "$ref": "#/$defs/pageWidthOrNull"
+        },
+        "labels": {
+          "$ref": "#/$defs/labelInfoListOrNull"
+        },
+        "created": {
+          "$ref": "#/$defs/stampOrNull"
+        },
+        "updated": {
+          "$ref": "#/$defs/stampOrNull"
+        },
+        "message": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
         "properties": {
           "oneOf": [
-            { "type": "null" },
+            {
+              "type": "null"
+            },
             {
               "type": "array",
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["key", "value"],
-                "properties": { "key": { "type": "string" }, "value": {} }
+                "required": [
+                  "key",
+                  "value"
+                ],
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "value": {}
+                }
               }
             }
           ]
@@ -368,59 +905,183 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "ok", "page_id", "title", "space", "parent", "parent_type", "page_width", "labels",
-        "format", "body"
+        "ok",
+        "page_id",
+        "title",
+        "space",
+        "parent",
+        "parent_type",
+        "page_width",
+        "labels",
+        "format",
+        "body"
       ],
       "properties": {
-        "ok": { "const": true },
-        "page_id": { "type": "string" },
-        "title": { "type": "string" },
-        "space": { "type": "string" },
-        "parent": { "$ref": "#/$defs/stringOrNull" },
-        "parent_type": { "$ref": "#/$defs/parentTypeOrNull" },
-        "page_width": { "$ref": "#/$defs/pageWidthOrNull" },
+        "ok": {
+          "const": true
+        },
+        "page_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "space": {
+          "type": "string"
+        },
+        "parent": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "parent_type": {
+          "$ref": "#/$defs/parentTypeOrNull"
+        },
+        "page_width": {
+          "$ref": "#/$defs/pageWidthOrNull"
+        },
         "labels": {
           "description": "The managed labels that went into the rendered frontmatter, sorted; null when the fetch failed. A different shape from info's labels on purpose: info describes the page, read describes the document it produced.",
-          "oneOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }]
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
-        "format": { "enum": ["markdown", "storage"] },
-        "body": { "type": "string" }
+        "format": {
+          "enum": [
+            "markdown",
+            "storage"
+          ]
+        },
+        "body": {
+          "type": "string"
+        }
       }
     },
     "updateResult": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "ok", "status", "dry_run", "file", "page_id", "title", "space", "url",
-        "version", "page_width", "labels", "attachments", "warnings", "broken", "error", "code"
+        "ok",
+        "status",
+        "dry_run",
+        "file",
+        "page_id",
+        "title",
+        "space",
+        "url",
+        "version",
+        "page_width",
+        "labels",
+        "attachments",
+        "warnings",
+        "broken",
+        "metadata_source",
+        "error",
+        "code"
       ],
       "properties": {
-        "ok": { "type": "boolean" },
-        "status": { "enum": ["published", "skipped", "failed"] },
-        "dry_run": { "type": "boolean" },
-        "file": { "type": "string" },
-        "page_id": { "$ref": "#/$defs/stringOrNull" },
-        "title": { "$ref": "#/$defs/stringOrNull" },
-        "space": { "$ref": "#/$defs/stringOrNull" },
-        "url": { "$ref": "#/$defs/stringOrNull" },
+        "ok": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "published",
+            "skipped",
+            "failed"
+          ]
+        },
+        "dry_run": {
+          "type": "boolean"
+        },
+        "file": {
+          "type": "string"
+        },
+        "page_id": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "title": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "space": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "url": {
+          "$ref": "#/$defs/stringOrNull"
+        },
         "version": {
           "oneOf": [
-            { "type": "null" },
+            {
+              "type": "null"
+            },
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["previous", "new"],
-              "properties": { "previous": { "type": "integer" }, "new": { "type": "integer" } }
+              "required": [
+                "previous",
+                "new"
+              ],
+              "properties": {
+                "previous": {
+                  "type": "integer"
+                },
+                "new": {
+                  "type": "integer"
+                }
+              }
             }
           ]
         },
-        "page_width": { "$ref": "#/$defs/pageWidthOrNull" },
-        "labels": { "$ref": "#/$defs/labelActionsOrNull" },
-        "attachments": { "type": "array", "items": { "$ref": "#/$defs/attachment" } },
-        "warnings": { "type": "array", "items": { "type": "string" } },
-        "broken": { "type": "array", "items": { "type": "string" } },
-        "error": { "$ref": "#/$defs/stringOrNull" },
-        "code": { "$ref": "#/$defs/codeOrNull" }
+        "page_width": {
+          "$ref": "#/$defs/pageWidthOrNull"
+        },
+        "labels": {
+          "$ref": "#/$defs/labelActionsOrNull"
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attachment"
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "broken": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "metadata_source": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "frontmatter",
+                "manifest"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Which location supplied this file's page metadata: its own frontmatter, or a pages: entry in markfluence.yaml. Null when nothing claims the file. Where both locations speak, frontmatter is reported, since it wins every field it can win."
+        },
+        "error": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "code": {
+          "$ref": "#/$defs/codeOrNull"
+        }
       }
     },
     "createResult": {
@@ -428,51 +1089,170 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "ok", "status", "dry_run", "file", "page_id", "title", "space", "parent", "parent_type", "parent_file", "url",
-        "page_width", "labels", "persisted", "attachments", "warnings", "broken", "error", "code"
+        "ok",
+        "status",
+        "dry_run",
+        "file",
+        "page_id",
+        "title",
+        "space",
+        "parent",
+        "parent_type",
+        "parent_file",
+        "url",
+        "page_width",
+        "labels",
+        "persisted",
+        "attachments",
+        "warnings",
+        "broken",
+        "metadata_source",
+        "error",
+        "code"
       ],
       "properties": {
-        "ok": { "type": "boolean" },
-        "status": { "enum": ["created", "not_created", "failed"] },
-        "dry_run": { "type": "boolean" },
-        "file": { "type": "string" },
-        "page_id": { "$ref": "#/$defs/stringOrNull" },
-        "title": { "$ref": "#/$defs/stringOrNull" },
-        "space": { "$ref": "#/$defs/stringOrNull" },
-        "parent": { "$ref": "#/$defs/stringOrNull" },
-        "parent_type": { "$ref": "#/$defs/parentTypeOrNull" },
-        "parent_file": { "$ref": "#/$defs/stringOrNull" },
-        "url": { "$ref": "#/$defs/stringOrNull" },
-        "page_width": { "$ref": "#/$defs/pageWidthOrNull" },
-        "labels": { "$ref": "#/$defs/labelActionsOrNull" },
-        "persisted": { "type": "boolean" },
-        "attachments": { "type": "array", "items": { "$ref": "#/$defs/attachment" } },
-        "warnings": { "type": "array", "items": { "type": "string" } },
-        "broken": { "type": "array", "items": { "type": "string" } },
-        "error": { "$ref": "#/$defs/stringOrNull" },
-        "code": { "$ref": "#/$defs/codeOrNull" }
+        "ok": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "created",
+            "not_created",
+            "failed"
+          ]
+        },
+        "dry_run": {
+          "type": "boolean"
+        },
+        "file": {
+          "type": "string"
+        },
+        "page_id": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "title": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "space": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "parent": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "parent_type": {
+          "$ref": "#/$defs/parentTypeOrNull"
+        },
+        "parent_file": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "url": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "page_width": {
+          "$ref": "#/$defs/pageWidthOrNull"
+        },
+        "labels": {
+          "$ref": "#/$defs/labelActionsOrNull"
+        },
+        "persisted": {
+          "type": "boolean"
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attachment"
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "broken": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "metadata_source": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "frontmatter",
+                "manifest"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Which location supplied this file's page metadata: its own frontmatter, or a pages: entry in markfluence.yaml. Null when nothing claims the file. Where both locations speak, frontmatter is reported, since it wins every field it can win."
+        },
+        "error": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "code": {
+          "$ref": "#/$defs/codeOrNull"
+        }
       }
     },
     "fixResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ok", "status", "file", "page_id", "dry_run", "changes", "reordered", "warnings", "error", "code"],
+      "required": [
+        "ok",
+        "status",
+        "file",
+        "page_id",
+        "dry_run",
+        "changes",
+        "reordered",
+        "warnings",
+        "error",
+        "code"
+      ],
       "properties": {
-        "ok": { "type": "boolean" },
-        "status": { "enum": ["changed", "consistent", "failed"] },
-        "file": { "type": "string" },
-        "page_id": { "$ref": "#/$defs/stringOrNull" },
-        "dry_run": { "type": "boolean" },
+        "ok": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "changed",
+            "consistent",
+            "failed"
+          ]
+        },
+        "file": {
+          "type": "string"
+        },
+        "page_id": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "dry_run": {
+          "type": "boolean"
+        },
         "changes": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["field", "old", "new"],
+            "required": [
+              "field",
+              "old",
+              "new"
+            ],
             "properties": {
-              "field": { "type": "string" },
-              "old": { "$ref": "#/$defs/stringOrNull" },
-              "new": { "type": "string" }
+              "field": {
+                "type": "string"
+              },
+              "old": {
+                "$ref": "#/$defs/stringOrNull"
+              },
+              "new": {
+                "type": "string"
+              }
             }
           }
         },
@@ -480,77 +1260,189 @@
           "description": "Whether fix rewrote the frontmatter into canonical field order. Independent of changes: a file whose values all match its live page can still be reordered, and that counts as changed.",
           "type": "boolean"
         },
-        "warnings": { "type": "array", "items": { "type": "string" } },
-        "error": { "$ref": "#/$defs/stringOrNull" },
-        "code": { "$ref": "#/$defs/codeOrNull" }
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "error": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "code": {
+          "$ref": "#/$defs/codeOrNull"
+        }
       }
     },
     "checkResult": {
       "description": "One checked file. broken/warnings are always [] (never null), matching ConfluencePage's own convention. status=broken means broken is non-empty (frontmatter or converter); status=failed means the file never reached a clean answer at all (unreadable, unterminated frontmatter, frontmatter that is not valid YAML or not a flat mapping of single-line scalars, bad page_width, non-numeric page_id) -- code is VALIDATION in that case. debug is non-null only when --show-html was passed and the file reached the converter (never on a failed file).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["ok", "status", "file", "broken", "warnings", "debug", "error", "code"],
+      "required": [
+        "ok",
+        "status",
+        "file",
+        "broken",
+        "warnings",
+        "debug",
+        "error",
+        "code"
+      ],
       "properties": {
-        "ok": { "type": "boolean" },
-        "status": { "enum": ["clean", "warnings", "broken", "failed"] },
-        "file": { "type": "string" },
-        "broken": { "type": "array", "items": { "type": "string" } },
-        "warnings": { "type": "array", "items": { "type": "string" } },
+        "ok": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "clean",
+            "warnings",
+            "broken",
+            "failed"
+          ]
+        },
+        "file": {
+          "type": "string"
+        },
+        "broken": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "debug": {
           "oneOf": [
-            { "type": "null" },
+            {
+              "type": "null"
+            },
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["html", "attachments"],
+              "required": [
+                "html",
+                "attachments"
+              ],
               "properties": {
-                "html": { "type": "string" },
-                "attachments": { "type": "array", "items": { "$ref": "#/$defs/checkAttachment" } }
+                "html": {
+                  "type": "string"
+                },
+                "attachments": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/checkAttachment"
+                  }
+                }
               }
             }
           ]
         },
-        "error": { "$ref": "#/$defs/stringOrNull" },
-        "code": { "$ref": "#/$defs/codeOrNull" }
+        "error": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "code": {
+          "$ref": "#/$defs/codeOrNull"
+        }
       }
     },
     "checkAttachment": {
       "description": "ConfluencePage.Attachments verbatim: a local image check's --show-html surfaces, not an upload outcome (contrast update/create's attachments array, which reports an action).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["filename", "path", "source"],
+      "required": [
+        "filename",
+        "path",
+        "source"
+      ],
       "properties": {
-        "filename": { "type": "string" },
-        "path": { "type": "string" },
-        "source": { "type": "string" }
+        "filename": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
       }
     },
     "attachmentUploadResult": {
       "description": "One uploaded file. status uses the same verbs as the attachments array on update/create. dest_path is always null: upload has no local destination to report, and only exists here so upload and download share one result shape.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["ok", "status", "dry_run", "filename", "dest_path", "error", "code"],
+      "required": [
+        "ok",
+        "status",
+        "dry_run",
+        "filename",
+        "dest_path",
+        "error",
+        "code"
+      ],
       "properties": {
-        "ok": { "type": "boolean" },
-        "status": { "enum": ["created", "updated", "skipped", "failed"] },
-        "dry_run": { "type": "boolean" },
-        "filename": { "type": "string" },
-        "dest_path": { "const": null },
-        "error": { "$ref": "#/$defs/stringOrNull" },
-        "code": { "$ref": "#/$defs/codeOrNull" }
+        "ok": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "created",
+            "updated",
+            "skipped",
+            "failed"
+          ]
+        },
+        "dry_run": {
+          "type": "boolean"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "dest_path": {
+          "const": null
+        },
+        "error": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "code": {
+          "$ref": "#/$defs/codeOrNull"
+        }
       }
     },
     "exportSummary": {
       "description": "export batch summary. skipped counts pages whose file was already on disk; a run that exports nothing new is all skipped and still succeeded. project_file says what happened to the markfluence.yaml a multi-page export needs to be republishable: null for a single-page export, which needs none.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["total", "succeeded", "failed", "skipped", "project_file"],
+      "required": [
+        "total",
+        "succeeded",
+        "failed",
+        "skipped",
+        "project_file"
+      ],
       "properties": {
-        "total": { "type": "integer" },
-        "succeeded": { "type": "integer" },
-        "failed": { "type": "integer" },
-        "skipped": { "type": "integer" },
-        "project_file": { "enum": ["wrote", "exists", null] }
+        "total": {
+          "type": "integer"
+        },
+        "succeeded": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        },
+        "skipped": {
+          "type": "integer"
+        },
+        "project_file": {
+          "enum": [
+            "wrote",
+            "exists",
+            null
+          ]
+        }
       }
     },
     "exportResult": {
@@ -558,157 +1450,379 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "ok", "page_id", "title", "space", "parent", "parent_type", "parent_file", "dry_run",
-        "status", "dest_path", "attachments", "warnings", "error", "code"
+        "ok",
+        "page_id",
+        "title",
+        "space",
+        "parent",
+        "parent_type",
+        "parent_file",
+        "dry_run",
+        "status",
+        "dest_path",
+        "attachments",
+        "warnings",
+        "error",
+        "code"
       ],
       "properties": {
-        "ok": { "type": "boolean" },
-        "page_id": { "type": "string" },
-        "title": { "type": "string" },
-        "space": { "type": "string" },
-        "parent": { "$ref": "#/$defs/stringOrNull" },
-        "parent_type": { "$ref": "#/$defs/parentTypeOrNull" },
+        "ok": {
+          "type": "boolean"
+        },
+        "page_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "space": {
+          "type": "string"
+        },
+        "parent": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "parent_type": {
+          "$ref": "#/$defs/parentTypeOrNull"
+        },
         "parent_file": {
           "$ref": "#/$defs/stringOrNull",
           "description": "The parent: value written into the exported file, when it is a path to the parent's own .md. Null when the parent stayed an id -- the export root, or a page whose parent is a folder."
         },
-        "dry_run": { "type": "boolean" },
-        "status": { "enum": ["wrote", "skipped", ""] },
-        "dest_path": { "$ref": "#/$defs/stringOrNull" },
+        "dry_run": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "wrote",
+            "skipped",
+            ""
+          ]
+        },
+        "dest_path": {
+          "$ref": "#/$defs/stringOrNull"
+        },
         "attachments": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["status", "filename", "dest_path", "error", "code"],
+            "required": [
+              "status",
+              "filename",
+              "dest_path",
+              "error",
+              "code"
+            ],
             "properties": {
-              "status": { "enum": ["downloaded", "skipped", "skipped_unreferenced", "failed"] },
-              "filename": { "type": "string" },
-              "dest_path": { "$ref": "#/$defs/stringOrNull" },
-              "error": { "$ref": "#/$defs/stringOrNull" },
-              "code": { "$ref": "#/$defs/codeOrNull" }
+              "status": {
+                "enum": [
+                  "downloaded",
+                  "skipped",
+                  "skipped_unreferenced",
+                  "failed"
+                ]
+              },
+              "filename": {
+                "type": "string"
+              },
+              "dest_path": {
+                "$ref": "#/$defs/stringOrNull"
+              },
+              "error": {
+                "$ref": "#/$defs/stringOrNull"
+              },
+              "code": {
+                "$ref": "#/$defs/codeOrNull"
+              }
             }
           }
         },
-        "warnings": { "type": "array", "items": { "type": "string" } },
-        "error": { "$ref": "#/$defs/stringOrNull" },
-        "code": { "$ref": "#/$defs/codeOrNull" }
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "error": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "code": {
+          "$ref": "#/$defs/codeOrNull"
+        }
       }
     },
     "attachmentDownloadResult": {
       "description": "One attachment written to disk. filename is the stored attachment name; dest_path is the local path written, which depends on the recorded source path, --flat, and --dest. dest_path is null only when resolving it is what failed.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["ok", "status", "dry_run", "filename", "dest_path", "error", "code"],
+      "required": [
+        "ok",
+        "status",
+        "dry_run",
+        "filename",
+        "dest_path",
+        "error",
+        "code"
+      ],
       "properties": {
-        "ok": { "type": "boolean" },
-        "status": { "enum": ["downloaded", "skipped", "failed"] },
-        "dry_run": { "type": "boolean" },
-        "filename": { "type": "string" },
-        "dest_path": { "$ref": "#/$defs/stringOrNull" },
-        "error": { "$ref": "#/$defs/stringOrNull" },
-        "code": { "$ref": "#/$defs/codeOrNull" }
+        "ok": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "downloaded",
+            "skipped",
+            "failed"
+          ]
+        },
+        "dry_run": {
+          "type": "boolean"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "dest_path": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "error": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "code": {
+          "$ref": "#/$defs/codeOrNull"
+        }
       }
     },
     "attachmentListResult": {
       "description": "One attachment on the page. filename is the name Confluence stores; for an attachment markfluence published that is the encoded source path, and source is the markdown image path it came from. managed is false for a hand-uploaded attachment (sha256 and source both null). source may also be null on a managed attachment published before markfluence recorded source paths, in which case sha256 is still set.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["ok", "id", "filename", "size", "media_type", "version", "comment", "managed", "sha256", "source"],
+      "required": [
+        "ok",
+        "id",
+        "filename",
+        "size",
+        "media_type",
+        "version",
+        "comment",
+        "managed",
+        "sha256",
+        "source"
+      ],
       "properties": {
-        "ok": { "const": true },
-        "id": { "type": "string" },
-        "filename": { "type": "string" },
-        "size": { "type": "integer" },
-        "media_type": { "type": "string" },
-        "version": { "type": "integer" },
-        "comment": { "type": "string" },
-        "managed": { "type": "boolean" },
-        "sha256": { "$ref": "#/$defs/stringOrNull" },
-        "source": { "$ref": "#/$defs/stringOrNull" }
+        "ok": {
+          "const": true
+        },
+        "id": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer"
+        },
+        "comment": {
+          "type": "string"
+        },
+        "managed": {
+          "type": "boolean"
+        },
+        "sha256": {
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "source": {
+          "$ref": "#/$defs/stringOrNull"
+        }
       }
     },
     "attachmentSummary": {
       "description": "attachment-upload/attachment-download batch summary.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["total", "succeeded", "failed", "skipped"],
+      "required": [
+        "total",
+        "succeeded",
+        "failed",
+        "skipped"
+      ],
       "properties": {
-        "total": { "type": "integer" },
-        "succeeded": { "type": "integer" },
-        "failed": { "type": "integer" },
-        "skipped": { "type": "integer" }
+        "total": {
+          "type": "integer"
+        },
+        "succeeded": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        },
+        "skipped": {
+          "type": "integer"
+        }
       }
     },
     "basicSummary": {
       "description": "info/read batch summary (total:1), and attachment-list (total: the attachment count).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["total", "succeeded", "failed"],
+      "required": [
+        "total",
+        "succeeded",
+        "failed"
+      ],
       "properties": {
-        "total": { "type": "integer" },
-        "succeeded": { "type": "integer" },
-        "failed": { "type": "integer" }
+        "total": {
+          "type": "integer"
+        },
+        "succeeded": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        }
       }
     },
     "updateSummary": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["total", "succeeded", "failed", "skipped"],
+      "required": [
+        "total",
+        "succeeded",
+        "failed",
+        "skipped"
+      ],
       "properties": {
-        "total": { "type": "integer" },
-        "succeeded": { "type": "integer" },
-        "failed": { "type": "integer" },
-        "skipped": { "type": "integer" }
+        "total": {
+          "type": "integer"
+        },
+        "succeeded": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        },
+        "skipped": {
+          "type": "integer"
+        }
       }
     },
     "createSummary": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["total", "succeeded", "failed", "aborted"],
+      "required": [
+        "total",
+        "succeeded",
+        "failed",
+        "aborted"
+      ],
       "properties": {
-        "total": { "type": "integer" },
-        "succeeded": { "type": "integer" },
-        "failed": { "type": "integer" },
-        "aborted": { "type": "boolean" }
+        "total": {
+          "type": "integer"
+        },
+        "succeeded": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        },
+        "aborted": {
+          "type": "boolean"
+        }
       }
     },
     "fixSummary": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["total", "succeeded", "failed", "changed", "consistent"],
+      "required": [
+        "total",
+        "succeeded",
+        "failed",
+        "changed",
+        "consistent"
+      ],
       "properties": {
-        "total": { "type": "integer" },
-        "succeeded": { "type": "integer" },
-        "failed": { "type": "integer" },
-        "changed": { "type": "integer" },
-        "consistent": { "type": "integer" }
+        "total": {
+          "type": "integer"
+        },
+        "succeeded": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        },
+        "changed": {
+          "type": "integer"
+        },
+        "consistent": {
+          "type": "integer"
+        }
       }
     },
     "checkSummary": {
       "description": "clean/warnings count files on the ok:true side (clean has neither broken nor warnings; warnings has only warnings); failed already covers both the broken and failed statuses on the ok:false side, the same granularity fixSummary uses.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["total", "succeeded", "failed", "clean", "warnings"],
+      "required": [
+        "total",
+        "succeeded",
+        "failed",
+        "clean",
+        "warnings"
+      ],
       "properties": {
-        "total": { "type": "integer" },
-        "succeeded": { "type": "integer" },
-        "failed": { "type": "integer" },
-        "clean": { "type": "integer" },
-        "warnings": { "type": "integer" }
+        "total": {
+          "type": "integer"
+        },
+        "succeeded": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        },
+        "clean": {
+          "type": "integer"
+        },
+        "warnings": {
+          "type": "integer"
+        }
       }
     },
     "errorObject": {
       "description": "The typed error object written to stderr on a fatal/pre-flight failure. command may be empty for a pre-parse (bad-flag) error.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema_version", "command", "error", "code", "warnings"],
+      "required": [
+        "schema_version",
+        "command",
+        "error",
+        "code",
+        "warnings"
+      ],
       "properties": {
-        "schema_version": { "const": 1 },
-        "command": { "type": "string" },
-        "error": { "type": "string" },
-        "code": { "$ref": "#/$defs/code" },
-        "warnings": { "type": "array", "items": { "type": "string" }, "description": "As the envelope's warnings, carried here too because a fatal failure emits no envelope -- and a credential-resolution failure is exactly when a warning about the .env matters most." }
+        "schema_version": {
+          "const": 1
+        },
+        "command": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "code": {
+          "$ref": "#/$defs/code"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "As the envelope's warnings, carried here too because a fatal failure emits no envelope -- and a credential-resolution failure is exactly when a warning about the .env matters most."
+        }
       }
     }
   }

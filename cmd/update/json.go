@@ -41,6 +41,15 @@ type updateResult struct {
 	warnings    []string
 	errMsg      string
 	code        jsonout.Code
+	// metadataSource is which location supplied this file's page metadata
+	// ("frontmatter", "manifest", or empty when nothing claims the file).
+	// Debugging "why did it publish to *that* page" in a CI log otherwise means
+	// reproducing the resolution by hand.
+	metadataSource string
+	// unmanaged distinguishes the two reasons a file is skipped: nothing
+	// claims it, or it is unchanged since the page's last version. Human
+	// output says which; --json has status plus metadata_source.
+	unmanaged bool
 }
 
 // fail marks the result failed with an error and code, and returns it for a
@@ -63,6 +72,10 @@ func (r *updateResult) renderHuman() {
 		return
 	}
 	if r.status == statusSkipped {
+		if r.unmanaged {
+			ui.Info(prefix + " Skipping -- not published by markfluence")
+			return
+		}
 		ui.Info(prefix + " Skipping -- no changes")
 		return
 	}
@@ -103,8 +116,11 @@ type jsonUpdateResult struct {
 	Attachments []jsonout.Attachment `json:"attachments"`
 	Warnings    []string             `json:"warnings"`
 	Broken      []string             `json:"broken"`
-	Error       *string              `json:"error"`
-	Code        *jsonout.Code        `json:"code"`
+	// MetadataSource is null for a file nothing claims, which is why it is a
+	// pointer rather than an empty string: "" would read as a source named "".
+	MetadataSource *string       `json:"metadata_source"`
+	Error          *string       `json:"error"`
+	Code           *jsonout.Code `json:"code"`
 }
 
 type jsonUpdateVersion struct {
@@ -127,6 +143,8 @@ func (r *updateResult) jsonResult() jsonUpdateResult {
 		Attachments: nonNilAttachments(r.attachments),
 		Warnings:    nonNilStrings(r.warnings),
 		Broken:      nonNilStrings(r.broken),
+
+		MetadataSource: strOrNil(r.metadataSource),
 	}
 	// version is present once we know the live version (all non-early failures).
 	if r.versionPrev != 0 || r.versionNew != 0 {
