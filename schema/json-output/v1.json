@@ -364,7 +364,10 @@
     "readResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ok", "page_id", "title", "space", "parent", "parent_type", "page_width", "format", "body"],
+      "required": [
+        "ok", "page_id", "title", "space", "parent", "parent_type", "page_width", "labels",
+        "format", "body"
+      ],
       "properties": {
         "ok": { "const": true },
         "page_id": { "type": "string" },
@@ -373,6 +376,10 @@
         "parent": { "$ref": "#/$defs/stringOrNull" },
         "parent_type": { "$ref": "#/$defs/parentTypeOrNull" },
         "page_width": { "$ref": "#/$defs/pageWidthOrNull" },
+        "labels": {
+          "description": "The managed labels that went into the rendered frontmatter, sorted; null when the fetch failed. A different shape from info's labels on purpose: info describes the page, read describes the document it produced.",
+          "oneOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }]
+        },
         "format": { "enum": ["markdown", "storage"] },
         "body": { "type": "string" }
       }
