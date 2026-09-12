@@ -194,6 +194,13 @@ finds the root by walking up from each file's own directory, independent of the
 working directory and of what else is in the same command (`_plans/026`
 commits 1–4).
 
+A project-wide `space:` or `page_width:` in `markfluence.yaml` (#100) sits
+inside that scope rather than straining it, and in the direction L2 wants: the
+value is declared in a committed file on disk, found by the same
+working-directory-independent walk, so two people in different directories
+resolve it identically. It is strictly better for L2 than the `--space` flag it
+replaces, which is invocation state by definition. Status unchanged.
+
 **L3** is what makes moving a page free. `images.go` records an attachment's
 `Source` relative to the root rather than to the referencing page, so identity
 follows the asset alone (`_plans/026` commit 4).

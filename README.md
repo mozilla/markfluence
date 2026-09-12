@@ -483,6 +483,21 @@ storage markup.
 # relative to this directory. https://github.com/mozilla/markfluence
 ```
 
+It can also carry **project-wide defaults**, which is what saves a hundred
+files from each repeating `space: ENG`:
+
+```yaml
+space: ENG
+page_width: max
+```
+
+Each is a default a file overrides: the chain is **flag > frontmatter >
+project file**, so the answer closest to the content wins. A key markfluence
+does not recognise is an error rather than something ignored — a typo in a
+project-wide default is wrong for every file at once. Credentials are
+deliberately not settings here; see
+[docs/root-model.md](docs/root-model.md#what-it-deliberately-does-not-hold).
+
 The rest of this section is the precise version of the same idea. Every
 markdown file has a **documentation root**: the directory holding
 `markfluence.yaml`, found by walking up from the file's own directory, or —
@@ -494,8 +509,8 @@ overrides discovery for the whole invocation — and, for `create`, `update`,
 and `attachment-upload`, also redirects where `.env` is read from (see
 [Configure](#configure)).
 
-For the reasoning behind this model — why a bare marker file, what it fixes,
-what it costs — see [docs/root-model.md](docs/root-model.md) and
+For the reasoning behind this model — what it fixes, what it costs, and every
+project-wide setting — see [docs/root-model.md](docs/root-model.md) and
 [_plans/025_file-organization.md](_plans/025_file-organization.md).
 
 ### Moving files and assets

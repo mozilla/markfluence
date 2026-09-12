@@ -49,25 +49,87 @@ the walk itself is paid for once, not twice.
 
 ## `markfluence.yaml`: the project file
 
-Its existence is its whole meaning. Nothing in it is parsed or read; the
-`.yaml` extension fixes the intended format for when a key is eventually
-added (see [#100](https://github.com/mozilla/markfluence/issues/100)) without
-that being a migration. It should carry a one-line comment saying what it
-does, since a reader who finds it should be able to tell without already
-knowing:
+It marks the root, and it declares project-wide settings
+([#100](https://github.com/mozilla/markfluence/issues/100)). A file with no
+settings in it is perfectly normal — it is what `export` plants, and marking
+the root was the file's only job until settings arrived:
 
 ```yaml
 # Marks the root of a markfluence project. Image and link paths are recorded
 # relative to this directory. https://github.com/mozilla/markfluence
 ```
 
+### The settings
+
+| Setting | What it defaults | Overridden by |
+|---|---|---|
+| `space` | the space `create` publishes into | `--space`, then a frontmatter `space:` |
+| `page_width` | the width `create` and `update` assert | `--page-width`, then a frontmatter `page_width:` |
+
+```yaml
+space: ENG
+page_width: max
+```
+
+The chain is **flag > frontmatter > project file**: the answer closest to the
+content wins. This is *not* the credentials chain, and conflating the two is
+the mistake the file's design forecloses — credentials resolve **flag >
+environment > `.env`** and answer *who you are*, where a setting here answers
+*what the content is*.
+
+A project-wide setting is only ever read when both levels above it are silent,
+so it never participates in a disagreement: `create` still refuses a `--space`
+that contradicts a frontmatter `space:`, and a project default cannot become a
+third party to that.
+
+One consequence worth knowing before you add `page_width:`: `update` asserts a
+width only when one is declared, and a project-wide declaration counts. A
+project that wants each page's live width left alone as it is should leave the
+key out.
+
+Settings are per-root, so an invocation spanning two projects gets each
+project's own defaults — see [Multi-root batches](#multi-root-batches-are-allowed).
+
+### A file that cannot be understood stops the command
+
+An unparseable file, or one holding a key markfluence does not recognise, is an
+error naming what is wrong. It is specifically **not** treated as a valid root
+marker: discovery does not walk on to an ancestor that happens to have a better
+one, and does not fall back to the markdown file's own directory. The root
+decides every attachment name and bounds every read, so a project file that
+cannot be understood means the project's boundary is unknown, and guessing is
+worse than stopping.
+
+**Refusing an unrecognised key is the point, not a limitation.** A
+`markfluence.yaml` written for a newer markfluence holds keys an older binary
+would ignore, and ignoring a project-wide default means publishing with the
+wrong space or the wrong width — silently, everywhere at once. It is also what
+catches `spce: ENG`. So the file carries no schema version, and the error says
+that an older binary is the likely cause.
+
+`markfluence check` validates a project file offline, alongside the markdown
+files you give it.
+
+### What it deliberately does not hold
+
+No `url`, `username`, or token. The reason is sharper than "those are
+credentials": markfluence sends basic auth to whatever host the resolved URL
+names, so a `url:` here would decide where `CONFLUENCE_TOKEN` is sent — and
+this file is committed, shared, and walked up to from a subdirectory. One line
+in a pull request would redirect a CI run's token to a host of the author's
+choosing.
+
+The asymmetry against the settings it does hold is the whole argument: a wrong
+`space` publishes to the wrong place in your own instance, which is visible and
+`fix` recovers it. A wrong `url` hands out the token, which is neither.
+
 Committed and shared, unlike `.env`, which stays gitignored and personal. A
 stray `.env` in an ancestor directory can hand a project credentials that
 aren't its own — which is exactly why the root (and, by extension, where
 `.env` was read from) is reported: visibility is the mitigation, not a
-permission check. `markfluence` reads nothing from inside a project file and
-executes nothing on account of its presence — walking up and trusting what's
-found there is the shape of
+permission check. `markfluence` *reads* a project file but **executes** nothing
+on account of its presence, and nothing in it can redirect a credential —
+walking up and trusting what's found there is the shape of
 [CVE-2022-24765](https://github.blog/2022-04-12-git-security-vulnerability-announced/)
 (pre-fix git walking up for `.git` with no ownership check) and of the
 `.git`-directory hook-execution CVEs that followed it (e.g. CVE-2024-32002),

@@ -10,8 +10,9 @@ Title and page id are read from each file's YAML frontmatter; --title and
 --page-id override the frontmatter (and require a single FILE). A page id is
 required (from --page-id or frontmatter); update errors if none is set.
 
-Page width is asserted only when set via --page-width or a page_width
-frontmatter line -- otherwise the live page's width is left untouched.
+Page width is asserted only when set via --page-width, a page_width
+frontmatter line, or a page_width: in markfluence.yaml -- otherwise the
+live page's width is left untouched.
 Labels work the same way: a labels: line is asserted exactly (anything on
 the page the file does not list is removed), and no labels: line means the
 page's labels are left alone, not even read.
