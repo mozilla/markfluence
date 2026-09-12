@@ -76,31 +76,108 @@ func TestResolveWidth(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// A project file declaring a width, and one declaring nothing.
+	declared := &project.Root{File: "/repo/markfluence.yaml", Config: project.Config{PageWidth: "narrow"}}
+	bare := &project.Root{File: "/repo/markfluence.yaml"}
+
 	t.Run("flag overrides frontmatter", func(t *testing.T) {
-		w, apply, err := resolveWidth("narrow", withFM)
+		w, apply, err := resolveWidth("narrow", withFM, bare)
 		if err != nil || !apply || w != pagewidth.Narrow {
 			t.Fatalf("= %q/%v/%v, want narrow/true/nil", w, apply, err)
 		}
 	})
 	t.Run("frontmatter when no flag", func(t *testing.T) {
-		w, apply, err := resolveWidth("", withFM)
+		w, apply, err := resolveWidth("", withFM, bare)
 		if err != nil || !apply || w != pagewidth.Wide {
 			t.Fatalf("= %q/%v/%v, want wide/true/nil", w, apply, err)
 		}
 	})
 	t.Run("no flag and no frontmatter width -> skip", func(t *testing.T) {
-		if _, apply, err := resolveWidth("", noWidth); err != nil || apply {
+		if _, apply, err := resolveWidth("", noWidth, bare); err != nil || apply {
 			t.Fatalf("= apply %v err %v, want false/nil", apply, err)
 		}
-		if _, apply, err := resolveWidth("", noFM); err != nil || apply {
+		if _, apply, err := resolveWidth("", noFM, bare); err != nil || apply {
 			t.Fatalf("(no frontmatter) = apply %v err %v, want false/nil", apply, err)
 		}
 	})
 	t.Run("invalid flag errors", func(t *testing.T) {
-		if _, apply, err := resolveWidth("huge", noFM); err == nil || apply {
+		if _, apply, err := resolveWidth("huge", noFM, bare); err == nil || apply {
 			t.Fatalf("= apply %v err %v, want false/error", apply, err)
 		}
 	})
+
+	// The behavior change: a project-wide page_width makes update assert a
+	// width on a file that declares none. Before, that file's live width was
+	// left alone. It is what "declared means asserted" (L9) means one level up.
+	t.Run("project file makes update assert a width", func(t *testing.T) {
+		w, apply, err := resolveWidth("", noWidth, declared)
+		if err != nil || !apply || w != pagewidth.Narrow {
+			t.Fatalf("= %q/%v/%v, want narrow/true/nil", w, apply, err)
+		}
+	})
+	t.Run("flag beats the project file", func(t *testing.T) {
+		w, apply, err := resolveWidth("wide", noWidth, declared)
+		if err != nil || !apply || w != pagewidth.Wide {
+			t.Fatalf("= %q/%v/%v, want wide/true/nil", w, apply, err)
+		}
+	})
+	t.Run("frontmatter beats the project file", func(t *testing.T) {
+		w, apply, err := resolveWidth("", withFM, declared)
+		if err != nil || !apply || w != pagewidth.Wide {
+			t.Fatalf("= %q/%v/%v, want wide/true/nil", w, apply, err)
+		}
+	})
+	// The escape hatch has to keep working: a project that omits the key gets
+	// no width request at all, which is the pre-#100 behavior.
+	t.Run("no project width means no width request", func(t *testing.T) {
+		if _, apply, err := resolveWidth("", noWidth, declaredNothing()); err != nil || apply {
+			t.Fatalf("= apply %v err %v, want false/nil", apply, err)
+		}
+	})
+	t.Run("invalid project width names the project file", func(t *testing.T) {
+		bad := &project.Root{File: "/repo/markfluence.yaml", Config: project.Config{PageWidth: "huge"}}
+		_, apply, err := resolveWidth("", noWidth, bad)
+		if err == nil || apply {
+			t.Fatalf("= apply %v err %v, want false/error", apply, err)
+		}
+		if !strings.Contains(err.Error(), "/repo/markfluence.yaml") {
+			t.Errorf("error = %q, want it to name the project file", err)
+		}
+	})
+	t.Run("nil root is not a panic", func(t *testing.T) {
+		if _, apply, err := resolveWidth("", noWidth, nil); err != nil || apply {
+			t.Fatalf("= apply %v err %v, want false/nil", apply, err)
+		}
+	})
+}
+
+// declaredNothing is a project file with no settings -- the marker that ships.
+func declaredNothing() *project.Root {
+	return &project.Root{File: "/repo/markfluence.yaml"}
+}
+
+func TestRootErrorCode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, project.Filename)
+	if err := os.WriteFile(path, []byte("spce: ENG\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := project.Discover(dir)
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if got := rootErrorCode(err); got != jsonout.CodeValidation {
+		t.Errorf("code = %q, want VALIDATION: a malformed project file is a local defect, not I/O", got)
+	}
+	// Anything else really is a failure to resolve the root.
+	if got := rootErrorCode(os.ErrPermission); got != jsonout.CodeIO {
+		t.Errorf("code = %q, want IO", got)
+	}
+	// RootError leaves a ConfigError as itself -- the root was found, and it is
+	// the file in it that is wrong.
+	if msg := project.RootError(err).Error(); strings.Contains(msg, "resolving the documentation root") {
+		t.Errorf("error = %q, want no root-resolution heading", msg)
+	}
 }
 
 func TestOverrideNeedsSingleFile(t *testing.T) {

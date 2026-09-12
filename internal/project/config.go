@@ -157,3 +157,25 @@ func readFailure(err error) string {
 	}
 	return err.Error()
 }
+
+// IsConfigError reports whether err is a markfluence.yaml that could not be
+// understood, as opposed to any other way resolving a root can fail.
+//
+// It exists because the two deserve different reporting: a malformed project
+// file is a local defect in a file the author can open and fix, where a failed
+// walk or a refused os.OpenRoot is an I/O problem. A command reporting the
+// first as I/O sends the reader looking for a disk fault.
+func IsConfigError(err error) bool {
+	var cfgErr *ConfigError
+	return errors.As(err, &cfgErr)
+}
+
+// RootError frames a root-resolution failure for a reader. A malformed project
+// file is reported as itself -- the root was found, and it is the file in it
+// that is wrong -- where anything else really is a failure to resolve the root.
+func RootError(err error) error {
+	if IsConfigError(err) {
+		return err
+	}
+	return fmt.Errorf("resolving the documentation root: %w", err)
+}

@@ -195,7 +195,20 @@ func processFile(
 	if !pageref.IsDigits(pageID) {
 		return r.fail(errors.New(pageref.NotNumericMessage(pageID)), jsonout.CodeValidation)
 	}
-	width, applyWidth, err := resolveWidth(pageWidthFlag, mf)
+	// The root is resolved here rather than beside the link index below,
+	// because the width chain now ends at the project file and every local
+	// check has to stay ahead of the first request. The walk is cached, so
+	// asking early costs nothing; building the *index* is not moved, so a file
+	// the mtime check skips still never pays for one.
+	abs, err := filepath.Abs(filename)
+	if err != nil {
+		return r.fail(err, jsonout.CodeIO)
+	}
+	root, err := roots.Resolve(filepath.Dir(abs))
+	if err != nil {
+		return r.fail(project.RootError(err), rootErrorCode(err))
+	}
+	width, applyWidth, err := resolveWidth(pageWidthFlag, mf, root)
 	if err != nil {
 		return r.fail(err, jsonout.CodeValidation)
 	}
@@ -240,14 +253,6 @@ func processFile(
 		}
 	}
 
-	abs, err := filepath.Abs(filename)
-	if err != nil {
-		return r.fail(err, jsonout.CodeIO)
-	}
-	root, err := roots.Resolve(filepath.Dir(abs))
-	if err != nil {
-		return r.fail(fmt.Errorf("resolving the documentation root: %w", err), jsonout.CodeIO)
-	}
 	index, err := indexes.Get(root)
 	if err != nil {
 		return r.fail(fmt.Errorf("building the link index: %w", err), jsonout.CodeIO)
@@ -383,10 +388,13 @@ func resolveTitlePageID(cliTitle, cliPageID string, mf *frontmatter.MarkdownFile
 	return title, titlePresent, pageID
 }
 
-// resolveWidth resolves the page width to assert. It returns apply=false when
+// resolveWidth resolves the page width to assert: --page-width, then the
+// frontmatter page_width, then the project file's default (#100's chain, flag >
+// frontmatter > project file). It returns apply=false when
 // neither --page-width nor a frontmatter page_width is set, meaning the live
 // page's width should be left untouched.
-func resolveWidth(cliPageWidth string, mf *frontmatter.MarkdownFile) (pagewidth.Width, bool, error) {
+func resolveWidth(cliPageWidth string, mf *frontmatter.MarkdownFile,
+	root *project.Root) (pagewidth.Width, bool, error) {
 	if cliPageWidth != "" {
 		w, err := pagewidth.Declared(map[string]string{"page_width": cliPageWidth})
 		return w, err == nil, err
@@ -395,7 +403,30 @@ func resolveWidth(cliPageWidth string, mf *frontmatter.MarkdownFile) (pagewidth.
 		w, err := pagewidth.Declared(mf.Frontmatter)
 		return w, err == nil, err
 	}
+	// The project file's default, and the one level of the chain that changes
+	// update's behavior: declaring page_width there makes update assert a width
+	// on a file that declares none, where before it left the live width alone.
+	// That is deliberate -- it is what "declared means asserted" (L9) means one
+	// level up -- and a project that wants the live width untouched omits the
+	// key. Absent still means no width request at all.
+	if root != nil && root.Config.PageWidth != "" {
+		w, err := pagewidth.Declared(map[string]string{"page_width": root.Config.PageWidth})
+		if err != nil {
+			return "", false, fmt.Errorf("%s: %w", root.File, err)
+		}
+		return w, true, nil
+	}
 	return "", false, nil
+}
+
+// rootErrorCode classifies a root-resolution failure. A malformed project file
+// is a local defect in a file the author can open and fix, so reporting it as
+// I/O would send the reader looking for a disk fault.
+func rootErrorCode(err error) jsonout.Code {
+	if project.IsConfigError(err) {
+		return jsonout.CodeValidation
+	}
+	return jsonout.CodeIO
 }
 
 // applyLabels asserts the declared label set, recording the per-label actions.
