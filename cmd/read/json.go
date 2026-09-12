@@ -3,6 +3,7 @@ package read
 import (
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 )
 
@@ -18,6 +19,7 @@ type jsonReadResult struct {
 	Parent     *string            `json:"parent"`
 	ParentType *string            `json:"parent_type"`
 	PageWidth  *jsonout.PageWidth `json:"page_width"`
+	Labels     *[]string          `json:"labels"`
 	Format     string             `json:"format"`
 	Body       string             `json:"body"`
 }
@@ -45,6 +47,18 @@ func buildResult(c *client.ConfluenceClient, page *client.Page, format, body str
 	}
 	if w, explicit, err := pagewidth.Read(c, page.ID); err == nil {
 		res.PageWidth = &jsonout.PageWidth{Value: string(w), Default: !explicit}
+	}
+	// A plain string array, deliberately a different shape from info's: info
+	// describes the page, read describes the document it produced. So this is
+	// exactly what went into the rendered frontmatter -- global-only and
+	// sorted -- and null when the fetch failed, so "none" and "unknown" stay
+	// distinguishable.
+	if live, err := labels.Read(c, page.ID); err == nil {
+		names := labels.Global(live)
+		if names == nil {
+			names = []string{}
+		}
+		res.Labels = &names
 	}
 	return res
 }

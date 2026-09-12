@@ -20,6 +20,7 @@ import (
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/frontmatter"
+	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/pageslug"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/ui"
@@ -275,13 +276,32 @@ func Frontmatter(c *client.ConfluenceClient, page *client.Page, parentOverride s
 	if w, _, err := pagewidth.Read(c, page.ID); err == nil {
 		width = string(w)
 	}
-	return RenderFrontmatter(page.Title, client.SpaceKeyFromWebUI(page.Links.WebUI), parent, page.ID, width)
+	// Best-effort, in the same shape as every other lookup here: a failed
+	// fetch omits the field rather than failing the render. Only the managed
+	// labels are emitted -- a my: or team: label has no frontmatter spelling,
+	// so writing one would produce a file that cannot publish what it says.
+	//
+	// Sorted, because neither label GET returns a useful order and an exported
+	// tree that reshuffles its own frontmatter between runs is noise in every
+	// later diff.
+	var names []string
+	if live, err := labels.Read(c, page.ID); err == nil {
+		names = labels.Global(live)
+	}
+	return RenderFrontmatter(
+		page.Title, client.SpaceKeyFromWebUI(page.Links.WebUI), parent, page.ID, width, names)
 }
 
 // RenderFrontmatter assembles the frontmatter block from resolved field values,
 // omitting space/parent/page_width when empty. frontmatter.Render emits them in
 // the canonical order and quotes values as YAML needs.
-func RenderFrontmatter(title, space, parent, pageID, width string) string {
+//
+// labels is nil when the fetch failed and empty when the page has none, and the
+// two are written the same way -- no labels: key at all. That differs from
+// update's reading of the field, deliberately: an emitted "labels: []" would
+// tell a later publish to remove every label, which is not something a read of
+// a page with no labels should assert on the author's behalf.
+func RenderFrontmatter(title, space, parent, pageID, width string, labels []string) string {
 	fields := []frontmatter.Field{{Key: "title", Value: title}}
 	if space != "" {
 		fields = append(fields, frontmatter.Field{Key: "space", Value: space})
@@ -292,6 +312,9 @@ func RenderFrontmatter(title, space, parent, pageID, width string) string {
 	fields = append(fields, frontmatter.Field{Key: "page_id", Value: pageID})
 	if width != "" {
 		fields = append(fields, frontmatter.Field{Key: "page_width", Value: width})
+	}
+	if len(labels) > 0 {
+		fields = append(fields, frontmatter.Field{Key: "labels", List: labels})
 	}
 	return frontmatter.Render(fields)
 }
