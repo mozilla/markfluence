@@ -10,7 +10,7 @@ lives beside it, because it is reference material rather than a read-through:
 
 | | |
 |---|---|
-| [docs/markdown.md](docs/markdown.md) | what the converter does with each markdown construct in a page body |
+| [docs/markdown_file.md](docs/markdown_file.md) | the page format: every frontmatter field, and what the converter does with each body construct |
 | [docs/github-actions.md](docs/github-actions.md) | running markfluence in CI: a working workflow, credentials, and why a service account |
 | [docs/root-model.md](docs/root-model.md) | the documentation root: how a tree of files maps to a tree of pages |
 | [docs/confluence/](docs/confluence/) | what we established about Confluence by experiment — the API, storage format, scopes, and the traps that produce confident wrong answers |
@@ -404,8 +404,8 @@ sibling `.md` file that exists under the documentation root but has no
 the *current* file itself has no `page_id` yet, since it's internally
 treated as a link to itself — which can read as though the file names
 itself as missing; it doesn't, that's just this file before its first
-publish (see [links to sibling `.md` files](docs/markdown.md)). Other message shapes:
-[`IMAGE BROKEN`/`LINK BROKEN`](docs/markdown.md), and `anchor not found: TARGET` for a
+publish (see [links to sibling `.md` files](docs/markdown_file.md)). Other message shapes:
+[`IMAGE BROKEN`/`LINK BROKEN`](docs/markdown_file.md), and `anchor not found: TARGET` for a
 `#fragment` that matches no heading.
 
 ```console
@@ -742,7 +742,7 @@ notes.pdf      1.2 MB    1  application/pdf  -
 ```
 
 `NAME` is the name Confluence stores — for an image markfluence published, the
-file's base name (see [docs/markdown.md](docs/markdown.md)) — and `SOURCE` is the Markdown image path
+file's base name (see [docs/markdown_file.md](docs/markdown_file.md)) — and `SOURCE` is the Markdown image path
 it came from, recorded in the attachment's comment. The table shows at a glance
 which attachments a publish manages and which it will leave alone.
 
@@ -930,8 +930,8 @@ a personal token there.
 
 ## Markdown page structure
 
-Each Markdown file is one Confluence page: an optional YAML **frontmatter** block
-followed by the Markdown **body**.
+Each Markdown file is one Confluence page: an optional YAML **frontmatter**
+block followed by the Markdown **body**.
 
 ```
 ---
@@ -946,53 +946,11 @@ page_width: max
 ...
 ```
 
-### Frontmatter
-
-Frontmatter is a **YAML** block delimited by `---` lines, restricted to flat
-`key: value` pairs. A value is a single-line scalar, or a list of them — written
-either inline (`labels: [a, b]`) or as `- ` lines. The fields markfluence reads
-as single values (`title`, `space`, `parent`, `page_id`, `page_width`) are an
-error when written as a list, rather than being read as unset. No nesting, and no multi-line
-values. That restriction is enforced: a nested value, a `|` block, a duplicate
-key, a tab indent, or a list item split over two lines is an error naming the
-key, not something read as blank. Full-line `#` comments and trailing inline
-` # ...` comments are preserved when markfluence rewrites a block, and a list
-keeps whichever of the two spellings you wrote it in.
-
-Because it is real YAML, a value that YAML would read as something other than a
-plain string has to be quoted — a colon-space (`title: "Deploy Runbook: Part 2"`),
-a leading `#`, `[`, `{`, `@`, `*`, `&`, `%`, `!`, `|`, `>`, `-`, or `?`, leading
-or trailing whitespace, and the words YAML types for you: `true`, `false`, `yes`,
-`no`, `null`, `~`, and anything that looks like a number. **markfluence quotes
-automatically whenever it writes a value**, so this only matters for frontmatter
-you hand-write.
-
-`null` in any spelling (`null`, `Null`, `~`, or an empty value) means *unset*.
-A page genuinely titled `null` is written `title: "null"`.
-
-| Field | Value domain | Notes |
-| --- | --- | --- |
-| `space` | a space key (e.g. `ENG`, or a personal space like `~1234abcd`) | Target space for `create` (or pass `--space`); written back by `create`. Always a key, never a numeric space id. |
-| `parent` | `null`, a numeric page **or folder** id, or a relative `.md` path | `null` = top-level page; an id = an existing parent, which may be a page or a Cloud folder (the value is just an id either way — nothing records which kind it is); a `.md` path = a parent authored in the same run (`create` resolves it in dependency order, then rewrites the value to `<page_id>  # <original.md>`). Used by `create` (or `--parent`). |
-| `page_id` | a numeric page id, or `null` | The target page. `update` looks it up by `title` and writes it back when missing; `create` writes it after creating the page. `null`/absent means "no page yet." |
-| `title` | text (**required**) | The Confluence page title. |
-| `labels` | a list of label names, e.g. `[ci/cd, howto]` | The page's labels. **Present means asserted exactly** — a label on the page that the file does not list is removed — and `labels: []` removes them all. **Absent means untouched**, so a page labeled by hand is safe from a run that never mentioned labels. Only `global:` labels are managed; a `my:`/`team:` label is shown by `info` and never written or removed — and if an unmanaged label shares a name with a surplus managed one, the removal is skipped with a warning, because Confluence's removal takes a name with no prefix and would delete the personal label instead. Names are lowercased (with a warning) since Confluence does that anyway; anything else invalid is an error before any write. `fix` writes back the live page's labels, which is how you adopt a page labeled in the UI. |
-| `page_width` | `narrow`, `wide`, or `max` | The published page width (the UI's "Adjust width" options; `narrow`/`wide`/`max` map to the `default`/`full-width`/`max` appearance properties). Absent or blank defaults to `max`. `create`/`update` assert it on every publish (so a width set in the Confluence UI is overwritten unless the frontmatter matches); `fix` writes back the live page's width. |
-
-To create a page, you only need to specify the `title` in the frontmatter.
-
-### Body
-
-The body is [GitHub-Flavored Markdown](https://github.github.com/gfm/), converted
-to Confluence storage format: headings, lists, tables, fenced code blocks, links,
-images, blockquotes, GitHub alert callouts, task lists, and inline HTML that maps
-to storage. Pasted Confluence storage markup passes through untouched.
-
-**[docs/markdown.md](docs/markdown.md) is the construct-by-construct reference** —
-what each one becomes, what round-trips, and the handful that are lossy (a table
-cell colour outside the named swatches, a column layout, an unmapped macro). It
-also covers **mentions**, which round-trip as a markdown link to the person's
-profile, and the table-cell conventions for colours, multi-line cells and lists.
+**[docs/markdown_file.md](docs/markdown_file.md) is the page-format reference**:
+every frontmatter field and what each verb does with it, and every body
+construct — tables and their cell conventions, GitHub alerts, images and how
+their paths resolve, links between pages, mentions, and pasted Confluence
+storage markup.
 
 ## The documentation root
 
@@ -1006,7 +964,7 @@ profile, and the table-cell conventions for colours, multi-line cells and lists.
   `markfluence.yaml` at the root of that tree. Without one, each file's root
   still defaults to its own directory, which means a page can't reach an
   image or another page sitting *above* itself; a shared-assets layout like
-  the one in [docs/markdown.md](docs/markdown.md) needs a declared root to work at all.
+  the one in [docs/markdown_file.md](docs/markdown_file.md) needs a declared root to work at all.
 
 ```yaml
 # Marks the root of a markfluence project. Image and link paths are recorded
@@ -1051,7 +1009,7 @@ publish. Identity follows the asset's location, not any particular page's
 **Setting up a shared assets directory across many pages** needs a
 `markfluence.yaml` at the directory that should be the shared root. Without
 one, each page's root defaults to its own directory, and an asset above any
-one of them is `IMAGE BROKEN` — the layout in [docs/markdown.md](docs/markdown.md) needs
+one of them is `IMAGE BROKEN` — the layout in [docs/markdown_file.md](docs/markdown_file.md) needs
 this to work at all.
 
 ## Development
