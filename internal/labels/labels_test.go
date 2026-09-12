@@ -102,6 +102,33 @@ func TestValidateQuotesTheRejectSet(t *testing.T) {
 	}
 }
 
+// TestValidateExplainsSplittingOnlyWhenItSplits. The separator explanation is
+// true of exactly two characters, and claiming it about a "." told an author
+// that v1.2 "would publish as several labels" -- which it would not. A warning
+// that is wrong about the case in front of you is how the accurate one stops
+// being read.
+func TestValidateExplainsSplittingOnlyWhenItSplits(t *testing.T) {
+	splits := []string{"a b", "a,b"}
+	for _, name := range splits {
+		err := labels.Validate(name)
+		if err == nil {
+			t.Fatalf("Validate(%q) = nil, want a refusal", name)
+		}
+		if !strings.Contains(err.Error(), "several labels") {
+			t.Errorf("Validate(%q) = %q, want the splitting explanation", name, err)
+		}
+	}
+	for _, name := range []string{"v1.2", "a#b", "a[b", "a?b"} {
+		err := labels.Validate(name)
+		if err == nil {
+			t.Fatalf("Validate(%q) = nil, want a refusal", name)
+		}
+		if strings.Contains(err.Error(), "several labels") {
+			t.Errorf("Validate(%q) = %q, want no splitting claim for a non-separator", name, err)
+		}
+	}
+}
+
 func TestDeclaredNormalizesAndWarns(t *testing.T) {
 	set, err := labels.Declared(map[string][]string{"labels": {"Runbook", "HOWTO"}}, nil)
 	if err != nil {

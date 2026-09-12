@@ -193,11 +193,20 @@ func Validate(name string) error {
 		return fmt.Errorf("label %q is only whitespace", name)
 	}
 	if i := strings.IndexAny(name, RejectChars); i >= 0 {
-		return fmt.Errorf(
-			"label %q contains %q, which Confluence refuses; a space or comma is "+
-				"a separator there, not a character, so %q would publish as "+
-				"several labels. Invalid: %s",
-			name, string(name[i]), name, describeRejectChars())
+		bad := string(name[i])
+		// The separator explanation belongs only to the two characters it is
+		// true of. Saying it about a "." claimed that v1.2 "would publish as
+		// several labels", which it would not -- it is simply refused, and
+		// mixing the two makes the accurate warning easy to stop reading.
+		if bad == " " || bad == "," {
+			return fmt.Errorf(
+				"label %q contains %q, which Confluence treats as a separator rather "+
+					"than a character: it would publish as several labels, and no "+
+					"later run could remove them. Invalid: %s",
+				name, bad, describeRejectChars())
+		}
+		return fmt.Errorf("label %q contains %q, which Confluence refuses. Invalid: %s",
+			name, bad, describeRejectChars())
 	}
 	// A tab is refused server-side too and is not in the reject set, so the
 	// whitespace check is separate rather than folded into it.
