@@ -38,6 +38,15 @@ per-command details a script author hits once and then needs to look up.
   `.results[] | .filename` works and `summary.total` is the attachment count.
   `export` nests the files it wrote in an `attachments` array on its page
   result, the way `update`/`create` do.
+- **`metadata_source`** on `update`/`create` says which location supplied that
+  file's page metadata: `"frontmatter"`, `"manifest"` (a `pages:` entry in
+  `markfluence.yaml`), or `null` when nothing claimed the file. Where both
+  locations speak it reports `"frontmatter"`, since that is the one that wins
+  every field it can win. It exists because "why did this publish to *that*
+  page?" is otherwise only answerable by reproducing the resolution by hand,
+  which is hard from a CI log. A `null` source on `update` goes with
+  `status: skipped`: nothing claims the file, which is not a failure —
+  repositories legitimately hold markdown that is not published.
 - **`check`'s `broken` status is `ok: false` with no `error`/`code`** — unlike
   every other failure, its `broken`/`warnings` arrays already say everything
   there is to say, so there's no separate operational error to attach. Only

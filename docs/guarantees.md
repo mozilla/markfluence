@@ -185,8 +185,9 @@ how a link to `sub/dup.md` reached `./dup.md`. `internal/linkindex` resolves by
 path instead, so a basename can no longer match the wrong file
 (`_plans/026` commit 5).
 
-**L2** is deliberately narrow. `--title` and `--page-width` change what gets
-published and are meant to, so the law constrains resolution and naming only.
+**L2** is deliberately narrow. A flag like `create`'s `--title` changes what
+gets published and is meant to, so the law constrains resolution and naming
+only.
 Within that scope it rules out a root derived from the working directory, and
 equally one derived from the *set* of arguments — the same file would otherwise
 be named differently depending on what else was in the batch. `internal/project`
@@ -200,6 +201,15 @@ value is declared in a committed file on disk, found by the same
 working-directory-independent walk, so two people in different directories
 resolve it identically. It is strictly better for L2 than the `--space` flag it
 replaces, which is invocation state by definition. Status unchanged.
+
+A `pages:` entry (#139) is the same argument taken further, and it is why the
+path keys are **lexical and root-relative** rather than resolved. Resolving a
+symlink would make a key's meaning depend on how a checkout was laid out, so
+the same repository could publish to different pages on two machines — exactly
+what L2 forbids. It is also why `update` lost `--title`, `--page-id` and
+`--page-width`: page metadata now lives entirely in files on disk, so which
+page a file publishes to no longer depends on how the command was invoked at
+all. L2's carve-out for flags is narrower than it was.
 
 **L3** is what makes moving a page free. `images.go` records an attachment's
 `Source` relative to the root rather than to the referencing page, so identity

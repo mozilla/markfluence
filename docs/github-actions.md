@@ -65,15 +65,42 @@ jobs:
           # A variable, not a secret: the cloud ID is public. Omit it if you're
           # using an unscoped personal token.
           CONFLUENCE_CLOUD_ID: ${{ vars.CONFLUENCE_CLOUD_ID }}
-        run:
-          markfluence update --page-id=12345 --force docs/some_doc.md
+        run: markfluence update docs/**/*.md
 ```
+
+That step takes no per-file inputs, and that is the point: each file's page id
+and title come from its own frontmatter or from a `pages:` entry in
+`markfluence.yaml`, so adding a page is a repository change rather than a
+workflow change. There are deliberately no `--page-id`/`--title`/`--page-width`
+flags — they would each have to name a single file, which is what made
+`docs/**/*.md` inexpressible before.
+
+If your markdown must stay pristine — a README, or a docs tree with other
+readers — put every page's metadata in `markfluence.yaml`:
+
+```yaml
+space: ENG
+
+pages:
+  docs/deploy-runbook.md:
+    title: Deploy Runbook
+    page_id: 12346
+```
+
+See [the project file](root-model.md#pages--page-metadata-for-a-pristine-file).
 
 Notes:
 
 - **Exit codes.** `update` exits non-zero if any file fails, so the job fails
   loudly. Add `--json` to get machine-readable per-file results on stdout (see
   [`--json` output](../README.md#--json-output)) if a later step needs to parse them.
+- **A file nothing claims is skipped, not failed**, so a glob over a docs tree
+  does not turn the job red when somebody adds a draft. `metadata_source` in
+  `--json` says which location supplied each published page's metadata, which is
+  what to look at when a page lands somewhere unexpected.
+- **Creating pages stays a human act.** A workflow creating one would have to
+  commit the new `page_id` back to the repository. Create locally, commit the
+  entry, and let CI update from then on.
 
 A reusable composite/Docker action wrapping this is tracked in
 [#29](https://github.com/mozilla/markfluence/issues/29).
