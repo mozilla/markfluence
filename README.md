@@ -3,6 +3,22 @@
 Markdown-centric Confluence cli tool. Works with Claude, works with GitHub
 actions, works with you.
 
+## Where things are
+
+This file covers installing, configuring, and running each command. The rest
+lives beside it, because it is reference material rather than a read-through:
+
+| | |
+|---|---|
+| [docs/markdown.md](docs/markdown.md) | what the converter does with each markdown construct in a page body |
+| [docs/root-model.md](docs/root-model.md) | the documentation root: how a tree of files maps to a tree of pages |
+| [docs/confluence/](docs/confluence/) | what we established about Confluence by experiment — the API, storage format, scopes, and the traps that produce confident wrong answers |
+| [docs/guarantees.md](docs/guarantees.md) | the properties markfluence holds itself to, each with an honest status |
+| [schema/json-output/v1.json](schema/json-output/v1.json) | the `--json` schema, also printed by `markfluence schema` |
+
+Every command also carries its own reasoning in `markfluence COMMAND --help`,
+which is the authoritative description of what it does and why.
+
 ## Which Confluence
 
 Ways to run Confluence and markfluence support for it:
