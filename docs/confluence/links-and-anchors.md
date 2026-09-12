@@ -132,11 +132,37 @@ three, and this file's own warning is that storage proves only what was stored;
 a `mention` node in ADF is what proves Confluence understood it as a mention
 rather than inert markup it happened to keep.
 
-### The profile URL cannot be validated server-side — verified 2026-09-12
+### The profile URL is the one Confluence itself uses — verified 2026-09-12
+
+Asked the authoritative way: publish a mention, then read the page back as
+`body-format=view` and see what href Confluence's own renderer puts on it.
+
+```html
+<a class="confluence-userlink user-mention" data-account-id="60c36d0718e9f60071326951"
+   href="https://mozilla-hub.atlassian.net/wiki/people/60c36d0718e9f60071326951?ref=confluence"
+   target="_blank">William Kahn-Greene</a>
+```
+
+So `{site}/wiki/people/{accountId}` is where Confluence sends a reader who
+clicks a mention, which makes it the right destination by construction rather
+than by inference. The link text is the display name, which is what the
+markdown spelling emits.
+
+`?ref=confluence` is analytics and is **not** emitted: the bare URL answers 200,
+and the legacy `display/~{accountId}` form 302s *to* the `?ref=` variant, so
+nothing depends on it.
+
+A third way to get a display name falls out of this, alongside `GetUser` and the
+ADF route: `body-format=view` carries the name *and* the href. Same cost as ADF
+— one extra page fetch, since `body-format` takes one value — so it changes
+nothing about the lookup decision, but it is worth knowing it exists.
+
+### A *particular* id cannot be validated by fetching the profile — verified 2026-09-12
 
 #91 records the profile URL as `{site}/wiki/people/{accountId}`, "**verified**
-… which answers 200". The URL is right; the 200 proves nothing, and it is worth
-saying why before anyone leans on it again.
+… which answers 200". The URL is right — see above — but the *200* proves
+nothing about any given id, and it is worth saying why before anyone leans on it
+to check one.
 
 | request | bytes | requested id in body | authenticated id in body |
 |---|---|---|---|
