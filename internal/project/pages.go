@@ -127,6 +127,15 @@ func readEntry(named string, fields []frontmatter.Item) (Entry, error) {
 	return e, nil
 }
 
+// IsPageField reports whether name is a field markfluence understands on a
+// page, in frontmatter or in an entry.
+//
+// Exported because telling a markfluence key from a foreign one is not a
+// judgment a caller should make for itself: a docs tree carrying Jekyll's
+// layout:/date: frontmatter has said nothing about Confluence, and a caller
+// that counted any key at all would read every such file as claimed.
+func IsPageField(name string) bool { return entryFields[name] != 0 }
+
 // knownEntryFields lists the recognized field names, sorted so a message is
 // stable.
 func knownEntryFields() []string {
