@@ -221,8 +221,45 @@ Whether an unresolved link is reported — and how badly — depends on why:
   is also a Warning (`anchor not found: …`); the link still works, it just
   lands at the top of the page instead of the named heading.
 
-A mention, an attachment link, or an external URL was never meant to resolve
-here and stays silent either way.
+An attachment link or an external URL was never meant to resolve here and stays
+silent either way. A mention is a link too, but a special one — see below.
+
+## Mentions
+
+A Confluence mention round-trips as an ordinary markdown link to the person's
+profile, with an `@` on the link text:
+
+```markdown
+Ping [@Ada Lovelace](https://home.atlassian.com/people/712020:0e5f8a21-3c4d-4e5f-a6b7-c8d9e0f1a2b3) about the deploy.
+```
+
+`read` and `export` write that; `create` and `update` publish it back as a real
+mention. Three things worth knowing:
+
+- **The `@` is what makes it a mention.** A link to the same URL whose text does
+  not start with `@` publishes as a plain link, so you can still link to
+  somebody's profile without pinging them.
+- **The account id is the only durable part.** The display name is regenerated
+  on every `read`/`export`, so it goes stale harmlessly when somebody changes
+  their name, and the host is regenerated too — nothing site-specific survives
+  into the markdown.
+- **An id that names nobody is a warning, not an error.** Confluence accepts any
+  account id and renders it as `@Unlicensed user` rather than failing, so
+  markfluence looks the id up and says so; nothing else will.
+
+**A colleague who has left keeps their name.** A deactivated account resolves
+normally, and Confluence appends the suffix itself, so a round-tripped page
+reads `[@Mark Reid (Deactivated)](…)` and records who has gone rather than
+losing them.
+
+An id that genuinely does not resolve — a typo, a hand-edited URL — renders as
+`[@Unlicensed user](…)`, matching what the page itself will show. The id stays
+in the URL, so it is still the easiest thing to correct.
+
+If markfluence cannot *ask* whether an account exists (no network, a rejected
+token), the mention is left exactly as it was rather than being given a
+placeholder — otherwise one bad moment mid-export would write `Unlicensed user`
+over every real name in a tree.
 
 ## Comment directives
 
