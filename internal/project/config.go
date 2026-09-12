@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/mozilla/markfluence/internal/frontmatter"
+	"github.com/mozilla/markfluence/internal/ui"
 )
 
 // Config is what a project file declares. Every field is project-*wide*, and
@@ -127,7 +128,28 @@ func loadConfig(path string) (Config, error) {
 			cfg.PageWidth = value
 		}
 	}
+	// A project-wide default is invisible by construction: it takes effect for
+	// a file that says nothing about it, so "why did this publish to ENG?" has
+	// no answer in the file the reader is looking at. --debug is where that
+	// answer goes. Only a file that declares something is worth a line; the
+	// marker that ships declares nothing, and a line for every root in a batch
+	// would be noise. The root itself is already reported unconditionally.
+	if settings := cfg.declared(); len(settings) > 0 {
+		ui.Debug(fmt.Sprintf("project file %s: %s", path, strings.Join(settings, ", ")))
+	}
 	return cfg, nil
+}
+
+// declared lists the settings this Config actually carries, for reporting.
+func (c Config) declared() []string {
+	var out []string
+	if c.Space != "" {
+		out = append(out, "space="+c.Space)
+	}
+	if c.PageWidth != "" {
+		out = append(out, "page_width="+c.PageWidth)
+	}
+	return out
 }
 
 // unknownSetting is the message #100 exists for. One line, because it lands

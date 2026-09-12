@@ -2,10 +2,13 @@ package project
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mozilla/markfluence/internal/ui"
 )
 
 // write puts a project file in a fresh directory and returns the directory.
@@ -282,4 +285,68 @@ func TestSettingsArePerRoot(t *testing.T) {
 	if got["one"] != "ENG" || got["two"] != "OPS" {
 		t.Errorf("spaces = %#v, want one=ENG two=OPS", got)
 	}
+}
+
+// A project-wide default takes effect for a file that says nothing about it,
+// so "why did this publish to ENG?" has no answer in the file the reader is
+// looking at. --debug is where that answer goes.
+func TestLoadConfigReportsDeclaredSettingsUnderDebug(t *testing.T) {
+	ui.SetDebug(true)
+	t.Cleanup(func() { ui.SetDebug(false) })
+
+	dir := write(t, "space: ENG\npage_width: wide\n")
+	out := captureStderr(t, func() {
+		root, err := Discover(dir)
+		if err != nil {
+			t.Fatalf("Discover: %v", err)
+		}
+		root.FS.Close()
+	})
+	for _, want := range []string{filepath.Join(dir, Filename), "space=ENG", "page_width=wide"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("debug output = %q, want it to contain %q", out, want)
+		}
+	}
+}
+
+// The marker that ships declares nothing, and a line for every root in a batch
+// would be noise. The root itself is already reported unconditionally.
+func TestLoadConfigSaysNothingForAMarkerWithNoSettings(t *testing.T) {
+	ui.SetDebug(true)
+	t.Cleanup(func() { ui.SetDebug(false) })
+
+	dir := write(t, "# Marks the root of a markfluence project.\n")
+	out := captureStderr(t, func() {
+		root, err := Discover(dir)
+		if err != nil {
+			t.Fatalf("Discover: %v", err)
+		}
+		root.FS.Close()
+	})
+	if strings.Contains(out, "project file") {
+		t.Errorf("debug output = %q, want nothing about the project file", out)
+	}
+}
+
+// captureStderr runs fn with os.Stderr redirected, returning what it printed.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := os.Stderr
+	os.Stderr = w
+	done := make(chan string, 1)
+	go func() {
+		var b strings.Builder
+		_, _ = io.Copy(&b, r)
+		done <- b.String()
+	}()
+	fn()
+	os.Stderr = saved
+	_ = w.Close()
+	out := <-done
+	_ = r.Close()
+	return out
 }
