@@ -693,7 +693,7 @@ func resolveFile(
 	if title == "" {
 		return record{}, errors.New("no title given (pass --title or add a 'title:' frontmatter field)")
 	}
-	width, err := resolveWidth(pageWidthOpt, mf.Frontmatter)
+	width, err := resolveWidth(pageWidthOpt, mf.Frontmatter, root)
 	if err != nil {
 		return record{}, err
 	}
@@ -719,17 +719,9 @@ func resolveFile(
 		return record{}, err
 	}
 
-	// Space: --space or frontmatter 'space'; both set and differing is an error.
-	fmSpace := mf.Frontmatter["space"]
-	if spaceOpt != "" && fmSpace != "" && spaceOpt != fmSpace {
-		return record{}, fmt.Errorf("--space %q conflicts with frontmatter space %q", spaceOpt, fmSpace)
-	}
-	spaceKey := spaceOpt
-	if spaceKey == "" {
-		spaceKey = fmSpace
-	}
-	if spaceKey == "" {
-		return record{}, errors.New("no space given (pass --space or add a 'space:' frontmatter field)")
+	spaceKey, err := resolveSpace(spaceOpt, mf.Frontmatter, root)
+	if err != nil {
+		return record{}, err
 	}
 	spaceID, ok := spaceCache[spaceKey]
 	if !ok {
@@ -1002,11 +994,63 @@ func resolveTitle(cliTitle string, mf *frontmatter.MarkdownFile) string {
 	return mf.Title()
 }
 
-// resolveWidth returns the effective page width: --page-width overrides the
-// frontmatter page_width, which defaults to max when unset.
-func resolveWidth(cliPageWidth string, fm map[string]string) (pagewidth.Width, error) {
+// resolveSpace returns the space key to publish into: --space, then the
+// frontmatter space, then the project file's default (#100's chain, flag >
+// frontmatter > project file).
+//
+// --space and a frontmatter space both set and differing stays an error, as it
+// has been: those are two answers about where a page goes, with no reason to
+// prefer one. The project default is not a third answer of that kind -- it is
+// read only when neither of the two above it said anything, so it can never
+// conflict with either, which is what keeps the chain from needing any new
+// disagreement rule.
+func resolveSpace(cliSpace string, fm map[string]string, root *project.Root) (string, error) {
+	fmSpace := fm["space"]
+	if cliSpace != "" && fmSpace != "" && cliSpace != fmSpace {
+		return "", fmt.Errorf("--space %q conflicts with frontmatter space %q", cliSpace, fmSpace)
+	}
+	if cliSpace != "" {
+		return cliSpace, nil
+	}
+	if fmSpace != "" {
+		return fmSpace, nil
+	}
+	if root != nil && root.Config.Space != "" {
+		return root.Config.Space, nil
+	}
+	return "", fmt.Errorf("no space given (pass --space, add a 'space:' frontmatter "+
+		"field, or set 'space:' in %s)", project.Filename)
+}
+
+// resolveWidth returns the effective page width: --page-width, then the
+// frontmatter page_width, then the project file's default, then max. That is
+// #100's chain -- flag > frontmatter > project file -- and the project file is
+// only ever consulted when the two above it are silent, so it never
+// participates in a conflict.
+//
+// A blank frontmatter page_width falls through to the project default rather
+// than defaulting to max, matching how every other field reads a blank value
+// as unset.
+//
+// The error names the project file when the bad value came from there.
+// internal/project cannot check this itself -- it would have to import
+// internal/pagewidth, which imports internal/client, which holds a
+// *project.Cache -- so this is where a project-wide width is first validated,
+// and "invalid page_width" pointing at a markdown file that never mentions one
+// is the wrong file to send someone to.
+func resolveWidth(cliPageWidth string, fm map[string]string, root *project.Root) (pagewidth.Width, error) {
 	if cliPageWidth != "" {
 		return pagewidth.Declared(map[string]string{"page_width": cliPageWidth})
 	}
-	return pagewidth.Declared(fm)
+	if strings.TrimSpace(fm["page_width"]) != "" {
+		return pagewidth.Declared(fm)
+	}
+	if root != nil && root.Config.PageWidth != "" {
+		w, err := pagewidth.Declared(map[string]string{"page_width": root.Config.PageWidth})
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", root.File, err)
+		}
+		return w, nil
+	}
+	return pagewidth.DefaultWidth, nil
 }
