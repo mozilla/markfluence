@@ -16,8 +16,7 @@ File an issue at
 For a bug, include the command you ran, what you expected, what happened, and
 the output of `markfluence --version`. Re-running with `--debug` often shows the
 request that failed. Redact your site URL, username, and token if you'd rather
-not share them — but say which Confluence flavor you're on (Cloud or Data
-Center), since the API differs.
+not share them.
 
 ## Development setup
 
@@ -30,7 +29,8 @@ make build     # produces ./bin/markfluence
 make test
 ```
 
-Run `make` with no target for the annotated list of rules.
+Run `make` with no target for the annotated list of rules. `make check` is the
+one to remember — see below.
 
 To exercise the binary against a real Confluence site, put a `.env` in the
 working directory — see [`.env.example`](.env.example) and the
