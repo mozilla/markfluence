@@ -31,12 +31,22 @@ type Config struct {
 	// PageWidth is the default page_width. Declaring it means update asserts
 	// a width on a file that declares none, the same way frontmatter does.
 	PageWidth string
+	// Pages is per-file page metadata, keyed by NormalizePageKey'd path (#139).
+	// Nil when the file has no pages: key at all, which is what distinguishes a
+	// project that has not chosen the manifest from one that has and has
+	// registered nothing -- `pages: {}` is an empty non-nil map.
+	Pages map[string]Entry
 }
 
-// kind is the shape a setting's value must have. Only scalars exist today.
+// kind is the shape a value must have -- a top-level setting's, or a field's
+// inside a pages: entry (pages.go).
 type kind int
 
-const kindScalar kind = iota + 1
+const (
+	kindScalar kind = iota + 1
+	kindList
+	kindMapping
+)
 
 // settings is the whitelist of recognized top-level keys, mapped to the shape
 // each one's value must have.
@@ -47,6 +57,7 @@ const kindScalar kind = iota + 1
 // should be able to join this table instead of reworking the reader.
 var settings = map[string]kind{
 	"page_width": kindScalar,
+	"pages":      kindMapping,
 	"space":      kindScalar,
 }
 
@@ -56,7 +67,7 @@ var settings = map[string]kind{
 // probing goccy, and a project file read by a second copy of them would be a
 // second set of the same bugs (#100 called this "a third minimal parser" and
 // declined it).
-var dialect = frontmatter.Dialect{Doc: "a project file", Item: "setting"}
+var dialect = frontmatter.Dialect{Doc: "a project file", Item: "setting", MaxDepth: 2}
 
 // ConfigError is a markfluence.yaml that could not be understood. Typed so a
 // caller can report it as itself rather than under the "resolving the
@@ -122,6 +133,14 @@ func loadConfig(path string) (Config, error) {
 			return Config{}, &ConfigError{File: path, Line: it.Line, Err: fmt.Errorf(
 				"setting %q must be a single value, not a list", it.Key)}
 		}
+		if want == kindScalar && it.Map != nil {
+			return Config{}, &ConfigError{File: path, Line: it.Line, Err: fmt.Errorf(
+				"setting %q must be a single value, not a mapping", it.Key)}
+		}
+		if want == kindMapping && it.Map == nil {
+			return Config{}, &ConfigError{File: path, Line: it.Line, Err: fmt.Errorf(
+				"setting %q must be a mapping", it.Key)}
+		}
 		// A declared-but-empty setting is unset rather than an error, matching
 		// how frontmatter reads its own fields: `space:` with nothing after it
 		// says no more than an absent key does.
@@ -131,6 +150,12 @@ func loadConfig(path string) (Config, error) {
 			cfg.Space = value
 		case "page_width":
 			cfg.PageWidth = value
+		case "pages":
+			pages, err := readPages(it.Map)
+			if err != nil {
+				return Config{}, &ConfigError{File: path, Line: it.Line, Err: err}
+			}
+			cfg.Pages = pages
 		}
 	}
 	return cfg, nil
@@ -144,6 +169,9 @@ func (c Config) declared() []string {
 	}
 	if c.PageWidth != "" {
 		out = append(out, "page_width="+c.PageWidth)
+	}
+	if c.Pages != nil {
+		out = append(out, fmt.Sprintf("pages=%d", len(c.Pages)))
 	}
 	return out
 }
