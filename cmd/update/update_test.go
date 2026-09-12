@@ -3,6 +3,7 @@ package update
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/linkindex"
+	"github.com/mozilla/markfluence/internal/pagedoc"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/project"
 )
@@ -134,7 +136,7 @@ func TestProcessFileRejectsNonNumericPageID(t *testing.T) {
 	}
 
 	c := client.New(client.Config{SiteURL: "https://wiki.example.net"})
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
 	if r.ok {
 		t.Fatal("a non-numeric page_id must fail the file")
 	}
@@ -163,7 +165,7 @@ func TestProcessFileReportsMissingPage(t *testing.T) {
 		t.Fatalf("writing fixture: %v", err)
 	}
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
 	if r.ok {
 		t.Fatal("a page_id that resolves to nothing must fail the file")
 	}
@@ -229,7 +231,7 @@ func TestProcessFilePublishesSuccessfully(t *testing.T) {
 
 	path := writeUpdateFixture(t, "---\npage_id: 1\n---\nHello.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
 	if !r.ok || r.status != statusPublished {
 		t.Fatalf("result = %+v, want ok/published", r)
 	}
@@ -260,7 +262,7 @@ func TestProcessFileSkipsWhenFileOlderThanPage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
 	if !r.ok || r.status != statusSkipped {
 		t.Fatalf("result = %+v, want ok/skipped", r)
 	}
@@ -294,7 +296,7 @@ func TestProcessFileForceBypassesMtimeSkip(t *testing.T) {
 	force = true
 	t.Cleanup(func() { force = false })
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
 	if !r.ok || r.status != statusPublished {
 		t.Fatalf("result = %+v, want ok/published: --force bypasses the mtime skip", r)
 	}
@@ -348,7 +350,7 @@ func TestProcessFileRejectsEmptyTitle(t *testing.T) {
 	}
 
 	c := client.New(client.Config{SiteURL: "https://wiki.invalid"})
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
 	if r.ok {
 		t.Fatal("a present-but-empty title must fail the file")
 	}
@@ -377,7 +379,7 @@ func TestProcessFileKeepsLiveTitleWhenAbsent(t *testing.T) {
 		t.Fatalf("writing fixture: %v", err)
 	}
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
 	if r.title != "Live Title" {
 		t.Errorf("title = %q, want the live page's title", r.title)
 	}
@@ -420,7 +422,7 @@ func TestProcessFileAbsentLabelsMakesNoRequest(t *testing.T) {
 	c := labelServer(t, `{"results":[]}`, &paths)
 	path := writeUpdateFixture(t, "---\npage_id: 1\n---\nHello.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
 	if !r.ok {
 		t.Fatalf("result = %+v, want ok", r)
 	}
@@ -443,7 +445,7 @@ func TestProcessFileAssertsTheDeclaredSet(t *testing.T) {
 	c := labelServer(t, live, &paths)
 	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: [runbook, howto]\n---\nHello.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
 	if !r.ok || r.status != statusPublished {
 		t.Fatalf("result = %+v, want ok/published", r)
 	}
@@ -484,7 +486,7 @@ func TestProcessFileUnmanagedLabelsSurvive(t *testing.T) {
 	c := labelServer(t, live, &paths)
 	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: [runbook]\n---\nHello.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
 	if !r.ok {
 		t.Fatalf("result = %+v, want ok", r)
 	}
@@ -502,7 +504,7 @@ func TestProcessFileEmptyLabelsRemovesThemAll(t *testing.T) {
 	c := labelServer(t, `{"results":[{"id":"1","name":"stale","prefix":"global"}]}`, &paths)
 	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: []\n---\nHello.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
 	if !r.ok {
 		t.Fatalf("result = %+v, want ok", r)
 	}
@@ -527,7 +529,7 @@ func TestProcessFileInvalidLabelFailsBeforeAnyWrite(t *testing.T) {
 	})
 	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: [Runbook Two]\n---\nHello.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
 	if r.ok {
 		t.Fatal("result ok, want a validation failure")
 	}
@@ -557,7 +559,7 @@ func TestProcessFileLabelFailureIsAWarning(t *testing.T) {
 	})
 	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: [runbook]\n---\nHello.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
 	if !r.ok || r.status != statusPublished {
 		t.Fatalf("result = %+v, want the publish still reported as ok", r)
 	}
@@ -577,7 +579,7 @@ func TestProcessFileLabelCaseWarns(t *testing.T) {
 	c := labelServer(t, `{"results":[]}`, &paths)
 	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: [Runbook]\n---\nHello.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
 	if !r.ok {
 		t.Fatalf("result = %+v, want ok", r)
 	}
@@ -601,11 +603,86 @@ func TestProcessFileSkippedFileSkipsLabels(t *testing.T) {
 	})
 	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: [runbook]\n---\nHello.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
 	if r.status != statusSkipped {
 		t.Fatalf("status = %q, want skipped", r.status)
 	}
 	if len(paths) != 0 {
 		t.Errorf("label requests = %v, want none for a skipped file", paths)
+	}
+}
+
+// TestProcessFileWarnsAboutAMentionThatNamesNobody is the end-to-end shape of
+// the only signal an author gets. Confluence publishes a bad account id happily
+// as "@Unlicensed user", so a typo in a hand-edited profile URL would otherwise
+// reach nobody, silently, on every run.
+func TestProcessFileWarnsAboutAMentionThatNamesNobody(t *testing.T) {
+	const bogus = "712020:00000000-0000-0000-0000-000000000000"
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/user") {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"No user found with key : null"}`))
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			_, _ = w.Write([]byte(pageWithVersion("1", 3, "2020-01-01T00:00:00Z")))
+		default:
+			_, _ = w.Write([]byte(pageWithVersion("1", 4, "2026-01-01T00:00:00Z")))
+		}
+	})
+	path := writeUpdateFixture(t,
+		"---\npage_id: 1\n---\nPing [@Nobody](https://home.atlassian.com/people/"+bogus+") now.\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	if !r.ok {
+		t.Fatalf("result = %+v, want the page still published", r)
+	}
+	joined := strings.Join(r.warnings, " ")
+	if !strings.Contains(joined, bogus) || !strings.Contains(joined, "Unlicensed user") {
+		t.Errorf("warnings = %q, want one naming the id and what a reader will see", r.warnings)
+	}
+}
+
+// TestProcessFileDoesNotWarnAboutAResolvableMention, and the mention still
+// publishes as a mention rather than a link.
+func TestProcessFileDoesNotWarnAboutAResolvableMention(t *testing.T) {
+	const good = "60c36d0718e9f60071326951"
+	var published string
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/user") {
+			_, _ = fmt.Fprintf(w, `{"accountId":%q,"displayName":"Ada Lovelace"}`, good)
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			_, _ = w.Write([]byte(pageWithVersion("1", 3, "2020-01-01T00:00:00Z")))
+		default:
+			// Decoded, not the raw request bytes: the storage travels as a
+			// JSON string, so "<" arrives as \u003c and a raw substring match
+			// would fail against a body that is perfectly correct.
+			var req struct {
+				Body struct {
+					Value string `json:"value"`
+				} `json:"body"`
+			}
+			raw, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(raw, &req)
+			published = req.Body.Value
+			_, _ = w.Write([]byte(pageWithVersion("1", 4, "2026-01-01T00:00:00Z")))
+		}
+	})
+	path := writeUpdateFixture(t,
+		"---\npage_id: 1\n---\nPing [@Ada](https://home.atlassian.com/people/"+good+") now.\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	if !r.ok {
+		t.Fatalf("result = %+v, want ok", r)
+	}
+	if len(r.warnings) != 0 {
+		t.Errorf("warnings = %q, want none", r.warnings)
+	}
+	if !strings.Contains(published, `<ri:user ri:account-id="`+good+`"`) {
+		t.Errorf("published body = %q, want a mention", published)
 	}
 }

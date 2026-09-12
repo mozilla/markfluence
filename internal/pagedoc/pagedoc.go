@@ -116,6 +116,47 @@ type UserCache struct {
 // NewUserCache returns an empty cache, good for one run.
 func NewUserCache() *UserCache { return &UserCache{names: map[string]string{}} }
 
+// MentionWarnings reports the mentions in a document that name nobody, one
+// warning per distinct unresolvable account id.
+//
+// This is the forward direction's use of the same cache, and it exists because
+// nothing else will report the problem. Confluence accepts **any** account id
+// and renders it as "@Unlicensed user" rather than failing, and the profile URL
+// a mention links to answers 200 for a real id and a nonsense one alike -- both
+// verified against the live instance. So a typo'd or hand-edited id publishes a
+// mention that silently reaches nobody, on every run, forever.
+//
+// A warning rather than a failure: the page still publishes and the rest of it
+// is fine, and a mention that names nobody is a defect in one word rather than
+// a reason to refuse the document.
+//
+// Sharing the cache with the inverse direction is what makes this affordable.
+// Publishing needs no display names at all -- only the id, which is already in
+// the markdown -- so this lookup exists purely for the warning, and without a
+// cross-page cache it would cost one request per distinct mention on every
+// single update.
+func MentionWarnings(c *client.ConfluenceClient, users *UserCache, ids []string) []string {
+	if users == nil || len(ids) == 0 {
+		return nil
+	}
+	// resolve dedupes for us by consulting the cache, but the *warnings* have
+	// to be deduped too: a rotation table mentioning one person in twelve rows
+	// should say so once.
+	names := users.resolve(c, ids)
+	var out []string
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if names[id] != "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, fmt.Sprintf(
+			"mention of account %q does not resolve to a user; it will publish as "+
+				"\"@Unlicensed user\" and reach nobody", id))
+	}
+	return out
+}
+
 // resolve returns display names for ids, asking the server only about ids it
 // has not seen. A nil cache resolves nothing, which renders every mention as
 // passthrough rather than failing.

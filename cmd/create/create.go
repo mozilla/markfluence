@@ -33,6 +33,7 @@ import (
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/linkindex"
+	"github.com/mozilla/markfluence/internal/pagedoc"
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/project"
@@ -459,12 +460,16 @@ func createAll(ordered []record, c *client.ConfluenceClient, doPersist bool) []*
 
 	// Phase 3: convert and publish every reserved page, now that every id any
 	// of them might link to already exists.
+	//
+	// One user cache for the whole batch, so a set of files mentioning the same
+	// people resolves each of them once.
+	users := pagedoc.NewUserCache()
 	for _, r := range ordered {
 		p, ok := pending[r.absPath]
 		if !ok {
 			continue
 		}
-		final[r.absPath] = publishOne(r, p.res, p.pageID, p.version, c)
+		final[r.absPath] = publishOne(r, p.res, p.pageID, p.version, c, users)
 	}
 
 	results := make([]*createResult, len(ordered))
@@ -540,7 +545,10 @@ func reserveOne(
 // never made: SyncAttachments opens every asset to checksum and upload it, so
 // an image that Lstat'd fine in preflight can still be unreadable now. Those
 // are the residuals S7 (no-partial-create) stays Partial for.
-func publishOne(r record, res *createResult, pageID string, version int, c *client.ConfluenceClient) *createResult {
+func publishOne(
+	r record, res *createResult, pageID string, version int,
+	c *client.ConfluenceClient, users *pagedoc.UserCache,
+) *createResult {
 	// SiteURL, not BaseURL: rewritten links are published into the page, so they
 	// must point at the site even when requests go through the gateway.
 	pageContent, err := convert.MdToConfluence(r.mdfile, r.root, r.index, c.SiteURL(), r.spaceKey, buildinfo.Stamp())
@@ -549,6 +557,9 @@ func publishOne(r record, res *createResult, pageID string, version int, c *clie
 	}
 	res.broken = append(res.broken, pageContent.Broken...)
 	res.warnings = append(res.warnings, pageContent.Warnings...)
+	// Only to catch an id that names nobody: Confluence renders any account id
+	// as "@Unlicensed user" rather than failing, so nothing else reports it.
+	res.warnings = append(res.warnings, pagedoc.MentionWarnings(c, users, pageContent.Mentions)...)
 
 	// --dry-run: preview without creating. The page has no id/URL (reserveOne
 	// never created one); every attachment would be a fresh upload, and a new
