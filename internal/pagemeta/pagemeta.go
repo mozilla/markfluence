@@ -23,6 +23,7 @@ package pagemeta
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -147,6 +148,15 @@ func Resolve(key string, mf *frontmatter.MarkdownFile, root *project.Root) (Reso
 	for k, v := range entry.Fields {
 		r.Fields[k] = v
 	}
+	// One translation at the boundary: a path inside the manifest is
+	// root-relative, like every pages: key, but a `parent:` path everywhere
+	// else in markfluence is relative to the file that names it (create's
+	// resolveParent, and what export writes). Converting here keeps both true
+	// -- the manifest stays internally consistent, and nothing downstream has
+	// to learn where a value came from.
+	if rel, ok := fileRelativeParent(key, r.Fields["parent"]); ok {
+		r.Fields["parent"] = rel
+	}
 	for k, v := range entry.Lists {
 		r.Lists[k] = v
 	}
@@ -167,6 +177,16 @@ func Resolve(key string, mf *frontmatter.MarkdownFile, root *project.Root) (Reso
 			r.Fields[k] = file
 		case inFile:
 			r.Fields[k] = file
+		case !inEntry:
+			// Present in the file and blank, with nothing in the entry to fall
+			// back to. The *blank* has to survive rather than vanish: a
+			// present-but-empty `title:` is a defect update and check report,
+			// and dropping the key here made the same file clean with an entry
+			// and broken without one. A blank value is not a disagreement
+			// (nonBlank), but it is still something the author wrote.
+			if v, present := mf.Frontmatter[k]; present {
+				r.Fields[k] = v
+			}
 		}
 	}
 	for _, k := range sortedListKeys(mf.Lists, entry.Lists) {
@@ -198,6 +218,24 @@ func Resolve(key string, mf *frontmatter.MarkdownFile, root *project.Root) (Reso
 	return r, nil
 }
 
+// fileRelativeParent converts a manifest entry's root-relative .md parent into
+// the file-relative form used everywhere else, reporting whether it did.
+//
+// Pure path arithmetic -- nothing is stat'd -- so it is safe to do for a file
+// that may not exist, and it cannot depend on the checkout's layout (L2).
+// Anything that is not a .md path is left alone: an id and a null mean the same
+// thing in both locations.
+func fileRelativeParent(key, parent string) (string, bool) {
+	if key == "" || parent == "" || !strings.HasSuffix(parent, ".md") {
+		return "", false
+	}
+	rel, err := filepath.Rel(path.Dir(key), parent)
+	if err != nil {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
+}
+
 // entryFor looks up a file's manifest entry.
 func entryFor(key string, root *project.Root) (project.Entry, bool) {
 	if root == nil || root.Config.Pages == nil {
@@ -218,10 +256,14 @@ func HasManifest(root *project.Root) bool {
 // declaresPageField reports whether either map holds a non-blank value under a
 // field markfluence understands.
 //
-// Restricted to known fields on purpose: a docs tree carrying Jekyll or Hugo
-// frontmatter (layout:, date:, draft:) has said nothing about Confluence, and
-// counting any key at all would report every such file as having contributed
-// metadata it never had.
+// Restricted to known fields on purpose, and the reason is inside markfluence
+// rather than hypothetical: frontmatter deliberately preserves keys markfluence
+// knows nothing about (a test there pins `reviewers: [ana, bo]` surviving a
+// write, since a labels special case would break #21/#100). So a file whose
+// only frontmatter is unknown keys is a shape markfluence explicitly supports,
+// and counting any key at all read it as having contributed metadata it never
+// had. The same holds for frontmatter another tool wrote, which is the premise
+// of #139 -- "a README or a docs tree that has other readers".
 func declaresPageField(fields map[string]string, lists map[string][]string) bool {
 	for k, v := range fields {
 		if project.IsPageField(k) && strings.TrimSpace(v) != "" {

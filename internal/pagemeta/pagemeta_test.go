@@ -195,12 +195,12 @@ func TestResolveUnmanaged(t *testing.T) {
 	}
 }
 
-// A docs tree carrying Jekyll or Hugo frontmatter has said nothing about
-// Confluence. Counting any key at all would report every such file as claimed
-// and fail a whole tree.
+// A file whose frontmatter markfluence knows nothing about has said nothing
+// about Confluence. markfluence deliberately preserves such keys, so counting
+// any key at all would read every such file as claimed and fail a whole tree.
 func TestResolveForeignFrontmatterIsUnmanaged(t *testing.T) {
 	root := rootWith(t, "space: ENG\n")
-	r, err := Resolve("a.md", parse(t, "layout: post\ndate: 2026-01-01\ndraft: false\n"), root)
+	r, err := Resolve("a.md", parse(t, "reviewers: [ana, bo]\nowner: sre\n"), root)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -301,5 +301,138 @@ func TestKeyForOutsideTheRoot(t *testing.T) {
 	}
 	if _, ok := KeyFor(nil, "/tmp/a.md"); ok {
 		t.Error("want no key for a nil root")
+	}
+}
+
+// A path in the manifest is root-relative like every pages: key, but a parent:
+// path everywhere else in markfluence is relative to the file that names it.
+// Resolve translates at the boundary so both stay true.
+func TestResolveTranslatesAnEntrysParentToFileRelative(t *testing.T) {
+	root := rootWith(t, `pages:
+  docs/deploy-runbook.md:
+    page_id: 2
+    parent: docs/engineering-docs.md
+`)
+	mf := parse(t, "")
+	r, err := Resolve("docs/deploy-runbook.md", mf, root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got := r.Fields["parent"]; got != "engineering-docs.md" {
+		t.Errorf("parent = %q, want engineering-docs.md (file-relative)", got)
+	}
+}
+
+func TestResolveParentTranslationAcrossDirectories(t *testing.T) {
+	tests := map[string]struct{ key, entry, want string }{
+		"same directory": {"docs/a.md", "docs/b.md", "b.md"},
+		"one level up":   {"docs/team/a.md", "docs/b.md", "../b.md"},
+		"one level down": {"a.md", "docs/b.md", "docs/b.md"},
+		"root to root":   {"a.md", "b.md", "b.md"},
+		"two levels up":  {"a/b/c.md", "d.md", "../../d.md"},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			root := rootWith(t, "pages:\n  "+tc.key+":\n    page_id: 1\n    parent: "+tc.entry+"\n")
+			r, err := Resolve(tc.key, parse(t, ""), root)
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			if got := r.Fields["parent"]; got != tc.want {
+				t.Errorf("parent = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// A parent that is not a path means the same thing in both locations, so it is
+// left exactly as written.
+func TestResolveLeavesANonPathParentAlone(t *testing.T) {
+	for _, value := range []string{"12345", "null"} {
+		root := rootWith(t, "pages:\n  docs/a.md:\n    page_id: 1\n    parent: "+value+"\n")
+		r, err := Resolve("docs/a.md", parse(t, ""), root)
+		if err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		want := value
+		if value == "null" {
+			want = "" // every null spelling reads as empty
+		}
+		if got := r.Fields["parent"]; got != want {
+			t.Errorf("parent = %q, want %q", got, want)
+		}
+	}
+}
+
+// A frontmatter parent is already file-relative and must not be translated.
+func TestResolveDoesNotTranslateAFrontmatterParent(t *testing.T) {
+	root := rootWith(t, "space: ENG\n")
+	r, err := Resolve("docs/team/a.md", parse(t, "parent: ../index.md\npage_id: 1\n"), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got := r.Fields["parent"]; got != "../index.md" {
+		t.Errorf("parent = %q, want it unchanged", got)
+	}
+}
+
+// A present-but-blank frontmatter key has to survive the merge. Dropping it
+// made the same file clean with an entry and broken without one, since a
+// present-but-empty title: is a defect update and check report.
+func TestResolveKeepsAPresentButBlankFrontmatterKey(t *testing.T) {
+	root := rootWith(t, "pages:\n  a.md:\n    page_id: 1\n")
+	r, err := Resolve("a.md", parse(t, "title:\n"), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	v, present := r.Fields["title"]
+	if !present {
+		t.Fatal("title vanished; a blank the author wrote is still something they wrote")
+	}
+	if v != "" {
+		t.Errorf("title = %q, want empty", v)
+	}
+}
+
+// The same input with no entry at all must behave identically, which is the
+// asymmetry the bug created.
+func TestResolveBlankKeySurvivesWithAndWithoutAnEntry(t *testing.T) {
+	withEntry := rootWith(t, "pages:\n  a.md:\n    page_id: 1\n")
+	without := rootWith(t, "space: ENG\n")
+	for name, root := range map[string]*project.Root{"with entry": withEntry, "no entry": without} {
+		t.Run(name, func(t *testing.T) {
+			r, err := Resolve("a.md", parse(t, "title:\npage_id: 1\n"), root)
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			if _, present := r.Fields["title"]; !present {
+				t.Error("title not present; the two paths must agree")
+			}
+		})
+	}
+}
+
+// Foreign frontmatter plus a key markfluence shares with other tools: the
+// realistic shape, and the one where the two fixes have to work together.
+// markfluence deliberately preserves keys it knows nothing about (a test in
+// internal/frontmatter pins `reviewers: [ana, bo]` surviving a write), so a
+// file whose only frontmatter is unknown keys must not read as claimed -- and
+// `title:` alone must not either, since it does not say which page this is.
+func TestResolveUnknownKeysWithAKnownOneDoNotClaimAFile(t *testing.T) {
+	root := rootWith(t, "space: ENG\n")
+	r, err := Resolve("a.md", parse(t, "reviewers: [ana, bo]\ntitle: Shared Key\n"), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if r.Managed() {
+		t.Error("managed; neither an unknown key nor a bare title identifies a page")
+	}
+	// It did contribute a known field, which is a different question.
+	if r.Source != FromFrontmatter {
+		t.Errorf("source = %q, want frontmatter", r.Source)
+	}
+	// And the unknown key is still carried, since markfluence preserves it.
+	if l := r.Lists["reviewers"]; len(l) != 2 {
+		t.Errorf("reviewers = %#v, want it preserved", l)
 	}
 }

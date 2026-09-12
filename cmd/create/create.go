@@ -163,6 +163,12 @@ type record struct {
 	// metadataSource is which location supplied this file's metadata, carried
 	// from preflight so the published result reports what was actually read.
 	metadataSource string
+	// inManifest reports whether a pages: entry claims this file, which is
+	// what suppresses the frontmatter write-back (see createAll).
+	inManifest bool
+	// warnings are the metadata-resolution warnings, carried from preflight so
+	// the published result reports them (D6).
+	warnings []string
 	// root bounds this file's image/parent reads and is what its attachments'
 	// names and recorded Source are relative to. Discovered from the file's own
 	// directory, cached across the batch by internal/project.Cache.
@@ -187,10 +193,6 @@ type failure struct {
 	filename, message string
 	pageID, url       string
 	code              jsonout.Code
-	// metadataSource is set when the failure happened after metadata
-	// resolution, so a --json consumer can still see which location supplied
-	// the coordinates that turned out to be wrong.
-	metadataSource string
 }
 
 // pageIDFailure is a phase-1 failure about a file's frontmatter page_id. create
@@ -482,7 +484,16 @@ func createAll(ordered []record, c *client.ConfluenceClient, doPersist bool) []*
 			}
 		}
 
-		res, pageID, version, ok := reserveOne(r, parentID, c, doPersist)
+		// A file whose metadata lives in markfluence.yaml must not have
+		// frontmatter written into it. D9's rule is that new metadata goes
+		// wherever that file's metadata already is, and PR 1 of #139 has no
+		// manifest writer yet -- so persisting would put a page_id (and a
+		// resolved `parent: <id>`) into a file whose entry says something
+		// else, and every later update and check of that file would then fail
+		// as a coordinate disagreement. Skipping the write leaves the author
+		// one copy-paste, which is the cost the plan accepted; writing it
+		// would have been self-inflicted corruption.
+		res, pageID, version, ok := reserveOne(r, parentID, c, doPersist && !r.inManifest)
 		if !ok {
 			final[r.absPath] = res
 			continue
@@ -535,6 +546,7 @@ func reserveOne(
 	r record, parentID string, c *client.ConfluenceClient, persist bool,
 ) (res *createResult, pageID string, version int, ok bool) {
 	res = newResult(r)
+	res.warnings = append(res.warnings, r.warnings...)
 	res.parent = nullableStr(parentID)
 	// parent_type tracks parent: both null for a top-level page, and both null in
 	// a dry-run whose parent is an in-set page that has no id yet.
@@ -544,6 +556,9 @@ func reserveOne(
 
 	if dryRunOpt {
 		res.persisted = persist
+		if r.inManifest {
+			res.warnings = append(res.warnings, manifestPersistNotice(""))
+		}
 		return res, "", 0, true
 	}
 
@@ -554,6 +569,11 @@ func reserveOne(
 	pageID = result.ID
 	res.pageID = pageID
 	res.url = c.PageURL(result, pageID)
+	if r.inManifest {
+		// Said out loud, because a silent non-write is how somebody ends up
+		// with a created page nothing records.
+		res.warnings = append(res.warnings, manifestPersistNotice(pageID))
+	}
 
 	if persist {
 		parentValue, parentComment := parentField(r.parent, parentID)
@@ -721,9 +741,15 @@ func resolveFile(
 		return record{}, err
 	}
 
+	// A soft disagreement is reported here as well as by update: D6 promises
+	// the warning wherever metadata is resolved, and create is the verb most
+	// likely to be run right after somebody edited one of the two locations.
+	warnings := meta.Warnings
+
 	title := resolveTitle(titleOpt, meta.Fields)
 	if title == "" {
-		return record{}, errors.New("no title given (pass --title or add a 'title:' frontmatter field)")
+		return record{}, fmt.Errorf("no title given (pass --title, add a 'title:' frontmatter "+
+			"field, or set 'title:' in this file's %s entry)", project.Filename)
 	}
 	width, err := resolveWidth(pageWidthOpt, meta.Fields, root)
 	if err != nil {
@@ -809,8 +835,17 @@ func resolveFile(
 	return record{
 		filename: filename, absPath: abs, mdfile: mf, title: title, spaceKey: spaceKey,
 		spaceID: spaceID, parent: parent, width: width, labels: labelSet, root: root, index: index,
-		metadataSource: string(meta.MetadataSource()),
+		metadataSource: string(meta.MetadataSource()), inManifest: meta.InManifest(),
+		warnings: warnings,
 	}, nil
+}
+
+// parentKey is the manifest key for a parent file, or "" when it has none --
+// which pagemeta.Resolve reads as "no entry", the right answer for a parent
+// outside this root.
+func parentKey(root *project.Root, abs string) string {
+	key, _ := pagemeta.KeyFor(root, abs)
+	return key
 }
 
 // resolveParent resolves a file's parent: reference. A ".md" reference is read
@@ -827,7 +862,9 @@ func resolveParent(
 	fmParent := fm["parent"]
 	fmParentSet := fmParent != "" && fmParent != "null"
 	if parentOpt != "" && fmParentSet {
-		return parentInfo{}, errors.New("both --parent and a frontmatter 'parent' are set; use only one")
+		return parentInfo{}, fmt.Errorf(
+			"both --parent and a declared 'parent' (in the frontmatter or in %s) are set; use only one",
+			project.Filename)
 	}
 	parentValue := fmParent
 	if parentOpt != "" {
@@ -884,9 +921,20 @@ func resolveParent(
 		if err != nil {
 			return parentInfo{}, fmt.Errorf("parent %s: %w", parentValue, err)
 		}
-		pID := pmf.PageID()
+		// Through pagemeta, not pmf.PageID(): the *parent's* coordinates may
+		// live in its own pages: entry rather than in its frontmatter, and
+		// reading only the file reported a published parent as "not yet
+		// published" -- which is #139's linkindex trap in a second place,
+		// where it fails a create rather than degrading a link.
+		pMeta, err := pagemeta.Resolve(parentKey(root, parentAbs), pmf, root)
+		if err != nil {
+			return parentInfo{}, fmt.Errorf("parent %s: %w", parentValue, err)
+		}
+		pID := strings.TrimSpace(pMeta.Fields["page_id"])
 		if pID == "" {
-			return parentInfo{}, fmt.Errorf("parent not yet published (no page_id): %s", parentValue)
+			return parentInfo{}, fmt.Errorf(
+				"parent not yet published (no page_id in the file or in %s): %s",
+				project.Filename, parentValue)
 		}
 		parentType, err := checkParentInSpace(c, pID, spaceID)
 		if err != nil {
@@ -990,6 +1038,21 @@ func parentField(p parentInfo, parentID string) (value, comment string) {
 
 // wantPersist resolves the --persist/--no-persist pair; --no-persist wins.
 func wantPersist(persist, noPersist bool) bool { return persist && !noPersist }
+
+// manifestPersistNotice says why nothing was written back, and what to do
+// instead. Until #139's write half lands, a page created for a file whose
+// metadata lives in markfluence.yaml has to have its id put in the entry by
+// hand -- and that has to be *said*, or the author is left with a created page
+// nothing on disk records.
+func manifestPersistNotice(pageID string) string {
+	if pageID == "" {
+		return fmt.Sprintf("this file's metadata lives in %s, so no frontmatter will be "+
+			"written; the new page id has to be added to its pages: entry by hand",
+			project.Filename)
+	}
+	return fmt.Sprintf("this file's metadata lives in %s, so no frontmatter was written; "+
+		"add \"page_id: %s\" to its pages: entry", project.Filename, pageID)
+}
 
 // overrideNeedsSingleFile reports whether --title was given with anything other
 // than exactly one FILE. --page-width and the persist toggle are batch-ok.

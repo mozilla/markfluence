@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mozilla/markfluence/internal/frontmatter"
+	"github.com/mozilla/markfluence/internal/pagemeta"
 	"github.com/mozilla/markfluence/internal/project"
 )
 
@@ -165,7 +167,7 @@ func TestResolveParentBothSetIsAnError(t *testing.T) {
 
 	_, err := resolveParent(filepath.Join(root.Dir, "a.md"),
 		map[string]string{"parent": "other.md"}, nil, nil, "", root)
-	if err == nil || !strings.Contains(err.Error(), "both --parent and a frontmatter 'parent' are set") {
+	if err == nil || !strings.Contains(err.Error(), "both --parent and a declared 'parent'") {
 		t.Errorf("err = %v, want the both-set conflict error", err)
 	}
 }
@@ -247,4 +249,113 @@ func TestResolveParentRefusesSymlinkedTarget(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "symlink") {
 		t.Errorf("err = %v, want a symlink refusal", err)
 	}
+}
+
+// --- a parent whose coordinates live in the manifest --------------------------
+
+// rootWithManifest builds a root whose markfluence.yaml holds body.
+func rootWithManifest(t *testing.T, body string) *project.Root {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, project.Filename), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root, err := project.Discover(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.FS.Close() })
+	return root
+}
+
+// The parent is a pristine file whose page_id lives only in its pages: entry.
+// Reading the parent's frontmatter alone reported it "not yet published",
+// which is #139's linkindex trap in a second place -- failing a create rather
+// than degrading a link.
+func TestResolveParentReadsThePageIDFromTheManifest(t *testing.T) {
+	root := rootWithManifest(t, "pages:\n  parent.md:\n    title: Parent\n    page_id: 100\n")
+	if err := os.WriteFile(filepath.Join(root.Dir, "parent.md"), []byte("# Parent\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := parentServer(t, map[string]string{"100": `{"id":"100","spaceId":"space1"}`}, nil)
+
+	p, err := resolveParent(filepath.Join(root.Dir, "a.md"),
+		map[string]string{"parent": "parent.md"}, nil, c, "space1", root)
+	if err != nil {
+		t.Fatalf("resolveParent: %v", err)
+	}
+	if p.kind != parentPublished || p.id != "100" {
+		t.Errorf("p = %+v, want kind=published id=100", p)
+	}
+}
+
+// A parent registered with no page_id yet: still an error, and the message has
+// to name both places the id could go.
+func TestResolveParentManifestEntryWithNoPageID(t *testing.T) {
+	root := rootWithManifest(t, "pages:\n  parent.md:\n    title: Parent\n")
+	if err := os.WriteFile(filepath.Join(root.Dir, "parent.md"), []byte("# Parent\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := resolveParent(filepath.Join(root.Dir, "a.md"),
+		map[string]string{"parent": "parent.md"}, nil, nil, "space1", root)
+	if err == nil {
+		t.Fatal("want an error for a parent with no page id anywhere")
+	}
+	for _, want := range []string{"not yet published", project.Filename} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to mention %q", err, want)
+		}
+	}
+}
+
+// The end-to-end shape from _plans/039's own example: the child's entry names
+// its parent root-relative, and the parent's id is in the parent's entry. The
+// plan's example failed both halves of this before the fix.
+func TestParentFromAnEntryMatchesThePlansExample(t *testing.T) {
+	root := rootWithManifest(t, `pages:
+  docs/engineering-docs.md:
+    title: Engineering Docs
+    page_id: 100
+  docs/deploy-runbook.md:
+    title: Deploy Runbook
+    parent: docs/engineering-docs.md
+    page_id: 101
+`)
+	if err := os.MkdirAll(filepath.Join(root.Dir, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"engineering-docs.md", "deploy-runbook.md"} {
+		if err := os.WriteFile(filepath.Join(root.Dir, "docs", name), []byte("# x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := parentServer(t, map[string]string{"100": `{"id":"100","spaceId":"space1"}`}, nil)
+
+	// The value resolveParent receives is what pagemeta hands it: the
+	// file-relative translation of the entry's root-relative path.
+	meta, err := pagemeta.Resolve("docs/deploy-runbook.md",
+		mustParse(t, filepath.Join(root.Dir, "docs", "deploy-runbook.md")), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got := meta.Fields["parent"]; got != "engineering-docs.md" {
+		t.Fatalf("translated parent = %q, want engineering-docs.md", got)
+	}
+	p, err := resolveParent(filepath.Join(root.Dir, "docs", "deploy-runbook.md"),
+		meta.Fields, nil, c, "space1", root)
+	if err != nil {
+		t.Fatalf("resolveParent: %v", err)
+	}
+	if p.kind != parentPublished || p.id != "100" {
+		t.Errorf("p = %+v, want kind=published id=100", p)
+	}
+}
+
+func mustParse(t *testing.T, path string) *frontmatter.MarkdownFile {
+	t.Helper()
+	mf, err := frontmatter.ParseFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return mf
 }
