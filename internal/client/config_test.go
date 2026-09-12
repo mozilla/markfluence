@@ -419,3 +419,52 @@ func TestResolveWarnsThroughTheDiscoveredEnvFile(t *testing.T) {
 		t.Errorf("warnings = %v, want exactly one", *got)
 	}
 }
+
+// A malformed markfluence.yaml used to be swallowed here, silently reading
+// .env from the working directory instead of the project root. It matters most
+// for a command with no per-file root of its own -- read, search, info -- which
+// would otherwise never report the malformed file at all.
+func TestResolveFailsOnAMalformedProjectFile(t *testing.T) {
+	clearConfluenceEnv(t)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "markfluence.yaml"),
+		[]byte("spce: ENG\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".env"),
+		[]byte("CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+
+	if _, err := Resolve(ResolveOptions{}); err == nil {
+		t.Fatal("Resolve succeeded with a malformed project file, want an error")
+	} else if !strings.Contains(err.Error(), "unknown setting") {
+		t.Errorf("error = %q, want it to name the unknown setting", err)
+	}
+}
+
+// --env-file overrides discovery absolutely, which has to keep holding: an
+// explicit path is how someone works around a project file they cannot fix.
+func TestResolveEnvFileOverridesAMalformedProjectFile(t *testing.T) {
+	clearConfluenceEnv(t)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "markfluence.yaml"),
+		[]byte("spce: ENG\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	explicit := filepath.Join(root, "creds.env")
+	if err := os.WriteFile(explicit,
+		[]byte("CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+
+	c, err := Resolve(ResolveOptions{EnvFile: explicit})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if c.SiteURL() != "https://wiki" {
+		t.Errorf("SiteURL = %q, want https://wiki", c.SiteURL())
+	}
+}
