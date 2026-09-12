@@ -115,8 +115,14 @@ Six things to read off it, each of which a decision below has to hold up:
   both speak the rule is not "the higher wins" but D6's grading: a coordinate
   disagreement is an error and a soft one is a warning. Only *below* them is
   there precedence, and only for a field neither declares.
-- **`parent` is a relative `.md` path here**, exactly as in frontmatter, and is
-  resolved the same way. The `page_id` form works too; nothing new.
+- **`parent` is a relative `.md` path here, but relative to the *root*, not to
+  the file** — like every other path in the manifest, and as #139's own example
+  spells it. That is *not* how frontmatter's `parent:` works, which is
+  file-relative; the two are reconciled by `pagemeta` translating an entry's
+  value at the boundary, so the manifest stays internally consistent and
+  nothing downstream has to learn where a value came from. An earlier draft of
+  this plan claimed it resolved "exactly as in frontmatter, the same way",
+  which was self-contradictory and was implemented as neither.
 - **Keys are root-relative and lexical** (D3), which is the same key space
   `linkindex` already uses (fact 1) — so `docs/deploy-runbook.md` linking to
   `engineering-docs.md` resolves through the manifest with no new path vocabulary.
@@ -533,6 +539,73 @@ flags), `docs/guarantees.md` (**L2** is why keys are lexical and root-relative),
 - **`update` enforcing `space`/`parent`** (#10). Until then a manifest `space` is
   read for disagreement detection but changes nothing about where `update`
   publishes, since the space comes from the live page.
+
+## What the review found — 2026-09-12
+
+Nine findings. Two were merge blockers and both were in `create`, which is the
+seam this PR left weakest: it "read entries" for `title`/`space`/`page_id`/
+`page_width`/`labels` while two other paths still read frontmatter alone.
+
+1. **A `.md` parent could not resolve in a manifest project — this plan's own
+   example failed.** Two independent halves. `resolveParent` joined the parent
+   path onto the *file's* directory, so the root-relative spelling looked for
+   `docs/docs/engineering-docs.md`; and it read the parent's id with
+   `pmf.PageID()`, frontmatter only, so a parent whose `page_id` lived in its
+   own entry reported "not yet published". That is #139's `linkindex` trap in a
+   second place, where it fails a `create` rather than degrading a link. Fixed
+   by the boundary translation above and by resolving the *parent's* metadata
+   through `pagemeta` too. The plan's example is now an end-to-end test.
+
+2. **`create` persisting frontmatter poisoned every later run of a registered
+   file.** Publishing wrote `page_id` and a resolved `parent: <id>` into a file
+   whose entry said something else, so the next `update` or `check` failed as a
+   coordinate disagreement. D9's rule is that new metadata goes where that
+   file's metadata already is, and PR 1 has no manifest writer — so the correct
+   behaviour is to *not write*, and say so. D13 called the cost "a `page_id`
+   copied by hand"; it was silently creating the thing that needed repairing.
+
+3. **`check`'s project-width lint read `mf.Frontmatter`, not the resolved
+   metadata**, so a file whose *entry* declared a width was failed over the
+   project's bad one — the exact false positive the surrounding comment forbids,
+   and `update` published the same file fine.
+
+4. **Soft-disagreement warnings were delivered only by `update`.** `check` and
+   `create` dropped `meta.Warnings` on the floor, against D6.
+
+5. **`metadata_source` was `"frontmatter"` on an unmanaged skip**, set before
+   the `Managed()` check — contradicting the schema, `docs/json-output.md`, and
+   the `unmanaged` field's own comment about `--json` telling the two skips
+   apart.
+
+6. **A present-but-blank frontmatter key vanished when an entry existed.** So a
+   file with `title:` (empty) was reported broken with no entry and clean with
+   one. A blank is not a *disagreement*, but it is still something the author
+   wrote.
+
+7. **`NormalizePageKey` judged absoluteness before normalizing separators**, so
+   `\foo.md`, `C:\foo.md` and `\\server\share\a.md` were accepted as keys
+   `KeyFor` can never produce — a silently unreachable entry.
+
+8. Minor: a dead `failure.metadataSource` field whose comment claimed it was
+   populated; `create`'s "add a 'title:' frontmatter field" and the
+   `--parent` conflict message not mentioning an entry.
+
+9. Noted, deliberate: a frontmatter-only file with `page_id:` blank now exits 0
+   `skipped` where it used to fail. D7 covers it, and "registered" is
+   entry-only by design.
+
+Test quality: nothing in `cmd/create` exercised `pagemeta` at all, which is how
+1 and 2 hid; the conformance fixtures left `metadata_source` empty so its enum
+values were never validated; and the human "not published by markfluence" line
+was untested despite the PR claiming the two skips are distinguishable. All
+added, and 1's two halves were sabotage-checked.
+
+One framing correction that came out of review discussion rather than from
+fable: the comments justifying `IsPageField` cited Jekyll and Hugo frontmatter,
+which is a scenario nobody here has. The grounded version is inside markfluence
+— `internal/frontmatter` deliberately preserves keys it does not understand,
+pinned by a test on `reviewers: [ana, bo]` — so a file carrying only such keys
+is a shape markfluence explicitly supports, with no third-party tool involved.
 
 ## Follow-ups
 
