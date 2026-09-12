@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/mozilla/markfluence/internal/buildinfo"
 	"github.com/mozilla/markfluence/internal/completion"
@@ -90,6 +91,10 @@ func run(cmd *cobra.Command, args []string) error {
 	for _, dir := range roots.Roots() {
 		ui.Info("root: " + dir)
 	}
+	// Under --debug only, and beside the root it belongs to: a project-wide
+	// default takes effect for a file that says nothing about it, so it has no
+	// answer anywhere in the file a reader would open.
+	project.ReportSettings(roots)
 
 	if ui.IsJSON() {
 		items := make([]any, len(results))
@@ -175,9 +180,12 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 	// applying once both verbs agree. An absent title stays unreported: update
 	// accepts it and keeps the live page's title.
 	var localBroken []string
-	// A project-wide page_width Confluence does not accept fails every publish
-	// under this root, so it is Broken rather than a warning -- the same
-	// severity an invalid frontmatter page_width gets, for the same reason.
+	// A project-wide page_width Confluence does not accept, reported only for a
+	// file that would actually use it -- one whose own frontmatter declares no
+	// width. A file that declares its own wins over the project file (the
+	// chain is flag > frontmatter > project file), so reporting the project's
+	// bad value there would fail a file that publishes perfectly well, and
+	// check's rule is that a false positive is worse than a miss.
 	//
 	// This is where a project-wide width is validated offline at all:
 	// internal/project cannot check its own value, since it would have to
@@ -185,10 +193,12 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 	// *project.Cache. check is the one verb that can find it without
 	// publishing.
 	//
-	// Reported on each file under that root rather than once for the run, which
-	// is what keeps every diagnostic scoped to the files actually named: a file
-	// under a different project hears nothing about this one.
-	if root.Config.PageWidth != "" {
+	// Broken rather than a warning, matching an invalid frontmatter page_width:
+	// for the files it is reported on, the publish really would fail. And
+	// reported per file rather than once for the run, which is what keeps every
+	// diagnostic scoped to the files actually named -- a file under a different
+	// project hears nothing about this one.
+	if root.Config.PageWidth != "" && strings.TrimSpace(mf.Frontmatter["page_width"]) == "" {
 		if _, err := pagewidth.Declared(
 			map[string]string{"page_width": root.Config.PageWidth}); err != nil {
 			localBroken = append(localBroken, fmt.Sprintf("%s: %s", root.File, err))

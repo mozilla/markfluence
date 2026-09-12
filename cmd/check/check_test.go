@@ -580,19 +580,52 @@ func TestRunMalformedProjectFileIsAValidationFailure(t *testing.T) {
 }
 
 // A project file under a *different* root says nothing about a file checked
-// elsewhere: diagnostics stay scoped to the files actually named.
+// elsewhere: diagnostics stay scoped to the file they apply to. Both files are
+// named in one run so the scoping is actually exercised -- naming only the good
+// one would pass against any implementation, since nothing would touch the bad
+// tree at all.
 func TestRunProjectDefectIsScopedToItsOwnRoot(t *testing.T) {
 	base := t.TempDir()
 	bad := filepath.Join(base, "bad")
 	good := filepath.Join(base, "good")
 	write(t, filepath.Join(bad, "markfluence.yaml"), "page_width: huge\n")
-	write(t, filepath.Join(bad, "main.md"), "---\ntitle: Bad\npage_id: 1\n---\n# Bad\n")
+	write(t, filepath.Join(bad, "bad.md"), "---\ntitle: Bad\npage_id: 1\n---\n# Bad\n")
 	write(t, filepath.Join(good, "markfluence.yaml"), "page_width: wide\n")
-	write(t, filepath.Join(good, "main.md"), "---\ntitle: Good\npage_id: 2\n---\n# Good\n")
+	write(t, filepath.Join(good, "good.md"), "---\ntitle: Good\npage_id: 2\n---\n# Good\n")
 
-	if _, err := captureOutput(t, func() error {
-		return run(testCmd(t, ""), []string{filepath.Join(good, "main.md")})
-	}); err != nil {
-		t.Fatalf("checking the good project = %v, want success", err)
+	out, err := captureOutput(t, func() error {
+		return run(testCmd(t, ""), []string{
+			filepath.Join(good, "good.md"), filepath.Join(bad, "bad.md")})
+	})
+	if !ui.IsSilent(err) || ui.ExitCode(err) != 1 {
+		t.Fatalf("run = %v, want a silent exit-1 error (bad.md is broken)", err)
+	}
+	if !strings.Contains(out, "1 of 2 file(s) failed") {
+		t.Errorf("output = %q, want exactly one of the two files to fail", out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "good.md") && strings.Contains(line, "invalid page_width") {
+			t.Errorf("good.md was blamed for the other project's width: %q", line)
+		}
+	}
+}
+
+// A file declaring its own page_width wins over the project file, so the
+// project's bad value must not fail it: check's rule is that a false positive
+// is worse than a miss (CLAUDE.md), and update would publish this file fine.
+func TestRunInvalidProjectPageWidthIsNotReportedForAFileThatOverridesIt(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "markfluence.yaml"), "page_width: huge\n")
+	write(t, filepath.Join(dir, "main.md"),
+		"---\ntitle: Main\npage_id: 1\npage_width: wide\n---\n# Main\n")
+
+	out, err := captureOutput(t, func() error {
+		return run(testCmd(t, ""), []string{filepath.Join(dir, "main.md")})
+	})
+	if err != nil {
+		t.Fatalf("run = %v, want success: the file declares its own width", err)
+	}
+	if strings.Contains(out, "invalid page_width") {
+		t.Errorf("output = %q, want no complaint: the file's own width wins", out)
 	}
 }
