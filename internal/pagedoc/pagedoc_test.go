@@ -1,10 +1,13 @@
 package pagedoc
 
 import (
+	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/clienttest"
 )
 
 func TestRenderFrontmatter(t *testing.T) {
@@ -124,5 +127,110 @@ func TestRenderFrontmatterQuotesALabelThatNeedsIt(t *testing.T) {
 	got := RenderFrontmatter("T", "", "", "1", "", []string{"a,b"})
 	if !strings.Contains(got, `"a,b"`) {
 		t.Errorf("RenderFrontmatter = %q, want the comma-bearing label quoted", got)
+	}
+}
+
+// --- user mentions ------------------------------------------------------------
+
+const (
+	mentionA = "712020:0e5f8a21-3c4d-4e5f-a6b7-c8d9e0f1a2b3"
+	mentionB = "60c36d0718e9f60071326951"
+)
+
+// userServer answers the v1 user lookup and counts how many times each id was
+// asked about.
+func userServer(t *testing.T, names map[string]string) (*client.ConfluenceClient, map[string]int) {
+	t.Helper()
+	asked := map[string]int{}
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("accountId")
+		asked[id]++
+		name, ok := names[id]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"No user found with key : null"}`))
+			return
+		}
+		_, _ = fmt.Fprintf(w, `{"accountId":%q,"displayName":%q}`, id, name)
+	})
+	return c, asked
+}
+
+func mentionPage(id string, ids ...string) *client.Page {
+	p := &client.Page{ID: id}
+	body := ""
+	for _, a := range ids {
+		body += `<p><ac:link><ri:user ri:account-id="` + a + `" /></ac:link></p>`
+	}
+	p.Body.Storage.Value = body
+	return p
+}
+
+// TestUserCacheAsksOncePerIDAcrossPages is the test the whole cache exists for,
+// and the one nothing in the output would reveal. PageLinks builds its space-id
+// map per page and Options is constructed per page, so a user map written the
+// same way would re-resolve the same people on every page of a walk -- twelve
+// names costing 2400 requests across 200 pages. Asserted on a request count,
+// since the rendered markdown is identical either way.
+func TestUserCacheAsksOncePerIDAcrossPages(t *testing.T) {
+	c, asked := userServer(t, map[string]string{mentionA: "Ada Lovelace", mentionB: "Bo Peep"})
+	users := NewUserCache()
+
+	for i := range 5 {
+		page := mentionPage(fmt.Sprint(i), mentionA, mentionB)
+		opts := Options(c, page, Placement{}, users)
+		if opts.UserNames[mentionA] != "Ada Lovelace" {
+			t.Fatalf("page %d: names = %v", i, opts.UserNames)
+		}
+	}
+	if asked[mentionA] != 1 || asked[mentionB] != 1 {
+		t.Errorf("lookups = %v, want exactly one per id across five pages", asked)
+	}
+}
+
+// TestUserCacheDoesNotRetryAMiss: an id that does not resolve is cached as the
+// miss it is, or a page mentioning deactivated people costs a request each,
+// every page, to learn the same failures.
+func TestUserCacheDoesNotRetryAMiss(t *testing.T) {
+	c, asked := userServer(t, map[string]string{})
+	users := NewUserCache()
+
+	for i := range 4 {
+		page := mentionPage(fmt.Sprint(i), mentionA)
+		if names := Options(c, page, Placement{}, users).UserNames; len(names) != 0 {
+			t.Fatalf("page %d: names = %v, want none resolved", i, names)
+		}
+	}
+	if asked[mentionA] != 1 {
+		t.Errorf("lookups = %v, want the miss asked once and remembered", asked)
+	}
+}
+
+// TestUserCacheMakesNoRequestWithoutAMention is the guard every other lookup in
+// this package has: a page with nothing to resolve costs nothing.
+func TestUserCacheMakesNoRequestWithoutAMention(t *testing.T) {
+	c, asked := userServer(t, map[string]string{mentionA: "Ada Lovelace"})
+	page := &client.Page{ID: "1"}
+	page.Body.Storage.Value = "<p>Nobody is mentioned here.</p>"
+
+	if names := Options(c, page, Placement{}, NewUserCache()).UserNames; names != nil {
+		t.Errorf("UserNames = %v, want nil", names)
+	}
+	if len(asked) != 0 {
+		t.Errorf("lookups = %v, want none", asked)
+	}
+}
+
+// TestNilUserCacheResolvesNothing: a nil cache renders every mention as
+// passthrough rather than panicking, so a caller that has no use for names
+// degrades instead of failing.
+func TestNilUserCacheResolvesNothing(t *testing.T) {
+	c, asked := userServer(t, map[string]string{mentionA: "Ada Lovelace"})
+	page := mentionPage("1", mentionA)
+	if names := Options(c, page, Placement{}, nil).UserNames; names != nil {
+		t.Errorf("UserNames = %v, want nil", names)
+	}
+	if len(asked) != 0 {
+		t.Errorf("lookups = %v, want none", asked)
 	}
 }

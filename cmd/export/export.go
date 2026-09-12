@@ -354,6 +354,10 @@ func exportNodes(
 	// Which page wrote each destination, so a second page wanting the same file
 	// with different content is reported rather than skipped.
 	claims := newClaims()
+	// One cache for the whole walk, so a person mentioned on every page of a
+	// tree is resolved once rather than once per page. This is the difference
+	// between a dozen requests and a few thousand on a rotation-heavy space.
+	users := pagedoc.NewUserCache()
 	places := layout(ref, nodes)
 	// Every page's file is spoken for before a single attachment is written.
 	// An attachment's recorded path can name any file under dest, and a
@@ -385,7 +389,7 @@ func exportNodes(
 
 	if page != nil {
 		place := places[page.ID]
-		r := exportOne(c, page, root, pagedoc.Placement{AttachmentDir: place.childDir}, place, claims)
+		r := exportOne(c, page, root, pagedoc.Placement{AttachmentDir: place.childDir}, place, claims, users)
 		if r.err != nil {
 			failed[page.ID] = true
 		}
@@ -423,7 +427,7 @@ func exportNodes(
 		default:
 			r := exportOne(c, child, root, pagedoc.Placement{
 				Dir: place.dir, AttachmentDir: place.childDir, Parent: place.parentFile,
-			}, place, claims)
+			}, place, claims, users)
 			if r.err != nil {
 				failed[n.ID] = true
 			}
@@ -480,7 +484,7 @@ type attachment struct {
 // and its frontmatter; place says where the file goes.
 func exportOne(
 	c *client.ConfluenceClient, page *client.Page, root string,
-	pl pagedoc.Placement, place placement, claims *destClaims,
+	pl pagedoc.Placement, place placement, claims *destClaims, users *pagedoc.UserCache,
 ) result {
 	res := result{page: page, place: place}
 	res.destPath = filepath.Join(root, filepath.FromSlash(place.file))
@@ -510,7 +514,7 @@ func exportOne(
 		res.pageStatus = attachfile.StatusSkipped
 	} else {
 		pl.Attachments = atts
-		doc, err := pagedoc.Render(c, page, pl)
+		doc, err := pagedoc.Render(c, page, pl, users)
 		if err != nil {
 			res.err, res.code = err, jsonout.CodeConvert
 			return res

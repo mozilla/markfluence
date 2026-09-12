@@ -78,12 +78,65 @@ func (d Doc) String() string { return d.Frontmatter + "\n" + d.Body }
 // See Placement for what pl carries.
 //
 // The page must have been fetched with its body (GetPageBodyOrNil).
-func Render(c *client.ConfluenceClient, page *client.Page, pl Placement) (Doc, error) {
-	body, err := convert.StorageToMarkdown(page.Body.Storage.Value, Options(c, page, pl))
+func Render(c *client.ConfluenceClient, page *client.Page, pl Placement, users *UserCache) (Doc, error) {
+	body, err := convert.StorageToMarkdown(page.Body.Storage.Value, Options(c, page, pl, users))
 	if err != nil {
 		return Doc{}, err
 	}
 	return Doc{Frontmatter: Frontmatter(c, page, pl.Parent), Body: body}, nil
+}
+
+// UserCache resolves mentioned account ids to display names, at most once per
+// id for as long as it lives.
+//
+// A cache rather than a plain lookup because mentions cluster and the obvious
+// structure is wrong: PageLinks builds its space-id map inside itself, once per
+// page, and Options is constructed per page too, so a user map written that way
+// would re-resolve the same twelve on-call people on every page of a 200-page
+// export -- 2400 requests to learn twelve names. So it is threaded in from the
+// caller, the way project.Cache and linkindex.Cache already are, and it is a
+// parameter rather than package state so two runs cannot see each other's.
+//
+// Not persisted to disk, and the reason is a guarantee rather than effort: L2
+// (invocation-independent) says output depends only on the files on disk, and a
+// disk cache would add "and on what your cache happens to hold" -- two people
+// exporting the same page would get different names, with nothing in the diff
+// to explain it. It is also the one part of this that is not static: an account
+// id never changes, which is why it is the identity here, but the id-to-name
+// mapping does, with no invalidation signal to hang anything on.
+type UserCache struct {
+	// names holds every id already asked about. A present key means "asked",
+	// and an empty value means "asked and could not resolve" -- that
+	// distinction is the whole point, or a page mentioning three deactivated
+	// people would cost three requests per page, forever, to learn the same
+	// three failures.
+	names map[string]string
+}
+
+// NewUserCache returns an empty cache, good for one run.
+func NewUserCache() *UserCache { return &UserCache{names: map[string]string{}} }
+
+// resolve returns display names for ids, asking the server only about ids it
+// has not seen. A nil cache resolves nothing, which renders every mention as
+// passthrough rather than failing.
+func (u *UserCache) resolve(c *client.ConfluenceClient, ids []string) map[string]string {
+	if u == nil || len(ids) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(ids))
+	for _, id := range ids {
+		name, asked := u.names[id]
+		if !asked {
+			// GetUser is best-effort and answers "" for an id that does not
+			// resolve, which is cached as the miss it is.
+			name = c.GetUser(id)
+			u.names[id] = name
+		}
+		if name != "" {
+			out[id] = name
+		}
+	}
+	return out
 }
 
 // Options assembles what the converter cannot fetch for itself: the attachment
@@ -98,10 +151,15 @@ func Render(c *client.ConfluenceClient, page *client.Page, pl Placement) (Doc, e
 // One conversion, parameterized by where the page sits. read and export produce
 // identical markdown for the same position; read has no tree, so it passes the
 // empty one.
-func Options(c *client.ConfluenceClient, page *client.Page, pl Placement) convert.StorageOptions {
+func Options(
+	c *client.ConfluenceClient, page *client.Page, pl Placement, users *UserCache,
+) convert.StorageOptions {
 	return convert.StorageOptions{
 		Sources:   pl.sources(c, page),
 		PageLinks: PageLinks(c, page),
+		// Gathered from the body, so a page with no mention makes no request --
+		// the guard every other lookup here has.
+		UserNames: users.resolve(c, convert.MentionTargets(page.Body.Storage.Value)),
 		PageDir:   pl.Dir,
 		// Where an attachment with no recorded path is placed: the directory
 		// named after the page, beside the page's own file. Computed here rather

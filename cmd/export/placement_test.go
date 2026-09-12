@@ -71,7 +71,7 @@ func TestExportWritesAttachmentsWhereTheMarkdownPointsThem(t *testing.T) {
 			cl := nativePageServer(t, c.comment)
 			p := page(t, cl)
 			res := exportOne(cl, p, dir, pagedoc.Placement{},
-				placement{file: pageslug.Filename(p.Title, p.ID)}, newClaims())
+				placement{file: pageslug.Filename(p.Title, p.ID)}, newClaims(), pagedoc.NewUserCache())
 			if res.err != nil {
 				t.Fatalf("export: %v", res.err)
 			}
@@ -222,7 +222,7 @@ func TestExportSkipsTheRenderForAnExistingFile(t *testing.T) {
 	p := page(t, c)
 	place := placement{file: "runbook.md"}
 
-	first := exportOne(c, p, dir, pagedoc.Placement{}, place, newClaims())
+	first := exportOne(c, p, dir, pagedoc.Placement{}, place, newClaims(), pagedoc.NewUserCache())
 	if first.pageStatus != statusWrote {
 		t.Fatalf("first run status = %q, want %q", first.pageStatus, statusWrote)
 	}
@@ -234,7 +234,7 @@ func TestExportSkipsTheRenderForAnExistingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	second := exportOne(c, p, dir, pagedoc.Placement{}, place, newClaims())
+	second := exportOne(c, p, dir, pagedoc.Placement{}, place, newClaims(), pagedoc.NewUserCache())
 	if second.pageStatus != attachfile.StatusSkipped {
 		t.Errorf("second run status = %q, want %q", second.pageStatus, attachfile.StatusSkipped)
 	}
