@@ -383,3 +383,27 @@ since "check validates offline" and "a mention needs the server" do not compose.
   #88 recorded.
 - **Harvesting names from ADF.** Noted above; revisit only if the per-id lookup
   is measured to hurt.
+- **A `mentions` field in `--json`.** Deliberately not added, and worth saying
+  why so it is not re-argued from scratch.
+
+  The asymmetry with `labels` is the thing to understand. In `--json` the body
+  is bare and the structured fields *are* the frontmatter, so a `labels` field
+  recovers metadata that would otherwise be absent from the output entirely. A
+  mention is **content**: it is already in `body`, as
+  `[@Name](https://home.atlassian.com/people/{id})`. A field would be a
+  convenience index over data that is present, not a recovery — and every
+  derived field is permanent published surface.
+
+  The case *for* it, if somebody ever asks: a consumer extracting mentions from
+  `body` has to pattern-match the profile URL, and that URL has already proven
+  unstable — it moved from `{site}/wiki/people/{id}` to
+  `home.atlassian.com/people/{id}` during this very issue, which would have
+  broken any such script. A field of bare account ids is stable across that
+  kind of move, and the URL shape is exactly the knowledge markfluence exists
+  to encapsulate. A plausible consumer exists too: auditing which people a set
+  of pages mentions, e.g. checking a rotation still names current employees.
+
+  Not built, because no consumer has asked and the information is not lost
+  without it. If it is added, `update`/`create` should report their
+  `ConfluencePage.Mentions` at the same time — exposing it only on `read` would
+  be its own asymmetry.
