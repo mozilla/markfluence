@@ -333,6 +333,26 @@ even there inconsistently, since `writeProjectFile` never overwrites an existing
 marker (S3), so the setting would be present or absent depending on whether one
 was already there.
 
+### `create --persist` still writes `space:` into the file — settled 2026-09-12
+
+Found while testing live: `create` persists the space it resolved, so a file
+`create` makes carries `space: ENG` even when the project file already said it.
+The dedup this issue exists for therefore pays off only for files that are
+hand-written and only ever `update`d.
+
+Left alone, deliberately. **The target workflow is CI updating existing pages,
+not creating them** — a person creates the page and wires the repo up so a GHA
+workflow can `update` it afterwards, which is the same division #139 records as
+"CI updates; humans create" (creating in CI would mean a workflow committing a
+new `page_id` back to the repo). So `create` is the verb a human runs once, with
+their own flags, and the write-back recording what it actually did is a feature
+there rather than duplication.
+
+The alternative — not persisting a field whose value came from the project file
+— would make a file's frontmatter silently depend on where it sits, and #139
+supersedes the problem properly by having `create` write a `pages:` entry
+instead.
+
 ## Out of scope
 
 - **`pages:`** — #139, blocked on this.
