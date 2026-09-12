@@ -1186,8 +1186,19 @@ mention. Three things worth knowing:
   account id and renders it as `@Unlicensed user` rather than failing, so
   markfluence looks the id up and says so; nothing else will.
 
-A mention whose account cannot be resolved to a name stays raw storage, which is
-the usual outcome for a deactivated person.
+**A colleague who has left keeps their name.** A deactivated account resolves
+normally, and Confluence appends the suffix itself, so a round-tripped page
+reads `[@Mark Reid (Deactivated)](…)` and records who has gone rather than
+losing them.
+
+An id that genuinely does not resolve — a typo, a hand-edited URL — renders as
+`[@Unlicensed user](…)`, matching what the page itself will show. The id stays
+in the URL, so it is still the easiest thing to correct.
+
+If markfluence cannot *ask* whether an account exists (no network, a rejected
+token), the mention is left exactly as it was rather than being given a
+placeholder — otherwise one bad moment mid-export would write `Unlicensed user`
+over every real name in a tree.
 
 ### Body
 
