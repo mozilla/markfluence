@@ -317,7 +317,7 @@ the check keeps holding if goccy regresses.
 
 The check compares the re-read **node kind** as well as its text, which is what
 makes the `.inf` case work. An earlier version compared text alone and passed:
-`scalarValue` flattens every scalar to its token, so markfluence read `.inf`
+the reader flattens every scalar to its token, so markfluence read `.inf`
 back as `.inf` and the round-trip looked clean while the file said "float" to
 everyone else. Comparing text is comparing the wrong thing.
 
