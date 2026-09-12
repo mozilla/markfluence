@@ -14,7 +14,8 @@ lives beside it, because it is reference material rather than a read-through:
 | [docs/root-model.md](docs/root-model.md) | the documentation root: how a tree of files maps to a tree of pages |
 | [docs/confluence/](docs/confluence/) | what we established about Confluence by experiment — the API, storage format, scopes, and the traps that produce confident wrong answers |
 | [docs/guarantees.md](docs/guarantees.md) | the properties markfluence holds itself to, each with an honest status |
-| [schema/json-output/v1.json](schema/json-output/v1.json) | the `--json` schema, also printed by `markfluence schema` |
+| [docs/json-output.md](docs/json-output.md) | `--json` in detail: status verbs, what counts as a result, why the shapes are what they are |
+| [schema/json-output/v1.json](schema/json-output/v1.json) | the `--json` schema itself, also printed by `markfluence schema` |
 
 Every command also carries its own reasoning in `markfluence COMMAND --help`,
 which is the authoritative description of what it does and why.
@@ -871,76 +872,25 @@ the schema cannot drift from the implementation.
 The binary carries that same schema, so a consumer can fetch the contract
 without knowing anything about this repository (see [`schema`](#schema)).
 
-Notes on the schema:
+**[docs/json-output.md](docs/json-output.md)** covers the rest: the per-command
+status verbs, what counts as one result for each command, `check`'s `broken`
+status, `create`'s preflight abort, and why `find`/`search` report an
+operational failure on stderr rather than as a result.
 
-- **Per-command stable.** Each command always emits the same keys in the same
-  shapes (empty values are `null` or `[]`); the key *set* differs per command.
-  `schema_version` is bumped on any breaking change.
-- **`roots`** lists every distinct [documentation root](#the-documentation-root)
-  the command resolved, sorted — `[]` for a command with no per-file root
-  concept (`find`, `search`, ...) or a pre-flight failure that never reached
-  root resolution. `schema` emits no envelope at all, so it has no `roots` key
-  to speak of.
-- **`warnings`** carries warnings about the *invocation* rather than about any
-  page or file — currently only the `.env` permission warning below. A result's
-  own warnings live on the result; this is for something that belongs to no
-  result. `[]` when there is nothing to report. It appears on the stderr error
-  object too, since a fatal failure emits no envelope and a credential failure
-  is exactly the run where a warning about your `.env` matters.
-- **Status verbs** are per-command: `published`/`skipped` (`update`),
-  `created`/`not_created` (`create`), `changed`/`consistent` (`fix`),
-  `clean`/`warnings`/`broken` (`check`),
-  `created`/`updated`/`skipped` (`attachment-upload`),
-  `downloaded`/`skipped` (`attachment-download`), plus `failed`. `info`, `read`,
-  and `attachment-list` results carry data only (no status verb).
-- **One result per target**, and the target is per-command: the page for
-  `info`/`read`/`export` (always one), the file for `update`/`create`/`fix`/`check`,
-  and the attachment for the three `attachment-*` commands — so
-  `.results[] | .filename` works and `summary.total` is the attachment count.
-  `export` nests the files it wrote in an `attachments` array on its page
-  result, the way `update`/`create` do.
-- **`check`'s `broken` status is `ok: false` with no `error`/`code`** — unlike
-  every other failure, its `broken`/`warnings` arrays already say everything
-  there is to say, so there's no separate operational error to attach. Only
-  its `failed` status (a file that never reached the converter at all) sets
-  them, the same as every other command's failure. `check --show-html` adds a
-  `debug: { html, attachments } | null` field, populated only for a file that
-  reached the converter; `html` stays exactly what the converter produced
-  (unindented), since it's meant to match what `update`/`create` would
-  literally publish.
-- **Compound values are objects**, never display strings — `version`,
-  `page_width`, and the `created`/`updated` author stamps on `info`.
-- **`create`'s preflight abort** (any file failing means nothing is created)
-  lists every input file — failed ones with an `error`, the rest as
-  `not_created` — and sets `summary.aborted: true`.
-- **Warnings and broken image/link notices** are data (`warnings`/`broken`
-  arrays on each result), not stderr log lines.
-- **The discovery commands list what they found**, so `results` is one object per
-  match (`find`, `search`) or per node (`children`), and `summary.total` is that
-  count. `search`'s summary carries two extra fields: `truncated`, meaning
-  `--limit` was reached with matches left over, and `skipped`, counting index rows
-  that had no page id to report (reachable only via `--cql` or `--type all`).
-  Neither is a count of matches you could get by asking again for more.
+Exit codes:
 
-Errors and exit codes:
+| exit | meaning |
+|---|---|
+| `0` | success — including "no matches", which is an answer a caller acts on |
+| `1` | a per-file or per-target failure; the envelope is still on stdout, with `ok: false` and an `error`/`code` on the failed results |
+| `2` | a fatal pre-flight failure (bad flags, credential resolution). No envelope; a typed error object goes to **stderr** instead |
 
-- **Per-file operational failures** appear in `results` as
-  `{ "ok": false, "error": "…", "code": "…" }`; the command exits `1` if any
-  file failed.
-- **`find` and `search` have no failed-result variant.** They name no page, so
-  there is no id to attach a failure to: an operational failure prints the same
-  typed error object to **stderr** and exits `1`, with no envelope on stdout.
-  Emitting an empty `results` array would be worse than emitting nothing, since
-  "no matches" is a meaningful answer that a caller acts on.
-- **Fatal/pre-flight failures** (bad flags, credential resolution) print a typed
-  error object to **stderr** and exit `2`:
+```json
+{ "schema_version": 1, "command": "update", "error": "…", "code": "CONFIG", "warnings": [] }
+```
 
-  ```json
-  { "schema_version": 1, "command": "update", "error": "…", "code": "CONFIG", "warnings": [] }
-  ```
-
-- Error `code` values: `CONFIG`, `AUTH`, `NOT_FOUND`, `VALIDATION`, `CONVERT`,
-  `IO`, `NETWORK`, `API`.
+Error `code` values: `CONFIG`, `AUTH`, `NOT_FOUND`, `VALIDATION`, `CONVERT`,
+`IO`, `NETWORK`, `API`.
 
 ### `schema`
 
