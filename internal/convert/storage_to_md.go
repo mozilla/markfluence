@@ -79,6 +79,7 @@ func StorageToMarkdown(storage string, opts StorageOptions) (string, error) {
 		attachmentDir: path.Clean("/" + opts.AttachmentDir)[1:],
 		pageLinks:     opts.PageLinks,
 		siteURL:       strings.TrimSuffix(opts.SiteURL, "/"),
+		userNames:     opts.UserNames,
 		headingSlugs:  headingSlugs(root),
 	}
 	blocks := r.blockStrings(root.kids, "")
@@ -112,6 +113,11 @@ type mdRenderer struct {
 
 	// siteURL is the Confluence site base, for a space link. Never the gateway.
 	siteURL string
+
+	// userNames maps a mentioned account id -> that person's display name,
+	// resolved by the caller. An id missing from it passes the mention through
+	// as raw storage. See StorageOptions.UserNames.
+	userNames map[string]string
 
 	// headingSlugs maps this document's own Confluence heading anchors to their
 	// GitHub equivalents, which is how a same-page anchor link is recovered.
