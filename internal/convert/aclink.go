@@ -52,6 +52,17 @@ type StorageOptions struct {
 	// into a page. Empty passes space links through.
 	SiteURL string
 
+	// UserNames maps a mentioned account id to that person's display name, as
+	// gathered by MentionTargets and resolved by the caller. An id missing from
+	// it passes the mention through as raw storage: there is no name to render,
+	// and a link whose text is a bare account id shows a reader nothing the
+	// storage did not.
+	//
+	// Note what is *not* here: a site. The profile URL a mention renders to
+	// lives on Atlassian Home rather than on the Confluence site, so it needs
+	// nothing from the caller's configuration -- see renderUserMention.
+	UserNames map[string]string
+
 	// PageDir is where the page's markdown file sits, relative to the root of
 	// whatever is being written -- "" for a file at that root, "home" for
 	// dest/home/child.md's parent, and so on, in slash form.
@@ -117,6 +128,41 @@ func PageLinkTargets(storage string) []PageLinkTarget {
 	return out
 }
 
+// MentionTargets returns every account id mentioned in this storage, so a
+// caller holding a client can resolve them to display names and hand the names
+// back through StorageOptions.UserNames. Ids are deduplicated, in document
+// order.
+//
+// PageLinkTargets' sibling, and it reports ids inside raw-serialized macros for
+// the same reason: matching the renderer's macro rules here would mean keeping
+// two copies of them in step, and the cost of being wrong is one wasted lookup
+// rather than a wrong answer.
+//
+// A parse failure yields no targets rather than an error, since the caller is
+// about to call StorageToMarkdown on the same storage, which reports it once.
+func MentionTargets(storage string) []string {
+	root, err := parseStorage(storage)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	walkNodes(root, func(n *snode) {
+		if n.name != "ac:link" {
+			return
+		}
+		u := findChild(n, "ri:user")
+		if u == nil {
+			return
+		}
+		if id := u.attrs["ri:account-id"]; id != "" && !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	})
+	return out
+}
+
 // pageTarget reads an <ri:page> element as a link target.
 func pageTarget(n *snode) PageLinkTarget {
 	return PageLinkTarget{
@@ -169,12 +215,13 @@ func (r *mdRenderer) renderACLink(n *snode) string {
 		return r.renderPageLink(n, target, anchor)
 	case target.name == "ri:space":
 		return r.renderSpaceLink(n, target)
+	case target.name == "ri:user":
+		return r.renderUserMention(n, target)
 	default:
-		// ri:user has no markdown equivalent at all; ri:attachment would
-		// republish as a dead relative href, since only images are uploaded
-		// (images.go); ri:blog-post cannot be resolved to an id, because
-		// SearchPagesByTitle does not see blog posts. All three round-trip
-		// exactly as storage.
+		// ri:attachment would republish as a dead relative href, since only
+		// images are uploaded (images.go); ri:blog-post cannot be resolved to
+		// an id, because SearchPagesByTitle does not see blog posts. Both
+		// round-trip exactly as storage.
 		return serialize(n)
 	}
 }
@@ -212,6 +259,48 @@ func (r *mdRenderer) renderSpaceLink(n, target *snode) string {
 		return serialize(n)
 	}
 	return mdLink(r.acLinkText(n, key), r.siteURL+"/wiki/spaces/"+key)
+}
+
+// mentionHost is where a user profile lives. Atlassian Home, not the Confluence
+// site -- and that is the finding the markdown spelling rests on, not a detail.
+// Confluence's own renderer still emits {site}/wiki/people/{accountId}, and
+// that URL no longer resolves usefully in a browser: it bounces through a
+// separate login and lands on a blank page. This one works, with no cloudId
+// parameter needed (docs/confluence/links-and-anchors.md).
+//
+// A consequence worth knowing before changing it: because the URL names no
+// site, a mention in markdown carries no site either. Nothing here depends on
+// SiteURL, on CONFLUENCE_CLOUD_ID, or on which instance the page came from, so
+// the same mention converts identically everywhere -- which is also what lets
+// `check` recognise one with no client at all.
+const mentionHost = "https://home.atlassian.com"
+
+// MentionURL is the profile URL a mention renders to. Exported because the
+// forward direction has to recognise what this direction emits, and a second
+// copy of the path would be a second thing to keep in step.
+func MentionURL(accountID string) string {
+	return mentionHost + "/people/" + accountID
+}
+
+// renderUserMention renders a mention as a link to the person's profile, with
+// their display name as the text and an "@" marking it as a mention.
+//
+// The "@" is what the forward direction reads to tell a mention from a
+// deliberate link to somebody's profile page: the URL alone cannot, since both
+// spellings point at the same place. So it is load-bearing rather than
+// decoration, even though recognition is by URL.
+//
+// An id the caller could not resolve passes through as storage. That is not a
+// degraded rendering to apologise for -- the account id is the only thing the
+// storage holds, and "[@712020:0e5f…](…)" tells a reader strictly less than the
+// raw element does while looking like it tells them more.
+func (r *mdRenderer) renderUserMention(n, target *snode) string {
+	id := target.attrs["ri:account-id"]
+	name := r.userNames[id]
+	if id == "" || name == "" {
+		return serialize(n)
+	}
+	return mdLink("@"+escapeLinkText(name), MentionURL(id))
 }
 
 // renderAnchorLink renders a link to a heading on this same page.

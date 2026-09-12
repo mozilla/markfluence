@@ -274,3 +274,122 @@ func TestLinkTextEscapesABackslashFirst(t *testing.T) {
 		t.Errorf("EscapeLinkText = %q, want %q", got, `a\\b\]c`)
 	}
 }
+
+// --- mentions -----------------------------------------------------------------
+
+const probeID = "712020:0e5f8a21-3c4d-4e5f-a6b7-c8d9e0f1a2b3"
+
+func mentionStorage(extra string) string {
+	return `<p>Ping <ac:link><ri:user ri:account-id="` + probeID + `"` + extra +
+		` /></ac:link> about it.</p>`
+}
+
+// TestMentionRendersAsAProfileLink is the point of #91: a mention exported as
+// raw storage tells a reader everything except the one thing they want, which
+// is who.
+func TestMentionRendersAsAProfileLink(t *testing.T) {
+	got, err := convert.StorageToMarkdown(mentionStorage(""), convert.StorageOptions{
+		UserNames: map[string]string{probeID: "Ada Lovelace"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Ping [@Ada Lovelace](https://home.atlassian.com/people/" + probeID + ") about it."
+	if !strings.Contains(got, want) {
+		t.Errorf("markdown = %q, want it to contain %q", got, want)
+	}
+}
+
+// TestMentionURLNamesNoSite pins the property the whole spelling rests on: the
+// profile URL lives on Atlassian Home, so a mention in markdown carries no
+// site, no cloud id, and nothing about which instance it came from. That is
+// what makes the output identical everywhere and what lets check recognise a
+// mention with no client.
+func TestMentionURLNamesNoSite(t *testing.T) {
+	got, err := convert.StorageToMarkdown(mentionStorage(""), convert.StorageOptions{
+		SiteURL:   "https://wiki.example.net",
+		UserNames: map[string]string{probeID: "Ada Lovelace"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "wiki.example.net") {
+		t.Errorf("markdown = %q, want no site in a mention URL", got)
+	}
+	if !strings.Contains(got, "https://home.atlassian.com/people/") {
+		t.Errorf("markdown = %q, want the Atlassian Home profile URL", got)
+	}
+}
+
+// TestMentionWithoutAResolvedNamePassesThrough. The account id is all the
+// storage holds, so a link reading "[@712020:0e5f…](…)" would tell a reader
+// strictly less than the raw element while looking like it told them more.
+func TestMentionWithoutAResolvedNamePassesThrough(t *testing.T) {
+	for _, name := range []string{"no map", "empty name"} {
+		opts := convert.StorageOptions{}
+		if name == "empty name" {
+			opts.UserNames = map[string]string{probeID: ""}
+		}
+		got, err := convert.StorageToMarkdown(mentionStorage(""), opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(got, "<ri:user") {
+			t.Errorf("%s: markdown = %q, want the storage passed through", name, got)
+		}
+	}
+}
+
+// TestMentionDropsTheLocalID: ri:local-id is a per-instance server id, and a
+// mention published with only the account id resolves to the same person --
+// verified against the live API (docs/confluence/links-and-anchors.md). So it
+// does not survive into the markdown, and nothing is lost.
+func TestMentionDropsTheLocalID(t *testing.T) {
+	storage := mentionStorage(` ri:local-id="4df0b1cc-1111-2222-3333-444455556666"`)
+	got, err := convert.StorageToMarkdown(storage, convert.StorageOptions{
+		UserNames: map[string]string{probeID: "Ada Lovelace"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "local-id") || strings.Contains(got, "4df0b1cc") {
+		t.Errorf("markdown = %q, want the local-id gone", got)
+	}
+}
+
+// TestMentionEscapesTheDisplayName: a name is plain text off the server, and
+// people's names carry brackets.
+func TestMentionEscapesTheDisplayName(t *testing.T) {
+	got, err := convert.StorageToMarkdown(mentionStorage(""), convert.StorageOptions{
+		UserNames: map[string]string{probeID: "Ada [contractor] Lovelace"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `[@Ada \[contractor\] Lovelace](`) {
+		t.Errorf("markdown = %q, want the brackets escaped", got)
+	}
+}
+
+// TestMentionTargetsDedupes pins the gather half: one lookup per distinct
+// person, not per mention, which on a rotation table is the difference between
+// a dozen requests and a hundred.
+func TestMentionTargetsDedupes(t *testing.T) {
+	other := "60c36d0718e9f60071326951"
+	storage := mentionStorage("") + mentionStorage("") +
+		`<p><ac:link><ri:user ri:account-id="` + other + `" /></ac:link></p>` +
+		`<p><ac:link><ri:page ri:content-title="Not a user" /></ac:link></p>`
+	got := convert.MentionTargets(storage)
+	if len(got) != 2 {
+		t.Fatalf("MentionTargets = %q, want two distinct ids", got)
+	}
+	if got[0] != probeID || got[1] != other {
+		t.Errorf("MentionTargets = %q, want document order", got)
+	}
+}
+
+func TestMentionTargetsIgnoresStorageWithNoMention(t *testing.T) {
+	if got := convert.MentionTargets(`<p>Nothing here.</p>`); got != nil {
+		t.Errorf("MentionTargets = %q, want nil so the caller makes no request", got)
+	}
+}
