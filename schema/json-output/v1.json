@@ -277,7 +277,10 @@
       "additionalProperties": false,
       "required": ["action", "name"],
       "properties": {
-        "action": { "enum": ["added", "removed", "unchanged"] },
+        "action": {
+          "description": "kept means a surplus label was left on the page because an unmanaged label shares its name: Confluence's removal takes a name with no prefix and deletes the personal label first, so there is no request that removes the intended one.",
+          "enum": ["added", "removed", "unchanged", "kept"]
+        },
         "name": { "type": "string" }
       }
     },

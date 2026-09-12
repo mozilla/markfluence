@@ -324,24 +324,38 @@ func labelChange(mf *frontmatter.MarkdownFile, liveLabels []string) (change, boo
 		return change{}, false
 	}
 	declared, present := mf.Lists[labels.Field]
-	normalized := make([]string, 0, len(declared))
-	for _, d := range declared {
-		n, _ := labels.Normalize(d)
-		normalized = append(normalized, n)
-	}
+	// A scalar labels: value is a file every other verb refuses, so fix has to
+	// offer a way out of it whatever the page's labels are -- including none,
+	// where the repair is "labels: []". Reading it as absent meant fix reported
+	// "already consistent" for a file check, update and create all reject, and
+	// only repaired it when the page happened to carry labels.
+	scalar := !present && hasKey(mf.Frontmatter, labels.Field)
+
 	if present {
-		if add, remove, _ := labels.Diff(normalized, liveLabels); len(add) == 0 && len(remove) == 0 {
+		// Compared raw, not normalized. Normalizing first made a case mismatch
+		// invisible here, so `labels: [Runbook]` against a page carrying
+		// `runbook` reported "already consistent" while update and check warned
+		// "Update the file to match" on every run -- the command whose job is
+		// to make the file match the page refusing to fix the thing the warning
+		// names.
+		if equalSets(declared, liveLabels) {
 			return change{}, false
 		}
-	} else if len(liveLabels) == 0 {
+	} else if !scalar && len(liveLabels) == 0 {
 		// No key and no labels: nothing to adopt, and writing "labels: []"
 		// would add a field that says nothing to every file fix touches.
 		return change{}, false
 	}
 
 	old := noneDisplay
-	if present {
+	switch {
+	case present:
 		old = renderLabelList(declared)
+	case scalar:
+		old = strings.TrimSpace(mf.Frontmatter[labels.Field])
+		if old == "" {
+			old = noneDisplay
+		}
 	}
 	return change{
 		field:      labels.Field,
@@ -355,6 +369,46 @@ func labelChange(mf *frontmatter.MarkdownFile, liveLabels []string) (change, boo
 // the human line and --json's `new` string.
 func renderLabelList(names []string) string {
 	return "[" + strings.Join(names, ", ") + "]"
+}
+
+// hasKey reports whether a frontmatter key is present at all, blank included.
+func hasKey(fm map[string]string, key string) bool {
+	_, ok := fm[key]
+	return ok
+}
+
+// equalSets reports whether two label lists name the same set, exactly as
+// Confluence would see them: order and duplicates carry no meaning, so a file
+// that merely reorders its list needs no write. Case does not get normalized
+// away first, because a file spelling a label differently from the page is
+// precisely what fix exists to correct.
+func equalSets(declared, live []string) bool {
+	if len(live) != len(uniq(declared)) {
+		return false
+	}
+	inLive := make(map[string]bool, len(live))
+	for _, l := range live {
+		inLive[l] = true
+	}
+	for _, d := range declared {
+		if !inLive[d] {
+			return false
+		}
+	}
+	return true
+}
+
+func uniq(names []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(names))
+	for _, n := range names {
+		if seen[n] {
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	return out
 }
 
 // norm treats "", whitespace-only, and the literal "null" all as no value.

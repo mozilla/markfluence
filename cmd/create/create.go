@@ -563,7 +563,8 @@ func publishOne(r record, res *createResult, pageID string, version int, c *clie
 		// not exist, so every declared label is an add and there is nothing to
 		// remove. Asking would be a request against an id that is not there.
 		if r.labels.Declared {
-			res.labels = toJSONLabels(labels.Actions(r.labels.Names, nil, nil))
+			res.warnings = append(res.warnings, r.labels.Warnings...)
+			res.labels = toJSONLabels(labels.Actions(r.labels.Names, nil, nil, nil))
 		}
 		res.ok = true
 		res.status = statusCreated
@@ -606,7 +607,15 @@ func publishOne(r record, res *createResult, pageID string, version int, c *clie
 	// does not. The names were validated in preflight, so anything that fails
 	// here is the server or the network rather than the file.
 	if r.labels.Declared {
-		if acts, err := labels.Apply(c, pageID, r.labels); err != nil {
+		// The normalization warnings come from preflight, where the set was
+		// validated -- create is the verb that has to carry them forward,
+		// since unlike update it never re-reads the field here. Dropping them
+		// left an author with a page labelled "runbook", a file still saying
+		// "Runbook", and nothing said about either.
+		res.warnings = append(res.warnings, r.labels.Warnings...)
+		acts, warnings, err := labels.Apply(c, pageID, r.labels)
+		res.warnings = append(res.warnings, warnings...)
+		if err != nil {
 			res.warnings = append(res.warnings, "could not set labels: "+err.Error())
 		} else {
 			res.labels = toJSONLabels(acts)

@@ -757,3 +757,44 @@ func TestEmptyListIsWrittenAsFlowEmpty(t *testing.T) {
 		}
 	}
 }
+
+// TestScalarFieldAsListIsRejected closes a regression that sequence support
+// opened. Before it, `parent:` written as a list failed the file; afterwards the
+// key landed in Lists, no command looked for it there, and it read as *absent*
+// -- so create published the page at the space root and then wrote
+// `parent: null` over the author's intent, with no error anywhere.
+//
+// The same silence covered `title:` (update keeps the live title, check calls
+// the file clean) and `page_width:`.
+func TestScalarFieldAsListIsRejected(t *testing.T) {
+	for _, block := range []string{
+		"parent:\n  - runbook.md",
+		"parent: [runbook.md]",
+		"title: [a, b]",
+		"space: [ENG]",
+		"page_id: [123]",
+		"page_width: [max]",
+	} {
+		_, err := frontmatter.Parse("doc.md", "---\n"+block+"\n---\nbody\n")
+		if err == nil {
+			t.Errorf("Parse(%q) = nil error, want a refusal", block)
+			continue
+		}
+		if !strings.Contains(err.Error(), "not a list") {
+			t.Errorf("Parse(%q) = %q, want it to say the field is not a list", block, err)
+		}
+	}
+}
+
+// TestUnknownListKeyIsStillAllowed is the other half of that whitelist: only
+// the fields markfluence reads as scalars are refused, so the generality #21
+// and #100 need survives.
+func TestUnknownListKeyIsStillAllowed(t *testing.T) {
+	mf, err := frontmatter.Parse("doc.md", "---\ntitle: T\nreviewers: [ana, bo]\n---\nbody\n")
+	if err != nil {
+		t.Fatalf("Parse = %v", err)
+	}
+	if got := mf.Lists["reviewers"]; !equalStrings(got, []string{"ana", "bo"}) {
+		t.Errorf("reviewers = %q, want [ana bo]", got)
+	}
+}

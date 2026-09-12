@@ -64,7 +64,6 @@ func (r report) jsonResult() jsonInfoResult {
 	// managed/unmanaged split, so managed is reported per label rather than
 	// left to be derived.
 	if r.labelsKnown {
-		res.Labels = &[]jsonout.LabelInfo{}
 		list := make([]jsonout.LabelInfo, 0, len(r.labels))
 		for _, l := range r.labels {
 			list = append(list, jsonout.LabelInfo{

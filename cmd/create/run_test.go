@@ -977,3 +977,47 @@ func TestRunDryRunPreviewsLabelsWithoutAsking(t *testing.T) {
 		t.Errorf("previewed label = %+v, want runbook added", got)
 	}
 }
+
+// TestRunCarriesLabelCaseWarning. The warning is raised in preflight, where the
+// set is validated, and create is the verb that has to carry it forward --
+// unlike update it never re-reads the field at publish. Dropping it left an
+// author with a page labelled "runbook", a file still saying "Runbook", and
+// nothing said about either: --persist rewrites title/space/parent/page_id/
+// page_width and not labels, so the file never catches up on its own.
+func TestRunCarriesLabelCaseWarning(t *testing.T) {
+	resetOpts(t)
+	ui.SetJSON(true)
+	t.Cleanup(func() { ui.SetJSON(false) })
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	path := write(t, dir, "case.md", "---\ntitle: Case\nlabels: [Runbook]\n---\nbody\n")
+
+	c, f := newFakeConfluence(t)
+	out, err := captureStdout(t, func() error {
+		return run(testCmd(t, c.SiteURL(), dir), []string{path})
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	schematest.ValidateEnvelope(t, []byte(out))
+
+	var env struct {
+		Results []struct {
+			Warnings []string `json:"warnings"`
+		} `json:"results"`
+	}
+	if jsonErr := json.Unmarshal([]byte(out), &env); jsonErr != nil {
+		t.Fatalf("unmarshal %q: %v", out, jsonErr)
+	}
+	if len(env.Results) != 1 {
+		t.Fatalf("results = %+v, want one", env.Results)
+	}
+	joined := strings.Join(env.Results[0].Warnings, " ")
+	if !strings.Contains(joined, "not lowercase") || !strings.Contains(joined, "Runbook") {
+		t.Errorf("warnings = %q, want the case warning naming the label as written",
+			env.Results[0].Warnings)
+	}
+	if len(f.labelsAdded) != 1 || f.labelsAdded[0] != "runbook" {
+		t.Errorf("labels added = %v, want the lowercased name", f.labelsAdded)
+	}
+}

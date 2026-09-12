@@ -377,7 +377,8 @@ func (r *updateResult) applyLabels(c *client.ConfluenceClient, pageID string, s 
 	if !s.Declared {
 		return
 	}
-	actions, err := labels.Apply(c, pageID, s)
+	actions, warnings, err := labels.Apply(c, pageID, s)
+	r.warnings = append(r.warnings, warnings...)
 	if err != nil {
 		r.warnings = append(r.warnings, "could not set labels: "+err.Error())
 		return
@@ -391,7 +392,8 @@ func (r *updateResult) previewLabels(c *client.ConfluenceClient, pageID string, 
 	if !s.Declared {
 		return
 	}
-	actions, err := labels.Plan(c, pageID, s)
+	actions, warnings, err := labels.Plan(c, pageID, s)
+	r.warnings = append(r.warnings, warnings...)
 	if err != nil {
 		r.warnings = append(r.warnings, "could not read labels: "+err.Error())
 		return
