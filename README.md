@@ -1120,7 +1120,9 @@ page_width: max
 
 Frontmatter is a **YAML** block delimited by `---` lines, restricted to flat
 `key: value` pairs. A value is a single-line scalar, or a list of them — written
-either inline (`labels: [a, b]`) or as `- ` lines. No nesting, and no multi-line
+either inline (`labels: [a, b]`) or as `- ` lines. The fields markfluence reads
+as single values (`title`, `space`, `parent`, `page_id`, `page_width`) are an
+error when written as a list, rather than being read as unset. No nesting, and no multi-line
 values. That restriction is enforced: a nested value, a `|` block, a duplicate
 key, a tab indent, or a list item split over two lines is an error naming the
 key, not something read as blank. Full-line `#` comments and trailing inline
@@ -1144,7 +1146,7 @@ A page genuinely titled `null` is written `title: "null"`.
 | `parent` | `null`, a numeric page **or folder** id, or a relative `.md` path | `null` = top-level page; an id = an existing parent, which may be a page or a Cloud folder (the value is just an id either way — nothing records which kind it is); a `.md` path = a parent authored in the same run (`create` resolves it in dependency order, then rewrites the value to `<page_id>  # <original.md>`). Used by `create` (or `--parent`). |
 | `page_id` | a numeric page id, or `null` | The target page. `update` looks it up by `title` and writes it back when missing; `create` writes it after creating the page. `null`/absent means "no page yet." |
 | `title` | text (**required**) | The Confluence page title. |
-| `labels` | a list of label names, e.g. `[ci/cd, howto]` | The page's labels. **Present means asserted exactly** — a label on the page that the file does not list is removed — and `labels: []` removes them all. **Absent means untouched**, so a page labeled by hand is safe from a run that never mentioned labels. Only `global:` labels are managed; a `my:`/`team:` label is shown by `info` and never written or removed. Names are lowercased (with a warning) since Confluence does that anyway; anything else invalid is an error before any write. `fix` writes back the live page's labels, which is how you adopt a page labeled in the UI. |
+| `labels` | a list of label names, e.g. `[ci/cd, howto]` | The page's labels. **Present means asserted exactly** — a label on the page that the file does not list is removed — and `labels: []` removes them all. **Absent means untouched**, so a page labeled by hand is safe from a run that never mentioned labels. Only `global:` labels are managed; a `my:`/`team:` label is shown by `info` and never written or removed — and if an unmanaged label shares a name with a surplus managed one, the removal is skipped with a warning, because Confluence's removal takes a name with no prefix and would delete the personal label instead. Names are lowercased (with a warning) since Confluence does that anyway; anything else invalid is an error before any write. `fix` writes back the live page's labels, which is how you adopt a page labeled in the UI. |
 | `page_width` | `narrow`, `wide`, or `max` | The published page width (the UI's "Adjust width" options; `narrow`/`wide`/`max` map to the `default`/`full-width`/`max` appearance properties). Absent or blank defaults to `max`. `create`/`update` assert it on every publish (so a width set in the Confluence UI is overwritten unless the frontmatter matches); `fix` writes back the live page's width. |
 
 To create a page, you only need to specify the `title` in the frontmatter.

@@ -4,7 +4,11 @@ import (
 	"strings"
 	"testing"
 
+	"encoding/json"
+	"net/http"
+
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/clienttest"
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/labels"
 )
@@ -308,7 +312,7 @@ func TestDiffIgnoresOrderAndDuplicates(t *testing.T) {
 // TestActionsReportTheWholeSet: the full declared set, not just the changes, so
 // a consumer can read a page's labels off a publish without a second call.
 func TestActionsReportTheWholeSet(t *testing.T) {
-	got := labels.Actions([]string{"howto"}, []string{"stale"}, []string{"runbook"})
+	got := labels.Actions([]string{"howto"}, []string{"stale"}, []string{"runbook"}, nil)
 	if len(got) != 3 {
 		t.Fatalf("len = %d, want 3", len(got))
 	}
@@ -322,4 +326,85 @@ func TestActionsReportTheWholeSet(t *testing.T) {
 	if got[0].Name != "howto" || got[1].Name != "runbook" || got[2].Name != "stale" {
 		t.Errorf("order = %v, want sorted by name", got)
 	}
+}
+
+// TestRemovalIsRefusedWhenAnUnmanagedLabelSharesTheName is a safety bug found
+// by probing the live API during review.
+//
+// Confluence's removal route takes a name and nothing else, and when two
+// prefixes share a name it deletes the **personal** one first. Measured
+// 2026-09-11: a page carrying global:probe-dup and my:probe-dup answered
+// `DELETE ?name=probe-dup` with 204 and left global:probe-dup in place, so a
+// name-only removal destroys exactly the label this package guarantees it never
+// touches. `&prefix=global` is ignored, a `global:`-qualified name 404s, and
+// the path form behaves the same -- there is no request that expresses the
+// intended one.
+//
+// So the surplus label is kept and reported, which fails the assert-exactly
+// rule visibly rather than deleting somebody's personal label quietly.
+func TestRemovalIsRefusedWhenAnUnmanagedLabelSharesTheName(t *testing.T) {
+	live := []client.Label{
+		{Name: "runbook", Prefix: "global"},
+		{Name: "runbook", Prefix: "my"},
+		{Name: "stale", Prefix: "global"},
+	}
+	c, removed := recordingClient(t, live)
+
+	set, err := labels.Declared(map[string][]string{"labels": {"howto"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actions, warnings, err := labels.Apply(c, "1", set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eq(*removed, []string{"runbook", "stale"}) || contains(*removed, "runbook") {
+		t.Errorf("removed = %q, want runbook kept (a my: label shares the name)", *removed)
+	}
+	if !contains(*removed, "stale") {
+		t.Errorf("removed = %q, want the non-colliding surplus removed", *removed)
+	}
+	var kept bool
+	for _, a := range actions {
+		if a.Name == "runbook" && a.Action == labels.ActionKept {
+			kept = true
+		}
+	}
+	if !kept {
+		t.Errorf("actions = %+v, want runbook reported as kept", actions)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "my:runbook") {
+		t.Errorf("warnings = %q, want one naming my:runbook", warnings)
+	}
+}
+
+func contains(hay []string, needle string) bool {
+	for _, h := range hay {
+		if h == needle {
+			return true
+		}
+	}
+	return false
+}
+
+// recordingClient serves a page's label list and records the names removed.
+func recordingClient(t *testing.T, live []client.Label) (*client.ConfluenceClient, *[]string) {
+	t.Helper()
+	removed := &[]string{}
+	rows, err := json.Marshal(map[string]any{"results": live})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			_, _ = w.Write(rows)
+		case http.MethodDelete:
+			*removed = append(*removed, r.URL.Query().Get("name"))
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	})
+	return c, removed
 }

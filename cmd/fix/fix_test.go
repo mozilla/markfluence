@@ -492,7 +492,6 @@ func TestFixLeavesAMatchingSetAlone(t *testing.T) {
 		"page_id: 1\nlabels: [ci/cd, runbook]",
 		"page_id: 1\nlabels: [runbook, ci/cd]",
 		"page_id: 1\nlabels: [runbook, ci/cd, runbook]",
-		"page_id: 1\nlabels: [Runbook, CI/CD]",
 	} {
 		got := plannedChanges(mdFile(t, block), page, "", []string{"ci/cd", "runbook"})
 		if ch, ok := labelChangeIn(got); ok {
@@ -633,5 +632,61 @@ func TestProcessFileLabelFixConverges(t *testing.T) {
 	second := processFile(path, c)
 	if !second.ok || second.status != statusConsistent {
 		t.Fatalf("second run = %+v (changes %+v), want ok/consistent", second, second.changes)
+	}
+}
+
+// TestFixCorrectsALabelCaseMismatch. update and check warn "Update the file to
+// match" for `labels: [Runbook]` against a page carrying `runbook`, since
+// Confluence lowercases server-side. fix is the command that is supposed to do
+// that updating, and it used to normalize case before comparing -- so it saw no
+// difference, reported "already consistent", and left the author with a warning
+// on every run and no command that would silence it.
+func TestFixCorrectsALabelCaseMismatch(t *testing.T) {
+	page := &client.Page{ID: "1", Title: "T"}
+	got := plannedChanges(mdFile(t, "page_id: 1\nlabels: [Runbook]"), page, "", []string{"runbook"})
+
+	ch, ok := labelChangeIn(got)
+	if !ok {
+		t.Fatalf("changes = %+v, want the case mismatch reconciled", got)
+	}
+	if ch.newValue != "[runbook]" {
+		t.Errorf("new = %q, want [runbook]", ch.newValue)
+	}
+	if ch.oldDisplay != "[Runbook]" {
+		t.Errorf("old = %q, want the spelling the file had", ch.oldDisplay)
+	}
+}
+
+// TestFixRepairsAScalarLabelsValue: a scalar labels: is refused by check,
+// update and create, so fix has to offer a way out of it whatever the page
+// carries. It used to read the key as absent, which meant "already consistent"
+// for a file nothing else would accept -- and it repaired the same file when
+// the page happened to have labels, so the behaviour was inconsistent as well
+// as incomplete.
+func TestFixRepairsAScalarLabelsValue(t *testing.T) {
+	page := &client.Page{ID: "1", Title: "T"}
+	tests := []struct {
+		name, block string
+		live        []string
+		wantNew     string
+	}{
+		{"page has none", "page_id: 1\nlabels: runbook", []string{}, "[]"},
+		{"page has some", "page_id: 1\nlabels: runbook", []string{"howto"}, "[howto]"},
+		{"null value", "page_id: 1\nlabels:", []string{"howto"}, "[howto]"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := plannedChanges(mdFile(t, tt.block), page, "", tt.live)
+			ch, ok := labelChangeIn(got)
+			if !ok {
+				t.Fatalf("changes = %+v, want the scalar value repaired", got)
+			}
+			if ch.newValue != tt.wantNew {
+				t.Errorf("new = %q, want %q", ch.newValue, tt.wantNew)
+			}
+			if ch.newList == nil {
+				t.Error("newList = nil, want a list to write")
+			}
+		})
 	}
 }

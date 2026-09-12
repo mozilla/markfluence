@@ -143,6 +143,30 @@ route with a 404 too, so that check goes through `notFound` rather than
 comparing the status directly (see [api.md](api.md)). That works here because
 this 404 *names the label* it could not find, which is what distinguishes it.
 
+### A name-only removal deletes the *personal* label first
+
+**Verified 2026-09-11.** The removal route takes a name and nothing else --
+`name` is the only parameter the v1 OpenAPI document lists -- and a page can
+carry the same name under two prefixes. On a page holding `global:probe-dup`
+*and* `my:probe-dup`:
+
+| request | result |
+|---|---|
+| `DELETE …/label?name=probe-dup` | 204, and **`my:probe-dup` is gone** while `global:probe-dup` remains |
+| `DELETE …/label?name=probe-dup&prefix=global` | 204, same outcome — the prefix is ignored |
+| `DELETE …/label?name=global:probe-dup` | 404 (a colon cannot appear in a name) |
+| `DELETE …/label/probe-dup` (path form) | 204, same outcome |
+| a second `?name=` delete | 204, and now the `global:` one goes |
+
+So there is **no request that removes the managed label of a colliding pair**,
+and the obvious one destroys the personal label markfluence promises never to
+touch. `internal/labels` therefore refuses that removal: the surplus label is
+kept, reported as `kept` in `--json`, and warned about. That fails the
+assert-exactly rule visibly, which is the better of the two available outcomes.
+
+Found in review, after the end-to-end run below had already passed — that run
+used `my:mine`, a name nothing collided with.
+
 ### v2 is read-only for labels
 
 | request | result |
@@ -190,7 +214,9 @@ case below was observed, and the page was purged afterward:
 - `create` and `update` apply a declared set, including `ci/cd`.
 - `update` asserting a smaller set **removes** the surplus, `ci/cd` included —
   the case the path form cannot do.
-- A `my:` label added by hand **survives** every one of those runs.
+- A `my:` label added by hand **survives** every one of those runs (with a
+  *non-colliding* name; see the prefix-collision section above for what happens
+  when the names match).
 - `labels: []` removes both managed labels and leaves `my:mine` alone.
 - A file with **no** `labels:` key publishes without touching the two labels
   applied by hand, and reports `labels: null`.

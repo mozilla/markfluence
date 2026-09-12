@@ -98,6 +98,9 @@ const (
 	ActionAdded     = "added"
 	ActionRemoved   = "removed"
 	ActionUnchanged = "unchanged"
+	// ActionKept marks a surplus label that could not be removed because an
+	// unmanaged label shares its name. See Apply.
+	ActionKept = "kept"
 )
 
 // Declared reads and validates the labels field from a file's frontmatter.
@@ -306,8 +309,8 @@ func Diff(declared, live []string) (add, remove, unchanged []string) {
 //
 // The full set rather than only the changes, so a consumer can read a page's
 // labels off a publish without a second call.
-func Actions(add, remove, unchanged []string) []Action {
-	out := make([]Action, 0, len(add)+len(remove)+len(unchanged))
+func Actions(add, remove, unchanged, kept []string) []Action {
+	out := make([]Action, 0, len(add)+len(remove)+len(unchanged)+len(kept))
 	for _, n := range add {
 		out = append(out, Action{Name: n, Action: ActionAdded})
 	}
@@ -316,6 +319,13 @@ func Actions(add, remove, unchanged []string) []Action {
 	}
 	for _, n := range unchanged {
 		out = append(out, Action{Name: n, Action: ActionUnchanged})
+	}
+	// Reported rather than omitted: a surplus label that is still on the page
+	// is a way in which the declared set was *not* asserted, and a consumer
+	// checking the result should be able to see that without parsing a warning
+	// string.
+	for _, n := range kept {
+		out = append(out, Action{Name: n, Action: ActionKept})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
@@ -326,8 +336,59 @@ func Read(c *client.ConfluenceClient, pageID string) ([]client.Label, error) {
 	return c.ListLabels(pageID)
 }
 
+// collides reports the names in remove that another prefix also uses, which is
+// what makes them unsafe to remove.
+//
+// Confluence's removal route takes a **name and nothing else** -- no prefix
+// parameter, documented or otherwise -- and when two prefixes share a name it
+// deletes the *personal* one first. Measured 2026-09-11: a page carrying
+// global:probe-dup and my:probe-dup answered `DELETE ?name=probe-dup` with 204
+// and left global:probe-dup in place. `&prefix=global` was ignored, a
+// `global:`-qualified name 404'd (a colon cannot appear in a name), and the
+// path form behaved identically. A second delete then took the global one.
+//
+// So a name-only removal of a colliding label destroys exactly the label this
+// package guarantees it never touches, and there is no request that expresses
+// the intended one. Not removing it is the only safe answer available.
+func collides(remove []string, live []client.Label) map[string]string {
+	unmanaged := map[string]string{}
+	for _, l := range live {
+		if l.Prefix != ManagedPrefix {
+			unmanaged[l.Name] = l.Prefix
+		}
+	}
+	out := map[string]string{}
+	for _, name := range remove {
+		if prefix, ok := unmanaged[name]; ok {
+			out[name] = prefix
+		}
+	}
+	return out
+}
+
+// splitRemovable partitions remove into what is safe to delete and what has to
+// be kept, with a warning naming each kept label.
+func splitRemovable(remove []string, live []client.Label) (safe, kept []string, warnings []string) {
+	blocked := collides(remove, live)
+	for _, name := range remove {
+		prefix, ok := blocked[name]
+		if !ok {
+			safe = append(safe, name)
+			continue
+		}
+		kept = append(kept, name)
+		warnings = append(warnings, fmt.Sprintf(
+			"label %q is not in the file but was kept: %s:%s shares the name, and "+
+				"Confluence's removal takes a name with no prefix and deletes the "+
+				"personal label first. Remove it in the UI, or rename one of the two.",
+			name, prefix, name))
+	}
+	return safe, kept, warnings
+}
+
 // Apply asserts s over a page's managed labels, returning one Action per label
-// in the declared set plus one per label removed.
+// in the declared set plus one per label removed, and any warnings raised while
+// doing it.
 //
 // A set that is already right makes no write: additions go out as one batched
 // POST and each removal is its own DELETE, both skipped when there is nothing
@@ -338,34 +399,37 @@ func Read(c *client.ConfluenceClient, pageID string) ([]client.Label, error) {
 // Calling this with an undeclared Set is a caller bug rather than a no-op with
 // a plausible reading: it would mean "remove every label" for a file that said
 // nothing about labels.
-func Apply(c *client.ConfluenceClient, pageID string, s Set) ([]Action, error) {
+func Apply(c *client.ConfluenceClient, pageID string, s Set) ([]Action, []string, error) {
 	if !s.Declared {
-		return nil, fmt.Errorf("internal: labels.Apply called for a file that declares none")
+		return nil, nil, fmt.Errorf("internal: labels.Apply called for a file that declares none")
 	}
 	live, err := c.ListLabels(pageID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	add, remove, unchanged := Diff(s.Names, Global(live))
+	safe, kept, warnings := splitRemovable(remove, live)
 	if err := c.AddLabels(pageID, add); err != nil {
-		return nil, err
+		return nil, warnings, err
 	}
-	for _, name := range remove {
+	for _, name := range safe {
 		if err := c.RemoveLabel(pageID, name); err != nil {
-			return nil, err
+			return nil, warnings, err
 		}
 	}
-	return Actions(add, remove, unchanged), nil
+	return Actions(add, safe, unchanged, kept), warnings, nil
 }
 
-// Plan is Apply's dry run: the same Actions, with nothing written.
-func Plan(c *client.ConfluenceClient, pageID string, s Set) ([]Action, error) {
+// Plan is Apply's dry run: the same Actions and warnings, with nothing written.
+func Plan(c *client.ConfluenceClient, pageID string, s Set) ([]Action, []string, error) {
 	if !s.Declared {
-		return nil, fmt.Errorf("internal: labels.Plan called for a file that declares none")
+		return nil, nil, fmt.Errorf("internal: labels.Plan called for a file that declares none")
 	}
 	live, err := c.ListLabels(pageID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return Actions(Diff(s.Names, Global(live))), nil
+	add, remove, unchanged := Diff(s.Names, Global(live))
+	safe, kept, warnings := splitRemovable(remove, live)
+	return Actions(add, safe, unchanged, kept), warnings, nil
 }

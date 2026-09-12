@@ -64,6 +64,25 @@ var fieldOrder = []string{"title", "space", "parent", "page_id"}
 // to two keys whose domains are closed. A title of "123" is still a string.
 var typedFields = map[string]bool{"page_id": true, "parent": true}
 
+// scalarFields are the keys markfluence reads as single values, and which are
+// therefore an error when written as a sequence.
+//
+// Without this a sequence-valued key simply lands in Lists, and a key no
+// command looks for there reads as *absent* -- which for `parent` meant
+// `parent:` written as a list published the page at the space root and then
+// had `parent: null` written over the author's intent, with no error anywhere.
+// Refusing it restores what the reader did before sequences existed.
+//
+// A whitelist of names, in a package that otherwise learns kinds rather than
+// names, and deliberately so: the alternative -- allowing only `labels` to be a
+// sequence -- would refuse an unknown list key like `reviewers`, which is the
+// generality #21 and #100 need. Unknown keys stay permissive in both
+// directions; these five do not, because their readers return a plain string
+// with nowhere to put an error.
+var scalarFields = map[string]bool{
+	"title": true, "space": true, "parent": true, "page_id": true, "page_width": true,
+}
+
 // keyLess orders two frontmatter keys: fieldOrder first, in that order, then
 // everything else alphabetically.
 func keyLess(a, b string) bool {
@@ -276,6 +295,10 @@ func toMaps(m *ast.MappingNode) (map[string]string, map[string][]string, error) 
 	for _, v := range m.Values {
 		key := v.Key.GetToken().Value
 		if seq, ok := v.Value.(*ast.SequenceNode); ok {
+			if scalarFields[key] {
+				return nil, nil, fmt.Errorf(
+					"frontmatter %q must be a single value, not a list", key)
+			}
 			l, err := sequenceValue(key, seq)
 			if err != nil {
 				return nil, nil, err
