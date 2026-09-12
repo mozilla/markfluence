@@ -1941,7 +1941,9 @@ func TestAddLabelsPostsOneV1Request(t *testing.T) {
 	if len(rec.methods) != 1 || rec.methods[0] != http.MethodPost {
 		t.Fatalf("methods = %v, want one POST", rec.methods)
 	}
-	if want := "/wiki/rest/api/content/123/child/label"; rec.paths[0] != want {
+	// /label, not /child/label: the child/ collection is read-only for labels
+	// and answers POST with a 405 (measured, docs/confluence/labels.md).
+	if want := "/wiki/rest/api/content/123/label"; rec.paths[0] != want {
 		t.Errorf("path = %q, want %q", rec.paths[0], want)
 	}
 	for _, want := range []string{`"name":"runbook"`, `"name":"ci/cd"`, `"prefix":"global"`} {
@@ -1974,7 +1976,7 @@ func TestRemoveLabelUsesTheQueryForm(t *testing.T) {
 	if err := c.RemoveLabel("123", "ci/cd"); err != nil {
 		t.Fatal(err)
 	}
-	if want := "/wiki/rest/api/content/123/child/label"; rec.paths[0] != want {
+	if want := "/wiki/rest/api/content/123/label"; rec.paths[0] != want {
 		t.Errorf("path = %q, want exactly %q with the name in the query", rec.paths[0], want)
 	}
 	if want := "name=ci%2Fcd"; rec.queries[0] != want {
