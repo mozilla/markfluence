@@ -324,7 +324,10 @@ frontmatter or `--page-id`); `update` errors if none is set. `--title` and
 renames the page, and a title otherwise falls back to the live page's title.
 Page width is asserted only when `--page-width` is passed or a `page_width`
 frontmatter line is present — otherwise the live page's width is left untouched.
-`update` never writes back to the file.
+Labels work the same way: a `labels:` line is asserted exactly (anything on the
+page that the file does not list is removed), and no `labels:` line means the
+page's labels are left alone — not even read. `update` never writes back to the
+file.
 
 A `page_id` that no longer resolves fails that file with what to do about it
 (`page_id 999 not found (deleted or wrong); correct it, or remove it and
@@ -357,8 +360,12 @@ markfluence update docs/*.md --dry-run              # preview; write nothing
 Usage: markfluence fix FILE... [flags]
 ```
 
-Reconcile each file's frontmatter (`page_id`, `space`, `parent`, `page_width`, and
-a missing `title`) to match its live Confluence page. The page is located by
+Reconcile each file's frontmatter (`page_id`, `space`, `parent`, `page_width`,
+`labels`, and a missing `title`) to match its live Confluence page. Labels are
+reconciled even for a file with no `labels:` line, which is how you adopt a page
+somebody labeled in the UI — the one place `fix` fills in a field `update` would
+have left alone, because `fix` reconciles the file to the page rather than the
+page to the file. The page is located by
 `page_id`, or by searching for the `title` when `page_id` is absent. `fix` never
 creates, updates, or moves pages — it's read-only on the server. It writes a file
 when a field changed, and also when the frontmatter fields are out of canonical
@@ -387,8 +394,9 @@ non-zero if any file is broken or fails outright.
 It reports the same `Broken`/`Warnings` a real `update`/`create` would
 produce — a missing or escaping image/link, an unpublished sibling link, a
 `#fragment` matching no heading — each prefixed with the source line it came
-from, plus three frontmatter checks: an unparseable/unterminated frontmatter
-block, an invalid `page_width`, and a present-but-non-numeric `page_id`.
+from, plus four frontmatter checks: an unparseable/unterminated frontmatter
+block, an invalid `page_width`, an invalid `labels` entry, and a
+present-but-non-numeric `page_id`.
 Deliberately not checked: whether `page_id`/`space`/`parent` are set at all —
 `check` can't know whether you're about to `create` or `update`, and a false
 positive there would be worse than a miss. A **Broken** result fails
@@ -452,7 +460,7 @@ composes with shell redirection.
 `--format` selects the output:
 
 - `markdown` (**default**) — the page converted to GitHub-Flavored Markdown, with
-  `title`/`page_id`/`space`/`page_width` frontmatter, i.e. a best-effort inverse of
+  `title`/`page_id`/`space`/`page_width`/`labels` frontmatter, i.e. a best-effort inverse of
   what `create`/`update` publish. The Confluence API has no markdown
   representation, so markfluence converts the storage body itself: constructs
   markfluence emits round-trip faithfully, while editor-authored content degrades
@@ -621,6 +629,10 @@ markfluence search deploy --limit all --json | jq -r '.results[].id'
 markfluence search 'type = page and label = "runbook"' --cql
 ```
 
+A label search only finds pages someone labeled. Since markfluence publishes
+labels from frontmatter (`labels:` above), a tree it manages is searchable this
+way without anyone tagging pages in the UI.
+
 ```
 Deployment runbook
   page 2064154670  PXI
@@ -705,7 +717,7 @@ downloaded out/assets/diagram.png
 ```
 
 The page is written as Markdown with `title`/`space`/`parent`/`page_id`/
-`page_width` frontmatter — byte-identical to what `read` prints — so an exported
+`labels`/`page_width` frontmatter — byte-identical to what `read` prints — so an exported
 file can be edited and published straight back with `update`.
 
 Attachments are written to the paths their images were published from, so the
@@ -1107,11 +1119,13 @@ page_width: max
 ### Frontmatter
 
 Frontmatter is a **YAML** block delimited by `---` lines, restricted to flat
-`key: value` pairs — no nesting, lists, or multi-line values. That restriction is
-enforced: a nested value, a `|` block, a duplicate key, or a tab indent is an
-error naming the key, not something read as blank. Full-line `#` comments and
-trailing inline ` # ...` comments are preserved when markfluence rewrites a
-block.
+`key: value` pairs. A value is a single-line scalar, or a list of them — written
+either inline (`labels: [a, b]`) or as `- ` lines. No nesting, and no multi-line
+values. That restriction is enforced: a nested value, a `|` block, a duplicate
+key, a tab indent, or a list item split over two lines is an error naming the
+key, not something read as blank. Full-line `#` comments and trailing inline
+` # ...` comments are preserved when markfluence rewrites a block, and a list
+keeps whichever of the two spellings you wrote it in.
 
 Because it is real YAML, a value that YAML would read as something other than a
 plain string has to be quoted — a colon-space (`title: "Deploy Runbook: Part 2"`),
@@ -1130,6 +1144,7 @@ A page genuinely titled `null` is written `title: "null"`.
 | `parent` | `null`, a numeric page **or folder** id, or a relative `.md` path | `null` = top-level page; an id = an existing parent, which may be a page or a Cloud folder (the value is just an id either way — nothing records which kind it is); a `.md` path = a parent authored in the same run (`create` resolves it in dependency order, then rewrites the value to `<page_id>  # <original.md>`). Used by `create` (or `--parent`). |
 | `page_id` | a numeric page id, or `null` | The target page. `update` looks it up by `title` and writes it back when missing; `create` writes it after creating the page. `null`/absent means "no page yet." |
 | `title` | text (**required**) | The Confluence page title. |
+| `labels` | a list of label names, e.g. `[ci/cd, howto]` | The page's labels. **Present means asserted exactly** — a label on the page that the file does not list is removed — and `labels: []` removes them all. **Absent means untouched**, so a page labeled by hand is safe from a run that never mentioned labels. Only `global:` labels are managed; a `my:`/`team:` label is shown by `info` and never written or removed. Names are lowercased (with a warning) since Confluence does that anyway; anything else invalid is an error before any write. `fix` writes back the live page's labels, which is how you adopt a page labeled in the UI. |
 | `page_width` | `narrow`, `wide`, or `max` | The published page width (the UI's "Adjust width" options; `narrow`/`wide`/`max` map to the `default`/`full-width`/`max` appearance properties). Absent or blank defaults to `max`. `create`/`update` assert it on every publish (so a width set in the Confluence UI is overwritten unless the frontmatter matches); `fix` writes back the live page's width. |
 
 To create a page, you only need to specify the `title` in the frontmatter.
