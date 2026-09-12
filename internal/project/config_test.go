@@ -52,7 +52,7 @@ func TestDiscoverAcceptsAMarkerWithNoSettings(t *testing.T) {
 				t.Fatalf("Discover: %v", err)
 			}
 			defer func() { _ = root.FS.Close() }()
-			if root.Config != (Config{}) {
+			if !configIsZero(root.Config) {
 				t.Errorf("Config = %#v, want zero", root.Config)
 			}
 			if root.Dir != dir {
@@ -72,7 +72,7 @@ func TestDiscoverRefusesAnUnknownSetting(t *testing.T) {
 	for _, want := range []string{
 		filepath.Join(dir, Filename) + ":2",
 		`unknown setting "spce"`,
-		"known: page_width, space",
+		"known: page_width, pages, space",
 		"newer markfluence",
 	} {
 		if !strings.Contains(msg, want) {
@@ -91,7 +91,12 @@ func TestDiscoverRefusesAMalformedFile(t *testing.T) {
 		"parse error":       {"space: [ENG\n", "sequence end token"},
 		"top-level list":    {"- ENG\n", "must be a flat mapping of key: value pairs"},
 		"list where scalar": {"space: [ENG, OPS]\n", `setting "space" must be a single value, not a list`},
-		"nested mapping":    {"space:\n  key: ENG\n", `setting "space" must be a single scalar value`},
+		// Refused by the settings table, not by the reader: the project dialect
+		// allows depth for pages:, so a mapping under a scalar setting reaches
+		// the table and earns the table's own wording.
+		"nested mapping":    {"space:\n  key: ENG\n", `setting "space" must be a single value, not a mapping`},
+		"pages as a scalar": {"pages: nope\n", `setting "pages" must be a mapping`},
+		"pages as a list":   {"pages: [a]\n", `setting "pages" must be a mapping`},
 		"duplicate key":     {"space: ENG\nspace: OPS\n", "already defined"},
 		"second document":   {"space: ENG\n...\nspace: OPS\n", "must be a single document"},
 	}
@@ -212,7 +217,7 @@ func TestFromPathWithNoProjectFile(t *testing.T) {
 		t.Fatalf("FromPath: %v", err)
 	}
 	defer func() { _ = root.FS.Close() }()
-	if root.File != "" || root.Config != (Config{}) {
+	if root.File != "" || !configIsZero(root.Config) {
 		t.Errorf("File = %q, Config = %#v, want empty", root.File, root.Config)
 	}
 }
@@ -252,7 +257,7 @@ func TestLoadConfigTreatsAnEmptySettingAsUnset(t *testing.T) {
 		t.Fatalf("Discover: %v", err)
 	}
 	defer func() { _ = root.FS.Close() }()
-	if root.Config != (Config{}) {
+	if !configIsZero(root.Config) {
 		t.Errorf("Config = %#v, want zero", root.Config)
 	}
 }
@@ -422,4 +427,10 @@ func TestLoadConfigDoesNotStripABOMElsewhere(t *testing.T) {
 	if _, err := Discover(dir); err == nil {
 		t.Fatal("Discover accepted a mid-file BOM, want an error")
 	}
+}
+
+// configIsZero reports whether a Config declares nothing. A plain == is not
+// available: Config holds a map now.
+func configIsZero(c Config) bool {
+	return c.Space == "" && c.PageWidth == "" && c.Pages == nil
 }
