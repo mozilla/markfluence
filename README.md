@@ -3,23 +3,22 @@
 Markdown-centric Confluence cli tool. Works with Claude, works with GitHub
 actions, works with you.
 
-## Where things are
+## Location of documentation
 
 This file covers installing, configuring, and running each command. The rest
 lives beside it, because it is reference material rather than a read-through:
 
 | | |
 |---|---|
+| [README.md](README.md) (this file) | installation, configuration, usage |
 | [docs/markdown_file.md](docs/markdown_file.md) | the page format: every frontmatter field, and what the converter does with each body construct |
 | [docs/github-actions.md](docs/github-actions.md) | running markfluence in CI: a working workflow, credentials, and why a service account |
 | [docs/root-model.md](docs/root-model.md) | the documentation root: how a tree of files maps to a tree of pages |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | how to contribute: development setup, what to run before opening a pr, commit conventions, how to file an issue, etc |
 | [docs/confluence/](docs/confluence/) | what we established about Confluence by experiment — the API, storage format, scopes, and the traps that produce confident wrong answers |
 | [docs/guarantees.md](docs/guarantees.md) | the properties markfluence holds itself to, each with an honest status |
 | [docs/json-output.md](docs/json-output.md) | `--json` in detail: status verbs, what counts as a result, why the shapes are what they are |
 | [schema/json-output/v1.json](schema/json-output/v1.json) | the `--json` schema itself, also printed by `markfluence schema` |
-
-Every command also carries its own reasoning in `markfluence COMMAND --help`,
-which is the authoritative description of what it does and why.
 
 ## Which Confluence
 
@@ -979,7 +978,7 @@ For the reasoning behind this model — why a bare marker file, what it fixes,
 what it costs — see [docs/root-model.md](docs/root-model.md) and
 [_plans/025_file-organization.md](_plans/025_file-organization.md).
 
-### Common tasks
+## Common tasks
 
 **Moving or renaming a markdown file.** Just move it. Links to it resolve by
 where it actually is, via the root-relative link index — nothing elsewhere
@@ -1004,13 +1003,6 @@ publish. Identity follows the asset's location, not any particular page's
 one, each page's root defaults to its own directory, and an asset above any
 one of them is `IMAGE BROKEN` — the layout in [docs/markdown_file.md](docs/markdown_file.md) needs
 this to work at all.
-
-## Development
-
-**[CONTRIBUTING.md](CONTRIBUTING.md)** has it all: development setup, what to
-run before opening a pull request, the converter's golden-file regression suite,
-commit conventions, how to file a bug, and what to read before changing
-anything that talks to Confluence.
 
 ## Inspirations
 
