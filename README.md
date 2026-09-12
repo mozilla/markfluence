@@ -498,6 +498,23 @@ project-wide default is wrong for every file at once. Credentials are
 deliberately not settings here; see
 [docs/root-model.md](docs/root-model.md#what-it-deliberately-does-not-hold).
 
+It can also hold a **`pages:` block**, giving each file its page metadata so the
+markdown itself stays pristine — no frontmatter at all:
+
+```yaml
+pages:
+  docs/deploy-runbook.md:
+    title: Deploy Runbook
+    page_id: 12346
+```
+
+That is what makes `markfluence update docs/**/*.md` work from CI with no
+per-file inputs, and it is why `update` has no `--page-id`/`--title` flags:
+those would each have to name one file. Both locations are legal and agreement
+is silent, so you can move metadata in a file at a time; a file neither place
+mentions is skipped rather than failed. Details:
+[docs/root-model.md](docs/root-model.md#pages--page-metadata-for-a-pristine-file).
+
 The rest of this section is the precise version of the same idea. Every
 markdown file has a **documentation root**: the directory holding
 `markfluence.yaml`, found by walking up from the file's own directory, or —

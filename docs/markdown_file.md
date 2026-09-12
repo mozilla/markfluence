@@ -64,9 +64,29 @@ page_width: max
 
 The chain is **flag > frontmatter > project file** — the answer closest to the
 content wins — and the project file is only consulted when both levels above it
-are silent, so it never conflicts with either. No other frontmatter field has a
-project-wide form: `title` and `page_id` are per page by definition, and
-`parent` varies per file.
+are silent, so it never conflicts with either.
+
+### The same block, somewhere else
+
+Every field above can live in a `pages:` entry in `markfluence.yaml` instead of
+in the file, which is how a markdown file stays pristine and still gets
+published:
+
+```yaml
+pages:
+  docs/deploy-runbook.md:
+    title: Deploy Runbook
+    page_id: 12346
+    labels: [runbook]
+```
+
+An entry is the same block, moved — the same field names, the same value
+domains, the same canonical order. Both locations are legal, agreement is
+silent, and an entry is *not* a fourth precedence level: frontmatter and an
+entry are two spellings of one level, so when both speak the rule is a
+disagreement rule rather than a precedence one. The details, and the path-key
+rules, are in
+[root-model.md](root-model.md#pages--page-metadata-for-a-pristine-file).
 
 ## Body
 

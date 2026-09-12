@@ -90,6 +90,52 @@ key out.
 Settings are per-root, so an invocation spanning two projects gets each
 project's own defaults — see [Multi-root batches](#multi-root-batches-are-allowed).
 
+### `pages:` — page metadata for a pristine file
+
+A `pages:` block maps a path to that file's page metadata, so a markdown file
+can be published while carrying no markfluence keys at all:
+
+```yaml
+space: ENG
+
+pages:
+  docs/deploy-runbook.md:
+    title: Deploy Runbook
+    page_id: 12346
+    labels: [runbook]
+```
+
+An entry **is a frontmatter block that lives elsewhere** — the same field names,
+the same value domains, the same canonical order. Both locations are legal and
+agreement is silent, which is what makes moving metadata into the manifest
+something you can do a file at a time.
+
+Where the two disagree, what happens depends on what the disagreement can
+destroy:
+
+| field | on disagreement |
+|---|---|
+| `page_id`, `space`, `parent` | **error** — the file fails. A `page_id` pasted from an old file would publish over a live page |
+| `title`, `page_width`, `labels` | **warning**, and the frontmatter wins. Visible and recoverable |
+
+A file **neither location mentions is skipped**, not failed: a repository
+legitimately holds markdown that is not published, so `markfluence update
+docs/**/*.md` does not go red because somebody added a draft. A file that *is*
+registered but has no `page_id` fails — something claimed it and the page has
+not been created yet.
+
+**Path keys** are relative to the root, in slash form, and lexically cleaned
+(`./docs/a.md` and `docs/a.md` are the same key). Two rules are load-time
+errors, because either means the manifest's structure is wrong rather than one
+entry being bad: a key that escapes the root, and two keys that normalize to one
+path. Keys are compared exactly, with no case folding — on a case-insensitive
+filesystem `Docs/a.md` opens the file but matches no `docs/a.md` key, so the
+file reads as unmanaged and is skipped.
+
+Resolution is lexical and never follows symlinks, for the same reason **L2**
+requires of everything else here: a key whose meaning depended on how the
+checkout was laid out would resolve differently on two machines.
+
 ### A file that cannot be understood stops the command
 
 An unparseable file, or one holding a key markfluence does not recognise, is an
