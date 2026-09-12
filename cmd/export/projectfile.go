@@ -10,9 +10,17 @@ import (
 	"github.com/mozilla/markfluence/internal/project"
 )
 
-// projectFileBody is what markfluence.yaml holds. Its existence is its whole
-// meaning -- nothing in it is parsed -- so it carries a comment saying so, for
-// whoever finds it and wonders (_plans/025).
+// projectFileBody is what markfluence.yaml holds: a comment and no settings.
+//
+// A project file can declare project-wide defaults now (#100), and this one
+// declares none deliberately. An exported tree needs no space: -- every file
+// export writes already carries its own in frontmatter (pagedoc.Frontmatter),
+// and frontmatter beats the project file, so the setting would be overridden by
+// every file under it. It would matter only for a file somebody adds later, and
+// even then inconsistently, since an existing marker is never overwritten.
+//
+// So the comment stays accurate, and it is here for whoever finds the file and
+// wonders what it is for (_plans/025).
 const projectFileBody = `# Marks the root of a markfluence project. Image and link paths are recorded
 # relative to this directory. https://github.com/mozilla/markfluence
 `
@@ -27,7 +35,8 @@ const (
 // writeProjectFile plants markfluence.yaml at the destination of a multi-page
 // export, and reports what it did.
 //
-// It is load-bearing rather than tidy. Without a project file the documentation
+// It is load-bearing rather than tidy, and for the root it marks rather than
+// for anything it says. Without a project file the documentation
 // root falls back to a markdown file's own directory, so dest/home/child.md
 // would take dest/home/ as its root -- and a shared asset reconstructed at
 // dest/assets/brand.png then sits above that root and republishes as
