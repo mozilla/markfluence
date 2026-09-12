@@ -14,6 +14,17 @@ import (
 	"github.com/mozilla/markfluence/internal/project"
 )
 
+// writeMarker plants a valid markfluence.yaml -- a comment and nothing else,
+// which is what ships and what export plants.
+func writeMarker(t *testing.T, dir string) string {
+	t.Helper()
+	path := filepath.Join(dir, project.Filename)
+	if err := os.WriteFile(path, []byte("# Marks the root of a markfluence project.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func writeFile(t *testing.T, dir, name string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
@@ -132,7 +143,9 @@ func TestLocalAttachmentsRefusesABatchCollision(t *testing.T) {
 		b := writeFile(t, root, "deploy/diagram.png")
 		cache := project.NewCache("")
 		if declareRoot {
-			writeFile(t, root, "markfluence.yaml")
+			// A real marker, not writeFile's placeholder bytes: the project
+			// file is parsed now, and a bare scalar in it is refused.
+			writeMarker(t, root)
 			cache = project.NewCache(root)
 		}
 
