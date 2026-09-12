@@ -798,3 +798,67 @@ func TestUnknownListKeyIsStillAllowed(t *testing.T) {
 		t.Errorf("reviewers = %q, want [ana bo]", got)
 	}
 }
+
+// TestParseErrorWordingIsExact pins the full sentence of every message
+// frontmatter composes itself, not a substring of it.
+//
+// This exists because the substring assertions above did not notice a refactor
+// that changed "a flat mapping of key: value pairs" into "a flat mapping of
+// frontmatter: value pairs": both contain "flat mapping". These strings are
+// user-facing and land verbatim in `check --json`, so the whole sentence is the
+// contract. goccy's own parse errors are excluded -- their wording belongs to
+// the dependency, and pinning it here would make a goccy bump look like a
+// markfluence regression.
+func TestParseErrorWordingIsExact(t *testing.T) {
+	tests := map[string]struct{ content, want string }{
+		"top-level scalar": {
+			"---\njust text\n---\nx\n",
+			"doc.md: frontmatter must be a flat mapping of key: value pairs, found String",
+		},
+		"top-level list": {
+			"---\n- a\n---\nx\n",
+			"doc.md: frontmatter must be a flat mapping of key: value pairs, found Sequence",
+		},
+		"second document": {
+			"---\ntitle: A\n...\ntitle: B\n---\nx\n",
+			`doc.md: frontmatter must be a single document: remove the "..." line`,
+		},
+		"nested value": {
+			"---\ntitle:\n  a: b\n---\nx\n",
+			`doc.md: frontmatter "title" must be a single scalar value, found Mapping`,
+		},
+		"literal block": {
+			"---\ntitle: |\n  lit\n---\nx\n",
+			`doc.md: frontmatter "title" must be a single scalar value, found Literal`,
+		},
+		"continued scalar": {
+			"---\ntitle: a plain\n  continued\n---\nx\n",
+			`doc.md: frontmatter "title" must be a single-line scalar; ` +
+				"a value split over several lines is not supported",
+		},
+		"list element block": {
+			"---\nlabels:\n  - |\n    lit\n---\nx\n",
+			`doc.md: frontmatter "labels[0]" must be a single scalar value, found Literal`,
+		},
+		"list element continued": {
+			"---\nlabels:\n  - a plain\n    continued\n---\nx\n",
+			`doc.md: frontmatter "labels[0]" must be a single-line scalar; ` +
+				"a list element split over several lines is not supported",
+		},
+		"list where a scalar is required": {
+			"---\nparent: [a, b]\n---\nx\n",
+			`doc.md: frontmatter "parent" must be a single value, not a list`,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := frontmatter.Parse("doc.md", tt.content)
+			if err == nil {
+				t.Fatalf("Parse(%q) = nil error, want one", tt.content)
+			}
+			if err.Error() != tt.want {
+				t.Errorf("error =\n  %q\nwant\n  %q", err, tt.want)
+			}
+		})
+	}
+}

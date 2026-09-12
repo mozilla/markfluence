@@ -31,6 +31,10 @@ import (
 // the two kinds of message read differently: `frontmatter must be a flat
 // mapping` and `setting "space" must be a single scalar value` are both right,
 // and neither noun works in the other's sentence.
+//
+// Item goes only where a *named* key is the subject. A sentence about keys in
+// general says "key" literally, which is why the flat-mapping refusal takes
+// neither field for that word.
 type Dialect struct {
 	Doc  string
 	Item string
@@ -116,8 +120,12 @@ func (r reader) parse(text string) (*block, error) {
 	case *ast.CommentGroupNode:
 		return &block{mapping: emptyMapping(), orphan: b}, nil
 	default:
-		return nil, fmt.Errorf("%s must be a flat mapping of %s: value pairs, found %s",
-			r.Doc, r.Item, b.Type())
+		// "key: value pairs" is literal, not r.Item: Item names one key in a
+		// sentence about that key ("setting \"space\" must be ..."), and reads
+		// as nonsense here -- this said "a flat mapping of frontmatter: value
+		// pairs" before a test pinned the whole sentence.
+		return nil, fmt.Errorf("%s must be a flat mapping of key: value pairs, found %s",
+			r.Doc, b.Type())
 	}
 }
 

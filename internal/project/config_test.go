@@ -89,7 +89,7 @@ func TestDiscoverRefusesAMalformedFile(t *testing.T) {
 		// A goccy parse error carries its own [line:col] and no noun of ours;
 		// ConfigError is what names the file.
 		"parse error":       {"space: [ENG\n", "sequence end token"},
-		"top-level list":    {"- ENG\n", "must be a flat mapping of setting: value pairs"},
+		"top-level list":    {"- ENG\n", "must be a flat mapping of key: value pairs"},
 		"list where scalar": {"space: [ENG, OPS]\n", `setting "space" must be a single value, not a list`},
 		"nested mapping":    {"space:\n  key: ENG\n", `setting "space" must be a single scalar value`},
 		"duplicate key":     {"space: ENG\nspace: OPS\n", "already defined"},
@@ -289,19 +289,19 @@ func TestSettingsArePerRoot(t *testing.T) {
 
 // A project-wide default takes effect for a file that says nothing about it,
 // so "why did this publish to ENG?" has no answer in the file the reader is
-// looking at. --debug is where that answer goes.
-func TestLoadConfigReportsDeclaredSettingsUnderDebug(t *testing.T) {
+// looking at. ReportSettings is where that answer goes.
+func TestReportSettingsNamesEveryDeclaredSetting(t *testing.T) {
 	ui.SetDebug(true)
 	t.Cleanup(func() { ui.SetDebug(false) })
 
 	dir := write(t, "space: ENG\npage_width: wide\n")
-	out := captureStderr(t, func() {
-		root, err := Discover(dir)
-		if err != nil {
-			t.Fatalf("Discover: %v", err)
-		}
-		_ = root.FS.Close()
-	})
+	c := NewCache("")
+	defer c.Close()
+	if _, err := c.Resolve(dir); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	out := captureStderr(t, func() { ReportSettings(c) })
 	for _, want := range []string{filepath.Join(dir, Filename), "space=ENG", "page_width=wide"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("debug output = %q, want it to contain %q", out, want)
@@ -311,11 +311,33 @@ func TestLoadConfigReportsDeclaredSettingsUnderDebug(t *testing.T) {
 
 // The marker that ships declares nothing, and a line for every root in a batch
 // would be noise. The root itself is already reported unconditionally.
-func TestLoadConfigSaysNothingForAMarkerWithNoSettings(t *testing.T) {
+func TestReportSettingsSaysNothingForAMarkerWithNoSettings(t *testing.T) {
 	ui.SetDebug(true)
 	t.Cleanup(func() { ui.SetDebug(false) })
 
 	dir := write(t, "# Marks the root of a markfluence project.\n")
+	c := NewCache("")
+	defer c.Close()
+	if _, err := c.Resolve(dir); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	out := captureStderr(t, func() { ReportSettings(c) })
+	if strings.Contains(out, "project file") {
+		t.Errorf("debug output = %q, want nothing about the project file", out)
+	}
+}
+
+// Loading must not print. It happens once per root for two unrelated reasons
+// -- a markdown file's root, and the separate walk from the working directory
+// that only locates .env -- so a line emitted during a load described
+// whichever root came first and fired for commands (info, search) that read no
+// settings at all.
+func TestLoadingAProjectFilePrintsNothing(t *testing.T) {
+	ui.SetDebug(true)
+	t.Cleanup(func() { ui.SetDebug(false) })
+
+	dir := write(t, "space: ENG\n")
 	out := captureStderr(t, func() {
 		root, err := Discover(dir)
 		if err != nil {
@@ -323,8 +345,35 @@ func TestLoadConfigSaysNothingForAMarkerWithNoSettings(t *testing.T) {
 		}
 		_ = root.FS.Close()
 	})
-	if strings.Contains(out, "project file") {
-		t.Errorf("debug output = %q, want nothing about the project file", out)
+	if out != "" {
+		t.Errorf("Discover printed %q, want nothing", out)
+	}
+}
+
+// Under --root every starting directory maps to one Root, and it must be built
+// once: a second FromPath means a second os.OpenRoot and a second read of the
+// project file for a root that cannot differ.
+func TestCacheBuildsTheOverrideRootOnce(t *testing.T) {
+	dir := write(t, "space: ENG\n")
+	c := NewCache(dir)
+	defer c.Close()
+
+	var first *Root
+	for _, start := range []string{dir, filepath.Join(dir, "a"), filepath.Join(dir, "b", "c")} {
+		root, err := c.Resolve(start)
+		if err != nil {
+			t.Fatalf("Resolve(%s): %v", start, err)
+		}
+		if first == nil {
+			first = root
+			continue
+		}
+		if root != first {
+			t.Errorf("Resolve(%s) built a second Root; want the one already built", start)
+		}
+	}
+	if got := c.resolved(); len(got) != 1 {
+		t.Errorf("resolved() = %d roots, want 1", len(got))
 	}
 }
 
@@ -349,4 +398,28 @@ func captureStderr(t *testing.T, fn func()) string {
 	out := <-done
 	_ = r.Close()
 	return out
+}
+
+// A leading BOM is not a setting name. Without stripping it, a file a Windows
+// editor wrote reports an unknown setting whose name starts with U+FEFF and
+// advises upgrading markfluence -- the wrong remedy for the wrong problem.
+func TestLoadConfigStripsALeadingBOM(t *testing.T) {
+	dir := write(t, "\ufeffspace: ENG\npage_width: wide\n")
+	root, err := Discover(dir)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	defer func() { _ = root.FS.Close() }()
+	if root.Config.Space != "ENG" || root.Config.PageWidth != "wide" {
+		t.Errorf("Config = %#v, want space=ENG page_width=wide", root.Config)
+	}
+}
+
+// Only at the start, and only one: a BOM anywhere else is content markfluence
+// must not silently discard.
+func TestLoadConfigDoesNotStripABOMElsewhere(t *testing.T) {
+	dir := write(t, "space: ENG\n\ufeffpage_width: wide\n")
+	if _, err := Discover(dir); err == nil {
+		t.Fatal("Discover accepted a mid-file BOM, want an error")
+	}
 }
