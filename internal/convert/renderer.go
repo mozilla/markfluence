@@ -59,13 +59,25 @@ type storageRenderer struct {
 	// reference the author did not touch, which is worth a warning.
 	pastedNames map[string]bool
 
-	// linkBrokenText is the literal replacement text for the *ast.Link
-	// currently being rendered, set on entering when its target is Broken and
-	// cleared (empty) otherwise; renderLink's matching leaving call reads it
-	// once to decide whether a closing "</a>" is due. Per-node transient
-	// state, the same shape as seen above -- safe because goldmark never
-	// renders two Link nodes concurrently (markdown has no nested links).
-	linkBrokenText string
+	// linkReplaced records that the *ast.Link currently being rendered was
+	// replaced by something other than an <a> element -- LINK BROKEN text, or
+	// a mention -- so renderLink's matching leaving call knows no closing
+	// "</a>" is due. Per-node transient state, the same shape as seen above --
+	// safe because goldmark never renders two Link nodes concurrently
+	// (markdown has no nested links).
+	//
+	// One flag rather than one per replacement kind: the leaving call only ever
+	// needs to know whether a tag was opened, and a second flag would be a
+	// second thing to remember to set.
+	linkReplaced bool
+
+	// mentions are the account ids this document published as mentions, in
+	// document order with duplicates kept. Reported on ConfluencePage so the
+	// caller can resolve them and warn about one that does not exist --
+	// Confluence accepts any id and renders "@Unlicensed user", so nothing
+	// downstream will ever report it. The Attachments shape: the converter
+	// discovers, the caller acts.
+	mentions []string
 
 	// lineOffset is the number of lines the frontmatter block consumed in the
 	// original file, added to every line nodeLine reports: goldmark parses

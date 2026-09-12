@@ -6,5 +6,6 @@
     "line 8: same-page anchor not resolved: #getting-started",
     "line 12: anchor not found: main.md#does-not-exist",
     "line 12: link not resolved: main.md#does-not-exist"
-  ]
+  ],
+  "mentions": []
 }
