@@ -220,3 +220,57 @@ func TestPageLinkTargetsIgnoresBodiesWithNone(t *testing.T) {
 		t.Errorf("got %v, want none", got)
 	}
 }
+
+// TestLinkTextEscapesBracketsInRawText covers a bug older than mentions: mdLink
+// was a bare Sprintf, so any page title holding a "]" exported as a broken
+// link -- the "]" ended the link text early and the rest of the line became
+// literal junk. Mentions turn it from theoretical into likely, since display
+// names carry brackets.
+func TestLinkTextEscapesBracketsInRawText(t *testing.T) {
+	storage := `<p>See <ac:link><ri:page ri:content-title="Deploy [staging] Runbook" ` +
+		`ri:space-key="ENG" /></ac:link>.</p>`
+	got, err := convert.StorageToMarkdown(storage, convert.StorageOptions{
+		SiteURL: "https://wiki.example.net",
+		PageLinks: map[convert.PageLinkTarget]string{
+			{SpaceKey: "ENG", Title: "Deploy [staging] Runbook"}: "https://wiki.example.net/wiki/x",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `[Deploy \[staging\] Runbook](https://wiki.example.net/wiki/x)`) {
+		t.Errorf("markdown = %q, want the brackets escaped in the link text", got)
+	}
+}
+
+// TestLinkTextDoesNotEscapeARenderedBody is the other half, and the reason the
+// escaping sits on the raw sources rather than in mdLink. An ac:link-body has
+// already been rendered to markdown, so escaping it would turn a bold body into
+// literal asterisks.
+func TestLinkTextDoesNotEscapeARenderedBody(t *testing.T) {
+	storage := `<p>See <ac:link><ri:page ri:content-title="Runbook" ri:space-key="ENG" />` +
+		`<ac:link-body><strong>the runbook</strong></ac:link-body></ac:link>.</p>`
+	got, err := convert.StorageToMarkdown(storage, convert.StorageOptions{
+		SiteURL: "https://wiki.example.net",
+		PageLinks: map[convert.PageLinkTarget]string{
+			{SpaceKey: "ENG", Title: "Runbook"}: "https://wiki.example.net/wiki/x",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `[**the runbook**](https://wiki.example.net/wiki/x)`) {
+		t.Errorf("markdown = %q, want the rendered body left alone", got)
+	}
+	if strings.Contains(got, `\*`) {
+		t.Errorf("markdown = %q, want no escaped asterisks", got)
+	}
+}
+
+// TestLinkTextEscapesABackslashFirst: the backslash pass has to run before the
+// bracket passes, or it would escape the escapes they add.
+func TestLinkTextEscapesABackslashFirst(t *testing.T) {
+	if got := convert.EscapeLinkTextForTest(`a\b]c`); got != `a\\b\]c` {
+		t.Errorf("EscapeLinkText = %q, want %q", got, `a\\b\]c`)
+	}
+}

@@ -231,6 +231,13 @@ func (r *mdRenderer) renderAnchorLink(n *snode, anchor string) string {
 //
 // A body comes in two spellings -- ac:link-body holds rich text, and
 // ac:plain-text-link-body holds CDATA -- and both occur on real pages.
+//
+// Only the *raw* sources are escaped, and which is which is the whole point of
+// the split below. An ac:link-body has already been rendered to markdown by
+// renderInlineChildren, so escaping it would turn a bold link body into a
+// literal "\*\*bold\*\*". The CDATA body and the fallback are plain text
+// straight off the server -- a page title, a space key, an anchor -- and a "]"
+// in any of them ends the link early.
 func (r *mdRenderer) acLinkText(n *snode, fallback string) string {
 	if b := findChild(n, "ac:link-body"); b != nil {
 		if s := r.renderInlineChildren(b); s != "" {
@@ -239,10 +246,30 @@ func (r *mdRenderer) acLinkText(n *snode, fallback string) string {
 	}
 	if b := findChild(n, "ac:plain-text-link-body"); b != nil {
 		if s := strings.TrimSpace(collapse(textContent(b))); s != "" {
-			return s
+			return escapeLinkText(s)
 		}
 	}
-	return fallback
+	return escapeLinkText(fallback)
+}
+
+// escapeLinkText makes plain text safe to use as a markdown link's text.
+//
+// The set is deliberately the one that *breaks* a link rather than everything
+// markdown reads specially: an unescaped "]" ends the text early and leaves the
+// rest of the line as literal junk, and a backslash has to go first or it would
+// escape the escapes. A title like "*Foo*" is a different problem -- it renders
+// as emphasis instead of as asterisks, losing fidelity without breaking the
+// link -- and is knowingly not handled here, since escaping every markdown
+// indicator in every recovered title is a larger change with its own round-trip
+// consequences.
+//
+// Before this, mdLink was a bare Sprintf: any page title holding a bracket
+// exported as a broken link, which mentions turned from theoretical into likely
+// because display names carry them.
+func escapeLinkText(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, "[", `\[`)
+	return strings.ReplaceAll(s, "]", `\]`)
 }
 
 // mdLink renders an inline markdown link, falling back to showing the
