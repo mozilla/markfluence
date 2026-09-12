@@ -14,7 +14,12 @@ import (
 // Not safe for concurrent use.
 type Cache struct {
 	override string
-	byDir    map[string]*Root
+	// overrideRoot is the one Root --root resolves to, built on first use.
+	// Without it, every distinct starting directory re-ran FromPath: a second
+	// os.OpenRoot, and -- since the project file is parsed -- a second read of
+	// it, for a root that cannot differ.
+	overrideRoot *Root
+	byDir        map[string]*Root
 }
 
 // NewCache builds a Cache that applies override -- --root's value, or "" when
@@ -25,7 +30,7 @@ func NewCache(override string) *Cache {
 
 // Resolve returns the root for startDir, discovering (or applying the
 // override) only the first time a given directory is seen. With an override,
-// every startDir maps to the same *Root, opened once. With no override, the
+// every startDir maps to the same *Root, built exactly once (overrideRoot). With no override, the
 // walk up from startDir consults the cache at every level (walkAndCache) so a
 // batch spanning many subdirectories of one project pays for Discover's walk
 // -- and os.OpenRoot -- once for the whole subtree, not once per distinct
@@ -40,12 +45,15 @@ func (c *Cache) Resolve(startDir string) (*Root, error) {
 		return root, nil
 	}
 	if c.override != "" {
-		root, err := FromPath(c.override)
-		if err != nil {
-			return nil, err
+		if c.overrideRoot == nil {
+			root, err := FromPath(c.override)
+			if err != nil {
+				return nil, err
+			}
+			c.overrideRoot = root
 		}
-		c.byDir[abs] = root
-		return root, nil
+		c.byDir[abs] = c.overrideRoot
+		return c.overrideRoot, nil
 	}
 	return c.walkAndCache(abs)
 }
@@ -120,8 +128,28 @@ func (c *Cache) Roots() []string {
 // Resolve call is done -- a root can be reused across many files, so nothing
 // closes it until the whole cache does.
 func (c *Cache) Close() {
-	for _, root := range c.byDir {
+	// Distinct Roots, not every byDir entry: under --root many directories map
+	// to one Root, and closing its handle once per entry would close an
+	// already-closed handle N-1 times.
+	for _, root := range c.resolved() {
 		_ = root.FS.Close()
 	}
 	clear(c.byDir)
+	c.overrideRoot = nil
+}
+
+// resolved returns every distinct *Root this cache holds, ordered by Dir, for
+// reporting. Distinct by identity rather than by Dir: two Roots for one
+// directory would be a bug, and collapsing them would hide it.
+func (c *Cache) resolved() []*Root {
+	seen := map[*Root]bool{}
+	out := []*Root{}
+	for _, root := range c.byDir {
+		if !seen[root] {
+			seen[root] = true
+			out = append(out, root)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Dir < out[j].Dir })
+	return out
 }
