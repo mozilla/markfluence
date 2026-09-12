@@ -981,43 +981,6 @@ A page genuinely titled `null` is written `title: "null"`.
 
 To create a page, you only need to specify the `title` in the frontmatter.
 
-### Mentions
-
-A Confluence mention round-trips as an ordinary markdown link to the person's
-profile, with an `@` on the link text:
-
-```markdown
-Ping [@Ada Lovelace](https://home.atlassian.com/people/712020:0e5f8a21-3c4d-4e5f-a6b7-c8d9e0f1a2b3) about the deploy.
-```
-
-`read` and `export` write that; `create` and `update` publish it back as a real
-mention. Three things worth knowing:
-
-- **The `@` is what makes it a mention.** A link to the same URL whose text does
-  not start with `@` publishes as a plain link, so you can still link to
-  somebody's profile without pinging them.
-- **The account id is the only durable part.** The display name is regenerated
-  on every `read`/`export`, so it goes stale harmlessly when somebody changes
-  their name, and the host is regenerated too — nothing site-specific survives
-  into the markdown.
-- **An id that names nobody is a warning, not an error.** Confluence accepts any
-  account id and renders it as `@Unlicensed user` rather than failing, so
-  markfluence looks the id up and says so; nothing else will.
-
-**A colleague who has left keeps their name.** A deactivated account resolves
-normally, and Confluence appends the suffix itself, so a round-tripped page
-reads `[@Mark Reid (Deactivated)](…)` and records who has gone rather than
-losing them.
-
-An id that genuinely does not resolve — a typo, a hand-edited URL — renders as
-`[@Unlicensed user](…)`, matching what the page itself will show. The id stays
-in the URL, so it is still the easiest thing to correct.
-
-If markfluence cannot *ask* whether an account exists (no network, a rejected
-token), the mention is left exactly as it was rather than being given a
-placeholder — otherwise one bad moment mid-export would write `Unlicensed user`
-over every real name in a tree.
-
 ### Body
 
 The body is [GitHub-Flavored Markdown](https://github.github.com/gfm/), converted
@@ -1027,7 +990,9 @@ to storage. Pasted Confluence storage markup passes through untouched.
 
 **[docs/markdown.md](docs/markdown.md) is the construct-by-construct reference** —
 what each one becomes, what round-trips, and the handful that are lossy (a table
-cell colour outside the named swatches, a column layout, an unmapped macro).
+cell colour outside the named swatches, a column layout, an unmapped macro). It
+also covers **mentions**, which round-trip as a markdown link to the person's
+profile, and the table-cell conventions for colours, multi-line cells and lists.
 
 ## The documentation root
 
