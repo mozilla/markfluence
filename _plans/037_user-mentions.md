@@ -100,7 +100,7 @@ costs a second page fetch. See "The lookup" below.
 ## Decisions
 
 **The inverse direction resolves names through `client.GetUser`, not ADF.**
-One `GET /user` per distinct account id, cached per run, gathered the way
+One `GET /user` per distinct account id, gathered the way
 `PageLinkTargets`/`PageLinks` already gathers page titles: walk the parsed body,
 collect distinct ids, resolve once each, hand a map back through
 `StorageOptions`. A page with no mention makes no request, which is the guard
@@ -113,6 +113,45 @@ second body format, in a package whose whole job is the storage one, to obtain a
 string that is decoration. `internal/convert` would gain an ADF reader for the
 benefit of the name in a link's text. Worth revisiting only if the per-id cost
 is measured to be a problem; noted in the issue rather than built.
+
+**The name cache is per run, cross-page, and passed in — not built per page.**
+This is the one place the obvious structure is wrong. `PageLinks` builds its
+`spaceIDs` map inside itself, once per page, and `Options` is constructed per
+page too; a user map written in that shape re-resolves the same twelve on-call
+people on every page of a 200-page export, which is 2400 requests to learn
+twelve names. So the cache is threaded in from the caller, the way
+`project.Cache` and `linkindex.Cache` already are, and the precedent for its
+shape is `cmd/info`'s `authorName(c, accountID, cache)` and `cmd/create`'s
+`spaceCache`: an explicit map argument, per invocation, no package-level state.
+
+**A miss is cached too.** `authorName` already does this, storing the id itself
+when the lookup fails. Without it a page mentioning three deactivated people
+costs three requests *per page*, forever, to learn the same three failures.
+The cached value has to distinguish "resolved to this name" from "does not
+resolve", since the two lead to different renderings.
+
+**Not persisted to disk**, and the reason is a guarantee rather than effort.
+**L2** (`invocation-independent`) says output depends only on the files on disk
+-- not the working directory, nor which files were passed in the same command.
+A disk cache adds "nor what your cache happens to hold": two people exporting
+the same page would get different names, and a re-export would change a name
+with nothing in the diff to explain it.
+
+It is also the one part of this that is not static. The account id never changes
+-- which is exactly why it is the source of truth here -- but the id→name
+mapping does, rarely, with no invalidation signal available. A rename would
+stick until someone cleared the cache by hand, and the failure would be silent
+and cosmetic, which is the kind that survives for years. markfluence has no
+persistent state at all today, so a cache directory would bring its whole tail
+(where it lives, how it is invalidated, whether `--no-cache` exists, what a
+shared CI runner does with it) to save a handful of requests.
+
+**The cache is what makes the forward-path warning affordable.** Publishing
+needs only the id; the name is never used. So the sole reason the forward path
+calls `GetUser` at all is the mangled-id warning below, and without a
+cross-page cache that warning costs a request per distinct mention on every
+`update` -- hard to justify on a rotation table. With one, a batch update of 50
+files sharing 20 people costs 20 requests once.
 
 **An id `GetUser` cannot resolve passes through as storage.** There is no name
 to render, and `[@712020:0e5f…](…)` shows a reader nothing the raw storage did
@@ -179,9 +218,11 @@ page whose profile links predate the change stops round-tripping.
 
 ### `internal/pagedoc`
 
-- Gather → resolve → pass, beside `PageLinks`: `UserNames(c, page)` resolving
-  each distinct id once, best-effort, omitting what fails. `Options` wires it
-  in. No request when the body holds no mention.
+- Gather → resolve → pass, beside `PageLinks`: `UserNames(c, page, cache)`
+  resolving each distinct id once, best-effort, omitting what fails. `Options`
+  wires it in. No request when the body holds no mention.
+- The **cache is a parameter, not a local**, which is the one structural thing
+  to get right — see the caching decision above.
 
 ### Commands
 
@@ -204,6 +245,11 @@ since "check validates offline" and "a mention needs the server" do not compose.
 - **The legacy URL is recognised** on the forward path and not emitted on the
   inverse.
 - **No mention, no request** — the `pagedoc` guard.
+- **One request per distinct id across a whole walk**, not per page: an export
+  of several pages mentioning the same person resolves them once. Asserted on a
+  request count, since this is the difference between twelve requests and
+  several thousand and nothing else in the output would show it.
+- **A miss is not retried** per page.
 - Regression cases under `internal/convert/testdata/regression/` for a mention
   in a paragraph and in a table cell, the latter because `renderCellLines` joins
   a cell's children and a mention inside one is the shape #91 is about.
