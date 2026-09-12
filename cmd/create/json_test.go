@@ -135,6 +135,7 @@ func TestJSONResultCreated(t *testing.T) {
   "attachments": [],
   "warnings": [],
   "broken": [],
+  "metadata_source": null,
   "error": null,
   "code": null
 }`

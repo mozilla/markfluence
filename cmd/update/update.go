@@ -19,6 +19,7 @@ import (
 	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/pagedoc"
+	"github.com/mozilla/markfluence/internal/pagemeta"
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/project"
@@ -27,12 +28,9 @@ import (
 )
 
 var (
-	message       string
-	force         bool
-	dryRun        bool
-	titleFlag     string
-	pageIDFlag    string
-	pageWidthFlag string
+	message string
+	force   bool
+	dryRun  bool
 )
 
 // Cmd is the update command.
@@ -40,38 +38,50 @@ var Cmd = &cobra.Command{
 	Use:   "update FILE...",
 	Short: "Publish one or more markdown files to Confluence pages",
 	Long: "Publish one or more markdown FILEs to Confluence pages.\n\n" +
-		"Title and page id are read from each file's YAML frontmatter; --title and\n" +
-		"--page-id override the frontmatter (and require a single FILE). A page id is\n" +
-		"required (from --page-id or frontmatter); update errors if none is set.\n\n" +
-		"Page width is asserted only when set via --page-width, a page_width\n" +
-		"frontmatter line, or a page_width: in markfluence.yaml -- otherwise the\n" +
-		"live page's width is left untouched.\n" +
-		"Labels work the same way: a labels: line is asserted exactly (anything on\n" +
-		"the page the file does not list is removed), and no labels: line means the\n" +
-		"page's labels are left alone, not even read.\n\n" +
-		"update never writes back to the file, so fixing a wrong page_id is always\n" +
-		"safe: the file is exactly as you left it. A page_id that no longer resolves\n" +
-		"fails that file and says what to do about it; one that is not a numeric id\n" +
-		"at all is reported without asking Confluence.\n\n" +
+		"Each file's title and page id come from its own YAML frontmatter, or from\n" +
+		"a 'pages:' entry for it in markfluence.yaml -- a file can stay pristine and\n" +
+		"keep its metadata there instead. Both places are legal and agreement is\n" +
+		"silent; where they disagree about page_id, space or parent the file fails,\n" +
+		"and where they disagree about title, page_width or labels the frontmatter\n" +
+		"wins with a warning.\n\n" +
+		"A file that neither place mentions is skipped, not failed: a repository\n" +
+		"legitimately holds markdown that is not published, so a glob over a docs\n" +
+		"tree does not go red because somebody added a draft. A file that IS\n" +
+		"registered but has no page id fails -- something claimed it and the page\n" +
+		"has not been created yet.\n\n" +
+		"There are no per-page flags. Page metadata lives in the file or its entry,\n" +
+		"which is what lets one invocation publish 'docs/**/*.md'; a flag would have\n" +
+		"to name a single file. A project-wide 'page_width:' in markfluence.yaml is\n" +
+		"how a whole tree gets one width.\n\n" +
+		"Page width is asserted only when something declares it -- the file, its\n" +
+		"entry, or the project-wide default -- otherwise the live page's width is\n" +
+		"left untouched. Labels work the same way: a labels: line is asserted\n" +
+		"exactly (anything on the page the file does not list is removed), and no\n" +
+		"labels: line means the page's labels are left alone, not even read.\n\n" +
+		"update never writes back to the file or to markfluence.yaml, so fixing a\n" +
+		"wrong page_id is always safe: nothing is as you left it by accident. A\n" +
+		"page_id that no longer resolves fails that file and says what to do about\n" +
+		"it; one that is not a numeric id at all is reported without asking\n" +
+		"Confluence.\n\n" +
 		"A file that has not changed since the page's last version is skipped,\n" +
 		"compared by mtime, unless --force is given. Each file is processed\n" +
 		"independently; the command exits non-zero if any file failed.\n\n" +
 		"--dry-run previews the version bump, attachment uploads and any width or\n" +
 		"label change without writing to Confluence. It honours the mtime skip and\n" +
 		"--force exactly as a real run does, so its forecast matches.",
-	Example: "  # Publish a file, taking the page id from its frontmatter\n" +
+	Example: "  # Publish a file, taking the page id from its frontmatter or its entry\n" +
 		"  markfluence update docs/managing_an_incident.md\n\n" +
+		"  # Publish a whole tree -- the CI shape: metadata comes from the files\n" +
+		"  # and from markfluence.yaml, so nothing has to be passed per file\n" +
+		"  markfluence update docs/**/*.md\n\n" +
 		"  # Publish a batch with a version message\n" +
 		"  markfluence update docs/*.md --message \"Bulk update\"\n\n" +
 		"  # Republish even though the file has not changed\n" +
 		"  markfluence update docs/foo.md --force\n\n" +
-		"  # Override the target page, or rename it\n" +
-		"  markfluence update page.md --page-id 123456\n" +
-		"  markfluence update page.md --title \"New Title\"\n\n" +
-		"  # Set the width across a batch\n" +
-		"  markfluence update docs/*.md --page-width wide\n\n" +
 		"  # Preview, write nothing\n" +
-		"  markfluence update docs/*.md --dry-run",
+		"  markfluence update docs/*.md --dry-run\n\n" +
+		"  # See which location supplied each file's metadata\n" +
+		"  markfluence update docs/*.md --json | jq -r '.results[] | \"\\(.file) \\(.metadata_source)\"'",
 	Args:              cobra.MinimumNArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
 	RunE:              run,
@@ -82,22 +92,9 @@ func init() {
 	Cmd.Flags().BoolVar(&force, "force", false, "Skip the file-mtime check and always update the page.")
 	Cmd.Flags().BoolVar(&dryRun, "dry-run", false,
 		"Preview what would be published without writing to Confluence.")
-	Cmd.Flags().StringVar(&titleFlag, "title", "",
-		"Override the page title (requires a single FILE).")
-	Cmd.Flags().StringVar(&pageIDFlag, "page-id", "",
-		"Override the target page id (requires a single FILE).")
-	Cmd.Flags().StringVar(&pageWidthFlag, "page-width", "",
-		"Override the page width: narrow, wide, or max.")
-
-	completion.RegisterFlag(Cmd, "page-width", completion.Values(pagewidth.Vocabulary()...))
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	if overrideNeedsSingleFile(titleFlag, pageIDFlag, len(args)) {
-		ui.Error("--title/--page-id apply to a single page; pass exactly one FILE")
-		return ui.ErrSilent
-	}
-
 	url, _ := cmd.Flags().GetString("url")
 	username, _ := cmd.Flags().GetString("username")
 	cloudID, _ := cmd.Flags().GetString("cloud-id")
@@ -180,31 +177,11 @@ func processFile(
 		return r.fail(err, jsonout.CodeValidation)
 	}
 
-	title, titlePresent, pageID := resolveTitlePageID(titleFlag, pageIDFlag, mf)
-	// Before the request, like the page-id check below: an empty title is a
-	// local defect, and paying for a round trip to discover it is waste. Only a
-	// title that is *present* and empty is wrong -- an absent title means the
-	// file does not manage the page's title, which is honoured further down.
-	if title == "" && titlePresent {
-		return r.fail(errors.New(
-			"frontmatter has an empty 'title:'; give it a value, remove it to keep the "+
-				"live page title, or pass --title"), jsonout.CodeValidation)
-	}
-	if pageID == "" {
-		return r.fail(errors.New("no page id: set page_id in frontmatter or pass --page-id"),
-			jsonout.CodeValidation)
-	}
-	r.pageID = pageID
-	// Before the request: an id that is not digits earns a 400 whose raw body is
-	// the least useful thing markfluence can show a reader.
-	if !pageref.IsDigits(pageID) {
-		return r.fail(errors.New(pageref.NotNumericMessage(pageID)), jsonout.CodeValidation)
-	}
-	// The root is resolved here rather than beside the link index below,
-	// because the width chain now ends at the project file and every local
-	// check has to stay ahead of the first request. The walk is cached, so
-	// asking early costs nothing; building the *index* is not moved, so a file
-	// the mtime check skips still never pays for one.
+	// The root comes first now: a file's metadata may live in the project
+	// file's pages: block rather than in the file, so nothing local can be
+	// checked until the root is known. The walk is cached, so asking early
+	// costs nothing; building the link *index* is still below the mtime check,
+	// so a file that is skipped never pays for one.
 	abs, err := filepath.Abs(filename)
 	if err != nil {
 		return r.fail(err, jsonout.CodeIO)
@@ -213,7 +190,53 @@ func processFile(
 	if err != nil {
 		return r.fail(project.RootError(err), rootErrorCode(err))
 	}
-	width, applyWidth, err := resolveWidth(pageWidthFlag, mf, root)
+	key, _ := pagemeta.KeyFor(root, abs)
+	meta, err := pagemeta.Resolve(key, mf, root)
+	if err != nil {
+		// A coordinate disagreement: the two locations name different pages, and
+		// publishing to either would be a guess about which one the author
+		// means. Only this file fails; the rest of the batch proceeds.
+		return r.fail(err, jsonout.CodeValidation)
+	}
+	r.metadataSource = string(meta.MetadataSource())
+	r.warnings = append(r.warnings, meta.Warnings...)
+
+	// Nothing anywhere claims this file, so there is nothing to publish and
+	// nothing wrong (#139). Repositories legitimately hold markdown that is not
+	// published to Confluence, drafts are a normal state, and a glob-driven CI
+	// run must not go red because somebody added a file. A file that *is*
+	// claimed but has no page_id still fails below: somebody registered it and
+	// create has not run.
+	if !meta.Managed() {
+		r.ok = true
+		r.status = statusSkipped
+		r.unmanaged = true
+		return r
+	}
+
+	title, titlePresent, pageID := resolveTitlePageID(meta.Fields)
+	// Before the request, like the page-id check below: an empty title is a
+	// local defect, and paying for a round trip to discover it is waste. Only a
+	// title that is *present* and empty is wrong -- an absent title means the
+	// file does not manage the page's title, which is honoured further down.
+	if title == "" && titlePresent {
+		return r.fail(errors.New(
+			"the title is present but empty; give it a value, or remove it to keep the "+
+				"live page title"), jsonout.CodeValidation)
+	}
+	if pageID == "" {
+		return r.fail(errors.New(
+			"no page id: set page_id in this file's frontmatter or in its "+
+				project.Filename+" entry, or create the page first"),
+			jsonout.CodeValidation)
+	}
+	r.pageID = pageID
+	// Before the request: an id that is not digits earns a 400 whose raw body is
+	// the least useful thing markfluence can show a reader.
+	if !pageref.IsDigits(pageID) {
+		return r.fail(errors.New(pageref.NotNumericMessage(pageID)), jsonout.CodeValidation)
+	}
+	width, applyWidth, err := resolveWidth(meta.Fields, root)
 	if err != nil {
 		return r.fail(err, jsonout.CodeValidation)
 	}
@@ -222,7 +245,7 @@ func processFile(
 	// a space publishes *successfully* as several labels that read back as none
 	// of what the file says, so there is no later run that can clean it up --
 	// see docs/confluence/labels.md.
-	labelSet, err := labels.Declared(mf.Lists, mf.Frontmatter)
+	labelSet, err := labels.Declared(meta.Lists, meta.Fields)
 	if err != nil {
 		return r.fail(err, jsonout.CodeValidation)
 	}
@@ -366,46 +389,33 @@ func (r *updateResult) previewWidth(
 	r.widthSet = true
 }
 
-// overrideNeedsSingleFile reports whether a per-page override (--title/--page-id)
-// was given with anything other than exactly one FILE. --page-width is exempt (a
-// uniform width change across a batch is sensible).
-func overrideNeedsSingleFile(cliTitle, cliPageID string, nFiles int) bool {
-	return (cliTitle != "" || cliPageID != "") && nFiles != 1
-}
-
-// resolveTitlePageID resolves the effective title and page id, letting the CLI
-// flags override the file's frontmatter. An empty page id is an error; an empty
-// title is an error only when the frontmatter key is present, which is what
-// titlePresent reports. An absent title falls back to the live page title later.
+// resolveTitlePageID reads the effective title and page id out of a file's
+// resolved metadata, which may have come from its frontmatter or from a pages:
+// entry (#139).
 //
-// --title wins over both, as every other override does, so it satisfies a
-// present-but-empty frontmatter title rather than tripping over it.
-func resolveTitlePageID(cliTitle, cliPageID string, mf *frontmatter.MarkdownFile) (
+// An empty page id is an error; an empty title is an error only when the key is
+// *present*, which is what titlePresent reports -- an absent title means the
+// file does not manage the page's title and falls back to the live one further
+// down. There is no flag to consider any more: update consumes metadata and has
+// no way to invent any (#139's "flags describe the run; files describe the
+// page").
+func resolveTitlePageID(fields map[string]string) (
 	title string, titlePresent bool, pageID string) {
-	title = cliTitle
-	if title == "" {
-		title, titlePresent = mf.TitleField()
-	}
-	pageID = cliPageID
-	if pageID == "" {
-		pageID = mf.PageID()
-	}
-	return title, titlePresent, pageID
+	title, titlePresent = fields["title"]
+	return strings.TrimSpace(title), titlePresent, strings.TrimSpace(fields["page_id"])
 }
 
-// resolveWidth resolves the page width to assert: --page-width, then the
-// frontmatter page_width, then the project file's default (#100's chain, flag >
-// frontmatter > project file). It returns apply=false when
-// neither --page-width nor a frontmatter page_width is set, meaning the live
-// page's width should be left untouched.
-func resolveWidth(cliPageWidth string, mf *frontmatter.MarkdownFile,
-	root *project.Root) (pagewidth.Width, bool, error) {
-	if cliPageWidth != "" {
-		w, err := pagewidth.Declared(map[string]string{"page_width": cliPageWidth})
-		return w, err == nil, err
-	}
-	if raw, ok := mf.Frontmatter["page_width"]; ok && strings.TrimSpace(raw) != "" {
-		w, err := pagewidth.Declared(mf.Frontmatter)
+// resolveWidth resolves the page width to assert: the file's own page_width --
+// from its frontmatter or its pages: entry, whichever supplied it -- then the
+// project file's project-wide default. It returns apply=false when neither is
+// set, meaning the live page's width is left untouched.
+//
+// --page-width is gone with the other page-metadata flags (#139): a uniform
+// width across a batch is what the project-wide default is for, and it says so
+// permanently rather than per invocation.
+func resolveWidth(fields map[string]string, root *project.Root) (pagewidth.Width, bool, error) {
+	if raw, ok := fields["page_width"]; ok && strings.TrimSpace(raw) != "" {
+		w, err := pagewidth.Declared(fields)
 		return w, err == nil, err
 	}
 	// The project file's default, and the one level of the chain that changes

@@ -22,121 +22,108 @@ import (
 )
 
 func TestResolveTitlePageID(t *testing.T) {
-	mf, err := frontmatter.Parse("f.md", "---\ntitle: FM Title\npage_id: 111\n---\nbody\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	tests := []struct {
-		name                  string
-		cliTitle, cliPageID   string
+	// The flags are gone (#139): update consumes metadata and has no way to
+	// invent any, so this reads whatever pagemeta resolved -- from the file's
+	// frontmatter or from its pages: entry, indistinguishably by design.
+	tests := map[string]struct {
+		fields                map[string]string
 		wantTitle, wantPageID string
+		wantPresent           bool
 	}{
-		{"flags override frontmatter", "CLI Title", "222", "CLI Title", "222"},
-		{"frontmatter when no flags", "", "", "FM Title", "111"},
-		{"only page-id overridden", "", "222", "FM Title", "222"},
-		{"only title overridden", "CLI Title", "", "CLI Title", "111"},
+		"both present": {
+			map[string]string{"title": "T", "page_id": "111"}, "T", "111", true},
+		"page id only": {
+			map[string]string{"page_id": "111"}, "", "111", false},
+		"title present but empty": {
+			map[string]string{"title": "", "page_id": "111"}, "", "111", true},
+		"whitespace title is empty but present": {
+			map[string]string{"title": "   ", "page_id": "111"}, "", "111", true},
+		"nothing": {map[string]string{}, "", "", false},
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			title, _, pageID := resolveTitlePageID(tc.cliTitle, tc.cliPageID, mf)
-			if title != tc.wantTitle || pageID != tc.wantPageID {
-				t.Errorf("resolveTitlePageID = %q/%q, want %q/%q",
-					title, pageID, tc.wantTitle, tc.wantPageID)
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			title, present, pageID := resolveTitlePageID(tc.fields)
+			if title != tc.wantTitle || pageID != tc.wantPageID || present != tc.wantPresent {
+				t.Errorf("= %q/%v/%q, want %q/%v/%q",
+					title, present, pageID, tc.wantTitle, tc.wantPresent, tc.wantPageID)
 			}
 		})
 	}
 }
 
-func TestResolveTitlePageIDEmptyWhenAbsent(t *testing.T) {
-	mf, err := frontmatter.Parse("f.md", "body only, no frontmatter\n")
-	if err != nil {
-		t.Fatal(err)
+// The three page-metadata flags are gone, and their absence is pinned rather
+// than incidental: re-adding one would put back the single-FILE-only shape that
+// made docs/**/*.md inexpressible from CI, which is the whole reason #139
+// exists.
+func TestPageMetadataFlagsAreGone(t *testing.T) {
+	for _, name := range []string{"title", "page-id", "page-width"} {
+		if f := Cmd.Flags().Lookup(name); f != nil {
+			t.Errorf("--%s exists; page metadata belongs in the file or its entry, not in a flag", name)
+		}
 	}
-	title, present, pageID := resolveTitlePageID("", "", mf)
-	if present {
-		t.Error("titlePresent = true, want false for a file with no frontmatter")
-	}
-	if title != "" || pageID != "" {
-		t.Errorf("resolveTitlePageID = %q/%q, want empty/empty", title, pageID)
+	// The invocation flags stay: they describe the run, not the page.
+	for _, name := range []string{"message", "force", "dry-run"} {
+		if f := Cmd.Flags().Lookup(name); f == nil {
+			t.Errorf("--%s is missing; it describes the run and should have stayed", name)
+		}
 	}
 }
 
 func TestResolveWidth(t *testing.T) {
-	withFM, err := frontmatter.Parse("f.md", "---\ntitle: T\npage_width: wide\n---\nb\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	noWidth, err := frontmatter.Parse("f.md", "---\ntitle: T\n---\nb\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	noFM, err := frontmatter.Parse("f.md", "b\n")
-	if err != nil {
-		t.Fatal(err)
-	}
+	withWidth := map[string]string{"title": "T", "page_width": "wide"}
+	noWidth := map[string]string{"title": "T"}
 
 	// A project file declaring a width, and one declaring nothing.
 	declared := &project.Root{File: "/repo/markfluence.yaml", Config: project.Config{PageWidth: "narrow"}}
 	bare := &project.Root{File: "/repo/markfluence.yaml"}
 
-	t.Run("flag overrides frontmatter", func(t *testing.T) {
-		w, apply, err := resolveWidth("narrow", withFM, bare)
-		if err != nil || !apply || w != pagewidth.Narrow {
-			t.Fatalf("= %q/%v/%v, want narrow/true/nil", w, apply, err)
-		}
-	})
-	t.Run("frontmatter when no flag", func(t *testing.T) {
-		w, apply, err := resolveWidth("", withFM, bare)
+	t.Run("the file's own width", func(t *testing.T) {
+		w, apply, err := resolveWidth(withWidth, bare)
 		if err != nil || !apply || w != pagewidth.Wide {
 			t.Fatalf("= %q/%v/%v, want wide/true/nil", w, apply, err)
 		}
 	})
-	t.Run("no flag and no frontmatter width -> skip", func(t *testing.T) {
-		if _, apply, err := resolveWidth("", noWidth, bare); err != nil || apply {
+	t.Run("no width anywhere means no width request", func(t *testing.T) {
+		if _, apply, err := resolveWidth(noWidth, bare); err != nil || apply {
 			t.Fatalf("= apply %v err %v, want false/nil", apply, err)
 		}
-		if _, apply, err := resolveWidth("", noFM, bare); err != nil || apply {
-			t.Fatalf("(no frontmatter) = apply %v err %v, want false/nil", apply, err)
+		if _, apply, err := resolveWidth(map[string]string{}, bare); err != nil || apply {
+			t.Fatalf("(no fields) = apply %v err %v, want false/nil", apply, err)
 		}
 	})
-	t.Run("invalid flag errors", func(t *testing.T) {
-		if _, apply, err := resolveWidth("huge", noFM, bare); err == nil || apply {
+	t.Run("an invalid width errors", func(t *testing.T) {
+		bad := map[string]string{"page_width": "huge"}
+		if _, apply, err := resolveWidth(bad, bare); err == nil || apply {
 			t.Fatalf("= apply %v err %v, want false/error", apply, err)
 		}
 	})
 
-	// The behavior change: a project-wide page_width makes update assert a
-	// width on a file that declares none. Before, that file's live width was
-	// left alone. It is what "declared means asserted" (L9) means one level up.
+	// The behavior change #100 made: a project-wide page_width makes update
+	// assert a width on a file that declares none, where before that file's
+	// live width was left alone. It is what "declared means asserted" (L9)
+	// means one level up.
 	t.Run("project file makes update assert a width", func(t *testing.T) {
-		w, apply, err := resolveWidth("", noWidth, declared)
+		w, apply, err := resolveWidth(noWidth, declared)
 		if err != nil || !apply || w != pagewidth.Narrow {
 			t.Fatalf("= %q/%v/%v, want narrow/true/nil", w, apply, err)
 		}
 	})
-	t.Run("flag beats the project file", func(t *testing.T) {
-		w, apply, err := resolveWidth("wide", noWidth, declared)
-		if err != nil || !apply || w != pagewidth.Wide {
-			t.Fatalf("= %q/%v/%v, want wide/true/nil", w, apply, err)
-		}
-	})
-	t.Run("frontmatter beats the project file", func(t *testing.T) {
-		w, apply, err := resolveWidth("", withFM, declared)
+	t.Run("the file beats the project file", func(t *testing.T) {
+		w, apply, err := resolveWidth(withWidth, declared)
 		if err != nil || !apply || w != pagewidth.Wide {
 			t.Fatalf("= %q/%v/%v, want wide/true/nil", w, apply, err)
 		}
 	})
 	// The escape hatch has to keep working: a project that omits the key gets
-	// no width request at all, which is the pre-#100 behavior.
+	// no width request at all.
 	t.Run("no project width means no width request", func(t *testing.T) {
-		if _, apply, err := resolveWidth("", noWidth, declaredNothing()); err != nil || apply {
+		if _, apply, err := resolveWidth(noWidth, declaredNothing()); err != nil || apply {
 			t.Fatalf("= apply %v err %v, want false/nil", apply, err)
 		}
 	})
 	t.Run("invalid project width names the project file", func(t *testing.T) {
 		bad := &project.Root{File: "/repo/markfluence.yaml", Config: project.Config{PageWidth: "huge"}}
-		_, apply, err := resolveWidth("", noWidth, bad)
+		_, apply, err := resolveWidth(noWidth, bad)
 		if err == nil || apply {
 			t.Fatalf("= apply %v err %v, want false/error", apply, err)
 		}
@@ -145,7 +132,7 @@ func TestResolveWidth(t *testing.T) {
 		}
 	})
 	t.Run("nil root is not a panic", func(t *testing.T) {
-		if _, apply, err := resolveWidth("", noWidth, nil); err != nil || apply {
+		if _, apply, err := resolveWidth(noWidth, nil); err != nil || apply {
 			t.Fatalf("= apply %v err %v, want false/nil", apply, err)
 		}
 	})
@@ -177,27 +164,6 @@ func TestRootErrorCode(t *testing.T) {
 	// the file in it that is wrong.
 	if msg := project.RootError(err).Error(); strings.Contains(msg, "resolving the documentation root") {
 		t.Errorf("error = %q, want no root-resolution heading", msg)
-	}
-}
-
-func TestOverrideNeedsSingleFile(t *testing.T) {
-	tests := []struct {
-		name                string
-		cliTitle, cliPageID string
-		nFiles              int
-		want                bool
-	}{
-		{"title with two files", "T", "", 2, true},
-		{"page-id with two files", "", "9", 2, true},
-		{"page-id with one file", "", "9", 1, false},
-		{"no overrides, many files", "", "", 3, false},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := overrideNeedsSingleFile(tc.cliTitle, tc.cliPageID, tc.nFiles); got != tc.want {
-				t.Errorf("overrideNeedsSingleFile = %v, want %v", got, tc.want)
-			}
-		})
 	}
 }
 
@@ -396,9 +362,6 @@ func TestResolveTitlePageIDSeparatesAbsentFromEmpty(t *testing.T) {
 		{"present and empty", "---\ntitle:\npage_id: 1\n---\nb\n", "", "", true},
 		{"present and null", "---\ntitle: null\npage_id: 1\n---\nb\n", "", "", true},
 		{"present with value", "---\ntitle: T\npage_id: 1\n---\nb\n", "", "T", true},
-		// --title wins, as every other override does, so it satisfies a
-		// present-but-empty frontmatter title rather than tripping over it.
-		{"flag over empty", "---\ntitle:\npage_id: 1\n---\nb\n", "CLI", "CLI", false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -406,7 +369,7 @@ func TestResolveTitlePageIDSeparatesAbsentFromEmpty(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			title, present, _ := resolveTitlePageID(tc.cliTitle, "", mf)
+			title, present, _ := resolveTitlePageID(mf.Frontmatter)
 			if title != tc.wantTitle || present != tc.wantPresent {
 				t.Errorf("resolveTitlePageID = %q/%v, want %q/%v",
 					title, present, tc.wantTitle, tc.wantPresent)
@@ -431,7 +394,7 @@ func TestProcessFileRejectsEmptyTitle(t *testing.T) {
 	if r.ok {
 		t.Fatal("a present-but-empty title must fail the file")
 	}
-	if !strings.Contains(r.errMsg, "empty 'title:'") {
+	if !strings.Contains(r.errMsg, "present but empty") {
 		t.Errorf("errMsg = %q, want the empty-title sentence", r.errMsg)
 	}
 	if r.code != jsonout.CodeValidation {
@@ -890,5 +853,203 @@ func TestProcessFileFrontmatterWidthBeatsProjectWidth(t *testing.T) {
 		if !strings.Contains(b, "full-width") {
 			t.Errorf("property body = %q, want the file's own width (full-width)", b)
 		}
+	}
+}
+
+// --- manifest metadata --------------------------------------------------------
+
+// writeManifestProject writes a markfluence.yaml and a markdown file under one
+// root, returning the file's path.
+func writeManifestProject(t *testing.T, projectFile, md string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, project.Filename), []byte(projectFile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "f.md")
+	if err := os.WriteFile(path, []byte(md), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// The point of #139: a pristine file, published from its manifest entry.
+func TestProcessFilePublishesFromAManifestEntry(t *testing.T) {
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			_, _ = w.Write([]byte(pageWithVersion("1", 3, "2020-01-01T00:00:00Z")))
+		default:
+			_, _ = w.Write([]byte(pageWithVersion("1", 4, "2026-01-01T00:00:00Z")))
+		}
+	})
+	// No frontmatter at all.
+	path := writeManifestProject(t,
+		"pages:\n  f.md:\n    title: From The Manifest\n    page_id: 1\n", "# Hello\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	if !r.ok || r.status != statusPublished {
+		t.Fatalf("result = %+v, want published", r)
+	}
+	if r.title != "From The Manifest" {
+		t.Errorf("title = %q, want the manifest's", r.title)
+	}
+	if r.metadataSource != "manifest" {
+		t.Errorf("metadata_source = %q, want manifest", r.metadataSource)
+	}
+}
+
+// A file nothing claims is skipped, ok, with no request made -- which is what
+// keeps a glob over a docs tree from going red when somebody adds a draft. The
+// server fails any request so the skip has to be local.
+func TestProcessFileSkipsAnUnmanagedFile(t *testing.T) {
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	path := writeManifestProject(t, "pages:\n  other.md:\n    page_id: 9\n", "# Draft\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	if !r.ok || r.status != statusSkipped {
+		t.Fatalf("result = %+v, want a successful skip", r)
+	}
+	if !r.unmanaged {
+		t.Error("unmanaged = false; the skip reason must be distinguishable from the mtime skip")
+	}
+	if r.metadataSource != "" {
+		t.Errorf("metadata_source = %q, want empty for an unclaimed file", r.metadataSource)
+	}
+}
+
+// A docs tree carrying Jekyll frontmatter has said nothing about Confluence.
+func TestProcessFileSkipsForeignFrontmatter(t *testing.T) {
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	path := writeManifestProject(t, "space: ENG\n",
+		"---\nlayout: post\ndate: 2026-01-01\n---\n# Post\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	if !r.ok || r.status != statusSkipped || !r.unmanaged {
+		t.Fatalf("result = %+v, want a successful unmanaged skip", r)
+	}
+}
+
+// A file that IS registered but has no page id fails: something claimed it and
+// create has not run. This is the case that must not be swept into the skip.
+func TestProcessFileRegisteredWithNoPageIDFails(t *testing.T) {
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	path := writeManifestProject(t, "pages:\n  f.md:\n    title: Claimed\n", "# Hello\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	if r.ok {
+		t.Fatalf("result = %+v, want a failure", r)
+	}
+	if !strings.Contains(r.errMsg, "no page id") {
+		t.Errorf("errMsg = %q, want the no-page-id message", r.errMsg)
+	}
+	if !strings.Contains(r.errMsg, project.Filename) {
+		t.Errorf("errMsg = %q, want it to mention the project file as a place to set one", r.errMsg)
+	}
+}
+
+// The clobber case: a page_id in two places naming two pages. Publishing to
+// either would be a guess, so the file fails and nothing is written.
+func TestProcessFileCoordinateDisagreementFails(t *testing.T) {
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	path := writeManifestProject(t, "pages:\n  f.md:\n    page_id: 1\n",
+		"---\npage_id: 999\n---\n# Hello\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	if r.ok {
+		t.Fatalf("result = %+v, want a failure", r)
+	}
+	if !strings.Contains(r.errMsg, "disagree about where this page is") {
+		t.Errorf("errMsg = %q, want the disagreement message", r.errMsg)
+	}
+	if r.code != jsonout.CodeValidation {
+		t.Errorf("code = %q, want VALIDATION", r.code)
+	}
+}
+
+// A soft disagreement is visible and recoverable, so it warns and the file wins.
+func TestProcessFileSoftDisagreementWarns(t *testing.T) {
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			_, _ = w.Write([]byte(pageWithVersion("1", 3, "2020-01-01T00:00:00Z")))
+		default:
+			_, _ = w.Write([]byte(pageWithVersion("1", 4, "2026-01-01T00:00:00Z")))
+		}
+	})
+	path := writeManifestProject(t,
+		"pages:\n  f.md:\n    title: Manifest Title\n    page_id: 1\n",
+		"---\ntitle: File Title\n---\n# Hello\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	if !r.ok {
+		t.Fatalf("result = %+v, want success", r)
+	}
+	if r.title != "File Title" {
+		t.Errorf("title = %q, want the file's", r.title)
+	}
+	if len(r.warnings) == 0 {
+		t.Fatal("no warnings; a soft disagreement must be reported")
+	}
+	if !strings.Contains(r.warnings[0], "title") {
+		t.Errorf("warnings = %#v, want one about title", r.warnings)
+	}
+	// Both locations spoke, and frontmatter is the one that won.
+	if r.metadataSource != "frontmatter" {
+		t.Errorf("metadata_source = %q, want frontmatter", r.metadataSource)
+	}
+}
+
+// A batch mixes the two: one file unmanaged, one publishing. The unmanaged one
+// must not fail the batch.
+func TestRunBatchSkipsUnmanagedAndPublishesTheRest(t *testing.T) {
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			_, _ = w.Write([]byte(pageWithVersion("1", 3, "2020-01-01T00:00:00Z")))
+		default:
+			_, _ = w.Write([]byte(pageWithVersion("1", 4, "2026-01-01T00:00:00Z")))
+		}
+	})
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, project.Filename),
+		[]byte("pages:\n  published.md:\n    title: P\n    page_id: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"published.md", "draft.md"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("# "+name+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	roots := project.NewCache("")
+	defer roots.Close()
+	indexes := linkindex.NewCache()
+	users := pagedoc.NewUserCache()
+
+	got := map[string]string{}
+	for _, name := range []string{"published.md", "draft.md"} {
+		r := processFile(filepath.Join(dir, name), c, roots, indexes, users)
+		if !r.ok {
+			t.Fatalf("%s failed: %s", name, r.errMsg)
+		}
+		got[name] = r.status
+	}
+	if got["published.md"] != statusPublished {
+		t.Errorf("published.md status = %q, want published", got["published.md"])
+	}
+	if got["draft.md"] != statusSkipped {
+		t.Errorf("draft.md status = %q, want skipped", got["draft.md"])
 	}
 }

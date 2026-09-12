@@ -63,9 +63,11 @@ func TestEntryIsShapedLikeAFrontmatterBlock(t *testing.T) {
 	if e.Fields == nil || e.Lists == nil {
 		t.Fatalf("entry = %#v, want both maps non-nil", e)
 	}
-	// The shapes MarkdownFile.Frontmatter and .Lists have.
-	var _ map[string]string = e.Fields
-	var _ map[string][]string = e.Lists
+	// The shapes MarkdownFile.Frontmatter and .Lists have -- asserted by
+	// handing them to functions typed for those, which is what every consumer
+	// does and what would break if Entry were ever re-typed.
+	takesFrontmatter(e.Fields)
+	takesLists(e.Lists)
 }
 
 // A project with no pages: key has not chosen the manifest; one with an empty
@@ -235,3 +237,6 @@ func TestStructuralPageErrorsAreNotPerFile(t *testing.T) {
 		t.Fatal("Discover succeeded; one escaping key must fail the load outright")
 	}
 }
+
+func takesFrontmatter(map[string]string) {}
+func takesLists(map[string][]string)     {}

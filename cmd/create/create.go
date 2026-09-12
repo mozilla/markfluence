@@ -34,6 +34,7 @@ import (
 	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/pagedoc"
+	"github.com/mozilla/markfluence/internal/pagemeta"
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/project"
@@ -159,6 +160,9 @@ type record struct {
 	// and carried rather than re-read so publish cannot disagree with what was
 	// checked.
 	labels labels.Set
+	// metadataSource is which location supplied this file's metadata, carried
+	// from preflight so the published result reports what was actually read.
+	metadataSource string
 	// root bounds this file's image/parent reads and is what its attachments'
 	// names and recorded Source are relative to. Discovered from the file's own
 	// directory, cached across the batch by internal/project.Cache.
@@ -183,6 +187,10 @@ type failure struct {
 	filename, message string
 	pageID, url       string
 	code              jsonout.Code
+	// metadataSource is set when the failure happened after metadata
+	// resolution, so a --json consumer can still see which location supplied
+	// the coordinates that turned out to be wrong.
+	metadataSource string
 }
 
 // pageIDFailure is a phase-1 failure about a file's frontmatter page_id. create
@@ -696,11 +704,28 @@ func resolveFile(
 		return record{}, fmt.Errorf("building the link index: %w", err)
 	}
 
-	title := resolveTitle(titleOpt, mf)
+	// A file's metadata may live in markfluence.yaml's pages: block rather
+	// than in the file (#139). create reads it for the same reason update
+	// does, and one reason more: a file already registered there carries a
+	// page_id, and ignoring it would publish a second page and leave the
+	// entry pointing at the first -- #18's bug, arrived at from the other
+	// direction.
+	//
+	// A coordinate disagreement fails the whole batch rather than this file,
+	// which falls out of preflight: create aborts if any file fails, and a
+	// page_id or parent wrong in one file means the batch's shape is not what
+	// the author thinks.
+	key, _ := pagemeta.KeyFor(root, abs)
+	meta, err := pagemeta.Resolve(key, mf, root)
+	if err != nil {
+		return record{}, err
+	}
+
+	title := resolveTitle(titleOpt, meta.Fields)
 	if title == "" {
 		return record{}, errors.New("no title given (pass --title or add a 'title:' frontmatter field)")
 	}
-	width, err := resolveWidth(pageWidthOpt, mf.Frontmatter, root)
+	width, err := resolveWidth(pageWidthOpt, meta.Fields, root)
 	if err != nil {
 		return record{}, err
 	}
@@ -714,7 +739,7 @@ func resolveFile(
 	// Fatal here, and it has to be: a label Confluence splits on a space
 	// publishes *successfully*, so unlike almost anything else phase 1 rejects,
 	// there is no later run that can repair it.
-	labelSet, err := labels.Declared(mf.Lists, mf.Frontmatter)
+	labelSet, err := labels.Declared(meta.Lists, meta.Fields)
 	if err != nil {
 		return record{}, err
 	}
@@ -722,11 +747,11 @@ func resolveFile(
 	// Before the space, parent, and duplicate-title lookups: a page_id that is
 	// already taken or already broken is the most specific thing wrong with the
 	// file, and reporting it first also spares three API calls the file cannot use.
-	if err := checkPageID(c, mf.PageID()); err != nil {
+	if err := checkPageID(c, strings.TrimSpace(meta.Fields["page_id"])); err != nil {
 		return record{}, err
 	}
 
-	spaceKey, err := resolveSpace(spaceOpt, mf.Frontmatter, root)
+	spaceKey, err := resolveSpace(spaceOpt, meta.Fields, root)
 	if err != nil {
 		return record{}, err
 	}
@@ -742,7 +767,7 @@ func resolveFile(
 		return record{}, fmt.Errorf("space %q not found", spaceKey)
 	}
 
-	parent, err := resolveParent(filename, mf.Frontmatter, inSetAbs, c, spaceID, root)
+	parent, err := resolveParent(filename, meta.Fields, inSetAbs, c, spaceID, root)
 	if err != nil {
 		return record{}, err
 	}
@@ -784,6 +809,7 @@ func resolveFile(
 	return record{
 		filename: filename, absPath: abs, mdfile: mf, title: title, spaceKey: spaceKey,
 		spaceID: spaceID, parent: parent, width: width, labels: labelSet, root: root, index: index,
+		metadataSource: string(meta.MetadataSource()),
 	}, nil
 }
 
@@ -994,11 +1020,11 @@ func writeBackFrontmatter(content string, r record, pageID, parentValue, parentC
 }
 
 // resolveTitle returns the effective title: --title overrides the frontmatter.
-func resolveTitle(cliTitle string, mf *frontmatter.MarkdownFile) string {
+func resolveTitle(cliTitle string, fields map[string]string) string {
 	if cliTitle != "" {
 		return cliTitle
 	}
-	return mf.Title()
+	return strings.TrimSpace(fields["title"])
 }
 
 // resolveSpace returns the space key to publish into: --space, then the
