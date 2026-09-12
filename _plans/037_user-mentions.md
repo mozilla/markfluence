@@ -20,13 +20,32 @@ that.
 ## The markdown spelling: A′
 
 ```markdown
-Ping [@Ada Lovelace](https://wiki.example.net/wiki/people/712020:0e5f…)
+Ping [@Ada Lovelace](https://home.atlassian.com/people/712020:0e5f…)
 ```
 
 An ordinary markdown link to the profile URL, with the display name as the link
 text and **`@` as the marker that makes it a mention**. A link to the same URL
 whose text does *not* begin with `@` stays a plain link and publishes as an
 `<a href>`.
+
+The destination is **Atlassian Home, not the Confluence site.** Confluence's own
+renderer still emits `{site}/wiki/people/{accountId}`, but that URL no longer
+goes anywhere useful: in a browser it bounces through a separate login and lands
+on a blank page. `https://home.atlassian.com/people/{accountId}` works, with no
+`cloudId` parameter needed — it redirects to an org-scoped form and arrives.
+Confirmed in a browser, which is the only thing that can confirm it: both of
+these are client-rendered, and `curl` returns an identical 200 shell for a real
+profile, a nonexistent one, and a URL that redirects to a blank page. Two wrong
+conclusions were drawn from `curl` here before that was understood.
+
+That the URL is **not site-scoped** is what makes this the good version rather
+than the tolerable one. The markdown carries only durable facts — a globally
+unique account id, and a display name that is admitted decoration — with no
+site, no cloud id, and therefore no config dependency, no discovery request,
+and one output shape on every machine. `CONFLUENCE_CLOUD_ID` is optional
+config; a spelling that needed it would either make an optional setting
+mandatory for this feature or produce different markdown depending on whose
+config ran the export, which is the objection that rules out a disk cache too.
 
 Four constraints picked this, and each one eliminates something:
 
@@ -164,7 +183,9 @@ the id they hand-edited is wrong. Nor will the profile link: verified
 2026-09-12, `{site}/wiki/people/{id}` returns the same static SPA shell for a
 real account and for `utter-nonsense`, so a dead mention link is
 indistinguishable from a live one by anything but a human clicking it. The
-`GetUser` check is the only signal available. The forward path therefore resolves the id
+`GetUser` check is the only signal available.
+
+The forward path therefore resolves the id
 before publishing (`GetUser`) and, when it does not resolve, emits a
 **warning** — not a `Broken`, since the mention still publishes and still
 names a person to anyone who can see the account; and not silence, since a
@@ -185,49 +206,57 @@ Only the *warning* needs a lookup, so `ConfluencePage` gains
 resolve and warn. That is the `Attachments` shape exactly: the converter
 discovers, the caller acts.
 
-**The profile URL is emitted for the site, never the gateway.** `SiteURL()`
-already, for the same reason rewritten links use it: the URL is published into
-a page.
+**Neither Confluence profile form is emitted**, only recognised.
+`{site}/wiki/display/~{accountId}` 302s to `{site}/wiki/people/{accountId}`,
+and that one in turn no longer renders usefully — so both are read on the way
+in and neither is written on the way out. A file exported before this decision
+keeps working; it just gets rewritten to the Home URL the next time it is
+exported, since the URL is regenerated rather than preserved.
 
-**The legacy profile form is not emitted.** `{site}/wiki/display/~{accountId}`
-302s to `{site}/wiki/people/{accountId}` (verified 2026-08-21, per #91), so only
-the latter is worth writing — but the forward path *recognises* both, or a page
-whose profile links predate the change stops round-tripping.
+**`?ref=confluence` and `?cloudId=…` are recognised and never emitted.** Both
+are decoration on a URL whose only load-bearing part is the id. Unresolved and
+deliberately so: the one difference between a blank profile page and a working
+one, in the browser session where this was found, was `ref=confluence`. Most
+likely that was a login interstitial rather than the parameter. markfluence
+emits neither, so nothing here depends on the answer.
 
-**Matching ignores the host.** A file always carries a concrete host — nothing
-writes a wildcard — but the forward path keys off the `/wiki/people/{id}` path
-alone and does not care which host precedes it.
+**Matching is on the path, ignoring host and query.** The rule is "any URL whose
+path ends `/people/{id}`", plus the legacy `display/~{id}` form. This is not a
+convenience: there are genuinely several spellings of the same target in
+circulation, and every one of them will be pasted into a file by somebody.
 
-The reason is that **the host is decoration, exactly like the display name**.
-`<ri:user ri:account-id="…"/>` records no host at all, so both the host and the
-name in a markdown mention are regenerated from whatever site was last read
-from, and only the account id is durable. Requiring the file's host to match
-would invent a constraint the stored data does not have: there is nothing for a
-mismatch to contradict.
+| form | where it comes from |
+|---|---|
+| `home.atlassian.com/people/{id}` | what markfluence emits |
+| `home.atlassian.com/people/{id}?cloudId=…` | the copy link in Confluence's own person modal |
+| `home.atlassian.com/o/{orgId}/people/{id}?cloudId=…` | the redirect target, equally pasteable |
+| `{site}/wiki/people/{id}` | what Confluence's renderer emits, so any link copied from a rendered page |
+| `{site}/wiki/display/~{id}` | legacy; 302s to the Confluence form |
+| `/people/{id}` or `/wiki/people/{id}` | root-relative, for the same reason |
 
-What it buys is that **`check` agrees with `update`**. `check` runs without a
-client, against a hardcoded `https://wiki.example.net`, so host-sensitive
-matching would make it recognise no real mention at all — it would report a
-file as publishing an `<a href>` while `update` publishes a mention, and
-`--show-html` would print HTML that is not what ships. Two commands disagreeing
-about the same file is worse than the offline gap it was meant to avoid.
+Ignoring the query follows from the same logic as ignoring the host: neither
+`cloudId` nor `ref` nor `/o/{orgId}` identifies the person. Only the id does,
+and `<ri:user ri:account-id="…"/>` stores nothing else — so requiring any of
+them to match would invent a constraint the stored data does not have.
 
-What it costs is that a link to *another* Confluence instance's profile
-publishes as a mention here. Defensible on its own terms: an Atlassian account
-id is global rather than per-site, so the id names the same human either way.
-They may lack access to this site, in which case Confluence renders
-`@Unlicensed user` — the same outcome as any id this site cannot resolve, and
-the warning below covers it.
+What it buys, and this is now by construction rather than by concession:
+**`check` agrees with `update`.** The emitted URL contains no site, so
+recognising a mention needs no client and no site knowledge — `check`'s
+hardcoded `https://wiki.example.net` is simply irrelevant to it. An earlier
+draft of this plan had to argue host-agnostic matching *in order to* stop
+`check` reporting an `<a href>` where `update` publishes a mention; with a
+site-independent URL there is nothing left to reconcile.
 
-A consequence to state rather than discover: the fixed point is **per site**.
-Export → publish → export is identical against one site, which is what
-`TestRoundTripMarkdownIsAFixedPoint` covers. Across sites the host changes,
-which is correct rather than drift.
+What it costs is that a link to another instance's Confluence-form profile URL
+publishes as a mention here. Defensible: an Atlassian account id is global, so
+it names the same human. They may lack access to this site, in which case
+Confluence renders `@Unlicensed user` — the same outcome as any unresolvable
+id, which the warning below covers.
 
-**A root-relative `/wiki/people/{id}` is recognised too.** Ignoring the host and
-then refusing a URL that has none would be arbitrary. It is a separate branch
-from the absolute case, since that href currently flows down the doc-link path
-as a non-`.md` relative link, so it gets its own test.
+A consequence worth stating: the fixed point is now **site-independent**, where
+an earlier draft of this plan had it per-site. Export → publish → export is
+identical regardless of which site it ran against, because nothing site-specific
+survives into the markdown.
 
 **The account id is not pattern-validated.** Ids come in at least two shapes —
 `60c36d0718e9f60071326951` (24 hex characters, no prefix) and
@@ -308,9 +337,12 @@ since "check validates offline" and "a mention needs the server" do not compose.
 - **A mangled id warns** and still publishes, since Confluence accepts it.
 - **The legacy URL is recognised** on the forward path and not emitted on the
   inverse.
-- **The host is ignored**: the same mention publishes from a file naming this
-  site, another site, and no host at all (root-relative). This is the decision,
-  so it is the test that states it.
+- **Host and query are ignored**: the same mention publishes from every row of
+  the recognition table above — the Home URL, the Home URL with `cloudId`, the
+  `/o/{orgId}` redirect form, both Confluence forms, and the root-relative
+  ones. This is the decision, so it is the test that states it.
+- **What is emitted is the Home URL with no query**, asserted exactly, since
+  that is the only spelling verified to work in a browser.
 - **Both account-id shapes** round-trip: bare 24-hex and `prefix:uuid`.
 - **A name needing escapes** survives a round trip: a display name holding `]`
   or `|`, the second inside a table cell.
