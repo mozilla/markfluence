@@ -1409,3 +1409,79 @@ func (c *ConfluenceClient) trySetContentProperty(pageID, key, value string) (str
 	}
 	return "set", nil
 }
+
+// --- labels ------------------------------------------------------------------
+
+// Label is one label on a page: its name and its prefix. The prefix is a
+// namespace Confluence keeps separately from the name and that no name can
+// contain, since a colon is in the set of characters a label name refuses
+// outright (see docs/confluence/labels.md).
+//
+// markfluence manages "global" labels only. The prefix is reported rather than
+// filtered here because info shows every label a page carries, including the
+// ones no frontmatter field could express.
+type Label struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Prefix string `json:"prefix"`
+}
+
+// ListLabels returns every label on a page, unfiltered, following pagination.
+//
+// v2 for the read, v1 for the writes below -- the same split attachments have,
+// and not a choice: v2 answers POST and DELETE on this collection with a 405.
+//
+// Unfiltered deliberately. Callers that assert a frontmatter field filter to
+// the "global" prefix themselves; info needs the whole list to show what it
+// cannot manage.
+func (c *ConfluenceClient) ListLabels(pageID string) ([]Label, error) {
+	return listV2[Label](c, "/wiki/api/v2/pages/"+pageID+"/labels", nil)
+}
+
+// AddLabels adds labels to a page in one request, returning nil for an empty
+// list without calling anything.
+//
+// The v1 route takes an array and is additive and idempotent: re-adding a name
+// the page already carries is a clean 200, and the response is the page's whole
+// label list. There is no bulk *set* route, so asserting an exact set is this
+// call plus RemoveLabel for the surplus, diffed client-side.
+//
+// Every name must already be valid. Confluence splits a name on spaces and
+// commas with no warning and a 200, so posting "Runbook Two" silently creates
+// two labels that no later read can attribute back -- see
+// docs/confluence/labels.md. Validation lives in internal/labels and runs
+// before any write.
+func (c *ConfluenceClient) AddLabels(pageID string, names []string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	payload := make([]map[string]string, 0, len(names))
+	for _, name := range names {
+		payload = append(payload, map[string]string{"prefix": "global", "name": name})
+	}
+	path := c.baseURL + "/wiki/rest/api/content/" + pageID + "/child/label"
+	return c.doJSON(http.MethodPost, path, nil, payload, nil, timeoutWrite)
+}
+
+// RemoveLabel removes one label from a page. A label that is not there is
+// success: the desired state is "absent", and it already is.
+//
+// The name goes in the **query string**, never the path. The path form
+// (DELETE .../child/label/{name}) works until a name contains a "/", which
+// answers 400 with a Tomcat HTML error page no matter how the slash is encoded,
+// while ?name= answers 204 for the same label. That is not a hypothetical
+// shape: "ci/cd" is a real label in the SRE space. Measured both ways in
+// docs/confluence/labels.md.
+//
+// The 404 check goes through notFound rather than comparing the status, because
+// a rejected credential is also a 404 -- on a whole batch of removals that
+// would otherwise report every label as "already gone" and the run as a
+// success.
+func (c *ConfluenceClient) RemoveLabel(pageID, name string) error {
+	path := c.baseURL + "/wiki/rest/api/content/" + pageID + "/child/label"
+	err := c.doJSON(http.MethodDelete, path, url.Values{"name": {name}}, nil, nil, timeoutWrite)
+	if notFound(err) {
+		return nil
+	}
+	return err
+}

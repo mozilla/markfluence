@@ -1845,3 +1845,164 @@ func TestRequestErrorIsTransparent(t *testing.T) {
 		t.Error("wrapRequest(nil) != nil")
 	}
 }
+
+// --- labels ------------------------------------------------------------------
+
+// recorder captures every request a call makes: method, path, and raw query.
+// The label tests assert on the *shape* of the request rather than only its
+// result, because the two things most likely to be got wrong here -- the
+// removal form and the v1/v2 split -- are invisible in a 204.
+type recorder struct {
+	methods []string
+	paths   []string
+	queries []string
+	bodies  []string
+}
+
+func newRecordingServer(t *testing.T, responses ...resp) (*ConfluenceClient, *recorder) {
+	t.Helper()
+	rec := &recorder{}
+	idx := 0
+	c := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		rec.methods = append(rec.methods, r.Method)
+		rec.paths = append(rec.paths, r.URL.Path)
+		rec.queries = append(rec.queries, r.URL.RawQuery)
+		rec.bodies = append(rec.bodies, string(body))
+		if idx >= len(responses) {
+			t.Errorf("unexpected extra request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(500)
+			return
+		}
+		out := responses[idx]
+		idx++
+		w.WriteHeader(out.status)
+		_, _ = w.Write([]byte(out.body))
+	})
+	return c, rec
+}
+
+func TestListLabelsReadsPrefixes(t *testing.T) {
+	c, rec := newRecordingServer(t, resp{200, `{"results":[
+		{"id":"1","name":"runbook","prefix":"global"},
+		{"id":"2","name":"mine","prefix":"my"}
+	]}`})
+	got, err := c.ListLabels("123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2", len(got))
+	}
+	if got[0].Name != "runbook" || got[0].Prefix != "global" {
+		t.Errorf("got[0] = %+v", got[0])
+	}
+	// Unfiltered: info needs the my: label, so the client must not drop it.
+	if got[1].Prefix != "my" {
+		t.Errorf("got[1] = %+v, want the my: label kept", got[1])
+	}
+	if want := "/wiki/api/v2/pages/123/labels"; rec.paths[0] != want {
+		t.Errorf("path = %q, want %q", rec.paths[0], want)
+	}
+}
+
+// TestListLabelsFollowsTheCursor pins the v2 pagination shape. A label
+// collection reports _links.next whenever more remains, so termination is its
+// absence -- the opposite of the v1 short-page rule, and picking the wrong one
+// truncates silently.
+func TestListLabelsFollowsTheCursor(t *testing.T) {
+	c, rec := newRecordingServer(t,
+		resp{200, `{"results":[{"id":"1","name":"a","prefix":"global"}],
+			"_links":{"next":"/wiki/api/v2/pages/123/labels?cursor=X"}}`},
+		resp{200, `{"results":[{"id":"2","name":"b","prefix":"global"}]}`},
+	)
+	got, err := c.ListLabels("123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2 across both pages", len(got))
+	}
+	if len(rec.paths) != 2 {
+		t.Fatalf("paths = %v, want two requests", rec.paths)
+	}
+	if !strings.Contains(rec.queries[1], "cursor=X") {
+		t.Errorf("second query = %q, want the cursor", rec.queries[1])
+	}
+}
+
+// TestAddLabelsPostsOneV1Request pins the batch and the prefix. Writes are v1:
+// v2 answers POST on this collection with a 405.
+func TestAddLabelsPostsOneV1Request(t *testing.T) {
+	c, rec := newRecordingServer(t, resp{200, `{"results":[]}`})
+	if err := c.AddLabels("123", []string{"runbook", "ci/cd"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.methods) != 1 || rec.methods[0] != http.MethodPost {
+		t.Fatalf("methods = %v, want one POST", rec.methods)
+	}
+	if want := "/wiki/rest/api/content/123/child/label"; rec.paths[0] != want {
+		t.Errorf("path = %q, want %q", rec.paths[0], want)
+	}
+	for _, want := range []string{`"name":"runbook"`, `"name":"ci/cd"`, `"prefix":"global"`} {
+		if !strings.Contains(rec.bodies[0], want) {
+			t.Errorf("body = %s, want it to contain %s", rec.bodies[0], want)
+		}
+	}
+}
+
+// TestAddLabelsSkipsAnEmptyBatch: nothing to add must not be a request, or
+// every publish of a file with no labels costs one.
+func TestAddLabelsSkipsAnEmptyBatch(t *testing.T) {
+	c, rec := newRecordingServer(t)
+	if err := c.AddLabels("123", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.methods) != 0 {
+		t.Errorf("methods = %v, want no request", rec.methods)
+	}
+}
+
+// TestRemoveLabelUsesTheQueryForm is the one that matters most in this file.
+// The path form works right up until a name holds a "/", which 400s with a
+// Tomcat HTML body however it is encoded -- and "ci/cd" is a real label in the
+// SRE space, so the path form fails on a real page. Asserting on the path and
+// query separately is what catches a regression to it: a name appended to the
+// path would leave the query empty and still 204 against a lenient fake.
+func TestRemoveLabelUsesTheQueryForm(t *testing.T) {
+	c, rec := newRecordingServer(t, resp{204, ""})
+	if err := c.RemoveLabel("123", "ci/cd"); err != nil {
+		t.Fatal(err)
+	}
+	if want := "/wiki/rest/api/content/123/child/label"; rec.paths[0] != want {
+		t.Errorf("path = %q, want exactly %q with the name in the query", rec.paths[0], want)
+	}
+	if want := "name=ci%2Fcd"; rec.queries[0] != want {
+		t.Errorf("query = %q, want %q", rec.queries[0], want)
+	}
+	if rec.methods[0] != http.MethodDelete {
+		t.Errorf("method = %q, want DELETE", rec.methods[0])
+	}
+}
+
+// TestRemoveLabelTreatsAbsentAsDone: the desired state of a removal is
+// "absent", and a 404 says it already is.
+func TestRemoveLabelTreatsAbsentAsDone(t *testing.T) {
+	c, _ := newRecordingServer(t, resp{404, `{"message":"No label with name [gone]"}`})
+	if err := c.RemoveLabel("123", "gone"); err != nil {
+		t.Errorf("RemoveLabel = %v, want nil for an absent label", err)
+	}
+}
+
+// TestRemoveLabelDoesNotSwallowARejectedCredential is why the 404 check goes
+// through notFound rather than comparing the status. A revoked token answers
+// with a 404 whose body names nothing, and reading that as "already gone" would
+// report a whole batch of removals as a success against a page nobody can even
+// read.
+func TestRemoveLabelDoesNotSwallowARejectedCredential(t *testing.T) {
+	c, _ := newRecordingServer(t, resp{404, `{"errors":[{"status":404,"title":"Not Found"}]}`})
+	err := c.RemoveLabel("123", "runbook")
+	if err == nil {
+		t.Fatal("RemoveLabel = nil, want the credential failure reported")
+	}
+}
