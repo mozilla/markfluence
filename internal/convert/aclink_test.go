@@ -321,22 +321,54 @@ func TestMentionURLNamesNoSite(t *testing.T) {
 	}
 }
 
-// TestMentionWithoutAResolvedNamePassesThrough. The account id is all the
-// storage holds, so a link reading "[@712020:0e5f…](…)" would tell a reader
-// strictly less than the raw element while looking like it told them more.
-func TestMentionWithoutAResolvedNamePassesThrough(t *testing.T) {
-	for _, name := range []string{"no map", "empty name"} {
-		opts := convert.StorageOptions{}
-		if name == "empty name" {
-			opts.UserNames = map[string]string{probeID: ""}
-		}
-		got, err := convert.StorageToMarkdown(mentionStorage(""), opts)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(got, "<ri:user") {
-			t.Errorf("%s: markdown = %q, want the storage passed through", name, got)
-		}
+// TestMentionThreeStates pins the distinction that keeps a fabricated name out
+// of somebody's file.
+//
+// A *confirmed* absence renders a placeholder, because the id is still the
+// useful part and a reader should not have to read XML to find it. A lookup
+// that could not be made renders nothing new at all -- passthrough -- because
+// writing "Unlicensed user" over a real name the moment a VPN drops would put
+// it across every page of an export, in a file that then looks authoritative.
+func TestMentionThreeStates(t *testing.T) {
+	tests := []struct {
+		name  string
+		names map[string]string
+		want  string
+	}{
+		{"resolved", map[string]string{probeID: "Ada Lovelace"}, "[@Ada Lovelace]("},
+		{"confirmed absent", map[string]string{probeID: ""}, "[@Unlicensed user]("},
+		{"lookup not made", nil, "<ri:user"},
+		{"other ids only", map[string]string{"someone-else": "Bo"}, "<ri:user"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := convert.StorageToMarkdown(mentionStorage(""),
+				convert.StorageOptions{UserNames: tt.names})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("markdown = %q, want it to contain %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestDeactivatedAccountKeepsItsName is the measurement that shaped the
+// placeholder. Surveying every mention on a real page -- 18 of them, six
+// departed -- the user lookup answered 200 for all 18, returning names like
+// "Mark Reid (Deactivated)": Confluence appends the suffix itself. So a
+// departed colleague keeps their name and never reaches the placeholder, which
+// is why the placeholder mirrors Confluence's wording for the case that does.
+func TestDeactivatedAccountKeepsItsName(t *testing.T) {
+	got, err := convert.StorageToMarkdown(mentionStorage(""), convert.StorageOptions{
+		UserNames: map[string]string{probeID: "Mark Reid (Deactivated)"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "[@Mark Reid (Deactivated)](") {
+		t.Errorf("markdown = %q, want the deactivated name kept verbatim", got)
 	}
 }
 

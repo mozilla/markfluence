@@ -966,18 +966,51 @@ func statusOf(err error) int {
 
 // GetUser returns a user's display name (best-effort: "" on any failure).
 func (c *ConfluenceClient) GetUser(accountID string) string {
+	name, _ := c.LookupUser(accountID)
+	return name
+}
+
+// ErrNoSuchUser reports that an account id resolves to nobody -- the API
+// answered a genuine 404 for it.
+//
+// It exists because "no name" and "could not ask" have to be told apart by
+// anything that writes a name into a file. GetUser flattens both to "", which
+// is right for a display where a missing author name is merely blank; it is
+// wrong for `read`/`export`, where rendering a placeholder for a transport
+// failure would put a fabricated name over a real one in somebody's markdown
+// (#91).
+var ErrNoSuchUser = errors.New("no user with that account id")
+
+// LookupUser returns an account's display name.
+//
+// Three outcomes, and callers that write output care about all three:
+//
+//   - a name, and nil
+//   - "", and ErrNoSuchUser -- the account genuinely does not resolve, which is
+//     what Confluence itself renders as "@Unlicensed user"
+//   - "", and any other error -- the question could not be asked (transport,
+//     rate limit, rejected credential), so nothing is known either way
+//
+// The 404 goes through notFound rather than a status comparison, because a
+// rejected credential is also a 404 on some routes and must not be read as
+// "this person does not exist".
+func (c *ConfluenceClient) LookupUser(accountID string) (string, error) {
 	if accountID == "" {
-		return ""
+		return "", ErrNoSuchUser
 	}
 	var out struct {
 		DisplayName string `json:"displayName"`
 	}
 	err := c.doJSON(http.MethodGet, c.baseURL+"/wiki/rest/api/user",
 		url.Values{"accountId": {accountID}}, nil, &out, timeoutRead)
-	if err != nil {
-		return ""
+	switch {
+	case err == nil:
+		return out.DisplayName, nil
+	case notFound(err):
+		return "", ErrNoSuchUser
+	default:
+		return "", err
 	}
-	return out.DisplayName
 }
 
 // --- attachments (v1) --------------------------------------------------------

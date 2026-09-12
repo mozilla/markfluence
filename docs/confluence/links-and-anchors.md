@@ -202,6 +202,19 @@ again — `body-format=storage,atlas_doc_format` answers **200 with an empty
 `body` object** rather than an error. So harvesting names from ADF costs a
 second page fetch, against one `GET /user` per distinct account id.
 
+**A deactivated account resolves normally, and keeps its name.** Verified
+2026-09-12 by looking up every mention on a real page — 18 of them, six
+belonging to people who have left. The user lookup answered **200 for all 18**,
+returning names like `Mark Reid (Deactivated)` and `. Lonnen (Deactivated)`:
+Confluence appends the suffix itself.
+
+This matters more than it sounds. The obvious assumption — that a departed
+colleague is *the* reason a mention fails to resolve — is false, and it was the
+premise of a first attempt at the placeholder wording. A departed colleague
+keeps their name, so a round-tripped rotation table stays fully readable and
+records who has left. The only thing that fails to resolve is an id that
+genuinely does not exist: a typo, or a hand-edited URL.
+
 **An unresolvable account id publishes happily.** A syntactically plausible but
 nonexistent id (`712020:00000000-0000-0000-0000-000000000000`) was accepted,
 stored verbatim, and renders as a `mention` reading **`@Unlicensed user`**.
