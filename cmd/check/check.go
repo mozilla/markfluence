@@ -15,6 +15,7 @@ import (
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
@@ -123,6 +124,16 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 	if _, err := pagewidth.Declared(mf.Frontmatter); err != nil {
 		return r.fail(err, jsonout.CodeValidation)
 	}
+	// An invalid label is a guaranteed publish defect that needs no network to
+	// see, the same class as an invalid page_width -- and worse in one way: a
+	// name Confluence splits on a space publishes successfully, as the wrong
+	// labels, and then cannot be removed by any spelling of the file (see
+	// docs/confluence/labels.md). Catching it offline is the cheapest place it
+	// can be caught.
+	labelSet, err := labels.Declared(mf.Lists, mf.Frontmatter)
+	if err != nil {
+		return r.fail(err, jsonout.CodeValidation)
+	}
 	if pageID := mf.PageID(); pageID != "" && !pageref.IsDigits(pageID) {
 		return r.fail(errors.New(pageref.NotNumericMessage(pageID)), jsonout.CodeValidation)
 	}
@@ -179,7 +190,9 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 		return r.fail(err, jsonout.CodeConvert)
 	}
 	r.broken = append(frontmatterBroken, page.Broken...)
-	r.warnings = page.Warnings
+	// Label warnings lead: they are a property of the frontmatter, so they hold
+	// whatever the converter went on to find in the body.
+	r.warnings = append(labelSet.Warnings, page.Warnings...)
 	if showHTML {
 		r.debugHTML = page.HTML
 		r.debugAttachments = page.Attachments

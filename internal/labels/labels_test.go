@@ -213,13 +213,17 @@ func TestDeclaredReadsBothYAMLStyles(t *testing.T) {
 	}
 }
 
+// TestDeclaredRefusesAnInvalidLabel also pins *which spelling* the message
+// quotes: the one in the file. Validating the lowercased name first reported
+// `label "runbook two"` for a file that says "Runbook Two", sending an author
+// to search for a string their file does not contain.
 func TestDeclaredRefusesAnInvalidLabel(t *testing.T) {
 	_, err := labels.Declared(map[string][]string{"labels": {"ok", "Runbook Two"}}, nil)
 	if err == nil {
 		t.Fatal("Declared = nil error, want the invalid label reported")
 	}
-	if !strings.Contains(err.Error(), "runbook two") {
-		t.Errorf("err = %q, want it to name the label", err)
+	if !strings.Contains(err.Error(), "Runbook Two") {
+		t.Errorf("err = %q, want it to name the label as written", err)
 	}
 }
 
