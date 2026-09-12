@@ -31,6 +31,28 @@ type Attachment struct {
 	Filename string `json:"filename"`
 }
 
+// Label is one label's outcome in an asserted set: what happened to it and its
+// name, mirroring Attachment's {action, filename}.
+//
+// A result carries the *whole* declared set every run, not just the changes, so
+// a consumer can read a page's labels off a publish without a second call.
+type Label struct {
+	Action string `json:"action"`
+	Name   string `json:"name"`
+}
+
+// LabelInfo describes one label a page carries, for info: its name, its
+// namespace, and whether markfluence manages it.
+//
+// Managed is reported rather than left to be derived, so a consumer does not
+// have to know the prefix rule to reproduce the split -- and so the rule can
+// only be wrong in one place.
+type LabelInfo struct {
+	Name    string `json:"name"`
+	Prefix  string `json:"prefix"`
+	Managed bool   `json:"managed"`
+}
+
 // AttachmentActionResult is one file's outcome from attachment-upload or
 // attachment-download: what happened, whether it succeeded, and (download only)
 // where it landed on disk. DestPath is always nil for attachment-upload, which
