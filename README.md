@@ -3,6 +3,18 @@
 Markdown-centric Confluence cli tool. Works with Claude, works with GitHub
 actions, works with you.
 
+## Which Confluence
+
+Ways to run Confluence and markfluence support for it:
+
+| Confluence | markfluence support |
+|---|---|
+| Cloud — Standard, Premium, Enterprise | **Supported.** |
+| Cloud with a custom site domain | **Supported.** |
+| Atlassian Government / isolated Cloud | **Untested.** Based on Atlassian documentation it has the same APIs and same identity model, so it is expected to work, but it's untested. |
+| Data Center | **Unsupported.** |
+| Server | **Unsupported.** Also end-of-life since February 2024. |
+
 ## Install
 
 ### From source
