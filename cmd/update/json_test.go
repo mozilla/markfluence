@@ -154,3 +154,37 @@ func TestSummarize(t *testing.T) {
 type errTest string
 
 func (e errTest) Error() string { return string(e) }
+
+// The enum values metadata_source can actually hold were never validated
+// against the schema: the conformance fixtures left the field empty, so only
+// null was ever checked.
+func TestSchemaConformanceMetadataSourceValues(t *testing.T) {
+	for _, src := range []string{"frontmatter", "manifest"} {
+		t.Run(src, func(t *testing.T) {
+			results := []*updateResult{{
+				file: "a.md", ok: true, status: statusPublished,
+				pageID: "1", title: "A", space: "ENG", url: "https://x/1",
+				versionPrev: 1, versionNew: 2, metadataSource: src,
+			}}
+			items := []any{results[0].jsonResult()}
+			env := jsonout.NewEnvelope("update", items, summarize(results))
+			var buf bytes.Buffer
+			if err := jsonout.Emit(&buf, env); err != nil {
+				t.Fatalf("Emit: %v", err)
+			}
+			schematest.ValidateEnvelope(t, buf.Bytes())
+		})
+	}
+}
+
+// And the unmanaged skip's own document, which no fixture covered.
+func TestSchemaConformanceUnmanagedSkip(t *testing.T) {
+	results := []*updateResult{{file: "a.md", ok: true, status: statusSkipped, unmanaged: true}}
+	items := []any{results[0].jsonResult()}
+	env := jsonout.NewEnvelope("update", items, summarize(results))
+	var buf bytes.Buffer
+	if err := jsonout.Emit(&buf, env); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	schematest.ValidateEnvelope(t, buf.Bytes())
+}

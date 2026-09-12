@@ -921,14 +921,15 @@ func TestProcessFileSkipsAnUnmanagedFile(t *testing.T) {
 	}
 }
 
-// A docs tree carrying Jekyll frontmatter has said nothing about Confluence.
+// Frontmatter markfluence knows nothing about -- a shape it explicitly
+// preserves -- says nothing about Confluence.
 func TestProcessFileSkipsForeignFrontmatter(t *testing.T) {
 	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 		w.WriteHeader(http.StatusInternalServerError)
 	})
 	path := writeManifestProject(t, "space: ENG\n",
-		"---\nlayout: post\ndate: 2026-01-01\n---\n# Post\n")
+		"---\nreviewers: [ana, bo]\nowner: sre\n---\n# Post\n")
 
 	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
 	if !r.ok || r.status != statusSkipped || !r.unmanaged {
@@ -1052,4 +1053,69 @@ func TestRunBatchSkipsUnmanagedAndPublishesTheRest(t *testing.T) {
 	if got["draft.md"] != statusSkipped {
 		t.Errorf("draft.md status = %q, want skipped", got["draft.md"])
 	}
+}
+
+// metadata_source is null on an unmanaged skip even for a file whose
+// frontmatter holds a known field: the question it answers is which location
+// supplied the metadata a page was published from, and nothing was published.
+// Setting it before the Managed() check reported "frontmatter" here, which
+// contradicted the schema and left --json unable to tell the two skips apart.
+func TestProcessFileUnmanagedSkipReportsNoSource(t *testing.T) {
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	// title and space are fields markfluence knows, so this file *contributes*
+	// metadata -- but names no page, so nothing claims it.
+	path := writeManifestProject(t, "space: ENG\n", "---\ntitle: Draft\nspace: ENG\n---\n# Draft\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	if !r.ok || r.status != statusSkipped || !r.unmanaged {
+		t.Fatalf("result = %+v, want an unmanaged skip", r)
+	}
+	if r.metadataSource != "" {
+		t.Errorf("metadata_source = %q, want empty", r.metadataSource)
+	}
+	if got := r.jsonResult().MetadataSource; got != nil {
+		t.Errorf("--json metadata_source = %q, want null", *got)
+	}
+}
+
+// The two skips have to be distinguishable, which is the whole reason the
+// unmanaged flag exists.
+func TestRenderHumanDistinguishesTheTwoSkips(t *testing.T) {
+	unmanaged := &updateResult{file: "a.md", ok: true, status: statusSkipped, unmanaged: true}
+	unchanged := &updateResult{file: "a.md", ok: true, status: statusSkipped}
+
+	got := captureStdout(t, unmanaged.renderHuman)
+	if !strings.Contains(got, "not published by markfluence") {
+		t.Errorf("unmanaged skip rendered %q", got)
+	}
+	got = captureStdout(t, unchanged.renderHuman)
+	if !strings.Contains(got, "no changes") {
+		t.Errorf("unchanged skip rendered %q", got)
+	}
+}
+
+// captureStdout runs fn with os.Stdout redirected, returning what it printed.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	rd, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := os.Stdout
+	os.Stdout = w
+	done := make(chan string, 1)
+	go func() {
+		var b strings.Builder
+		_, _ = io.Copy(&b, rd)
+		done <- b.String()
+	}()
+	fn()
+	os.Stdout = saved
+	_ = w.Close()
+	out := <-done
+	_ = rd.Close()
+	return out
 }

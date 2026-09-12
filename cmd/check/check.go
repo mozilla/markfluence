@@ -166,6 +166,10 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 		return r.fail(err, jsonout.CodeValidation)
 	}
 
+	// A soft disagreement between the two locations, which D6 promises is
+	// reported wherever metadata is resolved -- not only by update.
+	r.warnings = append(r.warnings, meta.Warnings...)
+
 	if _, err := pagewidth.Declared(meta.Fields); err != nil {
 		return r.fail(err, jsonout.CodeValidation)
 	}
@@ -217,7 +221,12 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 	// reported per file rather than once for the run, which is what keeps every
 	// diagnostic scoped to the files actually named -- a file under a different
 	// project hears nothing about this one.
-	if root.Config.PageWidth != "" && strings.TrimSpace(mf.Frontmatter["page_width"]) == "" {
+	// meta.Fields, not mf.Frontmatter: a width declared in this file's pages:
+	// entry wins over the project default exactly as one in its frontmatter
+	// does, so reading the file alone reported the project's bad value against
+	// a file that publishes perfectly well -- the false positive the paragraph
+	// above says check must not produce.
+	if root.Config.PageWidth != "" && strings.TrimSpace(meta.Fields["page_width"]) == "" {
 		if _, err := pagewidth.Declared(
 			map[string]string{"page_width": root.Config.PageWidth}); err != nil {
 			localBroken = append(localBroken, fmt.Sprintf("%s: %s", root.File, err))
