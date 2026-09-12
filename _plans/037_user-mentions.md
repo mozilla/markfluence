@@ -265,16 +265,24 @@ observed on the live instance. So the id is "the last path segment, non-empty,
 no slash" and nothing narrower; a shape check would reject real ids. The only
 real validation is the `GetUser` lookup, which is what the warning reports.
 
-**`mdLink` escapes its text, which fixes a bug older than this issue.**
-`mdLink` is a bare `fmt.Sprintf("[%s](%s)")` with no escaping, so a page title
-containing `]` already emits a broken link today, on the page-link and
-space-link paths. Mentions turn that from theoretical into likely: display names
-carry brackets, and a `|` inside a table cell breaks the row — with a mention in
-a table being the case this issue is named for. Fixed here rather than filed
-separately, because the feature is not correct without it.
+**Raw text used as link text is escaped, which fixes a bug older than this
+issue.** `mdLink` was a bare `fmt.Sprintf("[%s](%s)")`, so a page title
+containing `]` already emitted a broken link, on the page-link and space-link
+paths. Mentions turn that from theoretical into likely, since display names
+carry brackets. Fixed here rather than filed separately, because the feature is
+not correct without it.
 
-Parens need no escaping (`(she/her)` is fine in link text); `[`, `]`, `\` do,
-and `|` does inside a table cell.
+Two corrections to an earlier draft of this section, both found while doing it.
+The escaping does **not** go in `mdLink`: an `ac:link-body` reaching it has
+already been rendered to markdown, so escaping there turns a bold link body into
+literal `\*\*bold\*\*`. It goes on the raw sources instead — the CDATA body
+and the fallback. And a `|` inside a table cell was listed here as a risk
+mentions would surface; it is already handled, by `escapeCellPipe` in
+`storage_to_md.go`.
+
+Parens need no escaping (`(she/her)` is fine in link text). `[`, `]` and `\`
+do. A title like `*Foo*` renders as emphasis rather than asterisks — a fidelity
+loss that breaks nothing, knowingly left alone.
 
 ## Implementation
 
