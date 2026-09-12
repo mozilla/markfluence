@@ -1,0 +1,229 @@
+# Plan: render `<ri:user>` mentions readably, and republish them as mentions
+
+Make a Confluence mention survive a round trip as something a reader can read.
+Implements #91, and follows #88, which established the `<ac:link>` mapping and
+the passthrough this replaces.
+
+A mention is **80% of all `<ac:link>` usage** — 3346 of ~4200 occurrences in the
+survey behind #88, against 783 page links. Today it passes through as raw
+storage, which is round-trip safe and unreadable:
+
+```
+| FXMS-79 | 1pm | <ac:link><ri:user ri:account-id="712020:0000…" ri:local-id="4df0…" /></ac:link> | DONE |
+```
+
+The one thing a reader wants from a mention is *who*, and the account id is the
+one thing the storage does not say. On the pages where mentions cluster —
+on-call rotations, intake queues, meeting notes — most of the cells look like
+that.
+
+## The markdown spelling: A′
+
+```markdown
+Ping [@Ada Lovelace](https://wiki.example.net/wiki/people/712020:0e5f…)
+```
+
+An ordinary markdown link to the profile URL, with the display name as the link
+text and **`@` as the marker that makes it a mention**. A link to the same URL
+whose text does *not* begin with `@` stays a plain link and publishes as an
+`<a href>`.
+
+Four constraints picked this, and each one eliminates something:
+
+**The account id has to survive.** A display name is not stable — people change
+their names and the id does not — and the forward direction needs the id to emit
+`ri:user` at all. That rules out a bare `@Ada Lovelace`, which would need a
+name→id lookup on publish: ambiguous between two people with the same name, and
+a typo would silently mention nobody.
+
+**The name has to be visible**, which is the whole point, so passthrough plus a
+decorative comment is not an answer.
+
+**Both directions or neither**, per #88's rule: convert only when the markdown
+republishes to a link resolving to the same target. A spelling that reads
+nicely but cannot be recognised on the way back is a lossy rendering, and
+passthrough beats that.
+
+**It has to be a fixed point.** `TestRoundTripMarkdownIsAFixedPoint` means
+export → publish → export has to be identical markdown.
+
+### Why the `@`, and what it costs
+
+Recognition is by **URL**, not by the text: the forward path matches
+`{site}/wiki/people/{id}`. The `@` is what disambiguates *intent*, and there are
+two real intents that otherwise collapse into one spelling — "mention this
+person" and "link to this person's profile". Without the marker, someone who
+deliberately wrote a plain profile link gets a mention instead, silently.
+
+The cost is that link *text* now carries semantics, so stripping the `@` changes
+what publishes. Accepted, because the alternative is a silent reinterpretation
+and this one is at least visible in the diff. It also earns a warning the plain
+spelling could not justify: see "A mangled id" below.
+
+### Rejected alternatives
+
+| | why not |
+|---|---|
+| bare `@Ada Lovelace` | no id; needs a name lookup that two same-named people make ambiguous |
+| `[@Ada](confluence-user:712020:…)` | unambiguous, but renders as a dead link everywhere except markfluence, against C1 |
+| `@Ada Lovelace<!-- ri:user 712020:… -->` | has precedent (`tables.go`'s `bg:` cell comment) and is unambiguous, but no click-through, and the id is invisible so an author can edit the name into disagreement with it |
+| reference-style `[@Ada][user-712020]` | strictly more machinery than A′ for the same properties |
+
+The comment form is the serious runner-up: it reads as prose rather than as a
+link, which is nicer inside a sentence. Revisit if the `@`-in-link-text
+convention turns out to annoy people in practice.
+
+## What the probe settled — verified 2026-09-11
+
+Recorded in [links-and-anchors.md](../docs/confluence/links-and-anchors.md); the
+three findings that shape the work.
+
+**`ri:local-id` is not required.** A mention published with only
+`ri:account-id` comes back as an ADF `mention` node resolving to the same
+display name as one carrying a local-id. Read as ADF on purpose — `body.storage`
+was byte-identical for every spelling, and storage proves only what was stored.
+Had the local-id been required, nothing markdown can hold would republish as a
+mention and this issue would close as "passthrough is correct".
+
+So the local-id is dropped on republish, joining `ac:local-id`/`ac:macro-id` in
+`droppedAttrs`' category: a per-instance server-generated id.
+
+**An unresolvable id publishes happily**, as `@Unlicensed user`, while
+`GET /user?accountId=…` 404s for it. Confluence will not tell you an id is
+wrong. That decides both fallbacks — see below.
+
+**ADF names every mention for free** (`attrs.text`), which is a better answer
+than the bulk user route #91 wondered about — except that `body-format` takes
+one value, and asking for two answers **200 with an empty body object**. So it
+costs a second page fetch. See "The lookup" below.
+
+## Decisions
+
+**The inverse direction resolves names through `client.GetUser`, not ADF.**
+One `GET /user` per distinct account id, cached per run, gathered the way
+`PageLinkTargets`/`PageLinks` already gathers page titles: walk the parsed body,
+collect distinct ids, resolve once each, hand a map back through
+`StorageOptions`. A page with no mention makes no request, which is the guard
+every other lookup in `pagedoc` already has.
+
+Rejected: harvesting names from an ADF fetch. It is one request per *page*
+rather than per *user*, so it wins on a rotation table and loses on the common
+page with one mention — but the deciding factor is that it means parsing a
+second body format, in a package whose whole job is the storage one, to obtain a
+string that is decoration. `internal/convert` would gain an ADF reader for the
+benefit of the name in a link's text. Worth revisiting only if the per-id cost
+is measured to be a problem; noted in the issue rather than built.
+
+**An id `GetUser` cannot resolve passes through as storage.** There is no name
+to render, and `[@712020:0e5f…](…)` shows a reader nothing the raw storage did
+not. This is the existing behaviour for an unresolved `ri:page`, and it is why
+the mapping table's `ri:user` row now has two rows rather than one.
+
+**A mangled id is reported, not published silently.** Confluence accepts any
+id and renders `@Unlicensed user`, so the server will never tell an author that
+the id they hand-edited is wrong. The forward path therefore resolves the id
+before publishing (`GetUser`) and, when it does not resolve, emits a
+**warning** — not a `Broken`, since the mention still publishes and still
+names a person to anyone who can see the account; and not silence, since a
+mention nobody receives is exactly the failure #91 is about avoiding.
+
+This is what the `@` marker buys that plain-URL recognition could not: without
+it, every plain link to a profile would earn the same lookup and the same
+warning, and most of them are not mentions at all.
+
+**The forward path needs a client, which `internal/convert` does not have.**
+Same shape as the inverse: the converter reports what it needs, the caller
+resolves it. `MdToConfluence` gains nothing client-shaped; instead the mention
+ids in a document are gathered and resolved by the caller the way the link index
+already is. Deliberately **not** the same as `StorageOptions.PageLinks`, since
+this is the forward direction and has its own options type to extend.
+
+**The profile URL is emitted for the site, never the gateway.** `SiteURL()`
+already, for the same reason rewritten links use it: the URL is published into
+a page.
+
+**The legacy profile form is not emitted.** `{site}/wiki/display/~{accountId}`
+302s to `{site}/wiki/people/{accountId}` (verified 2026-08-21, per #91), so only
+the latter is worth writing — but the forward path should *recognise* both, or a
+page whose profile links predate the change stops round-tripping.
+
+## Implementation
+
+### `internal/convert` — inverse (`storage_to_md.go`, `aclink.go`)
+
+- `StorageOptions.UserNames map[string]string` — account id → display name, nil
+  or missing meaning "pass this mention through".
+- `MentionTargets(storage string) []string` — the distinct account ids in a
+  document, in document order, the sibling of `PageLinkTargets` and with the
+  same rationale for reporting ids inside raw macros (one wasted lookup beats
+  keeping two copies of the macro rules in step).
+- `renderACLink`'s `default` branch gains an `ri:user` case ahead of it,
+  rendering `[@Name](SITE/wiki/people/{id})` when the name is known and
+  `serialize(n)` when it is not. `ri:attachment`/`ri:blog-post` keep the
+  default.
+- The `@` is part of the *text*, not the URL, so `mdLink` needs nothing.
+
+### `internal/convert` — forward (`links.go`)
+
+- A mention branch in `rewriteHref`, **before** the absolute-URL fall-through in
+  `rewriteDocLink`: a destination matching `{site}/wiki/people/{id}` (or the
+  legacy `display/~{id}`) whose link text begins with `@` renders
+  `<ac:link><ri:user ri:account-id="{id}" /></ac:link>` and skips the `<a>`
+  element entirely — the same shape `images.go` uses when it replaces a whole
+  element.
+- Text not beginning with `@` falls through untouched and publishes as an
+  ordinary link. Pinned by a test, since this is the decision A′ exists for.
+- `MentionIDs(md)` equivalent for the forward direction so the caller can
+  resolve ids and pass names/validity in; an id that does not resolve publishes
+  anyway and warns.
+
+### `internal/pagedoc`
+
+- Gather → resolve → pass, beside `PageLinks`: `UserNames(c, page)` resolving
+  each distinct id once, best-effort, omitting what fails. `Options` wires it
+  in. No request when the body holds no mention.
+
+### Commands
+
+`read`, `export` get it through `pagedoc` automatically. `update`/`create` get
+the forward direction and the new warning. `check` cannot resolve an id
+offline, so a mention link is left alone there — worth a note in its own docs,
+since "check validates offline" and "a mention needs the server" do not compose.
+
+## Tests
+
+- **Fixed point**, extending `TestRoundTripMarkdownIsAFixedPoint`: a mention
+  exports, republishes, and re-exports identically.
+- **Round trip through storage**: mention → markdown → storage is a `ri:user`
+  with the same account id and **no** `ri:local-id`.
+- **The `@` rule, both ways**: `[@Ada](profile)` publishes as a mention;
+  `[Ada's profile](profile)` publishes as an `<a href>`. This pair is the plan.
+- **Unresolved name passes through** byte-identical, which the shield already
+  guarantees — the test is that the *decision* to pass through is taken.
+- **A mangled id warns** and still publishes, since Confluence accepts it.
+- **The legacy URL is recognised** on the forward path and not emitted on the
+  inverse.
+- **No mention, no request** — the `pagedoc` guard.
+- Regression cases under `internal/convert/testdata/regression/` for a mention
+  in a paragraph and in a table cell, the latter because `renderCellLines` joins
+  a cell's children and a mention inside one is the shape #91 is about.
+
+## Docs
+
+- `links-and-anchors.md` — already landed: the probe findings and the split
+  `ri:user` mapping rows.
+- `README.md` — the mention spelling in the `read`/`export` sections, and the
+  `@` rule stated where an author will look for it.
+- `docs/guarantees.md` — L5/L6 stay Partial; this narrows the gap rather than
+  closing it, and the note there should say so rather than implying a mention
+  was the last thing missing.
+
+## Out of scope
+
+- **Mentions in a `create`/`update` from scratch**, i.e. an author writing a
+  mention for a person whose id they do not know. That needs a name→id search
+  and belongs with whatever solves the ambiguity of two people sharing a name.
+- **`ri:attachment` and `ri:blog-post`**, which stay passthrough for the reasons
+  #88 recorded.
+- **Harvesting names from ADF.** Noted above; revisit only if the per-id lookup
+  is measured to hurt.
