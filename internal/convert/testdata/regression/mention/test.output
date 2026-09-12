@@ -1,0 +1,13 @@
+{
+  "attachments": [],
+  "broken": [],
+  "html": "<h1>On-call</h1>\n<p>Ping <ac:link><ri:user ri:account-id=\"712020:0e5f8a21-3c4d-4e5f-a6b7-c8d9e0f1a2b3\" /></ac:link> about the deploy.</p>\n<p>A profile link without the marker stays a link: <a href=\"https://home.atlassian.com/people/712020:0e5f8a21-3c4d-4e5f-a6b7-c8d9e0f1a2b3\">Ada's profile</a>.</p>\n<table data-layout=\"align-start\">\n<thead>\n<tr>\n<th>Week</th>\n<th>Primary</th>\n<th>Secondary</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Sep 15</td>\n<td><ac:link><ri:user ri:account-id=\"712020:0e5f8a21-3c4d-4e5f-a6b7-c8d9e0f1a2b3\" /></ac:link></td>\n<td><ac:link><ri:user ri:account-id=\"60c36d0718e9f60071326951\" /></ac:link></td>\n</tr>\n</tbody>\n</table>\n<p>The legacy and Confluence spellings are recognised too: <ac:link><ri:user ri:account-id=\"712020:0e5f8a21-3c4d-4e5f-a6b7-c8d9e0f1a2b3\" /></ac:link>, <ac:link><ri:user ri:account-id=\"712020:0e5f8a21-3c4d-4e5f-a6b7-c8d9e0f1a2b3\" /></ac:link>.</p>\n",
+  "warnings": [],
+  "mentions": [
+    "712020:0e5f8a21-3c4d-4e5f-a6b7-c8d9e0f1a2b3",
+    "712020:0e5f8a21-3c4d-4e5f-a6b7-c8d9e0f1a2b3",
+    "60c36d0718e9f60071326951",
+    "712020:0e5f8a21-3c4d-4e5f-a6b7-c8d9e0f1a2b3",
+    "712020:0e5f8a21-3c4d-4e5f-a6b7-c8d9e0f1a2b3"
+  ]
+}
