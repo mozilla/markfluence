@@ -37,22 +37,50 @@ import (
 // The host being irrelevant is also what lets `check` recognise a mention with
 // no client and no site: see mentionHost.
 func mentionAccountID(dest string) string {
+	// Absolute or root-relative only. A *relative* destination is a local file
+	// reference, and treating one as a profile URL destroyed real doc links:
+	// "[@ada](../people/ada.md)" in a tree with a people/ directory published
+	// as a mention of account "ada.md", with the link gone and rewriteDocLink's
+	// LINK BROKEN and not-yet-published checks skipped entirely, because this
+	// runs first. Found in review.
 	path := dest
-	if u, err := url.Parse(dest); err == nil && u.Path != "" {
-		path = u.Path
-	} else if i := strings.IndexAny(dest, "?#"); i >= 0 {
-		// Unparseable as a URL, so trim a query or fragment by hand rather
-		// than treating one as part of the id.
-		path = dest[:i]
+	if u, err := url.Parse(dest); err == nil {
+		if u.Scheme == "" && !strings.HasPrefix(dest, "/") {
+			return ""
+		}
+		if u.Path != "" {
+			path = u.Path
+		}
+	} else {
+		if !strings.HasPrefix(dest, "/") {
+			return ""
+		}
+		if i := strings.IndexAny(dest, "?#"); i >= 0 {
+			path = dest[:i]
+		}
 	}
 	path = strings.TrimSuffix(path, "/")
+	// Confluence's own forms live under /wiki; Atlassian Home's do not.
+	path = strings.TrimPrefix(path, "/wiki")
 
-	if i := strings.LastIndex(path, "/people/"); i >= 0 {
-		return trimProfileID(path[i+len("/people/"):])
-	}
-	// The legacy Confluence form spells the id as a personal space key.
-	if i := strings.LastIndex(path, "/display/~"); i >= 0 {
-		return trimProfileID(path[i+len("/display/~"):])
+	// Anchored at the start of the path, not searched for anywhere in it. A
+	// LastIndex of "/people/" matched any prefix at all, so
+	// "https://github.com/orgs/mozilla/people/willkg" became a mention of
+	// account "willkg".
+	switch {
+	case strings.HasPrefix(path, "/people/"):
+		return trimProfileID(strings.TrimPrefix(path, "/people/"))
+	case strings.HasPrefix(path, "/display/~"):
+		// The legacy Confluence form spells the id as a personal space key.
+		return trimProfileID(strings.TrimPrefix(path, "/display/~"))
+	case strings.HasPrefix(path, "/o/"):
+		// The org-scoped redirect target: /o/{orgId}/people/{id}.
+		rest := strings.TrimPrefix(path, "/o/")
+		i := strings.Index(rest, "/people/")
+		if i < 0 || strings.Contains(rest[:i], "/") {
+			return ""
+		}
+		return trimProfileID(rest[i+len("/people/"):])
 	}
 	return ""
 }

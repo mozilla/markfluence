@@ -425,3 +425,58 @@ func TestMentionTargetsIgnoresStorageWithNoMention(t *testing.T) {
 		t.Errorf("MentionTargets = %q, want nil so the caller makes no request", got)
 	}
 }
+
+// TestLinkTextEscapesAPlainLinkBody is a review finding: the escaping was
+// applied to the CDATA body and the fallback but not to ac:link-body, which
+// holds plain text in the common case. So the bug the escaping commit described
+// survived in the most common body form -- "Q1 Draft] notes" rendered as
+// "[Q1 Draft] notes](url)", which CommonMark reads as literal text, so the next
+// update publishes no link at all.
+func TestLinkTextEscapesAPlainLinkBody(t *testing.T) {
+	storage := `<p>See <ac:link><ri:page ri:content-title="X" ri:space-key="ENG" />` +
+		`<ac:link-body>Q1 Draft] notes</ac:link-body></ac:link> now.</p>`
+	got, err := convert.StorageToMarkdown(storage, convert.StorageOptions{
+		SiteURL:   "https://wiki.example.net",
+		PageLinks: map[convert.PageLinkTarget]string{{SpaceKey: "ENG", Title: "X"}: "https://x/y"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `[Q1 Draft\] notes](https://x/y)`) {
+		t.Errorf("markdown = %q, want the bracket escaped in a plain link body", got)
+	}
+}
+
+// TestPlainAnchorTextIsEscaped is the same finding at the fourth and most
+// common site: the plain <a> renderer. Without it the round trip lost a link
+// one cycle later rather than immediately -- exported correctly, republished as
+// an <a>, and *then* read back as literal text.
+func TestPlainAnchorTextIsEscaped(t *testing.T) {
+	got, err := convert.StorageToMarkdown(
+		`<p>See <a href="https://x/y">Q1 Draft] notes</a> now.</p>`, convert.StorageOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `[Q1 Draft\] notes](https://x/y)`) {
+		t.Errorf("markdown = %q, want the bracket escaped", got)
+	}
+}
+
+// TestMarkedUpLinkBodyIsStillNotEscaped guards the other direction, which is
+// why the escaping is conditional rather than unconditional: a body carrying
+// real markup has already been rendered to markdown, and escaping it would
+// produce a literal "\*\*bold\*\*".
+func TestMarkedUpLinkBodyIsStillNotEscaped(t *testing.T) {
+	storage := `<p>See <ac:link><ri:page ri:content-title="X" ri:space-key="ENG" />` +
+		`<ac:link-body><strong>bold</strong> notes</ac:link-body></ac:link> now.</p>`
+	got, err := convert.StorageToMarkdown(storage, convert.StorageOptions{
+		SiteURL:   "https://wiki.example.net",
+		PageLinks: map[convert.PageLinkTarget]string{{SpaceKey: "ENG", Title: "X"}: "https://x/y"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `[**bold** notes](https://x/y)`) {
+		t.Errorf("markdown = %q, want the markup left alone", got)
+	}
+}

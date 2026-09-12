@@ -981,6 +981,12 @@ func (c *ConfluenceClient) GetUser(accountID string) string {
 // (#91).
 var ErrNoSuchUser = errors.New("no user with that account id")
 
+// errNoDisplayName marks a lookup that succeeded without naming the account.
+// Unexported because no caller should branch on it: the point is only that it
+// is *not* ErrNoSuchUser, so it lands in the "could not be answered" state
+// rather than the "resolves to nobody" one.
+var errNoDisplayName = errors.New("user lookup returned no display name")
+
 // LookupUser returns an account's display name.
 //
 // Three outcomes, and callers that write output care about all three:
@@ -1004,8 +1010,16 @@ func (c *ConfluenceClient) LookupUser(accountID string) (string, error) {
 	err := c.doJSON(http.MethodGet, c.baseURL+"/wiki/rest/api/user",
 		url.Values{"accountId": {accountID}}, nil, &out, timeoutRead)
 	switch {
-	case err == nil:
+	case err == nil && out.DisplayName != "":
 		return out.DisplayName, nil
+	case err == nil:
+		// A 200 carrying no display name is not an answer either way, and it
+		// must not be reported as ErrNoSuchUser: the account plainly exists,
+		// the API just did not name it. Reading it as "nobody" put
+		// "@Unlicensed user" over a real person's mention on every page of an
+		// export. Found in review; reachable for a restricted or app account,
+		// or if Atlassian ever renames the field.
+		return "", errNoDisplayName
 	case notFound(err):
 		return "", ErrNoSuchUser
 	default:

@@ -370,7 +370,7 @@ func (r *mdRenderer) renderAnchorLink(n *snode, anchor string) string {
 // in any of them ends the link early.
 func (r *mdRenderer) acLinkText(n *snode, fallback string) string {
 	if b := findChild(n, "ac:link-body"); b != nil {
-		if s := r.renderInlineChildren(b); s != "" {
+		if s := r.inlineTextForLink(b); s != "" {
 			return s
 		}
 	}
@@ -380,6 +380,39 @@ func (r *mdRenderer) acLinkText(n *snode, fallback string) string {
 		}
 	}
 	return escapeLinkText(fallback)
+}
+
+// inlineTextForLink renders a node's children as a markdown link's text,
+// escaping the result when it is nothing but plain text.
+//
+// The distinction matters both ways, and an earlier version got it wrong in one
+// direction. Escaping a *rendered* body turns "<strong>bold</strong>" into a
+// literal "\*\*bold\*\*", which is why the escaping was first applied only to
+// the raw sources. But the common case for a link body is plain text, and
+// leaving it unescaped loses the link outright: a page titled "Q1 Draft]"
+// rendered as "[Q1 Draft] notes](url)", which CommonMark reads as literal text,
+// so the next update publishes no link at all. Found in review.
+//
+// "Nothing but plain text" is checkable rather than guessable: a text node is
+// an snode with an empty name, so a body whose every descendant is one carries
+// no markup for escaping to damage.
+func (r *mdRenderer) inlineTextForLink(n *snode) string {
+	rendered := r.renderInlineChildren(n)
+	if !onlyText(n) {
+		return rendered
+	}
+	return escapeLinkText(rendered)
+}
+
+// onlyText reports whether every descendant of n is a text node, so rendering
+// it produced no markdown syntax of its own.
+func onlyText(n *snode) bool {
+	for _, k := range n.kids {
+		if k.name != "" || !onlyText(k) {
+			return false
+		}
+	}
+	return true
 }
 
 // escapeLinkText makes plain text safe to use as a markdown link's text.
