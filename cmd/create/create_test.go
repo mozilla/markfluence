@@ -113,26 +113,146 @@ func TestResolveTitle(t *testing.T) {
 	}
 }
 
+func TestResolveSpace(t *testing.T) {
+	withFM := map[string]string{"space": "FM"}
+	none := map[string]string{}
+	declared := &project.Root{File: "/repo/markfluence.yaml", Config: project.Config{Space: "PROJ"}}
+	bare := &project.Root{File: "/repo/markfluence.yaml"}
+
+	t.Run("flag", func(t *testing.T) {
+		if got, err := resolveSpace("CLI", none, bare); err != nil || got != "CLI" {
+			t.Fatalf("= %q/%v, want CLI/nil", got, err)
+		}
+	})
+	t.Run("frontmatter", func(t *testing.T) {
+		if got, err := resolveSpace("", withFM, bare); err != nil || got != "FM" {
+			t.Fatalf("= %q/%v, want FM/nil", got, err)
+		}
+	})
+	t.Run("project file when the two above are silent", func(t *testing.T) {
+		if got, err := resolveSpace("", none, declared); err != nil || got != "PROJ" {
+			t.Fatalf("= %q/%v, want PROJ/nil", got, err)
+		}
+	})
+	t.Run("flag beats the project file", func(t *testing.T) {
+		if got, err := resolveSpace("CLI", none, declared); err != nil || got != "CLI" {
+			t.Fatalf("= %q/%v, want CLI/nil", got, err)
+		}
+	})
+	t.Run("frontmatter beats the project file", func(t *testing.T) {
+		if got, err := resolveSpace("", withFM, declared); err != nil || got != "FM" {
+			t.Fatalf("= %q/%v, want FM/nil", got, err)
+		}
+	})
+	// The project default is consulted only when both levels above it are
+	// silent, so it never becomes a third party to this disagreement.
+	t.Run("flag conflicting with frontmatter is still an error", func(t *testing.T) {
+		_, err := resolveSpace("CLI", withFM, declared)
+		if err == nil {
+			t.Fatal("want an error when --space and frontmatter disagree")
+		}
+		if !strings.Contains(err.Error(), "conflicts with frontmatter") {
+			t.Errorf("error = %q, want the conflict wording", err)
+		}
+	})
+	// Agreement is not a conflict, which the old inline form also held.
+	t.Run("flag agreeing with frontmatter is fine", func(t *testing.T) {
+		if got, err := resolveSpace("FM", withFM, declared); err != nil || got != "FM" {
+			t.Fatalf("= %q/%v, want FM/nil", got, err)
+		}
+	})
+	t.Run("nothing anywhere names all three places", func(t *testing.T) {
+		_, err := resolveSpace("", none, bare)
+		if err == nil {
+			t.Fatal("want an error when no space is given")
+		}
+		for _, want := range []string{"--space", "frontmatter", "markfluence.yaml"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error = %q, want it to mention %q", err, want)
+			}
+		}
+	})
+	t.Run("nil root is not a panic", func(t *testing.T) {
+		if _, err := resolveSpace("", none, nil); err == nil {
+			t.Fatal("want an error when no space is given")
+		}
+	})
+}
+
 func TestResolveWidth(t *testing.T) {
 	withFM := map[string]string{"page_width": "wide"}
+	none := map[string]string{}
+	// A project file declaring a width, and one declaring nothing.
+	declared := &project.Root{File: "/repo/markfluence.yaml", Config: project.Config{PageWidth: "narrow"}}
+	bare := &project.Root{File: "/repo/markfluence.yaml"}
+
 	t.Run("flag overrides frontmatter", func(t *testing.T) {
-		if w, err := resolveWidth("narrow", withFM); err != nil || w != pagewidth.Narrow {
+		if w, err := resolveWidth("narrow", withFM, bare); err != nil || w != pagewidth.Narrow {
 			t.Fatalf("= %q/%v, want narrow/nil", w, err)
 		}
 	})
 	t.Run("frontmatter when no flag", func(t *testing.T) {
-		if w, err := resolveWidth("", withFM); err != nil || w != pagewidth.Wide {
+		if w, err := resolveWidth("", withFM, bare); err != nil || w != pagewidth.Wide {
 			t.Fatalf("= %q/%v, want wide/nil", w, err)
 		}
 	})
 	t.Run("defaults to max when unset", func(t *testing.T) {
-		if w, err := resolveWidth("", map[string]string{}); err != nil || w != pagewidth.Max {
+		if w, err := resolveWidth("", none, bare); err != nil || w != pagewidth.Max {
 			t.Fatalf("= %q/%v, want max/nil", w, err)
 		}
 	})
 	t.Run("invalid flag errors", func(t *testing.T) {
-		if _, err := resolveWidth("huge", map[string]string{}); err == nil {
+		if _, err := resolveWidth("huge", none, bare); err == nil {
 			t.Fatal("want error for invalid --page-width")
+		}
+	})
+
+	t.Run("project file when neither flag nor frontmatter", func(t *testing.T) {
+		if w, err := resolveWidth("", none, declared); err != nil || w != pagewidth.Narrow {
+			t.Fatalf("= %q/%v, want narrow/nil", w, err)
+		}
+	})
+	t.Run("flag beats the project file", func(t *testing.T) {
+		if w, err := resolveWidth("wide", none, declared); err != nil || w != pagewidth.Wide {
+			t.Fatalf("= %q/%v, want wide/nil", w, err)
+		}
+	})
+	t.Run("frontmatter beats the project file", func(t *testing.T) {
+		if w, err := resolveWidth("", withFM, declared); err != nil || w != pagewidth.Wide {
+			t.Fatalf("= %q/%v, want wide/nil", w, err)
+		}
+	})
+	// A blank value is unset everywhere else in markfluence, so it must fall
+	// through rather than short-circuiting to max and hiding the project default.
+	t.Run("blank frontmatter falls through to the project file", func(t *testing.T) {
+		blank := map[string]string{"page_width": "  "}
+		if w, err := resolveWidth("", blank, declared); err != nil || w != pagewidth.Narrow {
+			t.Fatalf("= %q/%v, want narrow/nil", w, err)
+		}
+	})
+	// internal/project cannot validate its own width, so this is the first
+	// place a bad one is caught -- and the message has to send the reader to
+	// the file that actually holds it, not to a markdown file with no
+	// page_width in it at all.
+	t.Run("invalid project width names the project file", func(t *testing.T) {
+		bad := &project.Root{File: "/repo/markfluence.yaml", Config: project.Config{PageWidth: "huge"}}
+		_, err := resolveWidth("", none, bad)
+		if err == nil {
+			t.Fatal("want an error for an invalid project page_width")
+		}
+		if !strings.Contains(err.Error(), "/repo/markfluence.yaml") {
+			t.Errorf("error = %q, want it to name the project file", err)
+		}
+		if !strings.Contains(err.Error(), `invalid page_width "huge"`) {
+			t.Errorf("error = %q, want it to name the bad value", err)
+		}
+	})
+	// A declared width is a project-wide default, not a reason to fail a file
+	// that overrides it: an unparseable one must still be caught above, but a
+	// good one must not become a per-file requirement.
+	t.Run("nil root is not a panic", func(t *testing.T) {
+		if w, err := resolveWidth("", none, nil); err != nil || w != pagewidth.Max {
+			t.Fatalf("= %q/%v, want max/nil", w, err)
 		}
 	})
 }
