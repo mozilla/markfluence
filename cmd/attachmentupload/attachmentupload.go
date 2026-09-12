@@ -263,7 +263,14 @@ func rootRelativeSource(f string, roots *project.Cache) (string, error) {
 	}
 	root, err := roots.Resolve(filepath.Dir(abs))
 	if err != nil {
-		return "", fmt.Errorf("resolving the documentation root: %w", err)
+		if project.IsConfigError(err) {
+			// A markfluence.yaml that cannot be understood is a local defect in
+			// a file the author can open and fix, so it travels as badInput and
+			// is reported VALIDATION rather than IO -- matching create, update
+			// and check.
+			return "", badInput{err}
+		}
+		return "", project.RootError(err)
 	}
 	rel, err := filepath.Rel(root.Dir, abs)
 	if err != nil {

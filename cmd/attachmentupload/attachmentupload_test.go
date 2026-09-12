@@ -320,3 +320,30 @@ func TestPlanFailureCodeSeparatesServerFromLocal(t *testing.T) {
 		})
 	}
 }
+
+// A markfluence.yaml that cannot be understood is a local defect in a file the
+// author can open and fix, so it is reported VALIDATION rather than IO --
+// matching create, update and check, and the CLAUDE.md bullet that says those
+// helpers exist for exactly that.
+func TestLocalAttachmentsReportsAMalformedProjectFileAsValidation(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, project.Filename),
+		[]byte("spce: ENG\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	file := writeFile(t, root, "assets/x.png")
+
+	_, err := localAttachments([]string{file}, "", project.NewCache(""))
+	if err == nil {
+		t.Fatal("localAttachments succeeded with a malformed project file, want an error")
+	}
+	if got := localAttachmentsCode(err); got != jsonout.CodeValidation {
+		t.Errorf("code = %q, want VALIDATION", got)
+	}
+	if strings.Contains(err.Error(), "resolving the documentation root") {
+		t.Errorf("error = %q, want no root-resolution heading: the root was found", err)
+	}
+	if !strings.Contains(err.Error(), `unknown setting "spce"`) {
+		t.Errorf("error = %q, want the unknown-setting message", err)
+	}
+}
