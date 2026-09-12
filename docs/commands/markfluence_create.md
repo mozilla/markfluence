@@ -7,10 +7,11 @@ Create new Confluence pages from markdown files
 Create new Confluence pages from markdown FILEs.
 
 The title comes from frontmatter, or from --title, which overrides it and
-requires a single FILE. The space comes from --space or frontmatter. The
-parent comes from --parent or frontmatter and may be a page or a Cloud
-folder -- give a folder's id the same way you would a page's. Page width
-defaults to max.
+requires a single FILE. The space comes from --space, then frontmatter,
+then a space: in markfluence.yaml -- the answer closest to the content
+wins. The parent comes from --parent or frontmatter and may be a page or
+a Cloud folder -- give a folder's id the same way you would a page's.
+Page width follows the same chain and defaults to max.
 
 Every file is checked first -- including converting it -- and if any would
 fail, nothing is created. A page_id that resolves to nothing is a failure

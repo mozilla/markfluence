@@ -181,7 +181,7 @@ func dotenvDir(cwd string, roots *project.Cache) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer root.FS.Close()
+	defer func() { _ = root.FS.Close() }()
 	return root.Dir, nil
 }
 

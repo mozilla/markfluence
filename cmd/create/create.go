@@ -57,10 +57,11 @@ var Cmd = &cobra.Command{
 	Short: "Create new Confluence pages from markdown files",
 	Long: "Create new Confluence pages from markdown FILEs.\n\n" +
 		"The title comes from frontmatter, or from --title, which overrides it and\n" +
-		"requires a single FILE. The space comes from --space or frontmatter. The\n" +
-		"parent comes from --parent or frontmatter and may be a page or a Cloud\n" +
-		"folder -- give a folder's id the same way you would a page's. Page width\n" +
-		"defaults to max.\n\n" +
+		"requires a single FILE. The space comes from --space, then frontmatter,\n" +
+		"then a space: in markfluence.yaml -- the answer closest to the content\n" +
+		"wins. The parent comes from --parent or frontmatter and may be a page or\n" +
+		"a Cloud folder -- give a folder's id the same way you would a page's.\n" +
+		"Page width follows the same chain and defaults to max.\n\n" +
 		"Every file is checked first -- including converting it -- and if any would\n" +
 		"fail, nothing is created. A page_id that resolves to nothing is a failure\n" +
 		"too, not a fresh page: create will not publish a second copy and overwrite\n" +

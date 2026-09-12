@@ -27,7 +27,7 @@ func TestDiscoverReadsSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
-	defer root.FS.Close()
+	defer func() { _ = root.FS.Close() }()
 	if root.Config.Space != "ENG" {
 		t.Errorf("Space = %q, want ENG", root.Config.Space)
 	}
@@ -51,7 +51,7 @@ func TestDiscoverAcceptsAMarkerWithNoSettings(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Discover: %v", err)
 			}
-			defer root.FS.Close()
+			defer func() { _ = root.FS.Close() }()
 			if root.Config != (Config{}) {
 				t.Errorf("Config = %#v, want zero", root.Config)
 			}
@@ -136,7 +136,7 @@ func TestDiscoverDoesNotFallBackToStartDirOnAMalformedFile(t *testing.T) {
 	dir := write(t, "spce: OPS\n")
 	root, err := Discover(dir)
 	if err == nil {
-		defer root.FS.Close()
+		defer func() { _ = root.FS.Close() }()
 		t.Fatalf("Discover returned root %q, want an error", root.Dir)
 	}
 }
@@ -190,7 +190,7 @@ func TestFromPathReadsSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromPath: %v", err)
 	}
-	defer root.FS.Close()
+	defer func() { _ = root.FS.Close() }()
 	if root.Config.Space != "ENG" {
 		t.Errorf("Space = %q, want ENG", root.Config.Space)
 	}
@@ -211,7 +211,7 @@ func TestFromPathWithNoProjectFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromPath: %v", err)
 	}
-	defer root.FS.Close()
+	defer func() { _ = root.FS.Close() }()
 	if root.File != "" || root.Config != (Config{}) {
 		t.Errorf("File = %q, Config = %#v, want empty", root.File, root.Config)
 	}
@@ -251,7 +251,7 @@ func TestLoadConfigTreatsAnEmptySettingAsUnset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
 	}
-	defer root.FS.Close()
+	defer func() { _ = root.FS.Close() }()
 	if root.Config != (Config{}) {
 		t.Errorf("Config = %#v, want zero", root.Config)
 	}
@@ -300,7 +300,7 @@ func TestLoadConfigReportsDeclaredSettingsUnderDebug(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Discover: %v", err)
 		}
-		root.FS.Close()
+		_ = root.FS.Close()
 	})
 	for _, want := range []string{filepath.Join(dir, Filename), "space=ENG", "page_width=wide"} {
 		if !strings.Contains(out, want) {
@@ -321,7 +321,7 @@ func TestLoadConfigSaysNothingForAMarkerWithNoSettings(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Discover: %v", err)
 		}
-		root.FS.Close()
+		_ = root.FS.Close()
 	})
 	if strings.Contains(out, "project file") {
 		t.Errorf("debug output = %q, want nothing about the project file", out)
