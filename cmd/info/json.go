@@ -5,6 +5,7 @@ import (
 
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/labels"
 )
 
 // jsonInfoResult is info's --json result shape. Keys are always present (per the
@@ -12,20 +13,21 @@ import (
 // as null. page_status is Confluence's page status, renamed to avoid colliding
 // with the action commands' result-status concept.
 type jsonInfoResult struct {
-	OK         bool               `json:"ok"`
-	PageID     string             `json:"page_id"`
-	Title      string             `json:"title"`
-	PageStatus string             `json:"page_status"`
-	Space      string             `json:"space"`
-	Parent     *string            `json:"parent"`
-	ParentType *string            `json:"parent_type"`
-	Version    jsonVersion        `json:"version"`
-	PageWidth  *jsonout.PageWidth `json:"page_width"`
-	Created    *jsonout.Stamp     `json:"created"`
-	Updated    *jsonout.Stamp     `json:"updated"`
-	Message    string             `json:"message"`
-	URL        string             `json:"url"`
-	Properties []jsonProperty     `json:"properties"`
+	OK         bool                 `json:"ok"`
+	PageID     string               `json:"page_id"`
+	Title      string               `json:"title"`
+	PageStatus string               `json:"page_status"`
+	Space      string               `json:"space"`
+	Parent     *string              `json:"parent"`
+	ParentType *string              `json:"parent_type"`
+	Version    jsonVersion          `json:"version"`
+	PageWidth  *jsonout.PageWidth   `json:"page_width"`
+	Labels     *[]jsonout.LabelInfo `json:"labels"`
+	Created    *jsonout.Stamp       `json:"created"`
+	Updated    *jsonout.Stamp       `json:"updated"`
+	Message    string               `json:"message"`
+	URL        string               `json:"url"`
+	Properties []jsonProperty       `json:"properties"`
 }
 
 type jsonVersion struct {
@@ -56,6 +58,26 @@ func (r report) jsonResult() jsonInfoResult {
 	if r.widthKnown {
 		w := r.width
 		res.PageWidth = &w
+	}
+	// null when the fetch failed, [] when the page genuinely has none. A
+	// consumer should not have to know the prefix rule to reproduce the
+	// managed/unmanaged split, so managed is reported per label rather than
+	// left to be derived.
+	if r.labelsKnown {
+		res.Labels = &[]jsonout.LabelInfo{}
+		list := make([]jsonout.LabelInfo, 0, len(r.labels))
+		for _, l := range r.labels {
+			list = append(list, jsonout.LabelInfo{
+				Name: l.Name, Prefix: l.Prefix, Managed: l.Prefix == labels.ManagedPrefix,
+			})
+		}
+		sort.Slice(list, func(i, j int) bool {
+			if list[i].Prefix != list[j].Prefix {
+				return list[i].Prefix < list[j].Prefix
+			}
+			return list[i].Name < list[j].Name
+		})
+		res.Labels = &list
 	}
 	// properties stays null unless --properties was given and the fetch succeeded;
 	// then it is a (possibly empty) sorted array.

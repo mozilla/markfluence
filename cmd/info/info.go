@@ -12,6 +12,7 @@ import (
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/completion"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/ui"
@@ -126,6 +127,12 @@ type report struct {
 	withProps                bool
 	properties               []client.Property
 	propsErr                 error
+	// labelsKnown separates "the page has no labels" from "the fetch failed",
+	// which --json reports as [] and null respectively. info is the one command
+	// that shows unmanaged labels, so it keeps the client's unfiltered list
+	// rather than a split it would then have to re-derive.
+	labelsKnown bool
+	labels      []client.Label
 }
 
 // buildReport resolves a page (and, when withProps is set, its content
@@ -177,6 +184,14 @@ func buildReport(page *client.Page, c *client.ConfluenceClient, withProps bool) 
 		r.widthKnown = true
 		r.width = jsonout.PageWidth{Value: string(width), Default: !explicit}
 	}
+
+	// Best-effort, like the width: a page nobody can label is still worth
+	// describing, so a failed fetch leaves the rows out rather than failing the
+	// command.
+	if live, err := labels.Read(c, page.ID); err == nil {
+		r.labelsKnown = true
+		r.labels = live
+	}
 	return r
 }
 
@@ -202,6 +217,8 @@ func (r report) human() string {
 		{"parent", parent},
 		{"version", versionNumber(r.versionNum)},
 		{"page_width", widthDisplay},
+		{"labels", strings.Join(labels.Global(r.labels), ", ")},
+		{"labels/unmanaged", strings.Join(labels.Unmanaged(r.labels), ", ")},
 		{"created", withAuthor(r.createdAt, r.creator)},
 		{"updated", withAuthor(r.updatedAt, r.editor)},
 		{"message", r.message},
