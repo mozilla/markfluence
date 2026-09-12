@@ -118,6 +118,12 @@ destroy:
 | `page_id`, `space`, `parent` | **error** — the file fails. A `page_id` pasted from an old file would publish over a live page |
 | `title`, `page_width`, `labels` | **warning**, and the frontmatter wins. Visible and recoverable |
 
+Every command that takes a page accepts a pristine registered file, because they
+all resolve the argument through one place (`internal/pageref`): `markfluence
+info docs/deploy-runbook.md` works even though that file says nothing about
+Confluence. The exception is `fix`, which can locate such a page but cannot yet
+*write* to its entry, and says so rather than writing frontmatter instead.
+
 A file **neither location mentions is skipped**, not failed: a repository
 legitimately holds markdown that is not published, so `markfluence update
 docs/**/*.md` does not go red because somebody added a draft. A file that *is*
