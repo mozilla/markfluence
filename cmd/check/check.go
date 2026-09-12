@@ -148,15 +148,24 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 	}
 	root, err := roots.Resolve(filepath.Dir(abs))
 	if err != nil {
-		return r.fail(fmt.Errorf("resolving the documentation root: %w", err), jsonout.CodeIO)
+		code := jsonout.CodeIO
+		if project.IsConfigError(err) {
+			// A markfluence.yaml that cannot be understood is a local defect in
+			// a file the author can open and fix, which is check's whole
+			// subject -- reporting it as I/O would send the reader looking for
+			// a disk fault.
+			code = jsonout.CodeValidation
+		}
+		return r.fail(project.RootError(err), code)
 	}
 	index, err := indexes.Get(root)
 	if err != nil {
 		return r.fail(fmt.Errorf("building the link index: %w", err), jsonout.CodeIO)
 	}
 
-	// Collected before the conversion, which can bail out: a frontmatter defect
-	// is independent of anything the converter finds, and reporting it only when
+	// Collected before the conversion, which can bail out: a defect found
+	// without the converter -- in the frontmatter or in the project file -- is
+	// independent of anything the converter finds, and reporting it only when
 	// the body happens to convert would hide it behind an unrelated failure.
 	//
 	// A title that is present and empty is a guaranteed publish failure needing
@@ -165,9 +174,28 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 	// because check cannot know which verb is coming, and that reasoning stops
 	// applying once both verbs agree. An absent title stays unreported: update
 	// accepts it and keeps the live page's title.
-	var frontmatterBroken []string
+	var localBroken []string
+	// A project-wide page_width Confluence does not accept fails every publish
+	// under this root, so it is Broken rather than a warning -- the same
+	// severity an invalid frontmatter page_width gets, for the same reason.
+	//
+	// This is where a project-wide width is validated offline at all:
+	// internal/project cannot check its own value, since it would have to
+	// import internal/pagewidth, which imports internal/client, which holds a
+	// *project.Cache. check is the one verb that can find it without
+	// publishing.
+	//
+	// Reported on each file under that root rather than once for the run, which
+	// is what keeps every diagnostic scoped to the files actually named: a file
+	// under a different project hears nothing about this one.
+	if root.Config.PageWidth != "" {
+		if _, err := pagewidth.Declared(
+			map[string]string{"page_width": root.Config.PageWidth}); err != nil {
+			localBroken = append(localBroken, fmt.Sprintf("%s: %s", root.File, err))
+		}
+	}
 	if title, present := mf.TitleField(); present && title == "" {
-		frontmatterBroken = append(frontmatterBroken,
+		localBroken = append(localBroken,
 			"frontmatter has an empty 'title:'; give it a value or remove it")
 	}
 
@@ -187,13 +215,13 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 		// past a document it has already refused to publish.
 		var collision *convert.NameCollisionError
 		if errors.As(err, &collision) {
-			r.broken = append(frontmatterBroken, collision.Error())
+			r.broken = append(localBroken, collision.Error())
 			r.status = statusBroken
 			return r
 		}
 		return r.fail(err, jsonout.CodeConvert)
 	}
-	r.broken = append(frontmatterBroken, page.Broken...)
+	r.broken = append(localBroken, page.Broken...)
 	// Label warnings lead: they are a property of the frontmatter, so they hold
 	// whatever the converter went on to find in the body.
 	r.warnings = append(labelSet.Warnings, page.Warnings...)

@@ -494,3 +494,105 @@ func TestRunScalarLabelsIsFailed(t *testing.T) {
 		t.Errorf("output = %q, want it to name the list form", out)
 	}
 }
+
+// check is the one verb that can find a project-wide page_width Confluence
+// does not accept without publishing: internal/project cannot validate its own
+// value, since it would have to import internal/pagewidth, which imports
+// internal/client, which holds a *project.Cache.
+func TestRunInvalidProjectPageWidthIsBroken(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "markfluence.yaml"), "page_width: huge\n")
+	write(t, filepath.Join(dir, "main.md"), "---\ntitle: Main\npage_id: 1\n---\n# Main\n")
+
+	out, err := captureOutput(t, func() error { return run(testCmd(t, ""), []string{filepath.Join(dir, "main.md")}) })
+	if !ui.IsSilent(err) || ui.ExitCode(err) != 1 {
+		t.Fatalf("run = %v, want a silent exit-1 error", err)
+	}
+	if !strings.Contains(out, "invalid page_width") {
+		t.Errorf("output = %q, want the invalid-width message", out)
+	}
+	// The message has to name the project file, not the markdown file, which
+	// has no page_width in it at all.
+	if !strings.Contains(out, "markfluence.yaml") {
+		t.Errorf("output = %q, want it to name markfluence.yaml", out)
+	}
+}
+
+// A valid project-wide width is a default, not a per-file requirement.
+func TestRunValidProjectPageWidthIsClean(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "markfluence.yaml"), "page_width: wide\nspace: ENG\n")
+	write(t, filepath.Join(dir, "main.md"), "---\ntitle: Main\npage_id: 1\n---\n# Main\n")
+
+	if _, err := captureOutput(t, func() error {
+		return run(testCmd(t, ""), []string{filepath.Join(dir, "main.md")})
+	}); err != nil {
+		t.Fatalf("run = %v, want success", err)
+	}
+}
+
+// A markfluence.yaml that cannot be understood is a local defect in a file the
+// author can open and fix, which is exactly check's subject -- so it fails the
+// file as VALIDATION rather than as I/O, and without the "resolving the
+// documentation root" heading, since the root was found.
+func TestRunMalformedProjectFileIsAValidationFailure(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "markfluence.yaml"), "spce: ENG\n")
+	write(t, filepath.Join(dir, "main.md"), "---\ntitle: Main\npage_id: 1\n---\n# Main\n")
+
+	var env struct {
+		Results []struct {
+			Status string  `json:"status"`
+			Code   *string `json:"code"`
+			Error  *string `json:"error"`
+		} `json:"results"`
+	}
+	ui.SetJSON(true)
+	t.Cleanup(func() { ui.SetJSON(false) })
+	out, err := captureOutput(t, func() error {
+		return run(testCmd(t, ""), []string{filepath.Join(dir, "main.md")})
+	})
+	if !ui.IsSilent(err) || ui.ExitCode(err) != 1 {
+		t.Fatalf("run = %v, want a silent exit-1 error", err)
+	}
+	if err := json.Unmarshal([]byte(out), &env); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	if len(env.Results) != 1 {
+		t.Fatalf("results = %#v, want one", env.Results)
+	}
+	got := env.Results[0]
+	if got.Status != "failed" {
+		t.Errorf("status = %q, want failed", got.Status)
+	}
+	if got.Code == nil || *got.Code != "VALIDATION" {
+		t.Errorf("code = %v, want VALIDATION", got.Code)
+	}
+	if got.Error == nil {
+		t.Fatal("error = nil, want a message")
+	}
+	if !strings.Contains(*got.Error, `unknown setting "spce"`) {
+		t.Errorf("error = %q, want the unknown-setting message", *got.Error)
+	}
+	if strings.Contains(*got.Error, "resolving the documentation root") {
+		t.Errorf("error = %q, want no root-resolution heading", *got.Error)
+	}
+}
+
+// A project file under a *different* root says nothing about a file checked
+// elsewhere: diagnostics stay scoped to the files actually named.
+func TestRunProjectDefectIsScopedToItsOwnRoot(t *testing.T) {
+	base := t.TempDir()
+	bad := filepath.Join(base, "bad")
+	good := filepath.Join(base, "good")
+	write(t, filepath.Join(bad, "markfluence.yaml"), "page_width: huge\n")
+	write(t, filepath.Join(bad, "main.md"), "---\ntitle: Bad\npage_id: 1\n---\n# Bad\n")
+	write(t, filepath.Join(good, "markfluence.yaml"), "page_width: wide\n")
+	write(t, filepath.Join(good, "main.md"), "---\ntitle: Good\npage_id: 2\n---\n# Good\n")
+
+	if _, err := captureOutput(t, func() error {
+		return run(testCmd(t, ""), []string{filepath.Join(good, "main.md")})
+	}); err != nil {
+		t.Fatalf("checking the good project = %v, want success", err)
+	}
+}

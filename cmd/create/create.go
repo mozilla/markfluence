@@ -682,7 +682,9 @@ func resolveFile(
 	}
 	root, err := roots.Resolve(filepath.Dir(abs))
 	if err != nil {
-		return record{}, fmt.Errorf("resolving the documentation root: %w", err)
+		// A malformed markfluence.yaml is reported as itself: the root was
+		// found, and it is the file in it that is wrong.
+		return record{}, project.RootError(err)
 	}
 	index, err := indexes.Get(root)
 	if err != nil {
