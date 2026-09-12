@@ -480,10 +480,9 @@ markfluence read "https://org.atlassian.net/wiki/spaces/ENG/pages/1234567890/Tit
 Usage: markfluence children [PAGE] [flags]
 ```
 
-List the pages and folders under a page or folder. `PAGE` is a numeric id, a
-Confluence page **or folder** URL, or a markdown file whose frontmatter has a
-`page_id`. Pass `--space KEY` instead of a `PAGE` to list a whole space; exactly
-one of the two is required.
+List the pages and folders under a page or folder, or under a whole space with
+`--space KEY`. `markfluence children --help` explains why folders get their own
+rows and why a folder counts as a level.
 
 ```sh
 markfluence children 1234567890                  # direct children
@@ -494,7 +493,6 @@ markfluence children docs/index.md               # children of the page index.md
 markfluence children 1234567890 --json | jq -r '.results[] | select(.type=="page") | .id'
 markfluence children --space ENG                 # the space's top level
 markfluence children --space ENG --depth all     # every page and folder in the space
-markfluence children --space ENG --depth all --json | jq -r '.results[].title'
 ```
 
 ```
@@ -508,27 +506,18 @@ Titles indent by depth; `TYPE` and `ID` stay aligned so the output is still
 greppable. Siblings appear in the order Confluence displays them, which takes a
 merge — pages and folders come from separate requests.
 
-**Folders are listed, not just traversed.** A folder can hold the only pages in a
-subtree, so listing pages alone would show nothing for a folder that contains
-folders. A folder also counts as a level: at the default `--depth 1` a child
-folder appears as a row, and `--depth 2` shows what is inside it.
+`--depth` takes a positive number or `all`. `0` is rejected rather than treated
+as "unlimited", since silently walking an entire space for someone who meant
+"none" is worse than an error.
 
-`--depth` takes a positive number or `all`, defaulting to `1`. `0` is rejected
-rather than treated as "unlimited" — a common convention elsewhere, and silently
-walking an entire space for someone who meant "none" is worse than an error.
-`--depth all` is genuinely unbounded: it costs two requests per node, and the
-default of `1` is what keeps the casual case cheap.
+Trashed pages and folders are not listed. Finding nothing is a success: the
+command prints `No children.` and exits 0, so an empty `results` array is how a
+script tests for an empty subtree.
 
-Trashed pages and folders are not listed. Finding nothing is a success, not a
-failure: the command prints `No children.` and exits 0, so `--json` reporting an
-empty `results` array is how a script tests for an empty subtree.
+With `--space`, human output adds a `--depth` reminder when `--depth` was left at
+its default — on stderr, so the table still pipes:
 
-#### `--space`
-
-`--space` takes a space **key** (not a URL, and not a name), and lists that space
-instead of a page:
-
-```sh
+```
 $ markfluence children --space AIM
 TYPE  ID       TITLE
 page  2097154  Africa Innovation Mradi Home
@@ -537,20 +526,13 @@ page  2097185  What is Africa Mradi?
     Showing the space's top level. Use --depth 2, or --depth all for the whole tree.
 ```
 
-**Depth 1 is the space's top level**, which is usually just its homepage — hence
-the reminder, which human output prints only when `--depth` was left at its
-default, and prints to stderr so the table can still be piped. `--depth all` walks the whole space, at a pair of requests per page and
-folder in it.
-
-A space's top level is its root **pages**: a folder created with no parent lands
-under the homepage rather than at the root, so there is no such thing as a
-root-level folder to miss ([docs/confluence/spaces.md](docs/confluence/spaces.md)).
-More than one root page is normal, though — a page published with `parent: null`
-is one — so this is not the same as listing the homepage's children.
-
-In `--json`, a row at the space root reports `"parent_id": null`, since it hangs
-off no node and the space is not one. An unknown key is a usage error (exit 2),
-not an empty result, exactly as it is for `find` and `search`.
+A space's top level is its root **pages**, which is not the same as the
+homepage's children: more than one root page is normal (a page published with
+`parent: null` is one), and a folder created with no parent lands under the
+homepage rather than at the root, so there is no root-level folder to miss
+([docs/confluence/spaces.md](docs/confluence/spaces.md)). Such a row reports
+`"parent_id": null` in `--json`, hanging off no node. An unknown space key is a
+usage error (exit 2), not an empty result, as it is for `find` and `search`.
 
 ### `find`
 
@@ -613,7 +595,8 @@ Usage: markfluence search QUERY [flags]
 
 Find pages by **full text**, for when you do not know the title. `find` answers
 "does a page called *this* exist?"; `search` answers "where is the page about
-deploys?".
+deploys?". `markfluence search --help` covers how the query is matched and what
+the index cannot see.
 
 ```sh
 markfluence search "deploy runbook"
@@ -647,47 +630,34 @@ you *why* it matched, and an excerpt is too long for a column.
 Confluence reports rather than by matching your query text — so the highlight
 follows the server's own stemming (searching `deploy` marks `deploys`) and works
 under `--cql`, where there are no query words to match against. Some hits come
-back without them; Confluence marked 40 of 50 sampled rows. The highlight disappears
-under `--no-color`, under `NO_COLOR`, and whenever output is piped or
-redirected, so a captured excerpt is plain text. `--json` is unaffected: its
-`excerpt` is the same plain string it has always been.
+back without them; Confluence marked 40 of 50 sampled rows. The highlight
+disappears under `--no-color`, under `NO_COLOR`, and whenever output is piped,
+so a captured excerpt is plain text. `--json`'s `excerpt` is unaffected.
 
-**Multiple words are ANDed, and it is not a phrase search.** Every word must
-appear somewhere in the page, in any order — `"deploy runbook"` and
-`"runbook deploy"` return the same set. Adding a word narrows the search;
-quoting does not require the words to be adjacent.
+**markfluence never re-sorts results.** The API reports a relevance score of
+`0.0` on every row, so the order it returns is the only ranking that exists —
+which is also why a `--json` consumer should not sort `results`.
 
-**Results are in Confluence's relevance order, best first, and markfluence never
-re-sorts them.** The API reports a relevance score of `0.0` on every row, so the
-order it returns is the only ranking that exists — which is also why a `--json`
-consumer should not sort `results`.
+`--limit` takes a positive number or `all`, defaulting to `10` — a hit is 5–6
+lines, so ten is about a screen. `0` is refused rather than read as "unlimited",
+as with `children --depth`. When more matches exist the command reports *that*,
+not how many, because the API's own total is an estimate that disagrees with
+what it returns.
 
-**`--limit` defaults to 10, and never truncates silently.** A hit is a block of
-5–6 lines rather than a row, so ten is about a screen. It takes a positive
-number or `all`; `0` is refused rather than read as "unlimited", the same rule
-`--depth` follows. When there are more matches than were shown, the command says
-so. It reports *that* more exist rather than how many, because the API's own
-total is an estimate that disagrees with what it returns.
+`--type` defaults to `page` and also accepts `blogpost` or `all`. The index
+holds attachments, comments, databases and whiteboards, all of which match text,
+but their ids are not something any other command accepts — hence `all` rather
+than the default. `--type folder` is refused with a pointer to `find`.
 
-**`--type` defaults to `page`**, and also accepts `blogpost` or `all`. The search
-index holds attachments, comments, databases and whiteboards too, and all of them
-match text — but their ids are not something any other markfluence command
-accepts, so they are behind `all`. `--type folder` is refused with a pointer to
-`find`: a folder has no text, so it can never match a full-text query.
+`--cql` passes QUERY through as
+[CQL](https://developer.atlassian.com/cloud/confluence/advanced-searching-using-cql/)
+with no escaping and no clauses added. It cannot combine with `--space` or
+`--type`: those would have to be ANDed onto your query, which regroups a query
+containing `or` and silently answers something else. `--limit` still applies,
+bounding paging rather than the query.
 
-**`--cql` passes QUERY straight through as [CQL](https://developer.atlassian.com/cloud/confluence/advanced-searching-using-cql/)**,
-with no escaping and no clauses added. It cannot be combined with `--space` or
-`--type`: those would have to be ANDed onto your query, which would regroup a
-query containing `or` and silently answer something else. Put the clauses in the
-query yourself. `--limit` still applies, since it bounds paging rather than the
-query.
-
-**Two things `search` cannot find.** Archived pages are invisible to the search
-index entirely, and so are folders. Both are what `find` is for. The index also
-lags by up to about a minute, so a page created moments ago may not be there yet
-— anything that has to be correct *now* should use `find`.
-
-Finding nothing is a success: the command prints `No matches found.` and exits 0.
+The index also lags by up to about a minute, so a page created moments ago may
+not be there yet — anything that must be correct *now* should use `find`.
 
 The evidence behind the query it builds — including why it uses `siteSearch` and
 not the `text` field Atlassian documents — is in
@@ -700,7 +670,8 @@ Usage: markfluence export PAGE [flags]
 ```
 
 Write a page and the attachments it uses to a directory — the one-command form
-of `read` plus `attachment-download`.
+of `read` plus `attachment-download`. `markfluence export --help` covers what
+`--depth` and `--space` walk, and what the frontmatter it writes is for.
 
 ```console
 $ markfluence export 1234567890 --dest ./out
@@ -709,14 +680,9 @@ downloaded out/assets/diagram.png
            (skipped 2 unreferenced attachment(s); --all-attachments to include)
 ```
 
-The page is written as Markdown with `title`/`space`/`parent`/`page_id`/
-`labels`/`page_width` frontmatter — byte-identical to what `read` prints — so an exported
-file can be edited and published straight back with `update`.
-
 Attachments are written to the paths their images were published from, so the
 exported tree matches the layout of the repo the page came from and previews
-locally in GitHub or VSCode. `--depth` exports the page's descendants as well, mirroring the Confluence
-hierarchy:
+locally in GitHub or VSCode.
 
 ```console
 $ markfluence export 1234567890 --depth all --dest out
@@ -730,23 +696,20 @@ downloaded out/handbook/onboarding/diagram.png
 A page becomes `<slug>.md` with a `<slug>/` beside it holding its children and
 its own Confluence-native attachments; a folder becomes a directory. Each
 child's `parent:` points at its parent's file (`parent: ../handbook.md`), so the
-tree can be published into fresh pages rather than only back into the ids it
-came from. `--depth` takes `0` (the default, the page alone), a positive number,
-or `all`.
-
-`--space KEY` exports a whole space instead of a page, its root pages forming
-the top level. It needs an explicit `--depth`, since walking a space costs a
-pair of requests per page and folder in it. A **folder** can be the target too,
-in which case what is inside it becomes the top level.
+tree publishes into fresh pages rather than only back into the ids it came from.
+`--depth` takes `0` (the default, the page alone), a positive number, or `all`.
 
 `markfluence.yaml` is written at `--dest` for a multi-page export, marking it as
-a project root. Without it, each exported file's root would be its own
-directory, and a shared asset above a page would resolve outside it — so the
-tree would not publish back. An existing one is left alone.
+a project root. Without it each exported file's root would be its own directory,
+a shared asset above a page would resolve outside it, and the tree would not
+publish back. An existing one is left alone.
 
 A page whose file already exists is skipped, so a re-run resumes rather than
 re-fetching; `--force` re-exports everything, which is also how you refresh a
-tree whose pages changed upstream.
+tree whose pages changed upstream. `--file` names the page file, defaulting to a
+slug of the title, or the page id when the title slugs to nothing. `--dest`
+defaults to the current directory and is created if missing. `--dry-run`
+previews without writing. `--skip-attachments` writes the page file only.
 
 There is deliberately no `--attachments-dir`. It is no longer *unsafe* — an
 attachment is named by its base name, so moving `assets/x.png` to
@@ -754,18 +717,10 @@ attachment is named by its base name, so moving `assets/x.png` to
 everything into one directory reintroduces exactly the collision the base name
 already has to refuse: two pages' `diagram.png` cannot share a directory.
 
-Only attachments the page actually references are exported. That includes images,
-attachment links, and references inside macros markfluence passes through
-untouched. `--all-attachments` takes everything on the page instead;
-`--skip-attachments` writes the page file only.
-
-`--file` names the page file, defaulting to a slug of the title
-(`markfluence-test-page.md`), or the page id when the title slugs to nothing.
-`--dest` defaults to the current directory and is created if missing. Existing
-files are skipped unless `--force`, and `--dry-run` previews without writing.
-
-If the page references an attachment that isn't attached — already broken in
-Confluence — the export still succeeds and reports it as a warning.
+Referenced attachments include images, attachment links, and references inside
+macros markfluence passes through untouched. If the page references an
+attachment that is not attached — already broken in Confluence — the export
+still succeeds and reports it as a warning.
 
 Markdown is the only output format. Use `read --format storage` to inspect the
 raw storage Confluence holds.
