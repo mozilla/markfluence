@@ -370,6 +370,67 @@ instead.
   catch "published our docs to the wrong Confluence." Noted rather than filed;
   it waits for someone to want it.
 
+## What the review found — 2026-09-12
+
+Reviewed adversarially after implementation. Seven findings, all real; the first
+two were merge blockers.
+
+1. **The frontmatter refactor was not the pure one it claimed to be.** Threading
+   `Item` into the flat-mapping refusal turned `a flat mapping of key: value
+   pairs` into `a flat mapping of frontmatter: value pairs` — a user-facing
+   string that lands verbatim in `check --json`. It survived because the
+   existing assertion matched the substring `"flat mapping"`, which both
+   spellings contain. Fixed by making that word literal (`Item` names a
+   *named* key; a sentence about keys in general is not its job) and by
+   `TestParseErrorWordingIsExact`, which pins every message frontmatter
+   composes as a whole sentence.
+
+2. **`check`'s new lint was a false positive.** It reported an invalid
+   project-wide `page_width` for every file under the root, including a file
+   declaring its own width — which wins, so `update` publishes it fine. Its
+   justifying comment ("fails every publish under this root") was false against
+   the very resolvers it previews, and CLAUDE.md's rule for `check` is that a
+   false positive is worse than a miss. Now reported only for a file whose
+   frontmatter declares no width, which is exactly the set that would use the
+   default.
+
+3. **`ui.Debug` in `loadConfig` reported the wrong root, for commands that read
+   no settings.** Loading happens once per root for two unrelated reasons, and
+   the `.env` walk from the working directory is one of them — so `info --debug`
+   announced a project file it never consulted, and `create` described *cwd's*
+   root rather than a file's. Moved to `project.ReportSettings(cache)`, an
+   explicit call beside where each command already prints `root:`. Loading
+   prints nothing, pinned.
+
+4. **`--root` re-read the project file once per starting directory.** `Cache`
+   cached the override `Root` under `abs` only, so each new directory re-ran
+   `FromPath` — a second `os.OpenRoot` (already true before this branch) and now
+   a second file read. `Cache.overrideRoot` builds it once; `Close` dedupes by
+   `*Root` so a shared handle is not closed N times.
+
+5. **A UTF-8 BOM was diagnosed as "needs a newer markfluence."** A file a
+   Windows editor wrote reported an unknown setting whose name began U+FEFF.
+   Stripped, at the start of the file only.
+
+6. **`attachment-upload` still reported a `ConfigError` the old way** — wrapped
+   as `resolving the documentation root` and coded `IO`, contradicting the
+   CLAUDE.md bullet this branch added. Now `badInput`/`VALIDATION`, matching the
+   other three.
+
+7. **The reorder in `update` changed `roots` reporting for an all-skipped
+   batch** (it used to report none, since no file reached the root resolve).
+   Defensible — `roots` means every distinct root the command resolved, and it
+   did — but unrecorded either way.
+
+Two test-quality findings, both fixed: `TestRunProjectDefectIsScopedToItsOwnRoot`
+was trivially true (it named only the good project, so nothing would touch the
+bad tree under any implementation), and nothing pinned `update` making an actual
+width *request* from a project default — only `resolveWidth`'s bool. The new
+wire-level tests were sabotage-checked: flipping `apply` to false fails them.
+
+Doc drift the review caught: `CLAUDE.md` and `docs/guarantees.md` still cited
+`scalarValue`/`elementValue`, which the refactor renamed.
+
 ## Follow-ups
 
 - Make `client.ResolveOptions.Roots` an interface, then move `page_width`'s
