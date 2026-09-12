@@ -271,6 +271,41 @@
         "filename": { "type": "string" }
       }
     },
+    "labelAction": {
+      "description": "What happened to one label in an asserted set.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "name"],
+      "properties": {
+        "action": { "enum": ["added", "removed", "unchanged"] },
+        "name": { "type": "string" }
+      }
+    },
+    "labelActionsOrNull": {
+      "description": "The full label set asserted this run, or null when the file declares no labels key and the page's labels were left alone.",
+      "oneOf": [
+        { "type": "array", "items": { "$ref": "#/$defs/labelAction" } },
+        { "type": "null" }
+      ]
+    },
+    "labelInfo": {
+      "description": "One label a page carries. managed is true for the global prefix, the only one markfluence writes or removes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "prefix", "managed"],
+      "properties": {
+        "name": { "type": "string" },
+        "prefix": { "type": "string" },
+        "managed": { "type": "boolean" }
+      }
+    },
+    "labelInfoListOrNull": {
+      "description": "Every label on a page, or null when the fetch failed. An empty array means the page genuinely has none.",
+      "oneOf": [
+        { "type": "array", "items": { "$ref": "#/$defs/labelInfo" } },
+        { "type": "null" }
+      ]
+    },
     "singleOpFailure": {
       "description": "An operational failure for a single-target command (info/read): page not found, fetch error, etc.",
       "type": "object",
@@ -346,7 +381,7 @@
       "additionalProperties": false,
       "required": [
         "ok", "status", "dry_run", "file", "page_id", "title", "space", "url",
-        "version", "page_width", "attachments", "warnings", "broken", "error", "code"
+        "version", "page_width", "labels", "attachments", "warnings", "broken", "error", "code"
       ],
       "properties": {
         "ok": { "type": "boolean" },
@@ -369,6 +404,7 @@
           ]
         },
         "page_width": { "$ref": "#/$defs/pageWidthOrNull" },
+        "labels": { "$ref": "#/$defs/labelActionsOrNull" },
         "attachments": { "type": "array", "items": { "$ref": "#/$defs/attachment" } },
         "warnings": { "type": "array", "items": { "type": "string" } },
         "broken": { "type": "array", "items": { "type": "string" } },

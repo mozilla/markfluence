@@ -67,6 +67,7 @@ func TestJSONResultPublished(t *testing.T) {
     "value": "max",
     "default": false
   },
+  "labels": null,
   "attachments": [
     {
       "action": "updated",

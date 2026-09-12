@@ -16,6 +16,7 @@ import (
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagewidth"
@@ -167,6 +168,16 @@ func processFile(
 	if err != nil {
 		return r.fail(err, jsonout.CodeValidation)
 	}
+	// Before any request, and fatal: an invalid label is a local defect, and
+	// the one it exists to catch is not recoverable afterwards. A name holding
+	// a space publishes *successfully* as several labels that read back as none
+	// of what the file says, so there is no later run that can clean it up --
+	// see docs/confluence/labels.md.
+	labelSet, err := labels.Declared(mf.Lists, mf.Frontmatter)
+	if err != nil {
+		return r.fail(err, jsonout.CodeValidation)
+	}
+	r.warnings = append(r.warnings, labelSet.Warnings...)
 
 	// GetPageOrNil, not GetPage: a 404 here means the page_id is wrong, which is
 	// worth saying in words. Every other transport failure still reports itself.
@@ -235,6 +246,7 @@ func processFile(
 		}
 		r.versionNew = next
 		r.previewWidth(c, pageID, width, applyWidth)
+		r.previewLabels(c, pageID, labelSet)
 		r.ok = true
 		r.status = statusPublished
 		return r
@@ -274,6 +286,12 @@ func processFile(
 			}
 		}
 	}
+
+	// Labels last, and non-fatal for the same reason the width is: the page is
+	// published by the time this runs, so failing the result would report that
+	// the publish did not happen. A declared-but-unapplied set leaves labels
+	// null rather than claiming a set that is not there.
+	r.applyLabels(c, pageID, labelSet)
 
 	r.ok = true
 	r.status = statusPublished
@@ -342,4 +360,51 @@ func resolveWidth(cliPageWidth string, mf *frontmatter.MarkdownFile) (pagewidth.
 		return w, err == nil, err
 	}
 	return "", false, nil
+}
+
+// applyLabels asserts the declared label set, recording the per-label actions.
+//
+// A file that declares no labels key makes no request at all -- not merely no
+// write. That is what makes "absent means untouched" a property rather than an
+// implementation detail, and it is why the check is here rather than inside
+// labels.Apply, which refuses an undeclared set outright.
+//
+// A failure is a warning on a successful result, matching pagewidth.Apply: the
+// body is already published, and reporting the file as failed would say
+// otherwise. The labels field stays nil so nothing claims a set that was not
+// asserted.
+func (r *updateResult) applyLabels(c *client.ConfluenceClient, pageID string, s labels.Set) {
+	if !s.Declared {
+		return
+	}
+	actions, err := labels.Apply(c, pageID, s)
+	if err != nil {
+		r.warnings = append(r.warnings, "could not set labels: "+err.Error())
+		return
+	}
+	r.labels = toJSONLabels(actions)
+}
+
+// previewLabels reports the label changes a dry run would make, read-only. A
+// read failure is a warning, not fatal -- mirroring previewWidth.
+func (r *updateResult) previewLabels(c *client.ConfluenceClient, pageID string, s labels.Set) {
+	if !s.Declared {
+		return
+	}
+	actions, err := labels.Plan(c, pageID, s)
+	if err != nil {
+		r.warnings = append(r.warnings, "could not read labels: "+err.Error())
+		return
+	}
+	r.labels = toJSONLabels(actions)
+}
+
+// toJSONLabels converts label actions to the reported shape, always non-nil so
+// a declared-but-empty set renders as [] rather than null.
+func toJSONLabels(actions []labels.Action) []jsonout.Label {
+	out := make([]jsonout.Label, 0, len(actions))
+	for _, a := range actions {
+		out = append(out, jsonout.Label{Action: a.Action, Name: a.Name})
+	}
+	return out
 }

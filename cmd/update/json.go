@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/ui"
 )
 
@@ -30,6 +31,11 @@ type updateResult struct {
 	versionNew  int
 	width       *jsonout.PageWidth // set only when a width was asserted this run
 	widthSet    bool               // a "page width:" line should show (human)
+	// labels is nil when the file declares no labels key, which is the
+	// precedent page_width already sets for "not asserted this run" -- and it
+	// is load-bearing rather than cosmetic here, since an empty set is a
+	// meaningful declaration that means "remove them all".
+	labels      []jsonout.Label
 	attachments []jsonout.Attachment
 	broken      []string
 	warnings    []string
@@ -73,6 +79,11 @@ func (r *updateResult) renderHuman() {
 	if r.widthSet && r.width != nil {
 		ui.Info(prefix + " page width: " + r.width.Value)
 	}
+	for _, l := range r.labels {
+		if l.Action != labels.ActionUnchanged {
+			ui.Info(fmt.Sprintf("%s label %s: %s", prefix, l.Action, l.Name))
+		}
+	}
 	ui.Success(fmt.Sprintf("%s Published v%d: %s", prefix, r.versionNew, r.url))
 }
 
@@ -88,6 +99,7 @@ type jsonUpdateResult struct {
 	URL         *string              `json:"url"`
 	Version     *jsonUpdateVersion   `json:"version"`
 	PageWidth   *jsonout.PageWidth   `json:"page_width"`
+	Labels      *[]jsonout.Label     `json:"labels"`
 	Attachments []jsonout.Attachment `json:"attachments"`
 	Warnings    []string             `json:"warnings"`
 	Broken      []string             `json:"broken"`
@@ -111,6 +123,7 @@ func (r *updateResult) jsonResult() jsonUpdateResult {
 		Space:       strOrNil(r.space),
 		URL:         strOrNil(r.url),
 		PageWidth:   r.width,
+		Labels:      labelsOrNil(r.labels),
 		Attachments: nonNilAttachments(r.attachments),
 		Warnings:    nonNilStrings(r.warnings),
 		Broken:      nonNilStrings(r.broken),
@@ -125,6 +138,18 @@ func (r *updateResult) jsonResult() jsonUpdateResult {
 		res.Code = &c
 	}
 	return res
+}
+
+// labelsOrNil renders the labels field: an array when the file declared the
+// key, null when it did not. A pointer to a slice rather than a slice, because
+// an empty declared set and an absent key are different answers -- "[]" means
+// the page's labels were removed, null means they were never touched -- and a
+// nil slice cannot say which.
+func labelsOrNil(l []jsonout.Label) *[]jsonout.Label {
+	if l == nil {
+		return nil
+	}
+	return &l
 }
 
 // summarize builds update's batch summary.

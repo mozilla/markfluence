@@ -382,3 +382,230 @@ func TestProcessFileKeepsLiveTitleWhenAbsent(t *testing.T) {
 		t.Errorf("title = %q, want the live page's title", r.title)
 	}
 }
+
+// --- labels -------------------------------------------------------------------
+
+// labelServer answers a publish plus whatever label traffic the run makes,
+// recording every label path it sees so a test can assert on requests that
+// were *not* made.
+func labelServer(t *testing.T, live string, paths *[]string) *client.ConfluenceClient {
+	t.Helper()
+	return clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "label") {
+			*paths = append(*paths, r.Method+" "+r.URL.Path+"?"+r.URL.RawQuery)
+			if r.Method == http.MethodGet {
+				_, _ = w.Write([]byte(live))
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			_, _ = w.Write([]byte(pageWithVersion("1", 3, "2020-01-01T00:00:00Z")))
+		case http.MethodPut:
+			_, _ = w.Write([]byte(pageWithVersion("1", 4, "2026-01-01T00:00:00Z")))
+		default:
+			t.Errorf("unexpected method: %s %s", r.Method, r.URL.Path)
+		}
+	})
+}
+
+// TestProcessFileAbsentLabelsMakesNoRequest is the test that makes "absent
+// means untouched" a property rather than an implementation detail. Not merely
+// "no write": no *request*, so there is no path by which a run that never
+// mentioned labels can decide to change them.
+func TestProcessFileAbsentLabelsMakesNoRequest(t *testing.T) {
+	var paths []string
+	c := labelServer(t, `{"results":[]}`, &paths)
+	path := writeUpdateFixture(t, "---\npage_id: 1\n---\nHello.\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	if !r.ok {
+		t.Fatalf("result = %+v, want ok", r)
+	}
+	if len(paths) != 0 {
+		t.Errorf("label requests = %v, want none for a file with no labels key", paths)
+	}
+	if r.labels != nil {
+		t.Errorf("r.labels = %v, want nil so --json reports null", r.labels)
+	}
+}
+
+// TestProcessFileAssertsTheDeclaredSet: declared means exact, so a label on the
+// page that the file does not list is removed.
+func TestProcessFileAssertsTheDeclaredSet(t *testing.T) {
+	var paths []string
+	live := `{"results":[
+		{"id":"1","name":"runbook","prefix":"global"},
+		{"id":"2","name":"stale","prefix":"global"}
+	]}`
+	c := labelServer(t, live, &paths)
+	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: [runbook, howto]\n---\nHello.\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	if !r.ok || r.status != statusPublished {
+		t.Fatalf("result = %+v, want ok/published", r)
+	}
+	got := map[string]string{}
+	for _, l := range r.labels {
+		got[l.Name] = l.Action
+	}
+	want := map[string]string{"howto": "added", "stale": "removed", "runbook": "unchanged"}
+	for name, action := range want {
+		if got[name] != action {
+			t.Errorf("labels[%q] = %q, want %q (all: %v)", name, got[name], action, r.labels)
+		}
+	}
+	// The removal must go out as ?name=, never a path segment.
+	var sawRemoval bool
+	for _, p := range paths {
+		if strings.HasPrefix(p, http.MethodDelete) {
+			sawRemoval = true
+			if !strings.Contains(p, "?name=stale") {
+				t.Errorf("removal request = %q, want the ?name= form", p)
+			}
+		}
+	}
+	if !sawRemoval {
+		t.Error("want the surplus label removed")
+	}
+}
+
+// TestProcessFileUnmanagedLabelsSurvive: a my: or team: label has no
+// frontmatter spelling, so asserting a set that cannot mention it must not
+// remove it.
+func TestProcessFileUnmanagedLabelsSurvive(t *testing.T) {
+	var paths []string
+	live := `{"results":[
+		{"id":"1","name":"mine","prefix":"my"},
+		{"id":"2","name":"eng","prefix":"team"}
+	]}`
+	c := labelServer(t, live, &paths)
+	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: [runbook]\n---\nHello.\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	if !r.ok {
+		t.Fatalf("result = %+v, want ok", r)
+	}
+	for _, p := range paths {
+		if strings.HasPrefix(p, http.MethodDelete) {
+			t.Errorf("removal request %q, want no unmanaged label removed", p)
+		}
+	}
+}
+
+// TestProcessFileEmptyLabelsRemovesThemAll pins the other half of the
+// absent/empty distinction: "labels: []" is a declaration, not a no-op.
+func TestProcessFileEmptyLabelsRemovesThemAll(t *testing.T) {
+	var paths []string
+	c := labelServer(t, `{"results":[{"id":"1","name":"stale","prefix":"global"}]}`, &paths)
+	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: []\n---\nHello.\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	if !r.ok {
+		t.Fatalf("result = %+v, want ok", r)
+	}
+	if r.labels == nil {
+		t.Fatal("r.labels = nil, want [] so --json distinguishes it from an absent key")
+	}
+	if len(r.labels) != 1 || r.labels[0].Action != "removed" {
+		t.Errorf("labels = %v, want stale removed", r.labels)
+	}
+}
+
+// TestProcessFileInvalidLabelFailsBeforeAnyWrite is the ordering that matters:
+// a name Confluence would split publishes successfully and cannot then be
+// cleaned up, so the run must stop before the body goes out.
+func TestProcessFileInvalidLabelFailsBeforeAnyWrite(t *testing.T) {
+	var sawWrite bool
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			sawWrite = true
+		}
+		_, _ = w.Write([]byte(pageWithVersion("1", 3, "2020-01-01T00:00:00Z")))
+	})
+	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: [Runbook Two]\n---\nHello.\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	if r.ok {
+		t.Fatal("result ok, want a validation failure")
+	}
+	if r.code != jsonout.CodeValidation {
+		t.Errorf("code = %q, want VALIDATION", r.code)
+	}
+	if sawWrite {
+		t.Error("a write went out for a file with an invalid label")
+	}
+}
+
+// TestProcessFileLabelFailureIsAWarning: the body is published by the time
+// labels are applied, so a label failure must not report the publish as failed.
+func TestProcessFileLabelFailureIsAWarning(t *testing.T) {
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "label") {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"message":"boom"}`))
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			_, _ = w.Write([]byte(pageWithVersion("1", 3, "2020-01-01T00:00:00Z")))
+		default:
+			_, _ = w.Write([]byte(pageWithVersion("1", 4, "2026-01-01T00:00:00Z")))
+		}
+	})
+	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: [runbook]\n---\nHello.\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	if !r.ok || r.status != statusPublished {
+		t.Fatalf("result = %+v, want the publish still reported as ok", r)
+	}
+	if r.labels != nil {
+		t.Errorf("r.labels = %v, want nil rather than a set that was not asserted", r.labels)
+	}
+	if !strings.Contains(strings.Join(r.warnings, " "), "could not set labels") {
+		t.Errorf("warnings = %q, want the label failure reported", r.warnings)
+	}
+}
+
+// TestProcessFileLabelCaseWarns: lowercasing is a repair, so the run succeeds,
+// but silently rewriting an author's label is how a file stays out of step with
+// its page forever.
+func TestProcessFileLabelCaseWarns(t *testing.T) {
+	var paths []string
+	c := labelServer(t, `{"results":[]}`, &paths)
+	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: [Runbook]\n---\nHello.\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	if !r.ok {
+		t.Fatalf("result = %+v, want ok", r)
+	}
+	if !strings.Contains(strings.Join(r.warnings, " "), "not lowercase") {
+		t.Errorf("warnings = %q, want the case warning", r.warnings)
+	}
+	if len(r.labels) != 1 || r.labels[0].Name != "runbook" {
+		t.Errorf("labels = %v, want the lowercased name", r.labels)
+	}
+}
+
+// TestProcessFileSkippedFileSkipsLabels: a file the mtime check skipped is
+// skipped entirely, labels included.
+func TestProcessFileSkippedFileSkipsLabels(t *testing.T) {
+	var paths []string
+	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "label") {
+			paths = append(paths, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(pageWithVersion("1", 3, "2999-01-01T00:00:00Z")))
+	})
+	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: [runbook]\n---\nHello.\n")
+
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache())
+	if r.status != statusSkipped {
+		t.Fatalf("status = %q, want skipped", r.status)
+	}
+	if len(paths) != 0 {
+		t.Errorf("label requests = %v, want none for a skipped file", paths)
+	}
+}
