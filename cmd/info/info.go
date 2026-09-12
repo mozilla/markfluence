@@ -29,8 +29,17 @@ var Cmd = &cobra.Command{
 	Use:   "info PAGE",
 	Short: "Print metadata about a Confluence page",
 	Long: "Print metadata about a Confluence page.\n\n" +
+		"Id, title, status, space, parent, version, page width, labels, the\n" +
+		"created/updated author stamps, and the page URL. An empty field is\n" +
+		"omitted rather than printed blank.\n\n" +
 		"PAGE is a numeric page id, a Confluence page URL, or a markdown file\n" +
-		"whose frontmatter has a page_id.",
+		"whose frontmatter has a page_id.\n\n" +
+		"--properties also lists every one of the page's content properties, which\n" +
+		"is where Confluence keeps things like the page width.",
+	Example: "  # By page id\n" +
+		"  markfluence info 1234567890\n\n" +
+		"  # By the file that publishes to it, with content properties\n" +
+		"  markfluence info docs/foo.md --properties",
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
 	RunE:              run,

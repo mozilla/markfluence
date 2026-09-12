@@ -22,6 +22,10 @@ var Cmd = &cobra.Command{
 		"validate real --json output read that same embedded copy.\n\n"+
 		"The output is the schema document itself, so --json changes nothing here.",
 		jsonout.SchemaVersion),
+	Example: "  # Save the schema\n" +
+		"  markfluence schema > schema.json\n\n" +
+		"  # Which commands emit a --json envelope\n" +
+		"  markfluence schema | jq -r '.properties.command.enum | join(\" \")'\n",
 	Args: cobra.NoArgs,
 	// The command takes no arguments; without this, completion would offer every
 	// file in the directory.

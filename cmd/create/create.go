@@ -56,15 +56,44 @@ var Cmd = &cobra.Command{
 	Use:   "create FILE...",
 	Short: "Create new Confluence pages from markdown files",
 	Long: "Create new Confluence pages from markdown FILEs.\n\n" +
+		"The title comes from frontmatter, or from --title, which overrides it and\n" +
+		"requires a single FILE. The space comes from --space or frontmatter. The\n" +
+		"parent comes from --parent or frontmatter and may be a page or a Cloud\n" +
+		"folder -- give a folder's id the same way you would a page's. Page width\n" +
+		"defaults to max.\n\n" +
 		"Every file is checked first -- including converting it -- and if any would\n" +
-		"fail, nothing is created.\n" +
-		"Otherwise a content-less stub is reserved for each, parents-first, before\n" +
-		"any of them is converted -- so a link between two files in the same batch\n" +
-		"resolves regardless of which direction it points, or whether the two link\n" +
-		"to each other. A parent cycle among the given files is rejected instead.\n" +
-		"--title and --page-width override the frontmatter (--title requires\n" +
-		"a single FILE). Unless --no-persist is given, each created page's\n" +
-		"title/space/parent/page_id/page_width are written back into the frontmatter.",
+		"fail, nothing is created. A page_id that resolves to nothing is a failure\n" +
+		"too, not a fresh page: create will not publish a second copy and overwrite\n" +
+		"an id it cannot explain. Remove the page_id to create a new page, or\n" +
+		"correct it.\n\n" +
+		"Once every file passes, a content-less stub is reserved for each,\n" +
+		"parents-first, before any of them is converted -- so a link between two\n" +
+		"files in the same batch resolves regardless of which direction it points,\n" +
+		"or whether the two link to each other. A parent cycle among the given\n" +
+		"files is rejected instead. A run interrupted after the reserve phase\n" +
+		"leaves an empty page version behind rather than no page; every id is\n" +
+		"already written back, so a plain update finishes the job.\n\n" +
+		"A whole tree can be created in one pass: give each child a parent: that\n" +
+		"points at its parent's .md file, and creation is ordered parents-first\n" +
+		"with the real ids filled in.\n\n" +
+		"Unless --no-persist is given, each created page's\n" +
+		"title/space/parent/page_id/page_width/labels are written back into the\n" +
+		"frontmatter.\n\n" +
+		"--dry-run makes the same checks as a real run, so it exits non-zero on the\n" +
+		"same failures and one unpublishable file aborts the preview for the whole\n" +
+		"batch. To lint several files independently, use check instead.",
+	Example: "  # Create one page in a space\n" +
+		"  markfluence create docs/new_page.md --space ENG\n\n" +
+		"  # Create it under an existing parent page or folder\n" +
+		"  markfluence create docs/child.md --space ENG --parent 123456\n\n" +
+		"  # Create a whole tree, hierarchy taken from each file's parent: path\n" +
+		"  markfluence create docs/*.md --space ENG\n\n" +
+		"  # Override the title and width for a single file\n" +
+		"  markfluence create note.md --space ENG --title \"Ad-hoc note\" --page-width wide\n\n" +
+		"  # Create without writing page_id back into the file\n" +
+		"  markfluence create note.md --space ENG --no-persist\n\n" +
+		"  # Preview everything, write nothing\n" +
+		"  markfluence create docs/*.md --space ENG --dry-run",
 	Args:              cobra.MinimumNArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
 	RunE:              run,

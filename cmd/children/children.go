@@ -44,6 +44,19 @@ var Cmd = &cobra.Command{
 		"would show nothing for a folder that contains folders.\n\n" +
 		"A folder counts as a level: at the default --depth 1 a child folder\n" +
 		"appears as a row, and --depth 2 shows what is inside it.",
+	Example: "  # Direct children of a page\n" +
+		"  markfluence children 1234567890\n\n" +
+		"  # Deeper, or the whole subtree\n" +
+		"  markfluence children 1234567890 --depth 3\n" +
+		"  markfluence children 1234567890 --depth all\n\n" +
+		"  # By folder URL, or by the file that publishes to a page\n" +
+		"  markfluence children \"https://org.atlassian.net/wiki/spaces/ENG/folder/1234567890\"\n" +
+		"  markfluence children docs/index.md\n\n" +
+		"  # A whole space, and every page and folder in it\n" +
+		"  markfluence children --space ENG\n" +
+		"  markfluence children --space ENG --depth all\n\n" +
+		"  # Just the page ids\n" +
+		"  markfluence children 1234567890 --json | jq -r '.results[] | select(.type==\"page\") | .id'\n",
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
 	RunE:              run,

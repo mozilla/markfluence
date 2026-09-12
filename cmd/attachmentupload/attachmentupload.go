@@ -47,6 +47,13 @@ var Cmd = &cobra.Command{
 		"Two files whose base names agree cannot both be uploaded to one page,\n" +
 		"since an attachment name is unique per page; that is refused rather\n" +
 		"than silently overwriting.",
+	Example: "  # Upload one file, or several\n" +
+		"  markfluence attachment-upload 1234567890 diagram.png\n" +
+		"  markfluence attachment-upload 1234567890 report.pdf notes.txt\n\n" +
+		"  # Store it under the path a markdown image would reference\n" +
+		"  markfluence attachment-upload 1234567890 img.png --name assets/diagram.png\n\n" +
+		"  # Re-upload even though the checksum matches\n" +
+		"  markfluence attachment-upload 1234567890 diagram.png --force\n",
 	Args:              cobra.MinimumNArgs(2),
 	ValidArgsFunction: completion.PageThenFiles,
 	RunE:              run,

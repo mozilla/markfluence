@@ -27,14 +27,28 @@ var Cmd = &cobra.Command{
 	Use:   "fix FILE...",
 	Short: "Reconcile each markdown file's frontmatter to its live Confluence page",
 	Long: "Reconcile each markdown file's frontmatter to its live Confluence page.\n\n" +
-		"Populates/refreshes page_id, space, parent, and page_width (and fills a\n" +
-		"missing title) from the live page. Each file is processed independently;\n" +
-		"the command exits non-zero if any file failed.\n\n" +
+		"Populates/refreshes page_id, space, parent, page_width and labels (and\n" +
+		"fills a missing title) from the live page. The page is located by page_id,\n" +
+		"or by searching for the title when page_id is absent. fix never creates,\n" +
+		"updates or moves pages -- it is read-only on the server. Each file is\n" +
+		"processed independently; the command exits non-zero if any file failed.\n\n" +
+		"It writes a file when a field changed, and also when the frontmatter keys\n" +
+		"are out of canonical order (title, space, parent, page_id, then the rest\n" +
+		"alphabetically), which is reported separately as reordered. --dry-run\n" +
+		"reports both without writing.\n\n" +
+		"Labels are reconciled even for a file with no labels: line, which is how\n" +
+		"you adopt a page somebody labeled in the UI. That is the one place fix\n" +
+		"fills in a field update would have left alone, because fix reconciles the\n" +
+		"file to the page rather than the page to the file.\n\n" +
 		"parent is written as the live page's parent id. In a tree written by\n" +
 		"`export --depth`, where parent points at the parent's own .md file,\n" +
 		"fix therefore replaces that path with an id -- consistent with\n" +
 		"reconciling to the live page, and worth knowing before running it over\n" +
 		"an exported tree.",
+	Example: "  # Reconcile a batch of files to their live pages\n" +
+		"  markfluence fix docs/*.md\n\n" +
+		"  # Report what would change, write nothing\n" +
+		"  markfluence fix docs/foo.md --dry-run",
 	Args:              cobra.MinimumNArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
 	RunE:              run,

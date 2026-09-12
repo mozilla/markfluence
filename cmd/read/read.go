@@ -33,8 +33,27 @@ var Cmd = &cobra.Command{
 		"PAGE is a numeric page id, a Confluence page URL (the modern\n" +
 		"/wiki/.../pages/<id>/... form or a legacy ?pageId=<id> URL), or a\n" +
 		"markdown file whose frontmatter has a page_id.\n\n" +
-		"The default markdown output carries title/space/parent/page_id/page_width\n" +
-		"frontmatter and is a best-effort inverse of what create/update publish.",
+		"It composes with shell redirection.\n\n" +
+		"--format markdown (the default) carries\n" +
+		"title/space/parent/page_id/labels/page_width frontmatter and is a\n" +
+		"best-effort inverse of what create/update publish. The Confluence API has\n" +
+		"no markdown representation, so the storage body is converted here:\n" +
+		"constructs markfluence emits round-trip faithfully, while editor-authored\n" +
+		"content degrades gracefully -- a macro markfluence does not map, and a\n" +
+		"column layout, pass through as raw storage tags with their bodies kept as\n" +
+		"readable markdown, so they publish back unchanged. Some transforms are\n" +
+		"lossy (a table cell colour outside the named swatches comes back as a\n" +
+		"literal hex), so this is a reading aid rather than a guaranteed source\n" +
+		"round-trip.\n\n" +
+		"--format storage prints the raw storage-format XHTML exactly as stored.",
+	Example: "  # Markdown, with frontmatter, to stdout\n" +
+		"  markfluence read 1234567890\n\n" +
+		"  # Save it as a file you can edit and publish back\n" +
+		"  markfluence read 1234567890 > page.md\n\n" +
+		"  # The raw storage Confluence holds\n" +
+		"  markfluence read 1234567890 --format storage > page.storage.xml\n\n" +
+		"  # By URL\n" +
+		"  markfluence read \"https://org.atlassian.net/wiki/spaces/ENG/pages/1234567890/Title\"",
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
 	RunE:              run,

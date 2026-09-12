@@ -76,6 +76,14 @@ var Cmd = &cobra.Command{
 		"and not per space. Only attachments the page references are exported;\n" +
 		"--all-attachments takes everything on the page.\n\n" +
 		"This is the one-command form of `read` plus `attachment-download`.",
+	Example: "  # One page and the attachments it uses\n" +
+		"  markfluence export 1234567890 --dest ./out\n\n" +
+		"  # The page and its whole subtree, hierarchy mirrored on disk\n" +
+		"  markfluence export 1234567890 --depth all --dest out\n\n" +
+		"  # A whole space; --depth is required for a space walk\n" +
+		"  markfluence export --space ENG --depth all --dest out\n\n" +
+		"  # Re-export a tree whose pages changed upstream\n" +
+		"  markfluence export 1234567890 --depth all --dest out --force\n",
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
 	RunE:              run,
