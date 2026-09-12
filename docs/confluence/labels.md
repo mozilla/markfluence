@@ -9,11 +9,14 @@ Reads are v2; **writes are v1**, like attachments — but *not* at the path the
 attachment routes would lead you to guess. The one thing to read before touching
 any of this:
 
-| | route |
-|---|---|
-| read | `GET /wiki/api/v2/pages/{id}/labels` |
-| add | `POST /wiki/rest/api/content/{id}/label` |
-| remove | `DELETE /wiki/rest/api/content/{id}/label?name=…` |
+| | route | scope |
+|---|---|---|
+| read | `GET /wiki/api/v2/pages/{id}/labels` | `read:page:confluence` |
+| add | `POST /wiki/rest/api/content/{id}/label` | `write:confluence-content` |
+| remove | `DELETE /wiki/rest/api/content/{id}/label?name=…` | `write:confluence-content` |
+
+`write:confluence-content` is the only scope labels add, and the one a token
+granted before #138 will be missing.
 
 **Not `child/label`** — that collection is read-only for labels and answers a
 write with a 405. And **not** a name in the path — that breaks on `ci/cd`. Both
@@ -201,10 +204,13 @@ case below was observed, and the page was purged afterward:
 
 ## What is not verified
 
-- **The OAuth scope for the v1 label routes.** An unscoped personal token works
-  through the gateway, which says nothing about what scope a scoped token would
-  need; [api.md](api.md#scopes) records that v1 scopes cannot be looked up. A
-  scoped-token run will settle it.
+- **That a *scoped* token with the right scope actually works.** The scope
+  itself is no longer a guess — it is `write:confluence-content` for both
+  writes, **derived 2026-09-11** from the v1 OpenAPI document the rest of
+  [api.md's scope table](api.md#scopes) comes from, and `read:page:confluence`
+  for the v2 read, which any working token already has. What is untested is a
+  real scoped token exercising them; the end-to-end run above used an unscoped
+  personal token, which is scope-blind.
 - **Whether the 255-unit cap is enforced on the v2 read path.** Irrelevant
   unless a label was created by some other client that bypassed it.
 
