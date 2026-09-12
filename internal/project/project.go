@@ -1,10 +1,18 @@
 // Package project discovers the root of a markfluence project: the directory
 // holding markfluence.yaml, found by walking up from a starting directory.
 //
-// The marker file's existence is its whole meaning -- nothing in it is parsed
-// or executed, and discovery decides only where the root is, never authorizes
-// anything the file might someday declare. See _plans/026's security review
-// for why that separation is deliberate.
+// The marker file declares project-wide settings (Config, #100), and a file
+// that cannot be understood is not a valid marker: discovery fails rather than
+// walking on to an ancestor or falling back to the starting directory.
+//
+// What the file still never does is authorize anything. It is read, never
+// executed, and discovery decides only where the root is -- it does not grant
+// a project the ability to redirect credentials, which is why Config holds no
+// url or token and why a setting there answers "what is this content" rather
+// than "who are you". See _plans/026's security review for why that separation
+// is deliberate, and _plans/038 for the sharper form of it: basic auth goes to
+// whatever host the resolved URL names, so a committed, walked-up file naming
+// one would decide where the token is sent.
 //
 // Discover is called from two different starting points for two different
 // reasons, which is why this package returns a Root rather than a bare string:
@@ -35,6 +43,9 @@ type Root struct {
 	// File is the absolute path to markfluence.yaml, or "" when none was
 	// found and Dir fell back to the starting directory.
 	File string
+	// Config is what that file declares, zero-valued when there is no file
+	// (or when the file declares nothing, which is the shape that ships).
+	Config Config
 	// FS scopes every read to Dir: a path cannot escape it, even via a
 	// symlink partway down its traversal, which a lexical containment check
 	// cannot see but os.Root refuses outright. Callers close it when done.
@@ -104,13 +115,32 @@ func probeMarker(dir string) (hit bool, file string, err error) {
 	}
 }
 
-// open builds a Root for dir, opening an os.Root scoped to it.
+// open builds a Root for dir, opening an os.Root scoped to it and loading the
+// project file's settings when there is one.
+//
+// The load happens here because this is the single place a Root is built from a
+// marker: Discover, Cache.walkAndCache and FromPath all reach it, so the rule
+// that a project file which cannot be understood is not a valid marker exists
+// in one copy and the three cannot come to disagree about it. Nothing keeps
+// walking upward for a better marker and nothing falls back to the starting
+// directory: the root decides every attachment name, bounds every read, and
+// anchors the link index, so a file that cannot be understood means the
+// project's boundary is unknown, and guessing is worse than stopping (#100).
+//
+// Loading precedes OpenRoot so a refusal leaks no handle.
 func open(dir, file string) (*Root, error) {
+	cfg := Config{}
+	if file != "" {
+		var err error
+		if cfg, err = loadConfig(file); err != nil {
+			return nil, err
+		}
+	}
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return nil, err
 	}
-	return &Root{Dir: dir, File: file, FS: root}, nil
+	return &Root{Dir: dir, File: file, Config: cfg, FS: root}, nil
 }
 
 // FromPath builds a Root directly from an explicit directory, bypassing
