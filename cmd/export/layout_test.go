@@ -377,7 +377,8 @@ func TestCollisionWarningSurvivesASuccessfulExport(t *testing.T) {
 	}
 
 	res := exportOne(c, p, dir, pagedoc.Placement{AttachmentDir: "runbook"},
-		placement{file: "runbook.md", childDir: "runbook", warning: "COLLISION"}, newClaims())
+		placement{file: "runbook.md", childDir: "runbook", warning: "COLLISION"},
+		newClaims(), pagedoc.NewUserCache())
 	if res.err != nil {
 		t.Fatalf("export: %v", res.err)
 	}

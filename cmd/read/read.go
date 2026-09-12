@@ -88,7 +88,10 @@ func run(cmd *cobra.Command, args []string) error {
 		// no directory for a path to be relative to. An attachment with no
 		// recorded path therefore reads as <slug>/<name>, which is where
 		// attachment-download puts it.
-		body, err = convert.StorageToMarkdown(page.Body.Storage.Value, pagedoc.Options(c, page, pagedoc.Placement{}))
+		// A fresh cache: read handles one page, so there is nothing for it to
+		// share with, and a cache scoped to the command cannot outlive it.
+		body, err = convert.StorageToMarkdown(page.Body.Storage.Value,
+			pagedoc.Options(c, page, pagedoc.Placement{}, pagedoc.NewUserCache()))
 		if err != nil {
 			return operationalFail(pageID, err, jsonout.CodeConvert)
 		}
