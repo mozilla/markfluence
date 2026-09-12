@@ -3,6 +3,8 @@ package convert_test
 import (
 	"strings"
 	"testing"
+
+	"github.com/mozilla/markfluence/internal/convert"
 )
 
 const mentionID = "712020:0e5f8a21-3c4d-4e5f-a6b7-c8d9e0f1a2b3"
@@ -133,5 +135,68 @@ func TestMentionMarkerInsideAChildNodeStillCounts(t *testing.T) {
 		if len(mentions) != 1 {
 			t.Errorf("text %q: Mentions = %q, want the marker found in a child node", text, mentions)
 		}
+	}
+}
+
+// TestMentionRoundTripIsAFixedPoint is the guarantee that makes this a round
+// trip rather than two independent conversions: once a page has been through
+// markfluence, it stops moving.
+//
+// The first cycle *does* change the storage, and that is expected and
+// converges: Confluence's editor writes ri:local-id and markfluence does not,
+// so the republished storage is shorter. The same shape as the documented
+// attachment exception in docs/guarantees.md -- a native attachment gets
+// restamped once. What must hold is that cycle two onward changes nothing.
+func TestMentionRoundTripIsAFixedPoint(t *testing.T) {
+	names := map[string]string{mentionID: "Ada Lovelace"}
+	editor := `<p>Ping <ac:link><ri:user ri:account-id="` + mentionID +
+		`" ri:local-id="4df0b1cc-1111-2222-3333-444455556666" /></ac:link> about it.</p>`
+
+	toMD := func(storage string) string {
+		t.Helper()
+		md, err := convert.StorageToMarkdown(storage, convert.StorageOptions{UserNames: names})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return md
+	}
+
+	firstMD := toMD(editor)
+	firstStorage, _ := mentioned(t, firstMD+"\n")
+	secondMD := toMD(firstStorage)
+	if firstMD != secondMD {
+		t.Errorf("markdown moved between cycles:\n first: %q\nsecond: %q", firstMD, secondMD)
+	}
+	secondStorage, _ := mentioned(t, secondMD+"\n")
+	if firstStorage != secondStorage {
+		t.Errorf("storage moved between cycles:\n first: %q\nsecond: %q", firstStorage, secondStorage)
+	}
+	// The one-time convergence, asserted rather than assumed: the editor's
+	// local-id is gone after the first republish and never comes back.
+	if !strings.Contains(editor, "local-id") || strings.Contains(firstStorage, "local-id") {
+		t.Errorf("expected the local-id dropped exactly once; got %q", firstStorage)
+	}
+}
+
+// TestMentionRoundTripSurvivesAnUnresolvedName: when the name cannot be
+// resolved the mention stays raw storage, and *that* has to be a fixed point
+// too -- it is the common case for a deactivated account, and a page full of
+// them must not churn on every export.
+func TestMentionRoundTripSurvivesAnUnresolvedName(t *testing.T) {
+	editor := `<p>Ping <ac:link><ri:user ri:account-id="` + mentionID + `" /></ac:link> about it.</p>`
+	first, err := convert.StorageToMarkdown(editor, convert.StorageOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	republished, _ := mentioned(t, first+"\n")
+	second, err := convert.StorageToMarkdown(republished, convert.StorageOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Errorf("unresolved mention moved:\n first: %q\nsecond: %q", first, second)
+	}
+	if !strings.Contains(first, "ri:user") {
+		t.Errorf("markdown = %q, want the storage passed through", first)
 	}
 }
