@@ -106,6 +106,56 @@ target's own title.
 where it is a value and not a link. Those reach `serialize` through the
 unknown-macro path and never the renderer, which is what keeps them intact.
 
+### A mention needs only the account id — verified 2026-09-11
+
+The question #91 turns on: can a mention be reconstructed from the account id
+alone, or does `ri:local-id` carry something? If the local-id were required,
+nothing markdown can hold would republish as a mention and passthrough would be
+the only honest answer.
+
+Three spellings published to a scratch page and read back as **ADF**
+(`body-format=atlas_doc_format`), which is what the editor itself uses:
+
+| published storage | ADF node |
+|---|---|
+| `<ac:link><ri:user ri:account-id="60c36…" ri:local-id="4df0b1cc-…" /></ac:link>` | `mention` `{"id":"60c36…","localId":"4df0b1cc-…","text":"@William Kahn-Greene"}` |
+| `<ac:link><ri:user ri:account-id="60c36…" /></ac:link>` | `mention` `{"id":"60c36…","text":"@William Kahn-Greene"}` |
+| the same, self-closing `<ac:link>` | identical to the above |
+
+**The local-id is not required**, and its absence changes nothing a reader sees:
+the mention resolves to the same display name either way. So it belongs in
+`droppedAttrs`' category — a per-instance server-generated id — and dropping it
+on republish is correct rather than merely tolerated.
+
+Read as **ADF on purpose**. `body.storage` came back byte-identical for all
+three, and this file's own warning is that storage proves only what was stored;
+a `mention` node in ADF is what proves Confluence understood it as a mention
+rather than inert markup it happened to keep.
+
+### Two things the same probe turned up
+
+**ADF names every mention, for free.** Each node carries
+`attrs.text` — `"@William Kahn-Greene"` — so one ADF fetch of a page names every
+person mentioned on it, with no per-user lookup at all. That is a better answer
+than the bulk user route #91 wondered about. It is not free-free: `body-format`
+takes **one** value, and asking for two is the silently-discarded-filter trap
+again — `body-format=storage,atlas_doc_format` answers **200 with an empty
+`body` object** rather than an error. So harvesting names from ADF costs a
+second page fetch, against one `GET /user` per distinct account id.
+
+**An unresolvable account id publishes happily.** A syntactically plausible but
+nonexistent id (`712020:00000000-0000-0000-0000-000000000000`) was accepted,
+stored verbatim, and renders as a `mention` reading **`@Unlicensed user`**.
+Meanwhile `GET /wiki/rest/api/user?accountId=…` answers **404** for it
+(`No user found with key : null`), so `GetUser`'s best-effort `""` is the
+signal that an id cannot be resolved.
+
+Both directions follow from that. Inbound, an id `GetUser` cannot resolve has no
+name to render, so it passes through as storage. Outbound, **Confluence will not
+tell you an id is wrong** — a mangled one publishes as `@Unlicensed user`
+instead of failing — so a markdown mention whose id no longer resolves is worth
+reporting locally before publishing it, since the server never will.
+
 ### The mapping
 
 One rule: **convert when the markdown republishes to a link resolving to the
@@ -121,7 +171,8 @@ right answer wherever a markdown link would break.
 | `ac:anchor` alone, no matching heading | passthrough | a `#slug` matching no heading publishes as a dead relative href, silently |
 | `ri:space` | `[body](SITE/wiki/spaces/KEY)` | absolute URL, no lookup needed |
 | `ri:attachment` | passthrough | only images are uploaded, so `[x](Deck.ppt)` would publish as a dead relative href |
-| `ri:user` | passthrough | markdown has no mention |
+| `ri:user`, name resolved | `[@Display Name](SITE/wiki/people/{accountId})` | the id round-trips in the URL; only the account id is required to republish it as a mention (#91) |
+| `ri:user`, name unresolved | passthrough | no name to render, and the id alone says nothing to a reader |
 | `ri:blog-post` | passthrough | `SearchPagesByTitle` does not see blog posts |
 | no target at all | passthrough | nothing to link to |
 
