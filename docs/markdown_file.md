@@ -81,7 +81,11 @@ pages:
 ```
 
 An entry is the same block, moved — the same field names, the same value
-domains, the same canonical order. Both locations are legal, agreement is
+domains, the same canonical order. `create` writes one for you when the project
+uses `pages:` and the file carries no frontmatter of its own. The one value that
+is spelled differently in the two places is a `parent:` naming a `.md` file:
+root-relative in an entry, file-relative in frontmatter (see
+[root-model.md](root-model.md#pages--page-metadata-for-a-pristine-file)). Both locations are legal, agreement is
 silent, and an entry is *not* a fourth precedence level: frontmatter and an
 entry are two spellings of one level, so when both speak the rule is a
 disagreement rule rather than a precedence one. The details, and the path-key

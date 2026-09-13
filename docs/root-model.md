@@ -118,6 +118,21 @@ destroy:
 | `page_id`, `space`, `parent` | **error** — the file fails. A `page_id` pasted from an old file would publish over a live page |
 | `title`, `page_width`, `labels` | **warning**, and the frontmatter wins. Visible and recoverable |
 
+`markfluence create` writes an entry here when this is where the file's
+metadata belongs — a project that has chosen `pages:` never accidentally grows
+frontmatter, and one without it behaves exactly as before. A file that already
+carries its own frontmatter keeps it, so a half-migrated tree does not sprout
+entries behind you. `--no-persist` records nothing anywhere.
+
+One spelling to watch. A `parent:` that names a `.md` file is **relative to the
+root inside an entry** (like every `pages:` key) but **relative to the file** in
+frontmatter and on `create --parent` (matching how markdown links work). So the
+same parent is `docs/index.md` in an entry and `index.md` from a sibling file.
+markfluence translates between them, so nothing breaks — but if you move a
+`parent:` value from one location to the other by hand, re-spell it. `create`
+records the resolved page id rather than a path, so a round trip never hits
+this.
+
 Every command that takes a page accepts a pristine registered file, because they
 all resolve the argument through one place (`internal/pageref`): `markfluence
 info docs/deploy-runbook.md` works even though that file says nothing about
