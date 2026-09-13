@@ -772,3 +772,65 @@ Two things the live run found that the unit tests had not:
 Verified live end to end: a pristine parent created, a pristine child created
 under it, then `update docs/*.md` publishing both from the manifest — with
 neither markdown file carrying any frontmatter. Pages purged.
+
+## What PR 2's review found — 2026-09-12
+
+Ten findings. No corruption or data loss: `verifyNested` and the loader re-check
+held, and every bad shape ended as a refusal with the file byte-identical. The
+recurring defect was one level down, and it is the lesson worth keeping:
+**the writer assumed a file it had written — two-space indent, LF, no BOM,
+normalized bare keys — while the loader accepts a far wider dialect.** Every gap
+became "page created, entry not written", which is exactly the state D10 and
+**S7** exist to prevent.
+
+**The one that produced a broken state from a *successful* run**, and the reason
+this needed fixing before the flow could be recommended: `toManifest` sent a
+file with keys in *both* locations to the manifest, writing the resolved
+`parent: 101` into its entry while the file kept `parent: p.md`. The two then
+disagree about a coordinate, so every later `update` and `check` of that file
+fails until somebody edits one by hand. D9's "wherever that file's metadata
+already is" means *frontmatter* for a file whose metadata is already there, and
+the rule is now `HasManifest(root) && !meta.InFile()`.
+
+The dialect gaps, each of which made `create` create a page and record nothing:
+
+- **A constant indent.** Any `pages:` block not indented by exactly two spaces
+  was unwritable; four-space, which the loader reads happily, produced a parse
+  failure. One-space was worse in kind — the new entry nested *inside* its
+  predecessor, valid YAML saying something else, caught only because
+  `verifyNested` checks depth rather than parseability. Fixing it needed two
+  more measured details: an *empty* mapping has no sibling to ask its column
+  from and must use its own, and `toBlock` has to reset the converted mapping's
+  own column, since a flow mapping's token sits at the brace.
+- **Keys were never quoted.** Values have had the `readsBackAs` fallback since
+  #130; keys had nothing, so a filename holding any YAML indicator (`#x.md`,
+  `- a.md`, `a: b.md`, a tab, a leading space) was refused.
+- **A BOM.** `parseConfig` strips one deliberately, so it is a shape markfluence
+  accepts — but the writer parsed the first key as `\ufeffpages` and created a
+  second `pages:` block beside it.
+- **An un-normalized existing key.** `./b.md` *is* the entry for `b.md`, so
+  matching on raw text appended a duplicate the loader then refused.
+- **A file with no manifest key** (one outside the root) wrote an entry keyed by
+  the empty string.
+
+Smaller: a persist I/O failure was reported as `VALIDATION` where the
+frontmatter path reports `IO` (#133); the manifest path wrote a *sixth* field,
+`labels`, which `writeBackFrontmatter` has never written — and writing them
+rewrote them into their normalized form while the case warning still told the
+author to update the file to match. Both fixed by symmetry with the frontmatter
+path.
+
+The write is atomic now (temp file plus rename). `os.WriteFile` truncates
+first, and unlike the frontmatter path — which risks one page's metadata — this
+file holds *every* entry in the project.
+
+Two test-quality findings, both real: `TestCreateAllRecordsEachPageAsItGoes`
+claimed to pin D10 while exercising no failure at all, so a single deferred
+write at the end would have passed it; and nothing reached `SetPageEntry`'s
+second verification, because the test for it used a shape `SetNested` refuses
+first. Both now have tests that fail against the old code.
+
+Known and accepted, matching `UpdateField`: CRLF is normalized to LF, and a
+comment on the same line as a replaced value is dropped. D11's "comments
+survive" holds for key-attached and preceding comments, which is every
+placement probed except that one.
