@@ -45,6 +45,63 @@ inadvertently edited the page in the Confluence UI. All edits are in the
 Confluence history, so they can be recovered and applied to the repository
 correctly.
 
+### Publish only the files that changed
+
+`paths:` on the trigger decides whether the *job* runs. It does not narrow the
+glob, so `update --force docs/**/*.md` republishes every managed page on every
+merge — one typo fix bumps the whole tree.
+
+That is worth avoiding for reasons beyond tidiness:
+
+- **Confluence notifies watchers on update.** Republishing 200 pages emails
+  everyone watching any of them, for a change to one. This is the cost that
+  gets a publishing bot switched off.
+- **Page history stops being useful.** A run of identical new versions across
+  the tree makes "who changed this, and why" unanswerable in the UI.
+- **It is N times the API calls**, on an instance whose rate limit is shared
+  with everyone else, and a correspondingly slow job.
+
+Let git pick the files:
+
+```yaml
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # both ends of the push range have to be present
+
+      - name: List changed docs
+        id: changed
+        run: |
+          base='${{ github.event.before }}'
+          # A new branch or a force-push reports an all-zero sha; fall back to
+          # the first commit so the run publishes the whole tree rather than
+          # failing on an unknown ref.
+          if [ -z "${base//0/}" ]; then
+            base="$(git rev-list --max-parents=0 HEAD | tail -1)"
+          fi
+          git diff --name-only --diff-filter=ACMRT "$base" '${{ github.sha }}' \
+            -- 'docs/**/*.md' > changed.txt
+          echo "count=$(wc -l < changed.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish
+        if: steps.changed.outputs.count != '0'
+        env:
+          # ... as above
+        run: xargs markfluence update --force < changed.txt
+```
+
+Two details that are easy to get wrong:
+
+- **`--diff-filter=ACMRT`** (added, copied, modified, renamed, type-changed)
+  excludes deletions. Without it a deleted file lands in the list and fails the
+  run, since `update` cannot publish a file that is not there. Deleting a page
+  is deliberately not something a publish does.
+- **The empty-list guard.** `update` with no FILE arguments is an error, so a
+  run where the diff comes back empty has to skip the step rather than invoke
+  it.
+
+This is plain `git` rather than a marketplace changed-files action, which keeps
+one less third-party dependency in the step that holds the Confluence token.
+
 ### Say so on the page
 
 Since UI edits are going to be overwritten, the page should tell readers where
