@@ -171,5 +171,10 @@ The comment shows up under `extensions` too. Top-level keys are `ari`,
 `base64EncodedAri`, `extensions`, `id`, `macroRenderedOutput`, `metadata`,
 `status`, `title`, `type`, `version` — `title` being the stored attachment name.
 
+An attachment has a version of its own, and **uploading one does not bump the
+*page's* version** (verified 2026-09-13) — so a publish's attachment pass
+leaves the page at the version its body write produced. The full table of what
+does and does not bump it: [api.md](api.md#what-bumps-a-pages-version).
+
 See [api.md](api.md) for how these collections paginate and how downloads
 redirect.

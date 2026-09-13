@@ -19,6 +19,12 @@ content-appearance-draft     -> ["max"]
 Both set, both agreeing. This is why `pagewidth.Apply` writes the pair rather
 than just the published one.
 
+Writing either property leaves the page's `version.number` untouched, and each
+property carries a version counter of its own — see
+[api.md](api.md#what-bumps-a-pages-version). So a width change is invisible to
+anything watching the page version, and `pagewidth.Apply` running after a
+publish does not advance the page past the version that publish produced.
+
 ## The vocabulary
 
 Authors write the UI's words in frontmatter; the property takes a different set
