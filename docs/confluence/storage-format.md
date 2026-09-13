@@ -34,6 +34,36 @@ would churn ids forever.
 So the guarantee is **semantic**, not byte-for-byte, which is also the
 converter's stated design target.
 
+### Confluence strips HTML comments on write
+
+**Verified 2026-09-13.** A comment does not survive the write at all — it is not
+stored and not rendered, and an *inline* one leaves its surrounding whitespace
+behind:
+
+```diff
+- <p>before</p><!-- generic block comment --><p>mid <!-- inline comment --> text</p><p>after</p>
++ <p>before</p><p>mid  text</p><p>after</p>
+```
+
+Note the doubled space in `mid  text`: the removal is not even whitespace-clean,
+so a comment cannot be treated as a no-op even positionally.
+
+Two consequences, both about comparing a body markfluence sent against the body
+Confluence stored:
+
+- **`client.updateLanded` can never match for a page whose markdown contains an
+  HTML comment.** It recovers a lost response by re-reading the page and
+  accepting the write only when version, title *and* `body.storage` all equal
+  what was sent — and the stored body will always differ by the stripped
+  comment. So for such a page a write that actually landed is reported as a
+  failure. Narrow today, because nothing markfluence *generates* is a comment
+  (`<!-- bg:COLOR -->` is consumed by the AST transformer and
+  `<!-- confluence-toc -->` is substituted), but an author-written comment is
+  legal markdown and passes straight through `html.WithUnsafe()`.
+- **A content-based idempotence check has to normalize comments away** or it
+  reports a difference on every run for the same file — the exact opposite of
+  what it is for. See #149, which proposes exactly that comparison.
+
 ## Table layout
 
 Every table markfluence publishes carries `data-layout="align-start"`, which
