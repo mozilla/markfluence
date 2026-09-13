@@ -227,3 +227,31 @@ func TestSetNestedOutputReadsBack(t *testing.T) {
 		t.Errorf("fields = %#v", got2)
 	}
 }
+
+// `pages: {}` is a flow mapping, and it is exactly the shape a project that
+// has chosen the manifest but registered nothing has. A block entry appended
+// to a flow mapping emits "pages: {\n  a.md:" and does not parse.
+func TestSetNestedConvertsAFlowMappingToBlock(t *testing.T) {
+	for name, src := range map[string]string{
+		"empty flow":     "space: ENG\npages: {}\n",
+		"populated flow": "pages: {a.md: {page_id: 1}}\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := SetNested(src, []string{"pages", "b.md"},
+				[]Field{{Key: "page_id", Value: "2"}})
+			if err != nil {
+				t.Fatalf("SetNested: %v", err)
+			}
+			if strings.Contains(got, "{") {
+				t.Errorf("still flow style:\n%s", got)
+			}
+			if !strings.Contains(got, "  b.md:\n    page_id: 2") {
+				t.Errorf("entry not written as a block:\n%s", got)
+			}
+			// And whatever was already there survives.
+			if name == "populated flow" && !strings.Contains(got, "a.md:") {
+				t.Errorf("the existing entry was lost:\n%s", got)
+			}
+		})
+	}
+}
