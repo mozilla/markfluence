@@ -113,12 +113,21 @@ func loadConfig(path string) (Config, error) {
 		// established, which is the case that must not be guessed at.
 		return Config{}, &ConfigError{File: path, Err: errors.New(readFailure(err))}
 	}
+	return parseConfig(path, string(data))
+}
+
+// parseConfig validates an already-read project file. Split from loadConfig so
+// SetPageEntry can re-run the *loader's* rules over what it is about to write,
+// rather than only the parser's -- a write that produced a file markfluence
+// could not read, or could read as something else, must fail before it reaches
+// disk.
+func parseConfig(path, data string) (Config, error) {
 	// A leading BOM is not a setting name. Without stripping it, a file a
 	// Windows editor wrote reports an unknown setting whose name begins U+FEFF, advising
 	// upgrading markfluence, which is the wrong remedy for the wrong problem.
 	// Only at the start of the file, and only one: anywhere else it really is
 	// content markfluence should not silently discard.
-	items, err := dialect.ReadMapping(strings.TrimPrefix(string(data), "\ufeff"))
+	items, err := dialect.ReadMapping(strings.TrimPrefix(data, "\ufeff"))
 	if err != nil {
 		return Config{}, &ConfigError{File: path, Err: err}
 	}
