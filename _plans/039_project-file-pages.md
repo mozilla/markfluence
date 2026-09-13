@@ -871,3 +871,49 @@ Worth recording how the test got written: the first version landed the competing
 write *before* calling `SetPageEntry`, so the initial read already saw it and no
 collision occurred. It passed with the detection removed, which is how it was
 caught — the same sabotage check that has now found a trivially-true test twice.
+
+## A second, local review pass — 2026-09-12
+
+Run after the adversarial one, with a different brief. Five findings, and the
+most useful of them is a **correction to a fix the previous section claims to
+have made**, which is the argument for a second reviewer that does not inherit
+the first one's framing.
+
+**The `CodeOr` classification was dead code.** `jsonout.CodeOr` only consults
+`CodeFor` when `client.FromRequest(err)` is true, and `SetPageEntry` always
+returns a `*ConfigError` — so every failure fell through to the hardcoded
+`VALIDATION`, which is exactly what the earlier commit said it had fixed.
+Claiming symmetry with the frontmatter path was therefore wrong in the plan,
+the commit message and the PR comment. `ConfigError` now carries `IO`, and
+`project.IsIOFailure` is what a caller asks.
+
+The lesson is narrow and worth keeping: a fix that routes through a helper is
+not a fix until the helper's *precondition* has been checked. `CodeOr` reads
+like "classify this error" and means "classify this error if it came from a
+request".
+
+**`toBlock` computed its column from an absolute depth** — the very bug
+`childColumn` was added to fix, still present on the flow path. A document
+whose root mapping is itself indented (`  pages: {}`) is legal YAML the loader
+accepts, and the entry then came out at `pages:`' own column. Third instance of
+the same class, and the reason it kept recurring is that the fix was applied
+where the bug was found rather than everywhere the pattern lived. Every child
+column now comes from the parent key's real position; sabotaging it back to the
+constant fails the new tests with `the rewritten file lost "pages"`.
+
+**`replaceFile` replaced a symlinked project file with a regular one.**
+`os.WriteFile`, which the frontmatter path uses, follows a symlink — so making
+the write atomic was a silent behaviour change: a `markfluence.yaml` symlinked
+to a shared config became a local copy, and later edits to the shared file
+stopped applying to that directory. It writes through the link now.
+
+**`create`'s help still said metadata goes into the frontmatter**, and
+CLAUDE.md makes `CMD --help` the reference, so that is where it had to be
+fixed rather than in a doc. Both persist flags and the `Long` now say where a
+page is recorded, and that `markfluence.yaml` is a shared file being modified.
+The schema's `createResult` description covered only a frontmatter persist
+failure.
+
+**`SetNested` dropped `Field.Comment`** where `Render` and `setField` honour
+it — exported, taking `[]Field`, so the next caller to set one would have lost
+it in silence.
