@@ -340,7 +340,7 @@ func TestFileFlagIsReservedNotTheSlug(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	results := exportNodes(c, p, rootRef{ID: p.ID, Title: p.Title, File: true}, dir, nil)
+	results := exportNodes(c, p, rootRef{ID: p.ID, Title: p.Title, File: true}, dir, nil, nil)
 	if len(results) != 1 {
 		t.Fatalf("got %d results, want 1", len(results))
 	}
@@ -414,7 +414,7 @@ func TestFolderCollisionIsReported(t *testing.T) {
 	results := exportNodes(c, p, rootRef{ID: "1", Title: "Home", File: true}, dir, []pagetree.Node{
 		node("2", pagetree.TypeFolder, "Run Books", "1"),
 		node("3", pagetree.TypeFolder, "Run: Books", "1"),
-	})
+	}, nil)
 	if len(results) != 1 {
 		t.Fatalf("got %d results, want just the root page", len(results))
 	}

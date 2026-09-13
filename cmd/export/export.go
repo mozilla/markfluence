@@ -333,7 +333,14 @@ func runExport(c *client.ConfluenceClient, root string, t target) error {
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeIO)
 	}
-	return report(exportNodes(c, t.page, t.ref, root, nodes), marker, root)
+	// After the marker: for a multi-page export that file is what makes dest a
+	// root at all, so resolving the log before it would walk past dest and key
+	// every line against whatever project happens to be above it.
+	rec := newRecorder(root)
+	defer rec.close()
+	results := exportNodes(c, t.page, t.ref, root, nodes, rec)
+	rec.recordShas(c, results)
+	return report(results, marker, root)
 }
 
 // walkUnder is the subtree, or nothing at --depth 0.
@@ -357,7 +364,7 @@ func walkUnder(c *client.ConfluenceClient, pageID string, depth int) ([]pagetree
 // their parent and the layout groups by parent.
 func exportNodes(
 	c *client.ConfluenceClient, page *client.Page, ref rootRef, root string,
-	nodes []pagetree.Node,
+	nodes []pagetree.Node, rec *recorder,
 ) []result {
 	// Which page wrote each destination, so a second page wanting the same file
 	// with different content is reported rather than skipped.
@@ -401,6 +408,7 @@ func exportNodes(
 		if r.err != nil {
 			failed[page.ID] = true
 		}
+		rec.recordWalk(r)
 		results = append(results, r)
 	}
 
@@ -439,6 +447,7 @@ func exportNodes(
 			if r.err != nil {
 				failed[n.ID] = true
 			}
+			rec.recordWalk(r)
 			results = append(results, r)
 		}
 	}

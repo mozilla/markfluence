@@ -154,7 +154,7 @@ func TestExportTreeMirrorsTheHierarchy(t *testing.T) {
 		t.Fatalf("walk: %v", err)
 	}
 	results := exportNodes(c, root,
-		rootRef{ID: root.ID, Title: root.Title, File: true}, dir, nodes)
+		rootRef{ID: root.ID, Title: root.Title, File: true}, dir, nodes, nil)
 	if len(results) != 2 {
 		t.Fatalf("got %d results, want 2", len(results))
 	}
