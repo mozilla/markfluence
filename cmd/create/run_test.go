@@ -14,8 +14,10 @@ import (
 	"testing"
 
 	"github.com/mozilla/markfluence/internal/client"
+	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/linkindex"
+	"github.com/mozilla/markfluence/internal/pagemeta"
 	"github.com/mozilla/markfluence/internal/project"
 	"github.com/mozilla/markfluence/internal/schematest"
 	"github.com/mozilla/markfluence/internal/ui"
@@ -1208,4 +1210,121 @@ func mustRead(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+// D10's actual claim: a run that dies partway leaves every already-created
+// page recorded. The previous test for this exercised no failure, so a single
+// deferred write at the end would have passed it.
+//
+// The third file's entry is made unwritable by pointing its key at a spelling
+// the loader will reject once written -- the simplest in-process stand-in for
+// "the write failed" -- and the first two must still be on disk afterwards.
+func TestCreateAllRecordsEarlierPagesWhenALaterOneFails(t *testing.T) {
+	resetOpts(t)
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	writeManifest(t, dir, "pages:\n  a.md:\n    title: A\n  b.md:\n    title: B\n  c.md:\n    title: C\n")
+	paths := []string{}
+	for _, name := range []string{"a.md", "b.md", "c.md"} {
+		paths = append(paths, write(t, dir, name, "# "+name+"\n"))
+	}
+
+	c, _ := newFakeConfluence(t)
+	ordered := buildRecords(t, c, paths)
+	// Make the third record's write fail: an empty key is refused by the
+	// writer, and reaching it means the first two were already recorded.
+	for i := range ordered {
+		if filepath.Base(ordered[i].filename) == "c.md" {
+			ordered[i].manifestKey = ""
+		}
+	}
+	results := createAll(ordered, c, true)
+
+	var failed int
+	for _, res := range results {
+		if !res.ok {
+			failed++
+			if res.pageID == "" {
+				t.Errorf("%s failed with no page id; the created page becomes untraceable", res.file)
+			}
+		}
+	}
+	if failed != 1 {
+		t.Fatalf("want exactly one failure, got %d", failed)
+	}
+
+	root, err := project.Discover(dir)
+	if err != nil {
+		t.Fatalf("the project file does not load after a partial run: %v", err)
+	}
+	defer func() { _ = root.FS.Close() }()
+	for _, key := range []string{"a.md", "b.md"} {
+		if root.Config.Pages[key].Fields["page_id"] == "" {
+			t.Errorf("%s was not recorded, though it was created before the failure", key)
+		}
+	}
+}
+
+// A file with keys in *both* locations keeps using frontmatter. Writing the
+// resolved parent id into its entry while the file kept a path made the two
+// disagree about a coordinate, so every later update and check of that file
+// failed -- a successful create leaving a file unpublishable.
+func TestCreateAllFileWithBothLocationsKeepsFrontmatter(t *testing.T) {
+	resetOpts(t)
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	writeManifest(t, dir, "pages:\n  p.md:\n    title: P\n  c.md:\n    space: ENG\n")
+	p := write(t, dir, "p.md", "# P\n")
+	cPath := write(t, dir, "c.md", "---\ntitle: C\nparent: p.md\n---\n# C\n")
+
+	c, _ := newFakeConfluence(t)
+	results := createAll(buildRecords(t, c, []string{p, cPath}), c, true)
+	for _, res := range results {
+		if !res.ok {
+			t.Fatalf("%s failed: %s", res.file, res.errMsg)
+		}
+	}
+
+	// c.md declared metadata itself, so its page_id went into the file.
+	if !strings.Contains(mustRead(t, cPath), "page_id:") {
+		t.Errorf("c.md's page_id was not written to the file:\n%s", mustRead(t, cPath))
+	}
+	root, err := project.Discover(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.FS.Close() }()
+	if got := root.Config.Pages["c.md"].Fields["parent"]; got != "" {
+		t.Errorf("a resolved parent %q was written into c.md's entry; its frontmatter says a path, "+
+			"so the two now disagree", got)
+	}
+	// And the file still resolves, which is the property that was broken.
+	mf, err := frontmatter.ParseFile(cPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pagemeta.Resolve("c.md", mf, root); err != nil {
+		t.Errorf("c.md no longer resolves after a successful create: %v", err)
+	}
+}
+
+// labels is not written to an entry, which keeps the two persist paths
+// symmetrical -- writeBackFrontmatter has never written labels -- and avoids
+// rewriting the author's declared set into its normalized form.
+func TestCreateAllDoesNotWriteLabelsToAnEntry(t *testing.T) {
+	resetOpts(t)
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	writeManifest(t, dir, "pages:\n  a.md:\n    title: A\n    labels: [Runbook, ci/cd]\n")
+	path := write(t, dir, "a.md", "# A\n")
+
+	c, _ := newFakeConfluence(t)
+	results := createAll(buildRecords(t, c, []string{path}), c, true)
+	if !results[0].ok {
+		t.Fatalf("create failed: %s", results[0].errMsg)
+	}
+	written := mustRead(t, filepath.Join(dir, project.Filename))
+	if !strings.Contains(written, "[Runbook, ci/cd]") {
+		t.Errorf("the author's labels were rewritten:\n%s", written)
+	}
 }
