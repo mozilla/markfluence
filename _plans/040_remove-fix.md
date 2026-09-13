@@ -192,3 +192,48 @@ regression.
   and rewriting it would make the record lie.
 - `markfluence --help` no longer lists it; `markfluence fix` exits non-zero with
   cobra's unknown-command error.
+
+## As built
+
+Three things differed from the plan above.
+
+**A straggler the file survey missed.** `cmd/check/check.go` explained the
+half-and-half warning with "`fix` moving the keys is the remedy" — a *code
+comment*, so it was outside the doc list, and only the final `git ls-files |
+xargs grep` sweep found it. It was also **wrong before this change**: `fix`
+never moved keys into the manifest, it refused a manifest-only file outright.
+So it went from describing a capability that never existed to describing a
+command that no longer does. The comment now says the remedy is manual, and why.
+The lesson for the next removal is that the survey has to cover comments, not
+just prose files and identifiers.
+
+**The README says less than planned.** The plan had the worked `fix` section
+replaced by an explanation of where the capability went, which the first draft
+wrote as "`markfluence fix` used to and was removed (#151)". Cut: markfluence is
+unreleased, so nobody ever ran it, and a removal note in a 50,000-foot overview
+is noise for its audience. The section now states the direction plainly and the
+removal is recorded where the *reasoning* lives — `CLAUDE.md`, `guarantees.md`
+and this plan.
+
+**One commit did not build, and a swallowed error is why.** `git add -- cmd/fix
+cmd/root.go schema/… docs/commands/…` was run with `2>/dev/null` after
+`cmd/fix` had already been `git rm`'d, so the stale pathspec made git reject the
+whole invocation — staging none of the remaining paths. `git status` showed them
+unstaged in the second column and that went unread, so the commit landed with
+`cmd/fix/` deleted and `cmd/root.go` still importing it. Amended, and the
+amended commit was verified green in isolation with `git stash` + `make check`
+rather than assumed. Two habits: do not redirect stderr away from `git add`, and
+read which column `git status --short` puts the marker in.
+
+## Verified
+
+- `make check` green on the removal commit in isolation, and on the branch tip.
+- `markfluence --help` no longer lists `fix`; `markfluence fix docs/a.md` exits
+  **2** with cobra's `unknown command "fix" for "markfluence"` and suggests
+  `find`.
+- The sweep over `git ls-files`, excluding `_plans/`, returns only intentional
+  historical references: `CLAUDE.md` and `guarantees.md` explaining the
+  direction rule, `root-model.md` noting the exception is gone, and
+  `labels.md`'s re-attributed round-trip bullet. `_plans/` is untouched by
+  design — it records what was built, `004_fix-subcommand` included, and
+  rewriting it would make the record lie.
