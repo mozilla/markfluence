@@ -286,10 +286,20 @@ file that declares none, so an omitted field is not left alone there. `labels`
 holds in both verbs: absent means no label request is made at all, which is
 stronger than "no write" and is pinned by a test in `cmd/update`.
 
-`fix` is deliberately outside the law rather than a violation of it. It
-reconciles the *file* to the page, so the page is the authority and an absent
-field gets filled in -- which is the only way to adopt a page somebody labeled
-or resized by hand. The law constrains the direction that writes to Confluence.
+The law now has **no exception**, which it did until `fix` was removed (#151).
+`fix` reconciled the *file* to the page, so there the page was the authority and
+an absent field got filled in — an absent `labels` key meant "leave the page
+alone" to `update` and "adopt whatever the page carries" to `fix`, which is the
+kind of asymmetry a reader has to hold in their head. Every verb that writes now
+writes in one direction, and the law describes all of them.
+
+Adopting a page somebody labeled or resized by hand is consequently a manual
+step: look at the page (`info` shows labels and width; `read` and `export` emit
+them) and edit the file. #154 (`markfluence diff`) is the intended way to see
+what differs; nothing writes the file for you, deliberately.
+
+Status unchanged: `create`'s default width is what makes L9 partial, and that
+is untouched by the removal.
 
 ## Conformance
 

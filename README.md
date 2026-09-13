@@ -198,7 +198,6 @@ reach for.
 | [`create`](docs/commands/markfluence_create.md) | make new pages from files that have no `page_id` yet. Checks every file first, and creates nothing if any would fail |
 | [`update`](docs/commands/markfluence_update.md) | republish files that already have a `page_id`. Skips a file that has not changed |
 | [`check`](docs/commands/markfluence_check.md) | validate files with no network and no credentials — dead links, broken images, bad frontmatter |
-| [`fix`](docs/commands/markfluence_fix.md) | reconcile a file's frontmatter *from* its live page, when the two have drifted |
 
 **Getting things out of Confluence:**
 
@@ -227,7 +226,7 @@ everything else:
 
 And [`schema`](docs/commands/markfluence_schema.md) prints the `--json` schema.
 
-Every command takes `--json`; `create`, `update` and `fix` take `--dry-run`.
+Every command takes `--json`; `create` and `update` take `--dry-run`.
 
 ### Common workflows
 
@@ -281,26 +280,11 @@ markfluence check docs/*.md docs/**/*.md
 markfluence update docs/*.md docs/**/*.md
 ```
 
-Pick up changes somebody made in Confluence. This is the one command that
-writes *to* your files *from* Confluence — every other one goes the other way:
-
-```sh
-# what disagrees? nothing is written
-markfluence fix docs/*.md --dry-run
-
-# reconcile page_id, space, parent, page_width, labels and a missing title
-markfluence fix docs/*.md
-```
-
-`fix` never creates, updates or moves pages — it is read-only on the server.
-Note the asymmetry it settles: `update` leaves a field alone when your file does
-not mention it, while `fix` fills that field in from the page. It is how you
-adopt a page somebody labeled in the UI, or one you published by hand and want
-a file for.
-
-One thing it does *not* do: a `title` you have already set is left alone, so a
-page renamed in Confluence does not rename your frontmatter. Only a missing or
-blank `title` is filled in.
+Pick up changes somebody made in Confluence. Every command that writes goes one
+way — your files to the page — so this direction is a read plus an edit: `info`
+shows a page's labels and width, `read` prints it as markdown, and `export`
+writes the whole thing to disk, frontmatter included. Nothing rewrites an
+existing file's frontmatter from a page.
 
 ### What the output looks like
 

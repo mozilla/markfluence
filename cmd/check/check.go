@@ -241,7 +241,10 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 	// project that has chosen the manifest. A *warning*, never an error, and
 	// that is the whole point -- agreement between the two locations is legal,
 	// so this has to be sayable without becoming a wall somebody hits halfway
-	// through a migration. `fix` moving the keys is the remedy.
+	// through a migration. The remedy is manual -- move the keys into the entry
+	// by hand -- and deliberately so: nothing writes an existing file's
+	// frontmatter for you now that `fix` is gone (#151), and `fix` never
+	// actually moved them into the manifest anyway, it refused the file.
 	if pagemeta.HasManifest(root) && meta.InFile() {
 		r.warnings = append(r.warnings, fmt.Sprintf(
 			"this file carries markfluence frontmatter in a project that keeps page "+
