@@ -79,7 +79,13 @@ type ConfigError struct {
 	// Line is a 1-based line within it, or 0 when the problem is the document
 	// as a whole rather than one setting.
 	Line int
-	Err  error
+	// IO marks a failure to read or write the file, as opposed to a failure to
+	// understand what it says. A caller needs the difference to report a code:
+	// jsonout.CodeOr cannot tell, since it only consults CodeFor for an error
+	// that came from a *request*, so every ConfigError fell through to the
+	// caller's fallback.
+	IO  bool
+	Err error
 }
 
 func (e *ConfigError) Error() string {
@@ -237,6 +243,15 @@ func readFailure(err error) string {
 		return pathErr.Err.Error()
 	}
 	return err.Error()
+}
+
+// IsIOFailure reports whether err is a project-file failure that was I/O rather
+// than a refusal to understand the file -- a read that failed, or a write that
+// did. The distinction exists so a command reports IO for a read-only project
+// file and VALIDATION for one it could not parse, which is #133's rule.
+func IsIOFailure(err error) bool {
+	var cfgErr *ConfigError
+	return errors.As(err, &cfgErr) && cfgErr.IO
 }
 
 // IsConfigError reports whether err is a markfluence.yaml that could not be
