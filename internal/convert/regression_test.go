@@ -100,9 +100,9 @@ func runCase(t *testing.T, caseDir string) []byte {
 		t.Fatalf("building link index: %v", err)
 	}
 
-	// Goldens are deterministic by construction: the converter reads nothing
-	// but its arguments and the files under root -- no build state, no clock.
-	// It took a version stamp until #158, which a fixed value had to neutralize.
+	// Goldens are deterministic by construction: the converter reads nothing but
+	// its arguments and the files under root -- no build state, no clock -- so
+	// nothing here has to be pinned to keep them stable.
 	page, err := convert.MdToConfluence(md, root, index, cfg.baseURL, cfg.spaceKey)
 	if err != nil {
 		t.Fatalf("MdToConfluence: %v", err)

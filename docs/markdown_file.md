@@ -358,18 +358,13 @@ over every real name in a tree.
 
 - `<!-- confluence-toc -->` — replaced with Confluence table-of-contents macro.
 
-There used to be a `<!-- markfluence-version -->` directive too, substituted
-with the build stamp. It was removed (#158): the tool's version answers none of
-the questions a reader of a published page has, it had no inverse so an
-`export` baked the old string in as literal text, and a page carrying it
-re-rendered on every markfluence upgrade — which reads as a content change to
-anything comparing a file against its page. To say where a page comes from, put
-a callout at the top of the markdown and link the source file; a
-[GitHub alert](#github-alerts) converts to a Confluence panel. A file still
-holding the token simply loses it: **Confluence strips every HTML comment on
-write**, so it never reaches the stored page at all (measured — see
+That is the only one. **Any other HTML comment you write is discarded**, and not
+by markfluence: Confluence strips every comment on write, so it never reaches
+the stored page (measured — see
 [storage-format.md](confluence/storage-format.md#confluence-strips-html-comments-on-write)).
-That is true of any HTML comment you write in markdown, not just this one.
+So a comment is not a way to leave a note on a published page. To say where a
+page comes from, put a callout at the top of the markdown and link the source
+file; a [GitHub alert](#github-alerts) converts to a Confluence panel.
 
 ### Raw Confluence storage format
 

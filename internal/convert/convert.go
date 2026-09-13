@@ -67,13 +67,11 @@ func newMarkdown(r *storageRenderer) goldmark.Markdown {
 // converted under it (internal/linkindex.Build), not rebuilt here per
 // conversion.
 //
-// The output depends only on these arguments and the files under root -- no
-// build state, no clock. A <!-- markfluence-version --> token used to be
-// substituted with the build stamp here (#158), which made the same file render
-// differently on every upgrade: a round trip through export baked the old
-// string in as literal text, a republish of unchanged content looked like a
-// change, and check --show-html differed between two machines at the same
-// commit.
+// The output depends only on these arguments and the files under root: no build
+// state, no clock, nothing from the environment. That is what makes the
+// regression goldens deterministic by construction and check --show-html
+// byte-identical between two machines at one commit -- so nothing that varies
+// per build belongs in here, however small.
 func MdToConfluence(
 	md *frontmatter.MarkdownFile, root *project.Root, index *linkindex.Index, baseURL, spaceKey string,
 ) (*ConfluencePage, error) {
