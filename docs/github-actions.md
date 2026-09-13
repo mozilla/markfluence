@@ -27,6 +27,49 @@ make it a repository **variable** rather than a secret.
 
 [secrets]: https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions
 
+## The source of truth is external to Confluence
+
+A CI workflow only makes sense when **the repository is the source of truth**
+and the Confluence page is a published copy of it. If someone makes changes in
+the Confluence UI, they will get stomped on when the CI workflow pushes a new
+change.
+
+### Use `--force`
+
+```yaml
+        run: markfluence update --force docs/**/*.md
+```
+
+`update --force` prevents updates from failing in CI because someone
+inadvertently edited the page in the Confluence UI. All edits are in the
+Confluence history, so they can be recovered and applied to the repository
+correctly.
+
+### Say so on the page
+
+Since UI edits are going to be overwritten, the page should tell readers where
+they can make edits. Put a callout at the top of the markdown — markfluence
+converts a GitHub alert into a Confluence panel, so it renders as one:
+
+```markdown
+> [!NOTE]
+> This page is published from [docs/deploy-runbook.md](https://github.com/ORG/REPO/blob/main/docs/deploy-runbook.md).
+> Edits made here are overwritten on the next push. Open a pull request instead.
+```
+
+`NOTE`, `TIP`, `IMPORTANT`, `WARNING` and `CAUTION` are all supported and keep
+GitHub's colours. Linking the source file gives a reader somewhere to go, which
+is what turns "do not edit" into something actionable.
+
+Consider restricting page permissions to the publishing account as well, if the
+space allows it. A banner is a convention; permissions are a mechanism.
+
+### If Confluence is the source of truth, do not run this workflow
+
+If Confluence is the source of truth, you shouldn't be using a workflow to
+update Confluence. markfluence has no way to discover changes that have been
+made in the Confluence UI and has no mechanism for reconciling them.
+
 ## Workflow
 
 ```yaml
@@ -65,7 +108,8 @@ jobs:
           # A variable, not a secret: the cloud ID is public. Omit it if you're
           # using an unscoped personal token.
           CONFLUENCE_CLOUD_ID: ${{ vars.CONFLUENCE_CLOUD_ID }}
-        run: markfluence update docs/**/*.md
+        # --force because the repository is the source of truth here; see above.
+        run: markfluence update --force docs/**/*.md
 ```
 
 That step takes no per-file inputs, and that is the point: each file's page id
