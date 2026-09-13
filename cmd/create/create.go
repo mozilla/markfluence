@@ -163,9 +163,12 @@ type record struct {
 	// metadataSource is which location supplied this file's metadata, carried
 	// from preflight so the published result reports what was actually read.
 	metadataSource string
-	// inManifest reports whether a pages: entry claims this file, which is
-	// what suppresses the frontmatter write-back (see createAll).
-	inManifest bool
+	// toManifest reports where persist should write this file's metadata:
+	// true for the project file's pages: block, false for the file's own
+	// frontmatter (#139 D9).
+	toManifest bool
+	// manifestKey is this file's normalized pages: key, set when toManifest is.
+	manifestKey string
 	// warnings are the metadata-resolution warnings, carried from preflight so
 	// the published result reports them (D6).
 	warnings []string
@@ -484,16 +487,7 @@ func createAll(ordered []record, c *client.ConfluenceClient, doPersist bool) []*
 			}
 		}
 
-		// A file whose metadata lives in markfluence.yaml must not have
-		// frontmatter written into it. D9's rule is that new metadata goes
-		// wherever that file's metadata already is, and PR 1 of #139 has no
-		// manifest writer yet -- so persisting would put a page_id (and a
-		// resolved `parent: <id>`) into a file whose entry says something
-		// else, and every later update and check of that file would then fail
-		// as a coordinate disagreement. Skipping the write leaves the author
-		// one copy-paste, which is the cost the plan accepted; writing it
-		// would have been self-inflicted corruption.
-		res, pageID, version, ok := reserveOne(r, parentID, c, doPersist && !r.inManifest)
+		res, pageID, version, ok := reserveOne(r, parentID, c, doPersist)
 		if !ok {
 			final[r.absPath] = res
 			continue
@@ -556,9 +550,6 @@ func reserveOne(
 
 	if dryRunOpt {
 		res.persisted = persist
-		if r.inManifest {
-			res.warnings = append(res.warnings, manifestPersistNotice(""))
-		}
 		return res, "", 0, true
 	}
 
@@ -569,13 +560,21 @@ func reserveOne(
 	pageID = result.ID
 	res.pageID = pageID
 	res.url = c.PageURL(result, pageID)
-	if r.inManifest {
-		// Said out loud, because a silent non-write is how somebody ends up
-		// with a created page nothing records.
-		res.warnings = append(res.warnings, manifestPersistNotice(pageID))
-	}
 
 	if persist {
+		// Where the metadata goes is inferred, not flagged (#139 D9): to the
+		// manifest when that is where this file's metadata already lives, or
+		// when the project has chosen the manifest and the file says nothing;
+		// into the file's frontmatter otherwise. A project that has chosen the
+		// manifest never accidentally grows frontmatter, and a project without
+		// one behaves exactly as it did before.
+		if r.toManifest {
+			if err := persistToManifest(r, pageID, parentID); err != nil {
+				return res.failKeepingPage(err, jsonout.CodeValidation), "", 0, false
+			}
+			res.persisted = true
+			return res, pageID, result.Version.Number, true
+		}
 		parentValue, parentComment := parentField(r.parent, parentID)
 		content, err := writeBackFrontmatter(r.mdfile.Content, r, pageID, parentValue, parentComment)
 		if err != nil {
@@ -835,8 +834,10 @@ func resolveFile(
 	return record{
 		filename: filename, absPath: abs, mdfile: mf, title: title, spaceKey: spaceKey,
 		spaceID: spaceID, parent: parent, width: width, labels: labelSet, root: root, index: index,
-		metadataSource: string(meta.MetadataSource()), inManifest: meta.InManifest(),
-		warnings: warnings,
+		metadataSource: string(meta.MetadataSource()),
+		toManifest:     meta.InManifest() || (pagemeta.HasManifest(root) && !meta.InFile()),
+		manifestKey:    key,
+		warnings:       warnings,
 	}, nil
 }
 
@@ -1039,19 +1040,40 @@ func parentField(p parentInfo, parentID string) (value, comment string) {
 // wantPersist resolves the --persist/--no-persist pair; --no-persist wins.
 func wantPersist(persist, noPersist bool) bool { return persist && !noPersist }
 
-// manifestPersistNotice says why nothing was written back, and what to do
-// instead. Until #139's write half lands, a page created for a file whose
-// metadata lives in markfluence.yaml has to have its id put in the entry by
-// hand -- and that has to be *said*, or the author is left with a created page
-// nothing on disk records.
-func manifestPersistNotice(pageID string) string {
-	if pageID == "" {
-		return fmt.Sprintf("this file's metadata lives in %s, so no frontmatter will be "+
-			"written; the new page id has to be added to its pages: entry by hand",
-			project.Filename)
+// persistToManifest records the created page in the project file's pages:
+// block, the manifest counterpart of writeBackFrontmatter -- the same five
+// fields, in the same canonical order, in the other location.
+//
+// parent is written as the resolved id, exactly as the frontmatter path writes
+// it: an entry's `parent: <path>.md` is how an author *declares* a parent, and
+// once the page exists the id is what it resolved to. Unlike frontmatter there
+// is no room for a trailing comment naming the original path, so the path is
+// simply replaced -- the entry's key already says which file this is, which is
+// what the comment existed to disambiguate.
+func persistToManifest(r record, pageID, parentID string) error {
+	entry := project.Entry{
+		Fields: map[string]string{
+			"title":      r.title,
+			"space":      r.spaceKey,
+			"parent":     orNullValue(parentID),
+			"page_id":    pageID,
+			"page_width": string(r.width),
+		},
+		Lists: map[string][]string{},
 	}
-	return fmt.Sprintf("this file's metadata lives in %s, so no frontmatter was written; "+
-		"add \"page_id: %s\" to its pages: entry", project.Filename, pageID)
+	if r.labels.Declared {
+		entry.Lists["labels"] = r.labels.Names
+	}
+	return r.root.SetPageEntry(r.manifestKey, entry)
+}
+
+// orNullValue renders an empty parent as the null every other writer uses, so
+// a top-level page reads the same in an entry as in frontmatter.
+func orNullValue(id string) string {
+	if id == "" {
+		return "null"
+	}
+	return id
 }
 
 // overrideNeedsSingleFile reports whether --title was given with anything other
