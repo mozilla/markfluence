@@ -111,7 +111,7 @@ func TestRoundTripStableCallouts(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := testRoot(t, "")
-	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG", "vtest")
+	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG")
 	if err != nil {
 		t.Fatalf("MdToConfluence: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestRoundTripTableAlignment(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := testRoot(t, "")
-	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG", "vtest")
+	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG")
 	if err != nil {
 		t.Fatalf("MdToConfluence: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestRoundTripTableCellBG(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := testRoot(t, "")
-	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG", "vtest")
+	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG")
 	if err != nil {
 		t.Fatalf("MdToConfluence: %v", err)
 	}
@@ -239,7 +239,7 @@ func TestStorageToMarkdownJoinsMultilineCells(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := testRoot(t, "")
-	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG", "vtest")
+	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG")
 	if err != nil {
 		t.Fatalf("MdToConfluence: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestStorageToMarkdownPassesThroughListsInCells(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := testRoot(t, "")
-	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG", "vtest")
+	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG")
 	if err != nil {
 		t.Fatalf("MdToConfluence: %v", err)
 	}
@@ -389,7 +389,7 @@ func TestRoundTripPassthrough(t *testing.T) {
 				t.Fatal(err)
 			}
 			root := testRoot(t, "")
-			page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG", "vtest")
+			page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG")
 			if err != nil {
 				t.Fatalf("MdToConfluence: %v", err)
 			}
@@ -679,7 +679,7 @@ func publishAlert(t *testing.T, alert string) string {
 		t.Fatal(err)
 	}
 	root := testRoot(t, "")
-	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG", "vtest")
+	page, err := convert.MdToConfluence(md, root, testIndex(t, root), "https://wiki.example.net", "ENG")
 	if err != nil {
 		t.Fatalf("MdToConfluence: %v", err)
 	}

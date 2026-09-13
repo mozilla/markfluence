@@ -49,7 +49,7 @@ func TestRenderImageRefusesSymlinkedLeaf(t *testing.T) {
 	defer func() { _ = r.FS.Close() }()
 
 	idx := testIndex(t, r)
-	page, err := convert.MdToConfluence(md, r, idx, "https://wiki.example.net", "ENG", "vtest")
+	page, err := convert.MdToConfluence(md, r, idx, "https://wiki.example.net", "ENG")
 	if err != nil {
 		t.Fatalf("MdToConfluence: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestRenderImageRefusesEscapeThroughSymlinkedDirectory(t *testing.T) {
 	defer func() { _ = r.FS.Close() }()
 
 	idx := testIndex(t, r)
-	page, err := convert.MdToConfluence(md, r, idx, "https://wiki.example.net", "ENG", "vtest")
+	page, err := convert.MdToConfluence(md, r, idx, "https://wiki.example.net", "ENG")
 	if err != nil {
 		t.Fatalf("MdToConfluence: %v", err)
 	}

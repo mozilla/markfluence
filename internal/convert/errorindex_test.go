@@ -52,7 +52,7 @@ func convertSeeded(
 	for key, entry := range seed {
 		idx.SetPage(key, entry)
 	}
-	return convert.MdToConfluence(md, r, idx, "https://wiki.example.net", "ENG", "vtest")
+	return convert.MdToConfluence(md, r, idx, "https://wiki.example.net", "ENG")
 }
 
 // siblingEntry is what create's reserve phase seeds for an in-set file: the id

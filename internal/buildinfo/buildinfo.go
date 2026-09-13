@@ -31,10 +31,13 @@ func Revision() string {
 	return rev
 }
 
-// Stamp is the build stamp used both for --version and for the
-// <!-- markfluence-version --> token embedded in published pages:
-// "markfluence VERSION (SHA, DATE)". The commit hash and date are each omitted
-// when unavailable (and the parenthetical drops entirely if both are).
+// Stamp is the build stamp --version prints: "markfluence VERSION (SHA, DATE)".
+// The commit hash and date are each omitted when unavailable (and the
+// parenthetical drops entirely if both are).
+//
+// Nothing published ever carries it. It was substituted into pages for a
+// <!-- markfluence-version --> token until #158, which is why it must stay out
+// of internal/convert: the converter's output depends only on the files on disk.
 func Stamp() string {
 	s := "markfluence " + Version
 	var meta []string

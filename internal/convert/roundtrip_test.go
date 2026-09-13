@@ -118,7 +118,7 @@ func publishPage(t *testing.T, md string) *convert.ConfluencePage {
 	}
 	defer func() { _ = r.FS.Close() }()
 
-	page, err := convert.MdToConfluence(mf, r, testIndex(t, r), "https://wiki.example.net", "ENG", "vtest")
+	page, err := convert.MdToConfluence(mf, r, testIndex(t, r), "https://wiki.example.net", "ENG")
 	if err != nil {
 		t.Fatalf("markdown -> storage: %v", err)
 	}

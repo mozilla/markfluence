@@ -26,8 +26,6 @@ const (
 	// tocToken is replaced by the Confluence table-of-contents macro.
 	tocToken = "<!-- confluence-toc -->"
 	tocMacro = `<ac:structured-macro ac:name="toc" ac:schema-version="1" />`
-	// versionToken is replaced by the build version stamp passed to MdToConfluence.
-	versionToken = "<!-- markfluence-version -->"
 )
 
 // scanParser parses for inspection rather than for rendering: same extensions,
@@ -67,10 +65,17 @@ func newMarkdown(r *storageRenderer) goldmark.Markdown {
 // MdToConfluence assuming the working directory. index is the tree-wide
 // link/anchor index for root -- built once and shared across every file
 // converted under it (internal/linkindex.Build), not rebuilt here per
-// conversion. version is the build stamp substituted for the
-// <!-- markfluence-version --> token.
+// conversion.
+//
+// The output depends only on these arguments and the files under root -- no
+// build state, no clock. A <!-- markfluence-version --> token used to be
+// substituted with the build stamp here (#158), which made the same file render
+// differently on every upgrade: a round trip through export baked the old
+// string in as literal text, a republish of unchanged content looked like a
+// change, and check --show-html differed between two machines at the same
+// commit.
 func MdToConfluence(
-	md *frontmatter.MarkdownFile, root *project.Root, index *linkindex.Index, baseURL, spaceKey, version string,
+	md *frontmatter.MarkdownFile, root *project.Root, index *linkindex.Index, baseURL, spaceKey string,
 ) (*ConfluencePage, error) {
 	// Shield raw ac:/ri: storage tags so goldmark passes them through instead of
 	// escaping them; restore them after rendering.
@@ -104,7 +109,6 @@ func MdToConfluence(
 	}
 	out := unshield(buf.String())
 	out = strings.ReplaceAll(out, tocToken, tocMacro)
-	out = strings.ReplaceAll(out, versionToken, version)
 
 	page := &ConfluencePage{
 		HTML:        out,

@@ -25,7 +25,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mozilla/markfluence/internal/buildinfo"
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/completion"
 	"github.com/mozilla/markfluence/internal/convert"
@@ -628,7 +627,7 @@ func publishOne(
 ) *createResult {
 	// SiteURL, not BaseURL: rewritten links are published into the page, so they
 	// must point at the site even when requests go through the gateway.
-	pageContent, err := convert.MdToConfluence(r.mdfile, r.root, r.index, c.SiteURL(), r.spaceKey, buildinfo.Stamp())
+	pageContent, err := convert.MdToConfluence(r.mdfile, r.root, r.index, c.SiteURL(), r.spaceKey)
 	if err != nil {
 		return res.fail(err, jsonout.CodeConvert)
 	}
@@ -843,7 +842,7 @@ func resolveFile(
 	// idx.anchors, fixed at Build time and identical in both phases. A change
 	// making SetPage also mark a file as existing would break this. Pinned by
 	// TestErrorDoesNotDependOnTheIndex in internal/convert.
-	if _, err := convert.MdToConfluence(mf, root, index, c.SiteURL(), spaceKey, buildinfo.Stamp()); err != nil {
+	if _, err := convert.MdToConfluence(mf, root, index, c.SiteURL(), spaceKey); err != nil {
 		return record{}, &convertFailure{err: err}
 	}
 
