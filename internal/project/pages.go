@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -229,10 +230,27 @@ func (r *Root) SetPageEntry(key string, entry Entry) error {
 	if err != nil {
 		return &ConfigError{File: r.File, Err: errors.New(readFailure(err))}
 	}
-	after, err := frontmatter.SetNested(string(before), []string{"pages", key}, entryFieldList(entry))
+	// The BOM comes off before the writer sees it and goes back on after.
+	// parseConfig strips one deliberately (#100), so a BOM-prefixed project
+	// file is a shape markfluence accepts -- but leaving it in made the first
+	// key parse as "\ufeffpages", so the writer created a *second* pages: block
+	// beside it and the reload then refused the file. Dropping it instead would
+	// silently change a file the author's editor wrote.
+	body := string(before)
+	bom := ""
+	if strings.HasPrefix(body, "\ufeff") {
+		bom, body = "\ufeff", strings.TrimPrefix(body, "\ufeff")
+	}
+	// The existing spelling of the key, when there is one. pages: keys are
+	// compared after normalization, so an entry written as "./b.md" *is* the
+	// entry for "b.md" -- matching on the raw text appended a second one, and
+	// the reload then refused the file for having two keys naming one path.
+	path := []string{"pages", existingKeySpelling(body, key)}
+	after, err := frontmatter.SetNested(body, path, entryFieldList(entry))
 	if err != nil {
 		return &ConfigError{File: r.File, Err: err}
 	}
+	after = bom + after
 	// The loader, not just the parser: an unknown field or a wrong shape must
 	// fail here rather than on somebody's next invocation.
 	cfg, err := parseConfig(r.File, after)
@@ -243,11 +261,73 @@ func (r *Root) SetPageEntry(key string, entry Entry) error {
 		return &ConfigError{File: r.File, Err: fmt.Errorf(
 			"the rewritten file has no entry for %q", key)}
 	}
-	if err := os.WriteFile(r.File, []byte(after), 0o644); err != nil {
+	if err := replaceFile(r.File, after); err != nil {
 		return &ConfigError{File: r.File, Err: errors.New(readFailure(err))}
 	}
 	r.Config = cfg
 	return nil
+}
+
+// existingKeySpelling returns the spelling an equivalent key is already written
+// under, or key itself when there is none.
+//
+// Keys are compared after NormalizePageKey, so "./b.md", "docs//a.md" and a
+// backslash form all name entries that already exist -- and appending a second,
+// normalized spelling made the file hold two keys naming one path, which the
+// loader refuses. Updating the entry that is there is both correct and what the
+// author would expect.
+func existingKeySpelling(body, key string) string {
+	items, err := dialect.ReadMapping(body)
+	if err != nil {
+		return key
+	}
+	for _, it := range items {
+		if it.Key != "pages" || it.Map == nil {
+			continue
+		}
+		for _, entry := range it.Map {
+			if normalized, err := NormalizePageKey(entry.Key); err == nil && normalized == key {
+				return entry.Key
+			}
+		}
+	}
+	return key
+}
+
+// replaceFile writes content over path via a temporary file in the same
+// directory, then renames.
+//
+// os.WriteFile truncates first, so a write interrupted by a full disk or a
+// signal leaves the project file truncated -- and unlike the frontmatter path,
+// which risks one page's metadata, this file holds *every* entry in the
+// project. A rename is atomic on the same filesystem, so an interrupted run
+// leaves the original untouched.
+//
+// The mode of an existing file is preserved; a new one gets 0o644, matching
+// every other file markfluence writes.
+func replaceFile(path, content string) error {
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
+	// Same directory, so the rename cannot cross a filesystem boundary.
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	defer func() { _ = os.Remove(name) }() // no-op once the rename succeeds
+	if _, err := tmp.WriteString(content); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(name, mode); err != nil {
+		return err
+	}
+	return os.Rename(name, path)
 }
 
 // entryFieldList turns an Entry into frontmatter Fields, in canonical order.
