@@ -834,3 +834,40 @@ Known and accepted, matching `UpdateField`: CRLF is normalized to LF, and a
 comment on the same line as a replaced value is dropped. D11's "comments
 survive" holds for key-attached and preceding comments, which is every
 placement probed except that one.
+
+## A concurrency window PR 2 opened — 2026-09-12
+
+Found by following the review's own pattern into a dimension neither review pass
+was pointed at, after `/ultrareview` turned out to be Enterprise-gated.
+
+`SetPageEntry` is a read-modify-write with no serialization, and the project
+file is shared by every page. **Before the manifest, each page's metadata went
+into its own file, so two concurrent `create`s could not collide.** They now
+can: A reads, B reads, A writes, B writes, and A's entry is gone while A's page
+exists — "page created, entry not recorded" one more time, arriving from
+concurrency rather than from a refusal. So it is a regression this PR
+introduces, not a pre-existing gap.
+
+Bounded but live. `create docs/*.md` is sequential within one process, and page
+creation is deliberately a human act (#139 keeps it out of CI) — but concurrent
+Claude sessions against one repository are a normal working arrangement here,
+which is what makes it worth closing.
+
+**Optimistic, not locked.** `trySetPageEntry` re-reads immediately before
+replacing and reports a change rather than overwriting; `SetPageEntry` retries
+once against the new content, and reports the collision if it happens twice.
+The precedent is `client.SetContentProperty`, which retries once on top of a
+versioned PUT for the same shape of reason. A lock file would be stronger and
+would bring stale-lock handling with it, which is more machinery than a verb a
+person invokes by hand warrants. One retry is enough because the window is a
+single file rewrite: the loser re-reads the winner's file and merges into it.
+
+The give-up path is driven by `beforeReplace`, a nil-in-production test hook,
+the same arrangement `SetRetryLogger` and `SetSecurityWarner` use — racing a
+real writer makes a slow and flaky test of a branch that exists precisely so a
+collision is never resolved by guessing.
+
+Worth recording how the test got written: the first version landed the competing
+write *before* calling `SetPageEntry`, so the initial read already saw it and no
+collision occurred. It passed with the detection removed, which is how it was
+caught — the same sabotage check that has now found a trivially-true test twice.
