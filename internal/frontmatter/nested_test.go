@@ -255,3 +255,77 @@ func TestSetNestedConvertsAFlowMappingToBlock(t *testing.T) {
 		})
 	}
 }
+
+// A project file indented some other way must still be writable. A constant
+// indent refused any pages: block not indented by exactly two spaces -- a
+// four-space file, which the loader accepts, could never be recorded into, so
+// create made the page and reported a parse failure.
+func TestSetNestedFollowsTheExistingIndent(t *testing.T) {
+	for name, src := range map[string]string{
+		"four spaces": "pages:\n    a.md:\n        page_id: 1\n",
+		"three":       "pages:\n   a.md:\n      page_id: 1\n",
+		"one":         "pages:\n a.md:\n  page_id: 1\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := SetNested(src, []string{"pages", "b.md"},
+				[]Field{{Key: "page_id", Value: "2"}})
+			if err != nil {
+				t.Fatalf("SetNested: %v", err)
+			}
+			// Both entries must be siblings under pages:, which is what the
+			// one-space case got wrong by nesting b.md inside a.md.
+			items, err := (Dialect{Doc: "d", Item: "k", MaxDepth: 2}).ReadMapping(got)
+			if err != nil {
+				t.Fatalf("does not read back: %v\n%s", err, got)
+			}
+			if len(items) != 1 || items[0].Map == nil || len(items[0].Map) != 2 {
+				t.Fatalf("want two sibling entries, got:\n%s", got)
+			}
+		})
+	}
+}
+
+// A page key is a path, and a path may hold any of YAML's indicators. Values
+// have had the readsBackAs quoting fallback since #130; keys had nothing, so a
+// legitimate filename was refused rather than quoted.
+func TestSetNestedQuotesAKeyThatNeedsIt(t *testing.T) {
+	keys := []string{
+		"#x.md", "- a.md", "a: b.md", "a #b.md", "!a.md", "&a.md", "*a.md",
+		"@a.md", "|a.md", ">a.md", "a\tb.md", " a.md", "a.md ", "{a}.md",
+		"[a].md", "?a.md", "%a.md", "docs/ünïcode.md", "true", "123",
+	}
+	for _, key := range keys {
+		t.Run(key, func(t *testing.T) {
+			got, err := SetNested("# marker\n", []string{"pages", key},
+				[]Field{{Key: "page_id", Value: "1"}})
+			if err != nil {
+				t.Fatalf("SetNested(%q): %v", key, err)
+			}
+			items, err := (Dialect{Doc: "d", Item: "k", MaxDepth: 2}).ReadMapping(got)
+			if err != nil {
+				t.Fatalf("does not read back: %v\n%s", err, got)
+			}
+			if len(items) != 1 || items[0].Map == nil || len(items[0].Map) != 1 {
+				t.Fatalf("unexpected shape:\n%s", got)
+			}
+			if items[0].Map[0].Key != key {
+				t.Errorf("key read back as %q, wrote %q:\n%s", items[0].Map[0].Key, key, got)
+			}
+		})
+	}
+}
+
+// An existing quoted key is matched and updated rather than duplicated.
+func TestSetNestedUpdatesAnExistingQuotedKey(t *testing.T) {
+	got, err := SetNested("pages:\n  \"a: b.md\":\n    page_id: 1\n",
+		[]string{"pages", "a: b.md"}, []Field{{Key: "page_id", Value: "2"}})
+	if err != nil {
+		t.Fatalf("SetNested: %v", err)
+	}
+	if strings.Count(got, "page_id") != 1 {
+		t.Errorf("the entry was duplicated:\n%s", got)
+	}
+	if !strings.Contains(got, "page_id: 2") {
+		t.Errorf("not updated:\n%s", got)
+	}
+}
