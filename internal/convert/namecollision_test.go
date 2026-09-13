@@ -28,7 +28,7 @@ func convertBody(t *testing.T, root, body string, images ...string) (*convert.Co
 		t.Fatal(err)
 	}
 	defer func() { _ = r.FS.Close() }()
-	return convert.MdToConfluence(md, r, testIndex(t, r), "https://wiki.example.net", "ENG", "vtest")
+	return convert.MdToConfluence(md, r, testIndex(t, r), "https://wiki.example.net", "ENG")
 }
 
 // TestRefusesTwoAssetsWithOneName is the refusal itself. It names both paths,

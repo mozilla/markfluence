@@ -357,9 +357,17 @@ over every real name in a tree.
 ### Comment directives
 
 - `<!-- confluence-toc -->` — replaced with Confluence table-of-contents macro.
-- `<!-- markfluence-version -->` — replaced with the build stamp,
-  `markfluence VERSION (SHA, DATE)` (the same string `markfluence --version`
-  prints).
+
+There used to be a `<!-- markfluence-version -->` directive too, substituted
+with the build stamp. It was removed (#158): the tool's version answers none of
+the questions a reader of a published page has, it had no inverse so an
+`export` baked the old string in as literal text, and a page carrying it
+re-rendered on every markfluence upgrade — which reads as a content change to
+anything comparing a file against its page. To say where a page comes from, put
+a callout at the top of the markdown and link the source file; a
+[GitHub alert](#github-alerts) converts to a Confluence panel. A file still holding
+the token publishes it as an ordinary HTML comment, which is inert in storage
+format and invisible on the page.
 
 ### Raw Confluence storage format
 

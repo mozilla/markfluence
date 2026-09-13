@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mozilla/markfluence/internal/buildinfo"
 	"github.com/mozilla/markfluence/internal/completion"
 	"github.com/mozilla/markfluence/internal/convert"
 	"github.com/mozilla/markfluence/internal/frontmatter"
@@ -252,7 +251,7 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 			project.Filename))
 	}
 
-	page, err := convert.MdToConfluence(mf, root, index, checkBaseURL, checkSpaceKey, buildinfo.Stamp())
+	page, err := convert.MdToConfluence(mf, root, index, checkBaseURL, checkSpaceKey)
 	if err != nil {
 		// Two assets wanting one attachment name is a defect in the document,
 		// not a failure of the converter: the author fixes it by renaming a

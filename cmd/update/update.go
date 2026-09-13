@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mozilla/markfluence/internal/buildinfo"
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/completion"
 	"github.com/mozilla/markfluence/internal/convert"
@@ -294,7 +293,7 @@ func processFile(
 
 	// SiteURL, not BaseURL: rewritten links are published into the page, so they
 	// must point at the site even when requests go through the gateway.
-	pageContent, err := convert.MdToConfluence(mf, root, index, c.SiteURL(), r.space, buildinfo.Stamp())
+	pageContent, err := convert.MdToConfluence(mf, root, index, c.SiteURL(), r.space)
 	if err != nil {
 		return r.fail(err, jsonout.CodeConvert)
 	}
