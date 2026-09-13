@@ -112,6 +112,16 @@ var blockReader = reader{
 	fixup:      shiftLeadingPosition,
 }
 
+// docReader reads a whole YAML document rather than a fenced block: no "---"
+// position correction, no scalarOnly rule (those are frontmatter's own fields),
+// and depth enough for markfluence.yaml's pages: block. Used by the nested
+// writer, whose input is a file the loader already accepted -- so a parse
+// failure there is unexpected, and the wording is neutral rather than borrowed
+// from either caller.
+var docReader = reader{
+	Dialect: Dialect{Doc: "the file", Item: "key", MaxDepth: 2},
+}
+
 // parse parses a document's text into a flat mapping. Any other shape (a bare
 // scalar, a top-level list) is an error.
 func (r reader) parse(text string) (*block, error) {
