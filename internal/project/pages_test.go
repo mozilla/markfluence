@@ -706,3 +706,82 @@ func TestSetPageEntryRetriesOnceAndSucceeds(t *testing.T) {
 		}
 	}
 }
+
+// A read-only project file is an I/O failure, not a refusal to understand it.
+// jsonout.CodeOr cannot make that call -- it only consults CodeFor for an error
+// that came from a request -- so the distinction has to be on the error.
+func TestSetPageEntryMarksIOFailures(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can write a read-only file")
+	}
+	root := rootAt(t, "# marker\n")
+	dir := filepath.Dir(root.File)
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	err := root.SetPageEntry("a.md", Entry{Fields: map[string]string{"page_id": "1"}})
+	if err == nil {
+		t.Fatal("SetPageEntry succeeded with an unwritable directory")
+	}
+	if !IsIOFailure(err) {
+		t.Errorf("IsIOFailure = false for %v; a write failure must be distinguishable", err)
+	}
+}
+
+// A refusal to understand the file is *not* an I/O failure, or the distinction
+// would report every validation problem as a disk problem.
+func TestValidationFailureIsNotAnIOFailure(t *testing.T) {
+	root := rootAt(t, "space: ENG\n")
+	if err := os.WriteFile(root.File, []byte("pages: nope\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := root.SetPageEntry("a.md", Entry{Fields: map[string]string{"page_id": "1"}})
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if IsIOFailure(err) {
+		t.Errorf("IsIOFailure = true for a validation failure: %v", err)
+	}
+}
+
+// os.WriteFile -- which the frontmatter path uses -- follows a symlink, so
+// replacing the link with a regular file would be a behaviour change
+// introduced by making the write atomic: a markfluence.yaml symlinked to a
+// shared config would quietly become a local copy, and later edits to the
+// shared file would stop applying.
+func TestSetPageEntryWritesThroughASymlink(t *testing.T) {
+	base := t.TempDir()
+	shared := filepath.Join(base, "shared.yaml")
+	if err := os.WriteFile(shared, []byte("pages: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(base, "proj")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, Filename)
+	if err := os.Symlink(shared, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	root, err := Discover(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.FS.Close() }()
+
+	if err := root.SetPageEntry("a.md", Entry{Fields: map[string]string{"page_id": "1"}}); err != nil {
+		t.Fatalf("SetPageEntry: %v", err)
+	}
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Error("the symlink was replaced by a regular file")
+	}
+	if !strings.Contains(mustReadFile(t, shared), "a.md") {
+		t.Errorf("the shared target was not written:\n%s", mustReadFile(t, shared))
+	}
+}

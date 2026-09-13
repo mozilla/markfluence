@@ -32,8 +32,12 @@ points at its parent's .md file, and creation is ordered parents-first
 with the real ids filled in.
 
 Unless --no-persist is given, each created page's
-title/space/parent/page_id/page_width/labels are written back into the
-frontmatter.
+title/space/parent/page_id/page_width are recorded -- in the file's own
+frontmatter, or in a 'pages:' entry in markfluence.yaml when that is
+where the file's metadata lives. A file with no frontmatter in a project
+that uses 'pages:' gets an entry, so the markdown stays untouched; a file
+that already carries frontmatter keeps using it. Recording into
+markfluence.yaml modifies that shared file, once per created page.
 
 --dry-run makes the same checks as a real run, so it exits non-zero on the
 same failures and one unpublishable file aborts the preview for the whole
@@ -70,7 +74,7 @@ markfluence create FILE... [flags]
 ```
       --dry-run             Preview what would be created without writing to Confluence or files.
   -h, --help                help for create
-      --no-persist          Do not write anything back into the frontmatter.
+      --no-persist          Do not record anything: leave both the file and markfluence.yaml untouched.
       --page-width string   Override the page width: narrow, wide, or max.
       --parent string       Parent page or folder id for the new page(s).
       --space string        Target space key.

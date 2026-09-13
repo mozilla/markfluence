@@ -329,3 +329,59 @@ func TestSetNestedUpdatesAnExistingQuotedKey(t *testing.T) {
 		t.Errorf("not updated:\n%s", got)
 	}
 }
+
+// A document whose root mapping is itself indented is legal YAML and the loader
+// accepts it. Computing a child's column from an absolute depth emitted the new
+// entry at pages:' own column, which is the same bug childColumn fixed on the
+// non-flow path -- still present on the flow one.
+func TestSetNestedHandlesAnIndentedRootMapping(t *testing.T) {
+	for name, src := range map[string]string{
+		"indented flow":           "  pages: {}\n",
+		"indented flow populated": "  space: ENG\n  pages: {a.md: {page_id: 1}}\n",
+		"indented block":          "  pages:\n    a.md:\n      page_id: 1\n",
+		"four-space root":         "    pages:\n      a.md:\n        page_id: 1\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := SetNested(src, []string{"pages", "b.md"},
+				[]Field{{Key: "page_id", Value: "2"}})
+			if err != nil {
+				t.Fatalf("SetNested: %v\nfrom:\n%s", err, src)
+			}
+			items, err := (Dialect{Doc: "d", Item: "k", MaxDepth: 2}).ReadMapping(got)
+			if err != nil {
+				t.Fatalf("does not read back: %v\n%s", err, got)
+			}
+			var pages []Item
+			for _, it := range items {
+				if it.Key == "pages" {
+					pages = it.Map
+				}
+			}
+			if pages == nil {
+				t.Fatalf("pages lost:\n%s", got)
+			}
+			found := false
+			for _, e := range pages {
+				if e.Key == "b.md" {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("b.md is not a sibling under pages:\n%s", got)
+			}
+		})
+	}
+}
+
+// SetNested is exported and takes []Field, so a Comment must be honoured the
+// way Render and setField honour it rather than dropped in silence.
+func TestSetNestedHonoursAFieldComment(t *testing.T) {
+	got, err := SetNested("# marker\n", []string{"pages", "a.md"},
+		[]Field{{Key: "parent", Value: "123", Comment: "index.md"}})
+	if err != nil {
+		t.Fatalf("SetNested: %v", err)
+	}
+	if !strings.Contains(got, "index.md") {
+		t.Errorf("the comment was dropped:\n%s", got)
+	}
+}

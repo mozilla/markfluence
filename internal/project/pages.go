@@ -265,7 +265,7 @@ func (r *Root) SetPageEntry(key string, entry Entry) error {
 func (r *Root) trySetPageEntry(key string, entry Entry) (cfg Config, written bool, err error) {
 	before, err := os.ReadFile(r.File)
 	if err != nil {
-		return Config{}, false, &ConfigError{File: r.File, Err: errors.New(readFailure(err))}
+		return Config{}, false, &ConfigError{File: r.File, IO: true, Err: errors.New(readFailure(err))}
 	}
 	// The BOM comes off before the writer sees it and goes back on after.
 	// parseConfig strips one deliberately (#100), so a BOM-prefixed project
@@ -307,13 +307,13 @@ func (r *Root) trySetPageEntry(key string, entry Entry) (cfg Config, written boo
 	// between reading the file and writing it back.
 	current, err := os.ReadFile(r.File)
 	if err != nil {
-		return Config{}, false, &ConfigError{File: r.File, Err: errors.New(readFailure(err))}
+		return Config{}, false, &ConfigError{File: r.File, IO: true, Err: errors.New(readFailure(err))}
 	}
 	if string(current) != string(before) {
 		return Config{}, false, nil
 	}
 	if err := replaceFile(r.File, after); err != nil {
-		return Config{}, false, &ConfigError{File: r.File, Err: errors.New(readFailure(err))}
+		return Config{}, false, &ConfigError{File: r.File, IO: true, Err: errors.New(readFailure(err))}
 	}
 	return cfg, true, nil
 }
@@ -363,6 +363,14 @@ func existingKeySpelling(body, key string) string {
 // The mode of an existing file is preserved; a new one gets 0o644, matching
 // every other file markfluence writes.
 func replaceFile(path, content string) error {
+	// Through a symlink, not over it. os.WriteFile -- which the frontmatter
+	// path uses -- follows one, so replacing the link with a regular file would
+	// be a behaviour change introduced by making the write atomic: a
+	// markfluence.yaml symlinked to a shared config would quietly become a
+	// local copy, and every later edit to the shared file would stop applying.
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
 	mode := os.FileMode(0o644)
 	if info, err := os.Stat(path); err == nil {
 		mode = info.Mode().Perm()

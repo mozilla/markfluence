@@ -79,8 +79,12 @@ var Cmd = &cobra.Command{
 		"points at its parent's .md file, and creation is ordered parents-first\n" +
 		"with the real ids filled in.\n\n" +
 		"Unless --no-persist is given, each created page's\n" +
-		"title/space/parent/page_id/page_width/labels are written back into the\n" +
-		"frontmatter.\n\n" +
+		"title/space/parent/page_id/page_width are recorded -- in the file's own\n" +
+		"frontmatter, or in a 'pages:' entry in markfluence.yaml when that is\n" +
+		"where the file's metadata lives. A file with no frontmatter in a project\n" +
+		"that uses 'pages:' gets an entry, so the markdown stays untouched; a file\n" +
+		"that already carries frontmatter keeps using it. Recording into\n" +
+		"markfluence.yaml modifies that shared file, once per created page.\n\n" +
 		"--dry-run makes the same checks as a real run, so it exits non-zero on the\n" +
 		"same failures and one unpublishable file aborts the preview for the whole\n" +
 		"batch. To lint several files independently, use check instead.",
@@ -109,9 +113,10 @@ func init() {
 	Cmd.Flags().StringVar(&pageWidthOpt, "page-width", "",
 		"Override the page width: narrow, wide, or max.")
 	Cmd.Flags().BoolVar(&persistOpt, "persist", true,
-		"Write title/space/parent/page_id/page_width back into the frontmatter.")
+		"Record title/space/parent/page_id/page_width for each created page, in the "+
+			"file's frontmatter or in its markfluence.yaml entry.")
 	Cmd.Flags().BoolVar(&noPersistOpt, "no-persist", false,
-		"Do not write anything back into the frontmatter.")
+		"Do not record anything: leave both the file and markfluence.yaml untouched.")
 	Cmd.Flags().BoolVar(&dryRunOpt, "dry-run", false,
 		"Preview what would be created without writing to Confluence or files.")
 	// --persist exists only so wantPersist has a positive flag to combine with
@@ -570,10 +575,17 @@ func reserveOne(
 		// one behaves exactly as it did before.
 		if r.toManifest {
 			if err := persistToManifest(r, pageID, parentID); err != nil {
-				// CodeOr, not a hardcoded VALIDATION: a read-only project file
-				// is an I/O failure and the frontmatter path below reports one
-				// as such (#133). The page exists, so its id stays visible.
-				return res.failKeepingPage(err, jsonout.CodeOr(err, jsonout.CodeValidation)), "", 0, false
+				// A read-only project file is an I/O failure and the
+				// frontmatter path below reports one as such (#133). CodeOr
+				// cannot make this call -- it only consults CodeFor for an
+				// error that came from a *request*, so every ConfigError fell
+				// through to the fallback and the classification was dead code.
+				// The page exists, so its id stays visible either way.
+				code := jsonout.CodeValidation
+				if project.IsIOFailure(err) {
+					code = jsonout.CodeIO
+				}
+				return res.failKeepingPage(err, code), "", 0, false
 			}
 			res.persisted = true
 			return res, pageID, result.Version.Number, true

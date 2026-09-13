@@ -120,23 +120,28 @@ func childMapping(parent *ast.MappingNode, key string, depth int) (*ast.MappingN
 		if v.Key.GetToken().Value != key {
 			continue
 		}
+		// The child column comes from *this* key's real position, never from
+		// an absolute depth: a document whose root mapping is itself indented
+		// ("  pages: {}") loads fine, and computing from depth then emitted the
+		// entry at pages:' own column.
+		childCol := v.Key.GetToken().Position.Column + 2
 		switch m := v.Value.(type) {
 		case *ast.MappingNode:
-			toBlock(m, depth+1)
+			toBlock(m, childCol)
 			return m, nil
 		case *ast.MappingValueNode:
 			// goccy renders a one-pair mapping as a MappingValueNode, so an
 			// entry with a single field arrives in the other shape. Promoting it
 			// keeps the rest of this function working on one type; the promoted
 			// node carries the original pair, so nothing is lost.
-			promoted := ast.Mapping(token.New("", "", posAt(indentColumn(depth+1))), false)
+			promoted := ast.Mapping(token.New("", "", posAt(childCol)), false)
 			promoted.Values = append(promoted.Values, m)
 			v.Value = promoted
 			return promoted, nil
 		case *ast.NullNode:
 			// `pages:` with nothing after it. Writing into it is what the
 			// caller asked for, and an empty mapping is what it meant.
-			created := ast.Mapping(token.New("", "", posAt(indentColumn(depth+1))), false)
+			created := ast.Mapping(token.New("", "", posAt(childCol)), false)
 			v.Value = created
 			return created, nil
 		default:
@@ -165,12 +170,11 @@ func childMapping(parent *ast.MappingNode, key string, depth int) (*ast.MappingN
 // line, and block is the only readable style for a mapping of mappings. Valid
 // YAML in a readable style is the contract; matching an author's flow braces is
 // not.
-func toBlock(m *ast.MappingNode, depth int) {
+func toBlock(m *ast.MappingNode, col int) {
 	if !m.IsFlowStyle {
 		return
 	}
 	m.IsFlowStyle = false
-	col := indentColumn(depth)
 	// The mapping's own column too, not just its children's: a flow mapping's
 	// token sits at the brace ("pages: {}" puts it at column 8), and
 	// childColumn reads that column when the mapping is empty -- so leaving it
@@ -179,7 +183,7 @@ func toBlock(m *ast.MappingNode, depth int) {
 	for _, v := range m.Values {
 		v.Key.GetToken().Position.Column = col
 		if inner, ok := v.Value.(*ast.MappingNode); ok {
-			toBlock(inner, depth+1)
+			toBlock(inner, col+2)
 		}
 	}
 }
@@ -256,7 +260,12 @@ func nestedValue(f Field) ast.Node {
 	if f.List != nil {
 		return sequenceNodeFor(f.List, true)
 	}
-	return valueNodeFor(f.Key, f.Value)
+	// Through valueWithComment, so a Field.Comment is honoured here exactly as
+	// Render and setField honour it. Dropping it was silent, and SetNested is
+	// exported and takes []Field -- the next caller to set one (recording the
+	// original parent: path the way parentField does for frontmatter) would
+	// have lost it with nothing said.
+	return valueWithComment(f, true)
 }
 
 // insertSorted puts mv into m at the position canonical order wants for key.

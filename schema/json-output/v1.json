@@ -430,7 +430,7 @@
       }
     },
     "createResult": {
-      "description": "One input file's create outcome. page_id and url describe the created page; on a failure they are null, except in two cases where a real page exists and its id must stay visible: the file's frontmatter page_id blocked creation (page_id is that id, url is the page already at it, null when the id resolves to nothing), or a page was created on the server but persisting its frontmatter afterward failed (page_id/url name that orphaned page so it can be recovered).",
+      "description": "One input file's create outcome. page_id and url describe the created page; on a failure they are null, except in two cases where a real page exists and its id must stay visible: the file's frontmatter page_id blocked creation (page_id is that id, url is the page already at it, null when the id resolves to nothing), or a page was created on the server but recording its metadata afterward failed -- in the file's frontmatter or in its markfluence.yaml entry -- in which case page_id/url name that orphaned page so it can be recovered.",
       "type": "object",
       "additionalProperties": false,
       "required": [
