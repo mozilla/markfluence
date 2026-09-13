@@ -4,15 +4,15 @@ import "fmt"
 
 // The two ways a frontmatter page_id is wrong, phrased once.
 //
-// create, update, and fix all report both conditions, and all three want a reader
-// to recognize them as the same problem seen from different commands -- so the
-// sentence lives here rather than in three literals that drift apart. Only the
-// remedy differs, since what to do about a dead id depends on what the command was
-// trying to do, and that is the caller's to supply.
+// create and update report both conditions and check reports the non-numeric
+// one, and each wants a reader to recognize the same problem seen from a
+// different command -- so the sentence lives here rather than in literals that
+// drift apart. Only the remedy differs, since what to do about a dead id depends
+// on what the command was trying to do, and that is the caller's to supply.
 //
 // These return strings, not errors: create wraps the text in a typed error that
-// also carries the fields its --json result reports, while update and fix want a
-// plain error. A shared error type would serve neither.
+// also carries the fields its --json result reports, while update and check want
+// a plain error. A shared error type would serve neither.
 
 // NotFoundMessage describes a page_id that resolves to nothing -- the id 404s.
 // remedy completes the sentence -- e.g. "remove it to create a new page, or

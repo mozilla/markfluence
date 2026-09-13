@@ -375,8 +375,8 @@ func processFile(
 
 // previewWidth reports the width change a dry-run update would make. It reads the
 // live width (read-only) and marks a change only when it differs from the intended
-// width — mirroring fix's dry-run, and matching the real run's "page width:" line
-// only when there is something to change. A read failure is a warning, not fatal.
+// width — matching the real run's "page width:" line only when there is
+// something to change. A read failure is a warning, not fatal.
 func (r *updateResult) previewWidth(
 	c *client.ConfluenceClient, pageID string, width pagewidth.Width, applyWidth bool,
 ) {

@@ -50,7 +50,7 @@ func TestEmitEnvelope(t *testing.T) {
 
 func TestNewEnvelopeEmptyResultsIsArray(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Emit(&buf, NewEnvelope("fix", nil, nil)); err != nil {
+	if err := Emit(&buf, NewEnvelope("check", nil, nil)); err != nil {
 		t.Fatalf("Emit: %v", err)
 	}
 	if !strings.Contains(buf.String(), `"results": []`) {

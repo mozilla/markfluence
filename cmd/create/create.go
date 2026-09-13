@@ -294,8 +294,9 @@ func checkPageID(c *client.ConfluenceClient, pageID string) error {
 // is free to create against. page is nil when the id resolves to nothing.
 func pageIDFailureFor(c *client.ConfluenceClient, pageID string, page *client.Page) error {
 	if page == nil {
-		// Wording mirrors fix's locatePage, which reports the same condition; only
-		// the remedy differs, since removing the id here means "create a new page".
+		// pageref owns the wording so update reports the same condition the same
+		// way; only the remedy differs, since removing the id here means
+		// "create a new page".
 		return &pageIDFailure{
 			pageID:  pageID,
 			message: pageref.NotFoundMessage(pageID, "remove it to create a new page, or correct it"),
@@ -1122,9 +1123,10 @@ func overrideNeedsSingleFile(cliTitle string, nFiles int) bool {
 }
 
 // writeBackFrontmatter sets every field create persists, then normalizes the
-// block's field order. Normalizing here rather than leaving it to fix costs
-// nothing: persist already rewrites all five fields, so there is no untouched
-// line left for a surgical edit to protect.
+// block's field order. Normalizing here costs nothing: persist already rewrites
+// all five fields, so there is no untouched line left for a surgical edit to
+// protect. It is also the only place left that reorders a block -- no verb
+// reconciles a file from its page any more (#151).
 func writeBackFrontmatter(content string, r record, pageID, parentValue, parentComment string) (string, error) {
 	fields := []struct{ key, value, comment string }{
 		{"title", r.title, ""},

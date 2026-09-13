@@ -152,7 +152,8 @@ type `fix`, which is unrelated. Same for `internal/completion/completion.go`
 
 ## What is *not* touched
 
-No shared code becomes dead. Verified caller-by-caller rather than assumed:
+Almost no shared code becomes dead — **one exception, and the first draft of
+this plan got it wrong.** Verified caller-by-caller rather than assumed:
 
 | helper | other callers |
 |---|---|
@@ -165,13 +166,34 @@ No shared code becomes dead. Verified caller-by-caller rather than assumed:
 | `frontmatter.Normalize` | `create` |
 | `frontmatter.UpdateField` | `create` |
 
-One observation to record and *not* act on: `fix` is the only production caller
-that omits `SearchPagesByTitle`'s variadic `statuses`, so after removal the
-`len(statuses) == 0` → `StatusCurrent` default has no production caller.
-`internal/client/client_test.go:695` still exercises it, so it stays honest.
-Removing the default is a separate simplification and is out of scope here —
-touching the client while deleting a command is how a removal grows a
-regression.
+**`frontmatter.UpdateListField` is the exception, and this table originally
+omitted it.** `cmd/fix/fix.go:244` was its only non-test caller, and it is the
+sole entry point to the sequence-style-preservation path — `readsBackInSeqAs`
+and the `seq.IsFlowStyle` read that keeps a block `labels:` list from being
+rewritten as an unreadable single flow line. After this removal **nothing in
+the shipped binary writes a frontmatter sequence surgically**: `create` persists
+five *scalar* fields via `UpdateField` and deliberately never writes `labels`,
+`update` writes no files at all, and `read`/`export` go through `Render`, which
+builds a block from scratch. So the flow-vs-block contract is pinned only by
+`internal/frontmatter`'s own unit tests, and can regress without any command
+noticing.
+
+Kept rather than deleted, and the choice is deliberate rather than lazy:
+`internal/frontmatter` is the library that owns the frontmatter dialect, not a
+helper for current callers, and `UpdateListField` is `Render`'s surgical
+counterpart with a tested contract that the next verb writing a list would want.
+Deleting it is a separate decision, and #151's own reasoning applies — touching
+adjacent machinery while removing a command is how a removal grows a regression.
+What is *not* acceptable is the claim this plan made, so it is corrected here.
+
+Two smaller observations, recorded and not acted on:
+
+- `fix` is the only production caller that omits `SearchPagesByTitle`'s variadic
+  `statuses`, so the `len(statuses) == 0` → `StatusCurrent` default now has only
+  `internal/client/client_test.go:695` exercising it.
+- `internal/labels`'s exported `Field` const has no reference outside its own
+  package now. It still documents the key the package owns and is used at three
+  internal sites, so it is not dead — only no longer part of anyone's API.
 
 ## Order
 
@@ -237,3 +259,54 @@ read which column `git status --short` puts the marker in.
   `labels.md`'s re-attributed round-trip bullet. `_plans/` is untouched by
   design — it records what was built, `004_fix-subcommand` included, and
   rewriting it would make the record lie.
+
+## Review findings
+
+A local code review found eleven stragglers, all documentation, comment or
+dead-code drift rather than behaviour. None was catchable by the sweep this plan
+specified (`markfluence fix\|cmd/fix\|fixResult\|fixSummary`), which is the
+lesson: **a removal's survey has to cover prose, code comments, doc examples,
+and callers of anything the deleted package called** — four surfaces, where this
+plan listed one and a half.
+
+Two were substantive.
+
+**`frontmatter.UpdateListField` lost its only production caller**, contradicting
+this plan's own "no shared code becomes dead" claim. Corrected above.
+
+**The `labels.md` re-attribution was false.** The bullet was kept and pointed at
+`create`'s persist step as the code path still exercising block-style
+preservation — but `writeBackFrontmatter` writes five *scalar* fields and
+`persistToManifest` documents that "labels is deliberately *not* written", so
+`create` never rewrites a `labels:` sequence and cannot exercise it. The bullet
+now says plainly that no command does, which is the honest version and is the
+same fact as the `UpdateListField` finding seen from the docs side. Re-attributing
+a verified claim to a code path without checking that the path reaches the
+behaviour is the mistake to avoid repeating.
+
+Two more were pre-existing errors this PR turned into contradictions:
+
+- **`docs/markdown_file.md`'s `page_id` row** said `update` "looks it up by
+  `title` and writes it back when missing". It never did: `cmd/update/update.go`
+  fails with "no page id: set page_id in this file's frontmatter or in its
+  markfluence.yaml entry, or create the page first", and searches for nothing.
+  Wrong before, and now directly contradicting the README paragraph this PR
+  added.
+- **`README.md`'s `markfluence schema` console example** printed an enum
+  containing `fix` and missing `check` — stale for `fix` as of this PR, and
+  already wrong about `check`. The output is now verified against the binary.
+
+And one where the edit itself was wrong: **`README.md`'s `--dry-run` list** went
+from "`create`, `update` and `fix`" to "`create` and `update`", when five
+commands register the flag (`export`, `attachment-upload` and
+`attachment-download` too). An understatement was preserved while the line was
+being touched anyway.
+
+The rest were comments naming the deleted command: `internal/pageref/message.go`
+(which had the *count* wrong too, and disagreed with the CLAUDE.md sentence this
+PR rewrote for that very line), `internal/pagemeta`'s package doc,
+`cmd/create/create.go` twice, `cmd/update/update.go`'s `previewWidth`,
+`internal/jsonout`, and `internal/labels`'s `Diff` ("three commands", now two).
+`internal/jsonout/jsonout_test.go` also built an envelope with `command: "fix"`,
+a value no longer in the published enum — harmless under its substring
+assertion, but it documented an invalid document as the canonical example.

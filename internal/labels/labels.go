@@ -274,9 +274,9 @@ func Unmanaged(live []client.Label) []string {
 // and unsorted output would be unstable across runs for no reason a reader
 // could explain.
 //
-// This lives here so no command reimplements it. Three commands need the same
-// answer, and three copies of a set difference is three chances to leave a
-// label behind.
+// This lives here so no command reimplements it. Both writing verbs need the
+// same answer, and a copy of a set difference per command is a chance per
+// command to leave a label behind.
 func Diff(declared, live []string) (add, remove, unchanged []string) {
 	inLive := make(map[string]bool, len(live))
 	for _, l := range live {
