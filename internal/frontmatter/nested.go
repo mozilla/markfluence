@@ -92,6 +92,7 @@ func childMapping(parent *ast.MappingNode, key string, depth int) (*ast.MappingN
 		}
 		switch m := v.Value.(type) {
 		case *ast.MappingNode:
+			toBlock(m, depth+1)
 			return m, nil
 		case *ast.MappingValueNode:
 			// goccy renders a one-pair mapping as a MappingValueNode, so an
@@ -118,6 +119,35 @@ func childMapping(parent *ast.MappingNode, key string, depth int) (*ast.MappingN
 		ast.String(token.New(key, key, posAt(indentColumn(depth)))),
 		created), key)
 	return created, nil
+}
+
+// toBlock converts a flow mapping to block style, re-positioning it and
+// everything under it for the depth it now sits at.
+//
+// `pages: {}` is a flow mapping, and it is exactly the shape a project that has
+// chosen the manifest but registered nothing has. Appending a block entry to a
+// flow mapping emits "pages: {\n  a.md:" and does not parse -- measured, and
+// caught by verifyNested rather than reasoned about. A *populated* flow mapping
+// needs its existing children moved too, since they carry the columns flow gave
+// them; leaving them behind produced a different unparseable file.
+//
+// Style is deliberately not preserved, unlike a frontmatter sequence rewrite:
+// a nested entry cannot be written in flow style without re-emitting the whole
+// line, and block is the only readable style for a mapping of mappings. Valid
+// YAML in a readable style is the contract; matching an author's flow braces is
+// not.
+func toBlock(m *ast.MappingNode, depth int) {
+	if !m.IsFlowStyle {
+		return
+	}
+	m.IsFlowStyle = false
+	col := indentColumn(depth)
+	for _, v := range m.Values {
+		v.Key.GetToken().Position.Column = col
+		if inner, ok := v.Value.(*ast.MappingNode); ok {
+			toBlock(inner, depth+1)
+		}
+	}
 }
 
 // setNestedField replaces or inserts f's key in m, emitting it at depth.
