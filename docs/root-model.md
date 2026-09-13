@@ -208,6 +208,56 @@ decided here.
 **No `init` command generates this file.** Create it by hand; that's
 [#5](https://github.com/mozilla/markfluence/issues/5).
 
+## `.markfluence/`: local state, not committed
+
+Beside `markfluence.yaml`, a root gains a `.markfluence/` directory the first
+time a command has something to record there. Today it holds one file,
+`log.jsonl`, the append-only action log (#149).
+
+**It is not committed**, and the directory ignores itself: markfluence plants a
+`.markfluence/.gitignore` containing `*` alongside the first line it writes, so
+nothing has to be added to a `.gitignore` markfluence does not own. An existing
+one is never overwritten.
+
+The reason it is uncommitted is structural rather than ergonomic. A shared
+repository *is* a declaration that the repository is the source of truth, and
+in that arrangement `update --force` is the answer and nothing in the log is
+consulted. So the log serves one arrangement — a local copy, with the source of
+truth in Confluence — where per-checkout state is the right shape: another
+person's sync point is irrelevant to mine. Committing it would buy nothing and
+would produce a tail-append conflict on every concurrent publish.
+
+### What the log is for
+
+`update` cannot otherwise tell "the page differs from my file because I have
+edits to publish" from "the page differs because somebody published first".
+Distinguishing those needs a merge base — what *this copy* was derived from —
+which no page-side state can hold, because the page cannot know what a given
+local copy came from.
+
+So `create`, `update` and `export` each append a line recording the page
+version they left behind and a sha of what the body `PUT` sent. The last
+successful line for a file is that copy's base.
+
+One JSON object per line, appended, tolerant of a field it does not recognise
+so the format can grow without a version:
+
+```jsonl
+{"time":"...","action":"update","status":"ok","file":"docs/some-page.md","page_id":"123456789","page_version":44,"publish_sha256":"b800cc4f…","markfluence":"1.2.3"}
+```
+
+`file` is the same root-relative lexical key [`pages:`](#pages--page-metadata-for-a-pristine-file)
+is keyed by, which is what makes a multi-root batch work: each file's line goes
+to its own root's log, and a key means nothing without the root it is relative
+to.
+
+**Nothing in it is load-bearing.** It is advisory bookkeeping, so a missing,
+unreadable, corrupt or half-written log degrades the check that reads it and
+never the run — a line that will not parse is skipped, and a log that cannot be
+read leaves every file with no base, which means publish. A root with **no
+`markfluence.yaml` at all** gets no log and none is created, for the same
+reason nothing here creates a project file: that is [#5](https://github.com/mozilla/markfluence/issues/5).
+
 ## `--root`
 
 A persistent flag overriding discovery for the whole invocation, with one
