@@ -365,9 +365,11 @@ the questions a reader of a published page has, it had no inverse so an
 re-rendered on every markfluence upgrade — which reads as a content change to
 anything comparing a file against its page. To say where a page comes from, put
 a callout at the top of the markdown and link the source file; a
-[GitHub alert](#github-alerts) converts to a Confluence panel. A file still holding
-the token publishes it as an ordinary HTML comment, which is inert in storage
-format and invisible on the page.
+[GitHub alert](#github-alerts) converts to a Confluence panel. A file still
+holding the token simply loses it: **Confluence strips every HTML comment on
+write**, so it never reaches the stored page at all (measured — see
+[storage-format.md](confluence/storage-format.md#confluence-strips-html-comments-on-write)).
+That is true of any HTML comment you write in markdown, not just this one.
 
 ### Raw Confluence storage format
 
