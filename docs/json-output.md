@@ -27,13 +27,12 @@ per-command details a script author hits once and then needs to look up.
   object too, since a fatal failure emits no envelope and a credential failure
   is exactly the run where a warning about your `.env` matters.
 - **Status verbs** are per-command: `published`/`skipped` (`update`),
-  `created`/`not_created` (`create`), `changed`/`consistent` (`fix`),
-  `clean`/`warnings`/`broken` (`check`),
+  `created`/`not_created` (`create`), `clean`/`warnings`/`broken` (`check`),
   `created`/`updated`/`skipped` (`attachment-upload`),
   `downloaded`/`skipped` (`attachment-download`), plus `failed`. `info`, `read`,
   and `attachment-list` results carry data only (no status verb).
 - **One result per target**, and the target is per-command: the page for
-  `info`/`read`/`export` (always one), the file for `update`/`create`/`fix`/`check`,
+  `info`/`read`/`export` (always one), the file for `update`/`create`/`check`,
   and the attachment for the three `attachment-*` commands — so
   `.results[] | .filename` works and `summary.total` is the attachment count.
   `export` nests the files it wrote in an `attachments` array on its page

@@ -235,9 +235,9 @@ case below was observed, and the page was purged afterward:
 - `info` shows `labels:` and `labels/unmanaged:` as separate rows.
 - `read` emits `labels: [howto, runbook]` — global-only, sorted, between
   `page_id` and `page_width`.
-- `fix` adopts hand-applied labels into a file with no key, and the second run
-  reports `already consistent`.
-- A block-style list rewritten by `fix` comes back as a block-style list.
+- A block-style `labels:` list rewritten by the frontmatter writer comes back as
+  a block-style list. Verified through `fix`, which has since been removed
+  (#151); `create`'s persist step exercises the same writer.
 - Re-running `update` with an unchanged set makes no label change.
 
 ## What is not verified

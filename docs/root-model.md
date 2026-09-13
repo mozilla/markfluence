@@ -136,8 +136,8 @@ this.
 Every command that takes a page accepts a pristine registered file, because they
 all resolve the argument through one place (`internal/pageref`): `markfluence
 info docs/deploy-runbook.md` works even though that file says nothing about
-Confluence. The exception is `fix`, which can locate such a page but cannot yet
-*write* to its entry, and says so rather than writing frontmatter instead.
+Confluence. There is no exception — `fix` was one until it was removed (#151),
+since it could locate such a page but not write to its entry.
 
 A file **neither location mentions is skipped**, not failed: a repository
 legitimately holds markdown that is not published, so `markfluence update
@@ -188,7 +188,7 @@ choosing.
 
 The asymmetry against the settings it does hold is the whole argument: a wrong
 `space` publishes to the wrong place in your own instance, which is visible and
-`fix` recovers it. A wrong `url` hands out the token, which is neither.
+repairable by hand. A wrong `url` hands out the token, which is neither.
 
 Committed and shared, unlike `.env`, which stays gitignored and personal. A
 stray `.env` in an ancestor directory can hand a project credentials that
