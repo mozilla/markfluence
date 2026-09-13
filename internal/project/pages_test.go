@@ -2,6 +2,8 @@ package project
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -283,5 +285,205 @@ func TestKindZeroValueIsNotAValidKind(t *testing.T) {
 		if !IsPageField(name) {
 			t.Errorf("%s is not reported as a page field", name)
 		}
+	}
+}
+
+// --- SetPageEntry -------------------------------------------------------------
+
+// rootAt discovers a root in a directory holding the given project file.
+func rootAt(t *testing.T, body string) *Root {
+	t.Helper()
+	root, err := Discover(write(t, body))
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	t.Cleanup(func() { _ = root.FS.Close() })
+	return root
+}
+
+func TestSetPageEntryWritesAnEntry(t *testing.T) {
+	root := rootAt(t, "space: ENG\n")
+	err := root.SetPageEntry("docs/a.md", Entry{
+		Fields: map[string]string{"title": "A", "page_id": "123"},
+		Lists:  map[string][]string{"labels": {"runbook"}},
+	})
+	if err != nil {
+		t.Fatalf("SetPageEntry: %v", err)
+	}
+	body, err := os.ReadFile(root.File)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"space: ENG", "pages:", "  docs/a.md:", "    title: A",
+		"    page_id: 123", "    labels: [runbook]"} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("missing %q:\n%s", want, body)
+		}
+	}
+	// And the in-memory Config is updated, so a caller that goes on to resolve
+	// another file in the same run sees the entry it just wrote.
+	if _, ok := root.Config.Pages["docs/a.md"]; !ok {
+		t.Error("root.Config was not refreshed")
+	}
+}
+
+// The marker that ships is a comment and nothing else, which is the file most
+// first entries will be written into.
+func TestSetPageEntryIntoTheShippedMarker(t *testing.T) {
+	root := rootAt(t, "# Marks the root of a markfluence project. Image and link paths are recorded\n"+
+		"# relative to this directory. https://github.com/mozilla/markfluence\n")
+	if err := root.SetPageEntry("a.md", Entry{
+		Fields: map[string]string{"page_id": "1"},
+	}); err != nil {
+		t.Fatalf("SetPageEntry: %v", err)
+	}
+	body, err := os.ReadFile(root.File)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "Marks the root of a markfluence project") {
+		t.Errorf("the comment was dropped:\n%s", body)
+	}
+	// It reads back through the loader, which is the contract.
+	again, err := Discover(filepath.Dir(root.File))
+	if err != nil {
+		t.Fatalf("the written file does not load: %v\n%s", err, body)
+	}
+	defer func() { _ = again.FS.Close() }()
+	if again.Config.Pages["a.md"].Fields["page_id"] != "1" {
+		t.Errorf("entry did not read back:\n%s", body)
+	}
+}
+
+// Updating an existing entry replaces values without disturbing its neighbours.
+func TestSetPageEntryUpdatesInPlace(t *testing.T) {
+	root := rootAt(t, "pages:\n  a.md:\n    page_id: 1\n    title: Old\n  b.md:\n    page_id: 2\n")
+	if err := root.SetPageEntry("a.md", Entry{
+		Fields: map[string]string{"title": "New", "page_id": "1"},
+	}); err != nil {
+		t.Fatalf("SetPageEntry: %v", err)
+	}
+	body, _ := os.ReadFile(root.File)
+	if !strings.Contains(string(body), "title: New") || strings.Contains(string(body), "title: Old") {
+		t.Errorf("title not replaced:\n%s", body)
+	}
+	if !strings.Contains(string(body), "  b.md:\n    page_id: 2") {
+		t.Errorf("the neighbouring entry was disturbed:\n%s", body)
+	}
+}
+
+// An empty labels list is a declaration ("remove them all"); an absent one is
+// not the same thing, and the two must not collapse.
+func TestSetPageEntryEmptyListIsWritten(t *testing.T) {
+	root := rootAt(t, "# marker\n")
+	if err := root.SetPageEntry("a.md", Entry{
+		Fields: map[string]string{"page_id": "1"},
+		Lists:  map[string][]string{"labels": {}},
+	}); err != nil {
+		t.Fatalf("SetPageEntry: %v", err)
+	}
+	body, _ := os.ReadFile(root.File)
+	if !strings.Contains(string(body), "labels: []") {
+		t.Errorf("an empty declared list was not written:\n%s", body)
+	}
+}
+
+// A value the YAML dialect has to quote must survive the round trip -- the
+// write-then-re-read rule, at the entry level.
+func TestSetPageEntryQuotesWhatNeedsIt(t *testing.T) {
+	root := rootAt(t, "# marker\n")
+	if err := root.SetPageEntry("a.md", Entry{
+		Fields: map[string]string{"title": "Deploy: Part 2", "page_id": "1"},
+	}); err != nil {
+		t.Fatalf("SetPageEntry: %v", err)
+	}
+	again, err := Discover(filepath.Dir(root.File))
+	if err != nil {
+		t.Fatalf("the written file does not load: %v", err)
+	}
+	defer func() { _ = again.FS.Close() }()
+	if got := again.Config.Pages["a.md"].Fields["title"]; got != "Deploy: Part 2" {
+		t.Errorf("title read back as %q", got)
+	}
+}
+
+// Nothing is written when the result would not load. The guard matters because
+// the alternative is a tool that corrupts the file it was recording success in.
+//
+// The file is corrupted *after* discovery, which is the only way to reach this:
+// a project file that cannot be loaded cannot be discovered either. It is also
+// the realistic shape -- something else edited the file while a run was in
+// flight.
+func TestSetPageEntryWritesNothingWhenTheResultWouldNotLoad(t *testing.T) {
+	root := rootAt(t, "space: ENG\n")
+	corrupt := "pages: nope\n"
+	if err := os.WriteFile(root.File, []byte(corrupt), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.SetPageEntry("a.md", Entry{Fields: map[string]string{"page_id": "1"}}); err == nil {
+		t.Fatal("SetPageEntry succeeded against a scalar pages:, want an error")
+	}
+	after, _ := os.ReadFile(root.File)
+	if string(after) != corrupt {
+		t.Errorf("the file was modified:\n%s", after)
+	}
+}
+
+// The same guard against a file that turned unreadable under us.
+func TestSetPageEntryReportsAnUnreadableFile(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can read a 0000 file")
+	}
+	root := rootAt(t, "space: ENG\n")
+	if err := os.Chmod(root.File, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(root.File, 0o644) })
+	if err := root.SetPageEntry("a.md", Entry{Fields: map[string]string{"page_id": "1"}}); err == nil {
+		t.Fatal("SetPageEntry succeeded on an unreadable file, want an error")
+	}
+}
+
+// A root with no project file has nowhere to write, and says so rather than
+// creating one: whether markfluence may create a project file is a separate
+// decision (#5), not something a create should make silently.
+func TestSetPageEntryRefusesWithNoProjectFile(t *testing.T) {
+	dir := t.TempDir()
+	root, err := Discover(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.FS.Close() }()
+	if err := root.SetPageEntry("a.md", Entry{}); err == nil {
+		t.Fatal("SetPageEntry succeeded with no project file, want an error")
+	}
+	if _, err := os.Stat(filepath.Join(dir, Filename)); err == nil {
+		t.Error("a project file was created")
+	}
+}
+
+// Fields land in frontmatter's canonical order, so an entry reads like a
+// frontmatter block -- which is the whole premise of the shape.
+func TestSetPageEntryUsesCanonicalOrder(t *testing.T) {
+	root := rootAt(t, "# marker\n")
+	if err := root.SetPageEntry("a.md", Entry{
+		Fields: map[string]string{
+			"page_width": "wide", "title": "A", "page_id": "1", "space": "ENG", "parent": "null",
+		},
+		Lists: map[string][]string{"labels": {"x"}},
+	}); err != nil {
+		t.Fatalf("SetPageEntry: %v", err)
+	}
+	body, _ := os.ReadFile(root.File)
+	at := -1
+	for _, key := range []string{"title", "space", "parent", "page_id", "labels", "page_width"} {
+		i := strings.Index(string(body), key+":")
+		if i < 0 {
+			t.Fatalf("%s missing:\n%s", key, body)
+		}
+		if i < at {
+			t.Errorf("%s out of canonical order:\n%s", key, body)
+		}
+		at = i
 	}
 }

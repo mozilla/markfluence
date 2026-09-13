@@ -4,7 +4,9 @@ package project
 // of in the markdown, so a .md can be published while staying pristine (#139).
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"path"
 	"sort"
 	"strings"
@@ -198,4 +200,73 @@ func NormalizePageKey(p string) (string, error) {
 		return "", fmt.Errorf("page %q does not name a file", p)
 	}
 	return clean, nil
+}
+
+// SetPageEntry records a file's page metadata in the project file's pages:
+// block, creating the block and the entry as needed.
+//
+// key must already be normalized (NormalizePageKey); the caller has it from
+// pagemeta.KeyFor, and normalizing again here would hide a caller that skipped
+// it. entry's fields are written in frontmatter's canonical order.
+//
+// The read-modify-write is deliberate, and so is doing it once per page rather
+// than once per run: cmd/create writes each file's frontmatter as that page is
+// published, so a run that dies partway leaves every already-created page
+// recorded. The manifest has to keep that property, and one small file read and
+// written per created page is the price (#139 D10).
+//
+// Two verifications, not one. frontmatter.SetNested re-reads its own output and
+// checks each field landed at the path -- the shape a miscomputed indent
+// silently breaks. Then this re-runs the *loader* over the result, so a write
+// that produced a file markfluence could not read, or could read as something
+// else, fails before anything is written to disk. Nothing is more annoying than
+// a tool that corrupts the file it was recording success in.
+func (r *Root) SetPageEntry(key string, entry Entry) error {
+	if r.File == "" {
+		return fmt.Errorf("no %s to write an entry to", Filename)
+	}
+	before, err := os.ReadFile(r.File)
+	if err != nil {
+		return &ConfigError{File: r.File, Err: errors.New(readFailure(err))}
+	}
+	after, err := frontmatter.SetNested(string(before), []string{"pages", key}, entryFieldList(entry))
+	if err != nil {
+		return &ConfigError{File: r.File, Err: err}
+	}
+	// The loader, not just the parser: an unknown field or a wrong shape must
+	// fail here rather than on somebody's next invocation.
+	cfg, err := parseConfig(r.File, after)
+	if err != nil {
+		return err
+	}
+	if _, ok := cfg.Pages[key]; !ok {
+		return &ConfigError{File: r.File, Err: fmt.Errorf(
+			"the rewritten file has no entry for %q", key)}
+	}
+	if err := os.WriteFile(r.File, []byte(after), 0o644); err != nil {
+		return &ConfigError{File: r.File, Err: errors.New(readFailure(err))}
+	}
+	r.Config = cfg
+	return nil
+}
+
+// entryFieldList turns an Entry into frontmatter Fields, in canonical order.
+//
+// A list field is passed as a non-nil List even when empty, since an empty
+// labels: is a declaration meaning "remove them all" and a nil one means the
+// key is absent -- the distinction internal/labels rests on.
+func entryFieldList(e Entry) []frontmatter.Field {
+	var fields []frontmatter.Field
+	for _, key := range knownEntryFields() {
+		if entryFields[key] == kindList {
+			if l, ok := e.Lists[key]; ok {
+				fields = append(fields, frontmatter.Field{Key: key, List: l})
+			}
+			continue
+		}
+		if v, ok := e.Fields[key]; ok {
+			fields = append(fields, frontmatter.Field{Key: key, Value: v})
+		}
+	}
+	return fields
 }
