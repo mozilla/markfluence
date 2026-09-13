@@ -722,3 +722,53 @@ is something to reconcile it with.
 - `layout:` (#21) and any later field: they should need nothing here, and a test
   that an unknown-to-the-test field survives a manifest round-trip is what would
   prove it.
+
+## PR 2, as built — 2026-09-12
+
+Scoped to `create` only. The plan gave PR 2 `fix` migrating inline keys as well;
+#151 now proposes removing `fix` altogether, so that half is an open question
+rather than dropped work — and PR 2 needed nothing from it, which is the honest
+reason it was descoped rather than blocked on #151.
+
+**`frontmatter.SetNested`** (`nested.go`) is the writer, here rather than in
+`internal/project` so goccy stays confined to one package. Its sharp edge was
+measured, not reasoned: **a node's column is what goccy indents by**, so a
+mapping value built at the default position emits at the left margin however
+deep it was appended — appending `space: ENG` inside a `pages:` entry produces a
+*top-level setting*. Valid YAML, entirely different meaning, and nothing
+downstream would refuse it. `indentColumn` is two spaces per level, the same fix
+`seqIndentColumn` already applies to block sequence items.
+
+So `verifyNested` re-reads the result and asks whether each field landed **at
+the path** holding what was asked for, not merely whether the document parses —
+"did it parse" proves nothing against a field at the wrong depth. Sabotaging
+`indentColumn` to return 1 turns four tests red with "the rewritten file lost
+docs/b.md" rather than writing a corrupt file.
+
+**`project.SetPageEntry`** owns the file: read-modify-write once per page, per
+D10, and it verifies twice — `SetNested`'s own check, then `parseConfig` (split
+out of `loadConfig`) re-running the loader's rules, so a write producing a file
+markfluence could not read fails before touching disk. A test pins that such a
+file is left byte-identical.
+
+**`create`** infers the destination per D9 and needed no new flag.
+
+Two things the live run found that the unit tests had not:
+
+- **`pages: {}` is a *flow* mapping**, and it is exactly the shape a project
+  that has chosen the manifest and registered nothing has. Appending a block
+  entry to it emits `pages: {` then a newline and does not parse. A *populated*
+  flow mapping needed its children re-positioned too, since they carry the
+  columns flow gave them. `toBlock` handles both. `verifyNested` caught it, so
+  the failure was a refusal rather than a corrupt file — which is the whole
+  argument for verifying.
+- **A `parent:` naming a `.md` file is spelled differently in the two
+  locations** — root-relative in an entry, file-relative in frontmatter and on
+  `create --parent`. That is the translation this plan settled deliberately, but
+  it is a trap for anyone moving a value between locations by hand, so it is now
+  documented in `root-model.md` and `markdown_file.md`. `create` records the
+  resolved id rather than a path, so a round trip never hits it.
+
+Verified live end to end: a pristine parent created, a pristine child created
+under it, then `update docs/*.md` publishing both from the manifest — with
+neither markdown file carrying any frontmatter. Pages purged.
