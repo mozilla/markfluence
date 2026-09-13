@@ -5,6 +5,7 @@ import (
 
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/labels"
+	"github.com/mozilla/markfluence/internal/project"
 	"github.com/mozilla/markfluence/internal/ui"
 )
 
@@ -50,6 +51,18 @@ type updateResult struct {
 	// claims it, or it is unchanged since the page's last version. Human
 	// output says which; --json has status plus metadata_source.
 	unmanaged bool
+
+	// The three below feed the action log (#149) and are deliberately absent
+	// from --json: they are markfluence's own bookkeeping about the run, not
+	// a report about the page.
+	//
+	// root is the project root this file resolved under, which decides which
+	// log the line goes to -- a batch may span several. logKey is the file's
+	// root-relative manifest key, empty when it has none. publishSHA is a
+	// hash of what the body PUT sent, empty when the render never happened.
+	root       *project.Root
+	logKey     string
+	publishSHA string
 }
 
 // fail marks the result failed with an error and code, and returns it for a
