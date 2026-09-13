@@ -53,9 +53,9 @@ var rootCmd = &cobra.Command{
 		"must go through Atlassian's api.atlassian.com gateway. Leave it unset for an\n" +
 		"unscoped personal token. Find yours at\n" +
 		"https://YOUR-SITE.atlassian.net/_edge/tenant_info -- it isn't a secret.",
-	// --version prints the build stamp ("markfluence VERSION (SHA, DATE)"). This
-	// is the only place it is used: nothing published carries it, and the
-	// converter takes no build state at all (#158).
+	// --version prints the build stamp ("markfluence VERSION (SHA, DATE)"). The
+	// only use of it: nothing published carries a build stamp, and the converter
+	// takes no build state at all.
 	Version: buildinfo.Stamp(),
 	PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 		if noColorFlag {

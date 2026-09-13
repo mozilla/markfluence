@@ -35,9 +35,10 @@ func Revision() string {
 // The commit hash and date are each omitted when unavailable (and the
 // parenthetical drops entirely if both are).
 //
-// Nothing published ever carries it. It was substituted into pages for a
-// <!-- markfluence-version --> token until #158, which is why it must stay out
-// of internal/convert: the converter's output depends only on the files on disk.
+// Only --version uses it, and nothing published carries it. Keep it out of
+// internal/convert: that package's output depends only on its arguments and the
+// files on disk, and a build stamp in a page body makes the same file render
+// differently on every upgrade.
 func Stamp() string {
 	s := "markfluence " + Version
 	var meta []string
