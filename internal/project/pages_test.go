@@ -487,3 +487,147 @@ func TestSetPageEntryUsesCanonicalOrder(t *testing.T) {
 		at = i
 	}
 }
+
+// parseConfig strips a BOM deliberately, so a BOM-prefixed project file is a
+// shape markfluence accepts. Leaving it in made the first key parse as
+// "\ufeffpages", so the writer created a second pages: block beside it and the
+// reload refused the file -- page created, nothing recorded.
+func TestSetPageEntryHandlesABOM(t *testing.T) {
+	for name, body := range map[string]string{
+		"bom then a setting": "\ufeffspace: ENG\n",
+		"bom then pages":     "\ufeffpages: {}\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := rootAt(t, body)
+			if err := root.SetPageEntry("a.md", Entry{
+				Fields: map[string]string{"page_id": "1"},
+			}); err != nil {
+				t.Fatalf("SetPageEntry: %v", err)
+			}
+			written := mustReadFile(t, root.File)
+			if !strings.HasPrefix(written, "\ufeff") {
+				t.Errorf("the BOM was dropped:\n%q", written)
+			}
+			again, err := Discover(filepath.Dir(root.File))
+			if err != nil {
+				t.Fatalf("the written file does not load: %v\n%q", err, written)
+			}
+			defer func() { _ = again.FS.Close() }()
+			if again.Config.Pages["a.md"].Fields["page_id"] != "1" {
+				t.Errorf("entry did not read back:\n%q", written)
+			}
+		})
+	}
+}
+
+// Keys are compared after normalization, so an entry written as "./b.md" *is*
+// the entry for "b.md". Appending a normalized second spelling made the file
+// hold two keys naming one path, which the loader then refused.
+func TestSetPageEntryUpdatesAnUnnormalizedKey(t *testing.T) {
+	for _, spelling := range []string{"./b.md", "docs/../b.md"} {
+		t.Run(spelling, func(t *testing.T) {
+			root := rootAt(t, "pages:\n  "+spelling+":\n    title: B\n")
+			if err := root.SetPageEntry("b.md", Entry{
+				Fields: map[string]string{"page_id": "2"},
+			}); err != nil {
+				t.Fatalf("SetPageEntry: %v", err)
+			}
+			written := mustReadFile(t, root.File)
+			if strings.Count(written, "title: B") != 1 {
+				t.Errorf("the entry was duplicated:\n%s", written)
+			}
+			again, err := Discover(filepath.Dir(root.File))
+			if err != nil {
+				t.Fatalf("the written file does not load: %v\n%s", err, written)
+			}
+			defer func() { _ = again.FS.Close() }()
+			if again.Config.Pages["b.md"].Fields["page_id"] != "2" {
+				t.Errorf("entry did not read back:\n%s", written)
+			}
+		})
+	}
+}
+
+// A project file indented some other way must be writable: the loader accepts
+// it, so create has to be able to record into it.
+func TestSetPageEntryFollowsTheExistingIndent(t *testing.T) {
+	root := rootAt(t, "pages:\n    a.md:\n        page_id: 1\n")
+	if err := root.SetPageEntry("b.md", Entry{Fields: map[string]string{"page_id": "2"}}); err != nil {
+		t.Fatalf("SetPageEntry: %v", err)
+	}
+	again, err := Discover(filepath.Dir(root.File))
+	if err != nil {
+		t.Fatalf("the written file does not load: %v\n%s", err, mustReadFile(t, root.File))
+	}
+	defer func() { _ = again.FS.Close() }()
+	if len(again.Config.Pages) != 2 {
+		t.Errorf("want two entries, got %#v:\n%s", again.Config.Pages, mustReadFile(t, root.File))
+	}
+}
+
+// A page key is a path, and a path may hold YAML indicators.
+func TestSetPageEntryQuotesAKeyThatNeedsIt(t *testing.T) {
+	for _, key := range []string{"docs/a: b.md", "#a.md", "- a.md", "docs/ünïcode.md"} {
+		t.Run(key, func(t *testing.T) {
+			root := rootAt(t, "# marker\n")
+			if err := root.SetPageEntry(key, Entry{
+				Fields: map[string]string{"page_id": "1"},
+			}); err != nil {
+				t.Fatalf("SetPageEntry(%q): %v", key, err)
+			}
+			again, err := Discover(filepath.Dir(root.File))
+			if err != nil {
+				t.Fatalf("does not load: %v\n%s", err, mustReadFile(t, root.File))
+			}
+			defer func() { _ = again.FS.Close() }()
+			if _, ok := again.Config.Pages[key]; !ok {
+				t.Errorf("no entry for %q:\n%s", key, mustReadFile(t, root.File))
+			}
+		})
+	}
+}
+
+// The write goes through a temporary file and a rename, so an interrupted write
+// cannot truncate the one file holding every entry in the project.
+func TestSetPageEntryLeavesNoTemporaryFile(t *testing.T) {
+	root := rootAt(t, "# marker\n")
+	if err := root.SetPageEntry("a.md", Entry{Fields: map[string]string{"page_id": "1"}}); err != nil {
+		t.Fatalf("SetPageEntry: %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Dir(root.File))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.Name() != Filename {
+			t.Errorf("left %q behind", e.Name())
+		}
+	}
+}
+
+// An existing file's mode is preserved across the replace.
+func TestSetPageEntryPreservesTheFileMode(t *testing.T) {
+	root := rootAt(t, "# marker\n")
+	if err := os.Chmod(root.File, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.SetPageEntry("a.md", Entry{Fields: map[string]string{"page_id": "1"}}); err != nil {
+		t.Fatalf("SetPageEntry: %v", err)
+	}
+	info, err := os.Stat(root.File)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Errorf("mode = %v, want 0600", got)
+	}
+}
+
+func mustReadFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
