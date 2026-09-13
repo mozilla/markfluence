@@ -1021,3 +1021,191 @@ func TestRunCarriesLabelCaseWarning(t *testing.T) {
 		t.Errorf("labels added = %v, want the lowercased name", f.labelsAdded)
 	}
 }
+
+// --- persisting to the manifest -----------------------------------------------
+
+// writeManifest puts a markfluence.yaml in dir.
+func writeManifest(t *testing.T, dir, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, project.Filename), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// #139's bootstrap flow: a pristine file, published, with its metadata
+// recorded in the project file rather than written into the markdown.
+func TestCreateAllPersistsToTheManifest(t *testing.T) {
+	resetOpts(t)
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	// `pages: {}` is the shape a project that has chosen the manifest and
+	// registered nothing has -- and it is a *flow* mapping, which the writer
+	// has to convert.
+	writeManifest(t, dir, "pages: {}\n")
+	titleOpt = "A"
+	path := write(t, dir, "a.md", "# A\n")
+
+	c, _ := newFakeConfluence(t)
+	results := createAll(buildRecords(t, c, []string{path}), c, true)
+	if !results[0].ok {
+		t.Fatalf("create failed: %s", results[0].errMsg)
+	}
+	if !results[0].persisted {
+		t.Error("persisted = false, want true")
+	}
+
+	// The file is untouched: that is the whole point.
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "# A\n" {
+		t.Errorf("the markdown was rewritten:\n%s", body)
+	}
+
+	// And the entry reads back through the loader.
+	root, err := project.Discover(dir)
+	if err != nil {
+		t.Fatalf("the written project file does not load: %v", err)
+	}
+	defer func() { _ = root.FS.Close() }()
+	entry, ok := root.Config.Pages["a.md"]
+	if !ok {
+		t.Fatalf("no entry for a.md; project file:\n%s", mustRead(t, filepath.Join(dir, project.Filename)))
+	}
+	if entry.Fields["page_id"] != results[0].pageID {
+		t.Errorf("page_id = %q, want %q", entry.Fields["page_id"], results[0].pageID)
+	}
+	for key, want := range map[string]string{"title": "A", "space": "ENG", "page_width": "max"} {
+		if entry.Fields[key] != want {
+			t.Errorf("%s = %q, want %q", key, entry.Fields[key], want)
+		}
+	}
+}
+
+// A project with no pages: block behaves exactly as it did before: metadata
+// goes into the file's frontmatter, and the project file is untouched.
+func TestCreateAllWithoutAManifestWritesFrontmatter(t *testing.T) {
+	resetOpts(t)
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	writeManifest(t, dir, "space: ENG\n")
+	before := mustRead(t, filepath.Join(dir, project.Filename))
+	path := write(t, dir, "a.md", "---\ntitle: A\n---\n# A\n")
+
+	c, _ := newFakeConfluence(t)
+	results := createAll(buildRecords(t, c, []string{path}), c, true)
+	if !results[0].ok {
+		t.Fatalf("create failed: %s", results[0].errMsg)
+	}
+	if !strings.Contains(mustRead(t, path), "page_id:") {
+		t.Errorf("page_id was not written to the file:\n%s", mustRead(t, path))
+	}
+	if got := mustRead(t, filepath.Join(dir, project.Filename)); got != before {
+		t.Errorf("the project file was modified:\n%s", got)
+	}
+}
+
+// A file that already carries its own frontmatter keeps it, even in a project
+// that uses pages: -- new metadata goes wherever that file's metadata already
+// is (D9), so a half-migrated tree does not grow entries behind the author.
+func TestCreateAllFrontmatterFileKeepsItsFrontmatter(t *testing.T) {
+	resetOpts(t)
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	writeManifest(t, dir, "pages:\n  other.md:\n    page_id: 99\n")
+	path := write(t, dir, "a.md", "---\ntitle: A\n---\n# A\n")
+
+	c, _ := newFakeConfluence(t)
+	results := createAll(buildRecords(t, c, []string{path}), c, true)
+	if !results[0].ok {
+		t.Fatalf("create failed: %s", results[0].errMsg)
+	}
+	if !strings.Contains(mustRead(t, path), "page_id:") {
+		t.Error("page_id was not written to the file that already had frontmatter")
+	}
+	root, err := project.Discover(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.FS.Close() }()
+	if _, ok := root.Config.Pages["a.md"]; ok {
+		t.Error("an entry was created for a file that keeps its own frontmatter")
+	}
+}
+
+// --no-persist records nothing anywhere, manifest included.
+func TestCreateAllNoPersistWritesNoEntry(t *testing.T) {
+	resetOpts(t)
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	writeManifest(t, dir, "pages: {}\n")
+	titleOpt = "A"
+	path := write(t, dir, "a.md", "# A\n")
+
+	c, _ := newFakeConfluence(t)
+	results := createAll(buildRecords(t, c, []string{path}), c, false)
+	if !results[0].ok {
+		t.Fatalf("create failed: %s", results[0].errMsg)
+	}
+	if results[0].persisted {
+		t.Error("persisted = true under --no-persist")
+	}
+	root, err := project.Discover(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.FS.Close() }()
+	if len(root.Config.Pages) != 0 {
+		t.Errorf("an entry was written under --no-persist: %#v", root.Config.Pages)
+	}
+}
+
+// A batch records each page as it is published, so a run that dies partway
+// leaves the earlier pages recorded -- the property the per-file frontmatter
+// write already had (D10).
+func TestCreateAllRecordsEachPageAsItGoes(t *testing.T) {
+	resetOpts(t)
+	dir := t.TempDir()
+	spaceOpt = "ENG"
+	writeManifest(t, dir, "pages: {}\n")
+	a := write(t, dir, "a.md", "---\ntitle: A\n---\n# A\n")
+	b := write(t, dir, "b.md", "---\ntitle: B\n---\n# B\n")
+	// Both files have frontmatter titles, so remove them to make the manifest
+	// the destination: a pristine pair with titles supplied per-file is not
+	// expressible, so use the manifest for the titles instead.
+	writeManifest(t, dir, "pages:\n  a.md:\n    title: A\n  b.md:\n    title: B\n")
+	if err := os.WriteFile(a, []byte("# A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(b, []byte("# B\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, _ := newFakeConfluence(t)
+	results := createAll(buildRecords(t, c, []string{a, b}), c, true)
+	for _, res := range results {
+		if !res.ok {
+			t.Fatalf("%s failed: %s", res.file, res.errMsg)
+		}
+	}
+	root, err := project.Discover(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.FS.Close() }()
+	for _, key := range []string{"a.md", "b.md"} {
+		if root.Config.Pages[key].Fields["page_id"] == "" {
+			t.Errorf("%s has no page_id in its entry", key)
+		}
+	}
+}
+
+func mustRead(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
