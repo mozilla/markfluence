@@ -9,7 +9,7 @@
   "properties": {
     "schema_version": { "const": 1 },
     "markfluence_version": { "type": "string" },
-    "command": { "enum": ["info", "read", "update", "create", "fix", "check", "children", "find", "search", "attachment-list", "attachment-upload", "attachment-download", "export"] },
+    "command": { "enum": ["info", "read", "update", "create", "check", "children", "find", "search", "attachment-list", "attachment-upload", "attachment-download", "export"] },
     "roots": { "type": "array", "items": { "type": "string" }, "description": "Every distinct documentation root the command resolved, sorted. Empty for a command with no per-file root concept, and for a pre-flight failure that never reached root resolution." },
     "warnings": { "type": "array", "items": { "type": "string" }, "description": "Warnings about the invocation itself rather than about any page or file -- currently only the .env permission warning, raised when the .env that supplied the API token is reachable by anyone but its owner. Always present, [] when there is nothing to report, the same convention roots and results follow. Not per-result warnings: those live on the result." },
     "results": { "type": "array" },
@@ -49,15 +49,6 @@
         "properties": {
           "results": { "items": { "$ref": "#/$defs/createResult" } },
           "summary": { "$ref": "#/$defs/createSummary" }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "command": { "const": "fix" } }, "required": ["command"] },
-      "then": {
-        "properties": {
-          "results": { "items": { "$ref": "#/$defs/fixResult" } },
-          "summary": { "$ref": "#/$defs/fixSummary" }
         }
       }
     },
@@ -461,38 +452,6 @@
         "code": { "$ref": "#/$defs/codeOrNull" }
       }
     },
-    "fixResult": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["ok", "status", "file", "page_id", "dry_run", "changes", "reordered", "warnings", "error", "code"],
-      "properties": {
-        "ok": { "type": "boolean" },
-        "status": { "enum": ["changed", "consistent", "failed"] },
-        "file": { "type": "string" },
-        "page_id": { "$ref": "#/$defs/stringOrNull" },
-        "dry_run": { "type": "boolean" },
-        "changes": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["field", "old", "new"],
-            "properties": {
-              "field": { "type": "string" },
-              "old": { "$ref": "#/$defs/stringOrNull" },
-              "new": { "type": "string" }
-            }
-          }
-        },
-        "reordered": {
-          "description": "Whether fix rewrote the frontmatter into canonical field order. Independent of changes: a file whose values all match its live page can still be reordered, and that counts as changed.",
-          "type": "boolean"
-        },
-        "warnings": { "type": "array", "items": { "type": "string" } },
-        "error": { "$ref": "#/$defs/stringOrNull" },
-        "code": { "$ref": "#/$defs/codeOrNull" }
-      }
-    },
     "checkResult": {
       "description": "One checked file. broken/warnings are always [] (never null), matching ConfluencePage's own convention. status=broken means broken is non-empty (frontmatter or converter); status=failed means the file never reached a clean answer at all (unreadable, unterminated frontmatter, frontmatter that is not valid YAML or not a flat mapping of single-line scalars, bad page_width, non-numeric page_id) -- code is VALIDATION in that case. debug is non-null only when --show-html was passed and the file reached the converter (never on a failed file).",
       "type": "object",
@@ -681,20 +640,8 @@
         "aborted": { "type": "boolean" }
       }
     },
-    "fixSummary": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["total", "succeeded", "failed", "changed", "consistent"],
-      "properties": {
-        "total": { "type": "integer" },
-        "succeeded": { "type": "integer" },
-        "failed": { "type": "integer" },
-        "changed": { "type": "integer" },
-        "consistent": { "type": "integer" }
-      }
-    },
     "checkSummary": {
-      "description": "clean/warnings count files on the ok:true side (clean has neither broken nor warnings; warnings has only warnings); failed already covers both the broken and failed statuses on the ok:false side, the same granularity fixSummary uses.",
+      "description": "clean/warnings count files on the ok:true side (clean has neither broken nor warnings; warnings has only warnings); failed already covers both the broken and failed statuses on the ok:false side rather than splitting them the way status does.",
       "type": "object",
       "additionalProperties": false,
       "required": ["total", "succeeded", "failed", "clean", "warnings"],

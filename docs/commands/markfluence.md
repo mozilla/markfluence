@@ -46,7 +46,6 @@ markfluence [flags]
 * [markfluence create](markfluence_create.md)	 - Create new Confluence pages from markdown files
 * [markfluence export](markfluence_export.md)	 - Write a Confluence page and its attachments to a directory
 * [markfluence find](markfluence_find.md)	 - Find Confluence pages and folders by exact title
-* [markfluence fix](markfluence_fix.md)	 - Reconcile each markdown file's frontmatter to its live Confluence page
 * [markfluence info](markfluence_info.md)	 - Print metadata about a Confluence page
 * [markfluence read](markfluence_read.md)	 - Fetch a Confluence page and print its body
 * [markfluence schema](markfluence_schema.md)	 - Print the JSON Schema for --json output
