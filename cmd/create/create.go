@@ -570,7 +570,10 @@ func reserveOne(
 		// one behaves exactly as it did before.
 		if r.toManifest {
 			if err := persistToManifest(r, pageID, parentID); err != nil {
-				return res.failKeepingPage(err, jsonout.CodeValidation), "", 0, false
+				// CodeOr, not a hardcoded VALIDATION: a read-only project file
+				// is an I/O failure and the frontmatter path below reports one
+				// as such (#133). The page exists, so its id stays visible.
+				return res.failKeepingPage(err, jsonout.CodeOr(err, jsonout.CodeValidation)), "", 0, false
 			}
 			res.persisted = true
 			return res, pageID, result.Version.Number, true
@@ -835,7 +838,7 @@ func resolveFile(
 		filename: filename, absPath: abs, mdfile: mf, title: title, spaceKey: spaceKey,
 		spaceID: spaceID, parent: parent, width: width, labels: labelSet, root: root, index: index,
 		metadataSource: string(meta.MetadataSource()),
-		toManifest:     meta.InManifest() || (pagemeta.HasManifest(root) && !meta.InFile()),
+		toManifest:     toManifestDest(meta, root, key),
 		manifestKey:    key,
 		warnings:       warnings,
 	}, nil
@@ -1040,6 +1043,27 @@ func parentField(p parentInfo, parentID string) (value, comment string) {
 // wantPersist resolves the --persist/--no-persist pair; --no-persist wins.
 func wantPersist(persist, noPersist bool) bool { return persist && !noPersist }
 
+// toManifestDest decides where persist writes this file's metadata (D9): the
+// project file's pages: block, or the file's own frontmatter.
+//
+// The manifest only when the project has chosen it **and the file carries no
+// markfluence frontmatter of its own**. A file with keys in both places keeps
+// using frontmatter, which is what "wherever that file's metadata already is"
+// means for a file whose metadata is already there -- and the alternative was
+// silently destructive: writing a resolved `parent: 101` into the entry of a
+// file whose frontmatter says `parent: p.md` makes the two locations disagree
+// about a coordinate, so every later update and check of that file fails until
+// somebody edits one by hand. A successful create must not leave a file
+// unpublishable.
+//
+// A file with no key in the manifest is also refused: one outside the root has
+// none (KeyFor reports false), and writing an entry keyed by the empty string
+// produced a file that would not parse -- where before this it simply got
+// frontmatter, which is still the right answer.
+func toManifestDest(meta pagemeta.Resolved, root *project.Root, key string) bool {
+	return key != "" && pagemeta.HasManifest(root) && !meta.InFile()
+}
+
 // persistToManifest records the created page in the project file's pages:
 // block, the manifest counterpart of writeBackFrontmatter -- the same five
 // fields, in the same canonical order, in the other location.
@@ -1050,6 +1074,12 @@ func wantPersist(persist, noPersist bool) bool { return persist && !noPersist }
 // is no room for a trailing comment naming the original path, so the path is
 // simply replaced -- the entry's key already says which file this is, which is
 // what the comment existed to disambiguate.
+//
+// labels is deliberately *not* written, which keeps the two persist paths
+// symmetrical: writeBackFrontmatter has never written labels either. Writing
+// them would also rewrite them -- labels.Set carries the normalized names, so
+// a declared `[Runbook, ci/cd]` would come back `[ci/cd, runbook]` while the
+// case warning still told the author to update the file to match.
 func persistToManifest(r record, pageID, parentID string) error {
 	entry := project.Entry{
 		Fields: map[string]string{
@@ -1060,9 +1090,6 @@ func persistToManifest(r record, pageID, parentID string) error {
 			"page_width": string(r.width),
 		},
 		Lists: map[string][]string{},
-	}
-	if r.labels.Declared {
-		entry.Lists["labels"] = r.labels.Names
 	}
 	return r.root.SetPageEntry(r.manifestKey, entry)
 }
