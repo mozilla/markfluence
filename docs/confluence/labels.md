@@ -167,6 +167,18 @@ assert-exactly rule visibly, which is the better of the two available outcomes.
 Found in review, after the end-to-end run below had already passed — that run
 used `my:mine`, a name nothing collided with.
 
+### A label write does not bump the page version
+
+**Verified 2026-09-13**: adding a label and removing one both leave the page's
+`version.number` *and* its `version.createdAt` exactly as they were, while a
+body change bumps both. Details and the full table of what does and does not
+bump it: [api.md](api.md#what-bumps-a-pages-version).
+
+Two things follow. A label change is invisible to anything watching the page
+version, so labels cannot be tracked that way. And `labels.Apply` running after
+a publish does not advance the page past the version that publish produced,
+which is what lets a caller record the version it published without re-reading.
+
 ### v2 is read-only for labels
 
 | request | result |

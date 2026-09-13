@@ -244,6 +244,49 @@ else's content is far worse than reporting a failure that actually succeeded.
 triggers on *any* error specifically so nothing depends on the answer; guessing a
 status and getting it wrong would leave the recovery silently never firing.
 
+## What bumps a page's version
+
+A page's `version.number` tracks the **body and the title, and nothing else**.
+Every other write markfluence makes to a page leaves it alone, which is what
+makes it usable as a record of "has this page's content moved on?" (#149).
+
+**Verified 2026-09-13** against a scratch page in a personal space, created at
+version 1, through the gateway:
+
+| write | route | page version |
+|---|---|---|
+| create a content property | `POST /wiki/api/v2/pages/{id}/properties` | **unchanged** |
+| update a content property | `PUT /wiki/api/v2/pages/{id}/properties/{propId}` | **unchanged** |
+| add a label | `POST /wiki/rest/api/content/{id}/label` | **unchanged** |
+| remove a label | `DELETE /wiki/rest/api/content/{id}/label?name=` | **unchanged** |
+| upload an attachment | `PUT /wiki/rest/api/content/{id}/child/attachment` | **unchanged** |
+| change the body | `PUT /wiki/api/v2/pages/{id}` | **+1**, new `createdAt` |
+| change only the title | `PUT /wiki/api/v2/pages/{id}` | **+1**, new `createdAt` |
+
+`version.createdAt` moves with the number and stays put when it does, so the
+timestamp is no more sensitive than the counter — adding a label does not
+re-stamp the page.
+
+A content property carries **its own independent version counter**: across the
+create-then-update above it went 1 → 2 while the page stayed at 1. So a
+property's version says nothing about the page's, in either direction.
+
+Two consequences, both load-bearing.
+
+**A publish advances the page by exactly one version.** `update` writes the body
+and *then* applies width (two content properties), labels, and attachments, so a
+naive reader might expect the live version to be several ahead of the one the
+body PUT returned. It is not. Nothing after the body write touches it.
+
+**The version in the `PUT /pages/{id}` response is the version a later GET
+reports**, checked on both publishes above, so a caller recording what it
+published does not need a re-read to learn the number.
+
+**Not verified:** whether a *move* (the v1 `content/{id}/move` route, #10)
+bumps the version, and whether restoring a previous version from the UI does.
+Measured once, on one Cloud instance, through the gateway, with a personal
+token.
+
 ## Scopes
 
 **Derived 2026-08-20** from Atlassian's own OpenAPI documents, one lookup per
