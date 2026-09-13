@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mozilla/markfluence/internal/actionlog"
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/completion"
 	"github.com/mozilla/markfluence/internal/convert"
@@ -117,6 +118,10 @@ func run(cmd *cobra.Command, args []string) error {
 		ui.Warn("DRY RUN — no changes will be written.")
 	}
 	indexes := linkindex.NewCache()
+	// One log per root, read and appended through a cache for the same reason
+	// the index is: a batch under one project must not re-read its own
+	// publishing history once per file.
+	logs := actionlog.NewCache()
 	// One cache for the batch: a batch of files mentioning the same on-call
 	// rotation resolves each person once, not once per file.
 	users := pagedoc.NewUserCache()
@@ -125,6 +130,7 @@ func run(cmd *cobra.Command, args []string) error {
 	results := make([]*updateResult, 0, len(args))
 	for _, filename := range args {
 		r := processFile(filename, c, roots, indexes, users)
+		recordAction(logs, r)
 		results = append(results, r)
 		if !ui.IsJSON() {
 			r.renderHuman()
@@ -189,7 +195,11 @@ func processFile(
 	if err != nil {
 		return r.fail(project.RootError(err), rootErrorCode(err))
 	}
-	key, _ := pagemeta.KeyFor(root, abs)
+	key, keyed := pagemeta.KeyFor(root, abs)
+	r.root = root
+	if keyed {
+		r.logKey = key
+	}
 	meta, err := pagemeta.Resolve(key, mf, root)
 	if err != nil {
 		// A coordinate disagreement: the two locations name different pages, and
@@ -297,6 +307,11 @@ func processFile(
 	if err != nil {
 		return r.fail(err, jsonout.CodeConvert)
 	}
+	// What the body PUT would send, hashed: the resolved title and the body.
+	// Recorded rather than compared -- the checks that read it are #149's
+	// second half. Taken here, from the same two values handed to UpdatePage
+	// below, so the two cannot drift apart.
+	r.publishSHA = actionlog.Sum(title, pageContent.HTML)
 	r.broken = append(r.broken, pageContent.Broken...)
 	r.warnings = append(r.warnings, pageContent.Warnings...)
 	// Publishing needs no display names -- the account id is already in the
@@ -496,4 +511,54 @@ func toJSONLabels(actions []labels.Action) []jsonout.Label {
 		out = append(out, jsonout.Label{Action: a.Action, Name: a.Name})
 	}
 	return out
+}
+
+// recordAction appends this file's line to its root's action log (#149), so a
+// later run can tell "I changed this" from "they changed it".
+//
+// Called from the batch loop as each file completes, not once at the end: #139
+// D10's reasoning applies unchanged, since a run that dies partway must leave
+// every already-published page recorded.
+//
+// A failure to write is a warning and never a failure. The page is published by
+// the time this runs, so failing the result would report that it was not -- the
+// non-fatal shape pagewidth.Apply and labels.Apply already have. The cost lands
+// on the next run, which sees a base trailing the live page by this publish and
+// reports a divergence that --force resolves.
+//
+// Four cases record nothing:
+//
+//   - --dry-run, because a preview that logged would claim a publish happened.
+//   - A file nothing claims, because there is no page to have a base against.
+//   - A file with no manifest key, because a key is what a line is looked up by.
+//   - A skip. In this change that means the mtime skip, and it must not record:
+//     the skip establishes only that two timestamps are ordered a certain way,
+//     not that this copy matches the page, so a line would claim a base the
+//     check never verified. The content-based skip that replaces it does record
+//     one, because matching the page is exactly what it verified.
+func recordAction(logs *actionlog.Cache, r *updateResult) {
+	if dryRun || r.logKey == "" || r.pageID == "" || r.status == statusSkipped {
+		return
+	}
+	log := logs.Get(r.root)
+	if log == nil {
+		return
+	}
+	entry := actionlog.Entry{
+		Action:        actionlog.ActionUpdate,
+		Status:        actionlog.StatusOK,
+		File:          r.logKey,
+		PageID:        r.pageID,
+		PageVersion:   r.versionNew,
+		PublishSHA256: r.publishSHA,
+	}
+	if !r.ok {
+		// Recorded for the history, never read as a base. The version is the
+		// one seen rather than the one intended: nothing was published.
+		entry.Status = actionlog.StatusFailed
+		entry.PageVersion = r.versionPrev
+	}
+	if err := log.Append(entry); err != nil {
+		r.warnings = append(r.warnings, "could not record this publish in "+log.Path()+": "+err.Error())
+	}
 }
