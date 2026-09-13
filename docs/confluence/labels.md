@@ -237,7 +237,10 @@ case below was observed, and the page was purged afterward:
   `page_id` and `page_width`.
 - A block-style `labels:` list rewritten by the frontmatter writer comes back as
   a block-style list. Verified through `fix`, which has since been removed
-  (#151); `create`'s persist step exercises the same writer.
+  (#151) — and **no command exercises this any more**: `create` persists five
+  scalar fields and deliberately never writes `labels`, so
+  `frontmatter.UpdateListField` has no production caller and the style contract
+  is now pinned only by that package's own tests.
 - Re-running `update` with an unchanged set makes no label change.
 
 ## What is not verified

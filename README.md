@@ -226,7 +226,8 @@ everything else:
 
 And [`schema`](docs/commands/markfluence_schema.md) prints the `--json` schema.
 
-Every command takes `--json`; `create` and `update` take `--dry-run`.
+Every command takes `--json`. `create`, `update`, `export`, `attachment-upload`
+and `attachment-download` take `--dry-run`.
 
 ### Common workflows
 
@@ -408,7 +409,7 @@ from it — without reading it out of this repository:
 
 ```console
 $ markfluence schema | jq -r '.properties.command.enum | join(" ")'
-info read update create fix children find search attachment-list attachment-upload attachment-download export
+info read update create check children find search attachment-list attachment-upload attachment-download export
 
 $ markfluence update docs/*.md --json > out.json
 $ markfluence schema > schema.json

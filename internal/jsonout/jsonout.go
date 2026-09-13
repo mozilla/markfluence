@@ -182,8 +182,8 @@ func CodeFor(err error) Code {
 //
 // This is what most failure sites want, and CodeFor alone is not: CodeFor
 // answers NETWORK for any non-nil error that is not an *HTTPError, so a site
-// that mixes local and server failures -- create's preflight, fix's page
-// location, every attachment path -- would report "no title given" as a
+// that mixes local and server failures -- create's preflight, every attachment
+// path -- would report "no title given" as a
 // network problem. Passing everything to a constant is the other half of the
 // same mistake, and is what reported a rejected credential as VALIDATION
 // against a file that was fine (#133).

@@ -2,7 +2,7 @@
 // it may live: the file's own frontmatter, and a pages: entry in the project's
 // markfluence.yaml (#139).
 //
-// A package rather than a helper because update, create, fix, check *and*
+// A package rather than a helper because update, create, check *and*
 // internal/linkindex all need the identical merge, and a per-command copy is
 // exactly how two commands come to publish one file to two different pages.
 // It imports internal/frontmatter and internal/project and nothing else, so it
