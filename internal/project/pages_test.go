@@ -2,6 +2,7 @@ package project
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -630,4 +631,78 @@ func mustReadFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+// Before the manifest, each page's metadata went into its own file, so two
+// concurrent creates could not collide. They share one file now, which
+// reintroduces the lost update: A reads, B reads, A writes, B writes, and A's
+// entry is gone while A's page exists -- "page created, entry not recorded"
+// again, arriving from concurrency rather than from a refusal.
+//
+// The two tests below drive the collision through the beforeReplace hook, which
+// is the only way to land a competing write *inside* the read-modify-write
+// window. An earlier version of this test wrote the competing entry before
+// calling SetPageEntry at all, so the initial read already saw it and no
+// collision occurred -- it passed with the detection removed, which is how it
+// was caught.
+
+// The give-up path: a file that changes before *every* attempt is reported
+// rather than silently clobbered. Driven by the beforeReplace hook, since
+// racing a real writer would make a slow and flaky test of a branch that
+// exists precisely so a collision is never resolved by guessing.
+func TestSetPageEntryGivesUpIfTheFileKeepsChanging(t *testing.T) {
+	root := rootAt(t, "pages:\n  a.md:\n    page_id: 1\n")
+
+	n := 0
+	beforeReplace = func() {
+		n++
+		_ = os.WriteFile(root.File,
+			[]byte(fmt.Sprintf("pages:\n  a.md:\n    page_id: %d\n", n+1)), 0o644)
+	}
+	t.Cleanup(func() { beforeReplace = nil })
+
+	err := root.SetPageEntry("c.md", Entry{Fields: map[string]string{"page_id": "3"}})
+	if err == nil {
+		t.Fatal("SetPageEntry reported success while the file changed before every attempt")
+	}
+	if !strings.Contains(err.Error(), "changed while the entry") {
+		t.Errorf("error = %q, want the concurrent-change message", err)
+	}
+	if n != 2 {
+		t.Errorf("attempted %d times, want 2", n)
+	}
+	// And nothing of ours was written over the other writer's file.
+	if strings.Contains(mustReadFile(t, root.File), "c.md") {
+		t.Errorf("our entry was written despite the collision:\n%s", mustReadFile(t, root.File))
+	}
+}
+
+// One collision is absorbed: the second attempt merges into the winner's file.
+func TestSetPageEntryRetriesOnceAndSucceeds(t *testing.T) {
+	root := rootAt(t, "pages:\n  a.md:\n    page_id: 1\n")
+
+	once := false
+	beforeReplace = func() {
+		if once {
+			return
+		}
+		once = true
+		_ = os.WriteFile(root.File,
+			[]byte("pages:\n  a.md:\n    page_id: 1\n  b.md:\n    page_id: 2\n"), 0o644)
+	}
+	t.Cleanup(func() { beforeReplace = nil })
+
+	if err := root.SetPageEntry("c.md", Entry{Fields: map[string]string{"page_id": "3"}}); err != nil {
+		t.Fatalf("SetPageEntry: %v", err)
+	}
+	again, err := Discover(filepath.Dir(root.File))
+	if err != nil {
+		t.Fatalf("does not load: %v", err)
+	}
+	defer func() { _ = again.FS.Close() }()
+	for _, key := range []string{"a.md", "b.md", "c.md"} {
+		if _, ok := again.Config.Pages[key]; !ok {
+			t.Errorf("%s is missing:\n%s", key, mustReadFile(t, root.File))
+		}
+	}
 }

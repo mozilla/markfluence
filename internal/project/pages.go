@@ -226,9 +226,46 @@ func (r *Root) SetPageEntry(key string, entry Entry) error {
 	if r.File == "" {
 		return fmt.Errorf("no %s to write an entry to", Filename)
 	}
+	// Two attempts, because the read-modify-write is not serialized and this
+	// file is shared by every page in the project.
+	//
+	// Before the manifest each page's metadata went into its own file, so two
+	// concurrent creates could not collide. They share one file now, which
+	// reintroduces the lost update: A reads, B reads, A writes, B writes, and
+	// A's entry is gone while A's page exists -- "page created, entry not
+	// recorded" again, arriving from concurrency rather than from a refusal.
+	//
+	// Optimistic rather than locked, and the precedent is client's:
+	// SetContentProperty retries once on top of a versioned PUT for the same
+	// shape of reason. A lock file would be stronger and would bring
+	// stale-lock handling with it, which is more machinery than a verb a person
+	// invokes by hand warrants. One retry is enough because the window is a
+	// single file rewrite: the loser re-reads the winner's file and merges into
+	// it, and two writers colliding twice in that window is not a case worth
+	// designing for.
+	var lastErr error
+	for attempt := 1; attempt <= 2; attempt++ {
+		cfg, written, err := r.trySetPageEntry(key, entry)
+		if err != nil {
+			return err
+		}
+		if written {
+			r.Config = cfg
+			return nil
+		}
+		lastErr = &ConfigError{File: r.File, Err: fmt.Errorf(
+			"%s changed while the entry for %q was being written", Filename, key)}
+	}
+	return lastErr
+}
+
+// trySetPageEntry attempts one read-modify-write, reporting whether it landed.
+// written is false when the file changed underneath, which is the caller's cue
+// to try again against the new content.
+func (r *Root) trySetPageEntry(key string, entry Entry) (cfg Config, written bool, err error) {
 	before, err := os.ReadFile(r.File)
 	if err != nil {
-		return &ConfigError{File: r.File, Err: errors.New(readFailure(err))}
+		return Config{}, false, &ConfigError{File: r.File, Err: errors.New(readFailure(err))}
 	}
 	// The BOM comes off before the writer sees it and goes back on after.
 	// parseConfig strips one deliberately (#100), so a BOM-prefixed project
@@ -248,25 +285,45 @@ func (r *Root) SetPageEntry(key string, entry Entry) error {
 	path := []string{"pages", existingKeySpelling(body, key)}
 	after, err := frontmatter.SetNested(body, path, entryFieldList(entry))
 	if err != nil {
-		return &ConfigError{File: r.File, Err: err}
+		return Config{}, false, &ConfigError{File: r.File, Err: err}
 	}
 	after = bom + after
 	// The loader, not just the parser: an unknown field or a wrong shape must
 	// fail here rather than on somebody's next invocation.
-	cfg, err := parseConfig(r.File, after)
+	cfg, err = parseConfig(r.File, after)
 	if err != nil {
-		return err
+		return Config{}, false, err
 	}
 	if _, ok := cfg.Pages[key]; !ok {
-		return &ConfigError{File: r.File, Err: fmt.Errorf(
+		return Config{}, false, &ConfigError{File: r.File, Err: fmt.Errorf(
 			"the rewritten file has no entry for %q", key)}
 	}
-	if err := replaceFile(r.File, after); err != nil {
-		return &ConfigError{File: r.File, Err: errors.New(readFailure(err))}
+	if beforeReplace != nil {
+		beforeReplace()
 	}
-	r.Config = cfg
-	return nil
+	// Re-read immediately before replacing. Not a guarantee -- another writer
+	// can still land between this and the rename -- but it closes the window
+	// that matters, which is the seconds a create spends publishing a page
+	// between reading the file and writing it back.
+	current, err := os.ReadFile(r.File)
+	if err != nil {
+		return Config{}, false, &ConfigError{File: r.File, Err: errors.New(readFailure(err))}
+	}
+	if string(current) != string(before) {
+		return Config{}, false, nil
+	}
+	if err := replaceFile(r.File, after); err != nil {
+		return Config{}, false, &ConfigError{File: r.File, Err: errors.New(readFailure(err))}
+	}
+	return cfg, true, nil
 }
+
+// beforeReplace runs just before the re-read that detects a concurrent write.
+// A test hook, nil in every real run, and the same arrangement SetRetryLogger
+// and SetSecurityWarner use: the give-up path is otherwise only reachable by
+// racing a real writer, which makes for a slow and flaky test of a branch that
+// exists precisely so a collision is reported rather than silently resolved.
+var beforeReplace func()
 
 // existingKeySpelling returns the spelling an equivalent key is already written
 // under, or key itself when there is none.
