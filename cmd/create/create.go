@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mozilla/markfluence/internal/actionlog"
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/completion"
 	"github.com/mozilla/markfluence/internal/convert"
@@ -516,12 +517,15 @@ func createAll(ordered []record, c *client.ConfluenceClient, doPersist bool) []*
 	// One user cache for the whole batch, so a set of files mentioning the same
 	// people resolves each of them once.
 	users := pagedoc.NewUserCache()
+	logs := actionlog.NewCache()
 	for _, r := range ordered {
 		p, ok := pending[r.absPath]
 		if !ok {
 			continue
 		}
-		final[r.absPath] = publishOne(r, p.res, p.pageID, p.version, c, users)
+		res := publishOne(r, p.res, p.pageID, p.version, c, users)
+		recordAction(logs, r, res)
+		final[r.absPath] = res
 	}
 
 	results := make([]*createResult, len(ordered))
@@ -663,6 +667,16 @@ func publishOne(
 		return res.fail(err, jsonout.CodeFor(err))
 	}
 	res.url = c.PageURL(result, pageID)
+	// The base this publish establishes (#149), recorded by the caller once
+	// the page is finished. Hashed from the same title and body handed to
+	// UpdatePage just above, so the two cannot drift apart.
+	//
+	// #149 required a source sha to be taken *after* create's frontmatter
+	// write-back, since that changes the file's bytes. A publish sha needs no
+	// such rule: the write-back adds a page_id, which moves neither the title
+	// nor the rendered body.
+	res.pageVersion = version + 1
+	res.publishSHA = actionlog.Sum(r.title, pageContent.HTML)
 
 	// CodeOr, not CodeFor: SyncAttachments opens every asset to checksum and
 	// upload it, so a file the converter saw but cannot now read fails here --
@@ -1211,4 +1225,46 @@ func resolveWidth(cliPageWidth string, fm map[string]string, root *project.Root)
 		return w, nil
 	}
 	return pagewidth.DefaultWidth, nil
+}
+
+// recordAction appends this page's line to its root's action log (#149),
+// establishing the base a later update compares against.
+//
+// Inside the publish loop rather than after it, so a run that dies partway
+// leaves every already-published page recorded -- #139 D10's rule, which is
+// the same reason create writes each file's metadata as that page is
+// published rather than batching the writes to the end.
+//
+// Only a successful publish records. A create that failed either left no page
+// at all, so there is nothing for a base to describe, or left the stub S7
+// names -- and that stub is finished by `markfluence update`, which records
+// its own line when it does. Writing a failure line here would name a page
+// that may have been rolled back.
+//
+// A failure to write is a warning, never a failure: the page exists and
+// carries its content by the time this runs, exactly as for the width and the
+// labels above it.
+func recordAction(logs *actionlog.Cache, r record, res *createResult) {
+	if dryRunOpt || !res.ok || res.pageID == "" || res.publishSHA == "" {
+		return
+	}
+	log := logs.Get(r.root)
+	if log == nil {
+		return
+	}
+	key, ok := pagemeta.KeyFor(r.root, r.absPath)
+	if !ok {
+		return
+	}
+	err := log.Append(actionlog.Entry{
+		Action:        actionlog.ActionCreate,
+		Status:        actionlog.StatusOK,
+		File:          key,
+		PageID:        res.pageID,
+		PageVersion:   res.pageVersion,
+		PublishSHA256: res.publishSHA,
+	})
+	if err != nil {
+		res.warnings = append(res.warnings, "could not record this publish in "+log.Path()+": "+err.Error())
+	}
 }

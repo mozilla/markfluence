@@ -48,6 +48,13 @@ type createResult struct {
 	// create is the ordinary case -- a new page's metadata often comes from
 	// flags alone).
 	metadataSource string
+
+	// The two below feed the action log (#149) and are deliberately absent
+	// from --json: bookkeeping about the run, not a report about the page.
+	// pageVersion is the version the publish left the page at; publishSHA is
+	// a hash of what that body PUT sent.
+	pageVersion int
+	publishSHA  string
 }
 
 // newResult seeds a result with the fields known before creation is attempted.
