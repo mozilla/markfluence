@@ -1,6 +1,7 @@
 package update
 
 import (
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/clienttest"
 	"github.com/mozilla/markfluence/internal/jsonout"
+	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/pagedoc"
 	"github.com/mozilla/markfluence/internal/project"
@@ -258,9 +260,14 @@ func TestAVersionOnlyBaseStillRefusesAMovedPage(t *testing.T) {
 	}
 }
 
-// And the other half on its own: a sha with no version cannot speak to
-// divergence, but still answers "would publishing change anything".
-func TestAShaOnlyBaseStillSkipsAnUnchangedBody(t *testing.T) {
+// The other half on its own does *not* license a skip, and that is the point.
+// The sha attests what markfluence last published; only the version agreeing
+// with the live page attests that the page still holds it. A line carrying a
+// sha and no version -- an export line from the walk, or a hand-edited log --
+// therefore cannot conclude, and "cannot conclude" means publish. Concluding
+// "unchanged" would report a skip while somebody's UI edit stood and this
+// file's content was never published at all.
+func TestAShaOnlyBaseCannotLicenseASkip(t *testing.T) {
 	p := &livePage{version: 3}
 	dir, path := inProject(t, "---\npage_id: 1\n---\nHello.\n")
 	c := p.client(t)
@@ -272,11 +279,32 @@ func TestAShaOnlyBaseStillSkipsAnUnchangedBody(t *testing.T) {
 	seedBase(t, dir, actionlog.Entry{File: "f.md", PageID: "1", PublishSHA256: first.publishSHA})
 
 	r := publish(t, c, path)
-	if !r.ok || r.status != statusSkipped {
-		t.Fatalf("result = %+v, want ok/skipped", r)
+	if !r.ok || r.status != statusPublished {
+		t.Fatalf("result = %+v, want ok/published", r)
 	}
-	if p.puts != 1 {
-		t.Errorf("PUTs = %d, want still 1", p.puts)
+	if p.puts != 2 {
+		t.Errorf("PUTs = %d, want 2: a sha with no version cannot justify skipping", p.puts)
+	}
+	if r.bodyChanged != nil {
+		t.Errorf("body_changed = %v, want nil: the check could not run", *r.bodyChanged)
+	}
+}
+
+// "kept" is a label that could *not* be removed, so it is not a write and must
+// not make a run report itself as a publish. Otherwise a page carrying an
+// unmanaged label of the same name reports "published" with nothing written on
+// every run, and a consumer waiting for a tree to settle never sees it.
+func TestAKeptLabelIsNotAWrite(t *testing.T) {
+	r := &updateResult{labels: []jsonout.Label{{Action: labels.ActionKept, Name: "stale"}}}
+	if changedALabel(r) {
+		t.Error("a kept label counted as a change")
+	}
+	if statusFor(r, false) != statusSkipped {
+		t.Error("a run that wrote nothing reported itself as published")
+	}
+	r.labels = append(r.labels, jsonout.Label{Action: labels.ActionAdded, Name: "runbook"})
+	if !changedALabel(r) {
+		t.Error("a real addition was missed")
 	}
 }
 
@@ -293,5 +321,60 @@ func TestNoBaseMeansPublishSilently(t *testing.T) {
 	}
 	if len(r.warnings) != 0 {
 		t.Errorf("warnings = %q, want none: an unknown base is reported once per run, not per file", r.warnings)
+	}
+}
+
+// stderrOf runs fn with os.Stderr redirected and returns what it printed.
+func stderrOf(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stderr
+	os.Stderr = w
+	fn()
+	os.Stderr = old
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
+
+// A dead link must stay visible on a file that has stopped changing, which is
+// exactly the file the body skip now applies to. The old skip ran before the
+// converter, so a skipped result carried nothing to report; this one runs
+// after it, so suppressing warnings would hide a broken link forever -- and
+// would leave human output disagreeing with --json, which reports it either
+// way.
+func TestABodyUnchangedSkipStillReportsABrokenLink(t *testing.T) {
+	p := &livePage{version: 3}
+	_, path := inProject(t, "---\npage_id: 1\n---\nSee [the runbook](nope.md).\n")
+	c := p.client(t)
+
+	first := publish(t, c, path)
+	if !first.ok {
+		t.Fatalf("first run: %s", first.errMsg)
+	}
+	if len(first.broken) == 0 {
+		t.Fatal("setup: the converter reported no broken link")
+	}
+
+	second := publish(t, c, path)
+	if second.status != statusSkipped {
+		t.Fatalf("second run status = %q, want skipped", second.status)
+	}
+	if len(second.broken) == 0 {
+		t.Error("a skipped result dropped the broken link from the payload")
+	}
+	// The warning goes to stderr (ui.Warn); the skip line itself is stdout
+	// (ui.Info), so only the warning is captured here.
+	out := stderrOf(t, second.renderHuman)
+	if !strings.Contains(out, "LINK BROKEN") {
+		t.Errorf("human output on a skip did not mention the broken link:\n%s", out)
 	}
 }

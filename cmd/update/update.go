@@ -330,9 +330,14 @@ func processFile(
 	// worse one -- publishing would replace their work with the very bytes
 	// they started from.
 	if !force && haveBase && base.PageVersion != 0 && page.Version.Number != base.PageVersion {
+		// "export --force" rather than "re-export": export skips a page whose
+		// file is already there (S3) and records nothing for a skip, so a
+		// plain re-export leaves this refusal in place and repeats it
+		// verbatim on the next run.
 		return r.fail(fmt.Errorf(
-			"the page has changed since your copy (v%d -> v%d); re-export it before publishing, "+
-				"or --force to publish over it", base.PageVersion, page.Version.Number),
+			"the page has changed since your copy (v%d -> v%d); replace your copy with "+
+				"`export --force` before publishing, or `update --force` to publish over it",
+			base.PageVersion, page.Version.Number),
 			jsonout.CodeConflict)
 	}
 
@@ -362,8 +367,18 @@ func processFile(
 	// still run, which is the fix for a live bug: the old mtime skip returned
 	// before all three, so redrawing an image without touching the markdown
 	// never uploaded it and the page kept serving the old diagram.
+	// Both halves of the base are required, not just the sha. The sha attests
+	// what markfluence last *published*; only the version agreeing with the
+	// live page attests that the page still holds it. With a version the
+	// divergence check above has already established that agreement, so this
+	// is about the line that carries a sha and no version -- an export line
+	// written during the walk, or a hand-edited log. There, concluding
+	// "unchanged" would report a skip while somebody's UI edit stood and this
+	// file's content was never published. A missing version means "cannot
+	// conclude", which means publish.
 	bodyChanged := true
-	if !force && haveBase && base.PublishSHA256 != "" {
+	if !force && haveBase && base.PublishSHA256 != "" &&
+		base.PageVersion != 0 && page.Version.Number == base.PageVersion {
 		bodyChanged = base.PublishSHA256 != r.publishSHA
 		r.bodyChanged = &bodyChanged
 	}
@@ -495,9 +510,16 @@ func wroteAnAttachment(r *updateResult) bool {
 }
 
 // changedALabel reports whether any label was added or removed.
+//
+// "kept" is not a change, and reading it as one was a bug: it marks a surplus
+// label that could *not* be removed because an unmanaged label shares its
+// name, so it is the opposite of a write. A page carrying such a label reports
+// it on every run, which would have made the result "published" with nothing
+// written, forever -- and a consumer watching for a tree to settle into
+// "skipped" would never see it.
 func changedALabel(r *updateResult) bool {
 	for _, l := range r.labels {
-		if l.Action != labels.ActionUnchanged {
+		if l.Action != labels.ActionUnchanged && l.Action != labels.ActionKept {
 			return true
 		}
 	}
@@ -712,17 +734,26 @@ func reportBaseGaps(results []*updateResult, logs *actionlog.Cache) {
 	checked, unknown := 0, 0
 	rootless := map[string]bool{}
 	for _, r := range results {
-		// No page id means nothing claims the file or it never resolved one,
-		// so there was no comparison to make and nothing to report.
-		if r.pageID == "" {
+		if r.root != nil && r.root.File == "" && r.pageID != "" {
+			rootless[r.root.Dir] = true
+			// Counted *or* warned, never both. A rootless project can never
+			// accrue a base, so including it would make a line that claims to
+			// extinguish itself repeat forever beside the warning explaining
+			// why -- which is the distinction this function's own comment
+			// draws.
+			continue
+		}
+		// Only a file this run actually published or verified: a non-zero sha
+		// means the render happened, which is where both checks finish. A
+		// file that failed -- a 404, a convert error, a refused page -- must
+		// not be counted, or the sentence says it was published without the
+		// check when it was not published at all.
+		if !r.ok || r.publishSHA == "" {
 			continue
 		}
 		checked++
 		if r.base == nil {
 			unknown++
-		}
-		if r.root != nil && r.root.File == "" {
-			rootless[r.root.Dir] = true
 		}
 	}
 	if unknown > 0 {

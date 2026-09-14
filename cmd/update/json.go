@@ -95,6 +95,22 @@ func (r *updateResult) renderHuman() {
 		ui.Error(prefix + " " + r.errMsg)
 		return
 	}
+	// Broken links and warnings print *above* the skip branch, not below it.
+	// That ordering was safe while the skip was the mtime check, which
+	// returned before the converter ever ran -- so a skipped result carried
+	// nothing to report. The unchanged-body skip runs after the render, so by
+	// now the result may be carrying a LINK BROKEN message, a mention naming
+	// nobody, a metadata disagreement, a label-case repair, or a failure to
+	// record the run. Reporting those only when something was published would
+	// hide a dead link forever on exactly the file that has stopped changing,
+	// and would leave human output disagreeing with --json, which reports them
+	// either way.
+	for _, b := range r.broken {
+		ui.Warn(prefix + " " + b)
+	}
+	for _, w := range r.warnings {
+		ui.Warn(prefix + " " + w)
+	}
 	if r.status == statusSkipped {
 		if r.unmanaged {
 			ui.Info(prefix + " Skipping -- not published by markfluence")
@@ -102,12 +118,6 @@ func (r *updateResult) renderHuman() {
 		}
 		ui.Info(prefix + " Skipping -- no changes")
 		return
-	}
-	for _, b := range r.broken {
-		ui.Warn(prefix + " " + b)
-	}
-	for _, w := range r.warnings {
-		ui.Warn(prefix + " " + w)
 	}
 	for _, a := range r.attachments {
 		ui.Info(fmt.Sprintf("%s attachment %s: %s", prefix, a.Action, a.Filename))
