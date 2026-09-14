@@ -168,3 +168,38 @@ func TestADryRunExportRecordsNothing(t *testing.T) {
 		t.Error("a dry run created the state directory")
 	}
 }
+
+// A log that cannot be written must say so on the page's own result, not
+// through ui.Hint: every ui helper is a no-op under --json, so an unwritable
+// .markfluence would otherwise let `export --json` report every page as a
+// clean success while recording no base anywhere.
+func TestAnUnwritableLogWarnsOnTheResult(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, project.Filename), []byte("# marker\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A regular file where the state directory goes, so MkdirAll cannot win.
+	if err := os.WriteFile(filepath.Join(dir, actionlog.Dirname), []byte("in the way\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := newRecorder(dir)
+	if rec == nil {
+		t.Fatal("no recorder: the root has a project file")
+	}
+	t.Cleanup(rec.close)
+
+	res := result{
+		page:       &client.Page{ID: "1", Title: "Home", Version: client.Version{Number: 7}},
+		destPath:   filepath.Join(dir, "home.md"),
+		pageStatus: statusWrote,
+	}
+	rec.recordWalk(&res)
+
+	if len(res.warnings) == 0 {
+		t.Fatal("a failed append left no warning on the result")
+	}
+	if !strings.Contains(res.warnings[0], "could not record") {
+		t.Errorf("warning = %q", res.warnings[0])
+	}
+}
