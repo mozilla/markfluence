@@ -35,6 +35,11 @@ const (
 	CodeIO         Code = "IO"         // local file read/write
 	CodeNetwork    Code = "NETWORK"    // transport failure (no HTTP status)
 	CodeAPI        Code = "API"        // other HTTP >= 400
+	// CodeConflict is a refusal to write over somebody else's work: the page
+	// has moved past the base this copy was derived from (#149). Not
+	// VALIDATION, which would say the file is defective -- nothing about it
+	// is. The remedy is to re-export, or to pass --force.
+	CodeConflict Code = "CONFLICT"
 )
 
 // Envelope is the top-level stdout document for every command in --json mode.
