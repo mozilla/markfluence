@@ -131,7 +131,7 @@ func TestBaseIsTheLastSuccessfulLine(t *testing.T) {
 // what Append wrote rather than what it cached.
 func testRoot2(t *testing.T, l *Log) *project.Root {
 	t.Helper()
-	root, err := project.FromPath(filepath.Dir(l.dir))
+	root, err := project.FromPath(l.root.Dir)
 	if err != nil {
 		t.Fatalf("reopening root: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestALineWithNoShaStillCarriesItsVersion(t *testing.T) {
 // A root with no markfluence.yaml gets no log, and every method stays usable.
 func TestNoProjectFileMeansNoLog(t *testing.T) {
 	if l := For(rootWithoutMarker(t)); l != nil {
-		t.Fatalf("got a log for a root with no project file: %q", l.dir)
+		t.Fatalf("got a log for a root with no project file: %q", l.Path())
 	}
 	var l *Log
 	if err := l.Append(Entry{File: "a.md"}); err != nil {
@@ -311,5 +311,39 @@ func TestCacheHandsOutOneLogPerRoot(t *testing.T) {
 	}
 	if len(c.Logs()) != 2 {
 		t.Errorf("Logs() returned %d, want the two real roots", len(c.Logs()))
+	}
+}
+
+// S1 (no-write-outside-root), and the reason every read and write here goes
+// through root.FS rather than a bare os call.
+//
+// A bare os.OpenFile with O_APPEND|O_CREATE follows a symlink, so a
+// .markfluence/log.jsonl pointing anywhere -- planted by whoever can write the
+// project directory -- would have markfluence append JSON to a file outside
+// the root. Measured against the bare call before this was fixed: it wrote
+// straight through. An os.Root refuses the escape instead.
+func TestAppendRefusesToFollowASymlinkOutOfTheRoot(t *testing.T) {
+	root := testRoot(t)
+	outside := filepath.Join(t.TempDir(), "target.txt")
+	if err := os.WriteFile(outside, []byte("untouched\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root.Dir, Dirname), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root.Dir, Dirname, Filename)); err != nil {
+		t.Skipf("cannot create a symlink here: %v", err)
+	}
+
+	err := For(root).Append(Entry{Action: ActionUpdate, Status: StatusOK, File: "a.md"})
+	if err == nil {
+		t.Error("appended through a symlink pointing out of the root")
+	}
+	data, readErr := os.ReadFile(outside)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(data) != "untouched\n" {
+		t.Errorf("wrote outside the root: %q", data)
 	}
 }
