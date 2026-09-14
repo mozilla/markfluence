@@ -78,6 +78,8 @@ func TestJSONResultPublished(t *testing.T) {
   "warnings": [],
   "broken": [],
   "metadata_source": "frontmatter",
+  "base": null,
+  "body_changed": null,
   "error": null,
   "code": null
 }`

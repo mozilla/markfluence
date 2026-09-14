@@ -148,7 +148,7 @@
   ],
   "$defs": {
     "code": {
-      "enum": ["CONFIG", "AUTH", "NOT_FOUND", "VALIDATION", "CONVERT", "IO", "NETWORK", "API"]
+      "enum": ["CONFIG", "AUTH", "NOT_FOUND", "VALIDATION", "CONVERT", "IO", "NETWORK", "API", "CONFLICT"]
     },
     "codeOrNull": {
       "oneOf": [{ "$ref": "#/$defs/code" }, { "type": "null" }]
@@ -388,7 +388,7 @@
       "required": [
         "ok", "status", "dry_run", "file", "page_id", "title", "space", "url",
         "version", "page_width", "labels", "attachments", "warnings", "broken",
-        "metadata_source", "error", "code"
+        "metadata_source", "base", "body_changed", "error", "code"
       ],
       "properties": {
         "ok": { "type": "boolean" },
@@ -416,6 +416,25 @@
         "warnings": { "type": "array", "items": { "type": "string" } },
         "broken": { "type": "array", "items": { "type": "string" } },
         "metadata_source": { "$ref": "#/$defs/metadataSourceOrNull" },
+        "base": {
+          "description": "The merge base this run compared against: what a previous create, update or export recorded for this file in the project's local action log. null when none was usable -- no log, no line for this file, or a line naming a different page -- which is how a consumer tells \"the page had not moved\" from \"nothing could be checked\". page_version is 0 and publish_sha256 is \"\" when that half of the base was never recorded; the two are read independently.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["page_version", "publish_sha256"],
+              "properties": {
+                "page_version": { "type": "integer" },
+                "publish_sha256": { "type": "string" }
+              }
+            }
+          ]
+        },
+        "body_changed": {
+          "description": "Whether the body PUT was needed: false means the page already held what this file renders to, so only attachments, width and labels could have changed and version.previous equals version.new. null means the check did not run -- no base, a base carrying no sha, or --force, which always publishes.",
+          "type": ["boolean", "null"]
+        },
         "error": { "$ref": "#/$defs/stringOrNull" },
         "code": { "$ref": "#/$defs/codeOrNull" }
       }

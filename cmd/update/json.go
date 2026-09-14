@@ -3,6 +3,7 @@ package update
 import (
 	"fmt"
 
+	"github.com/mozilla/markfluence/internal/actionlog"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/project"
@@ -63,6 +64,16 @@ type updateResult struct {
 	root       *project.Root
 	logKey     string
 	publishSHA string
+
+	// base is the merge base found for this file, nil when none was usable.
+	// Reported as --json's "base" -- a fact about the log rather than about
+	// the check, so it is set even under --force, where the checks do not run.
+	base *actionlog.Entry
+	// bodyChanged is what the idempotence check concluded, nil when it could
+	// not run: no base, no sha in the base, or --force. A tri-state rather
+	// than a bool because "the check did not run" is the thing a CI consumer
+	// has to be able to see, the same reason metadata_source is nullable.
+	bodyChanged *bool
 }
 
 // fail marks the result failed with an error and code, and returns it for a
@@ -101,7 +112,15 @@ func (r *updateResult) renderHuman() {
 	for _, a := range r.attachments {
 		ui.Info(fmt.Sprintf("%s attachment %s: %s", prefix, a.Action, a.Filename))
 	}
-	ui.Info(fmt.Sprintf("%s Updating '%s' (v%d -> v%d)...", prefix, r.title, r.versionPrev, r.versionNew))
+	// The version pair only when the body actually moved. An attachment-only
+	// run -- a redrawn diagram, published with no prose change -- must not
+	// claim a bump that did not happen, since an attachment upload leaves the
+	// page version alone; and it must not print nothing either, which would
+	// read as a no-op when the diagram really was replaced.
+	bodyMoved := r.versionNew != r.versionPrev
+	if bodyMoved {
+		ui.Info(fmt.Sprintf("%s Updating '%s' (v%d -> v%d)...", prefix, r.title, r.versionPrev, r.versionNew))
+	}
 	if r.widthSet && r.width != nil {
 		ui.Info(prefix + " page width: " + r.width.Value)
 	}
@@ -109,6 +128,10 @@ func (r *updateResult) renderHuman() {
 		if l.Action != labels.ActionUnchanged {
 			ui.Info(fmt.Sprintf("%s label %s: %s", prefix, l.Action, l.Name))
 		}
+	}
+	if !bodyMoved {
+		ui.Success(fmt.Sprintf("%s Body unchanged at v%d: %s", prefix, r.versionNew, r.url))
+		return
 	}
 	ui.Success(fmt.Sprintf("%s Published v%d: %s", prefix, r.versionNew, r.url))
 }
@@ -131,9 +154,24 @@ type jsonUpdateResult struct {
 	Broken      []string             `json:"broken"`
 	// MetadataSource is null for a file nothing claims, which is why it is a
 	// pointer rather than an empty string: "" would read as a source named "".
-	MetadataSource *string       `json:"metadata_source"`
-	Error          *string       `json:"error"`
-	Code           *jsonout.Code `json:"code"`
+	MetadataSource *string `json:"metadata_source"`
+	// Base is the merge base this run compared against, null when none was
+	// usable -- no log, no line for this file, or a line naming another page.
+	// That null is the "the check could not run" signal a CI consumer needs
+	// and a human does not, the same split metadata_source makes.
+	Base *jsonUpdateBase `json:"base"`
+	// BodyChanged is what the idempotence check concluded, null when it did
+	// not run (no base, a base with no sha, or --force).
+	BodyChanged *bool         `json:"body_changed"`
+	Error       *string       `json:"error"`
+	Code        *jsonout.Code `json:"code"`
+}
+
+// jsonUpdateBase is the recorded base, reported so a consumer can see what the
+// decision rested on.
+type jsonUpdateBase struct {
+	PageVersion   int    `json:"page_version"`
+	PublishSHA256 string `json:"publish_sha256"`
 }
 
 type jsonUpdateVersion struct {
@@ -158,6 +196,13 @@ func (r *updateResult) jsonResult() jsonUpdateResult {
 		Broken:      nonNilStrings(r.broken),
 
 		MetadataSource: strOrNil(r.metadataSource),
+		BodyChanged:    r.bodyChanged,
+	}
+	if r.base != nil {
+		res.Base = &jsonUpdateBase{
+			PageVersion:   r.base.PageVersion,
+			PublishSHA256: r.base.PublishSHA256,
+		}
 	}
 	// version is present once we know the live version (all non-early failures).
 	if r.versionPrev != 0 || r.versionNew != 0 {
