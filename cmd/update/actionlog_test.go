@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/mozilla/markfluence/internal/actionlog"
 	"github.com/mozilla/markfluence/internal/client"
@@ -60,7 +59,7 @@ func publishingServer(t *testing.T) *client.ConfluenceClient {
 func runOne(t *testing.T, path string) *updateResult {
 	t.Helper()
 	r := processFile(path, publishingServer(t), project.NewCache(""),
-		linkindex.NewCache(), pagedoc.NewUserCache())
+		linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	recordAction(actionlog.NewCache(), r)
 	return r
 }
@@ -107,30 +106,6 @@ func TestTheRecordedShaCoversTheTitle(t *testing.T) {
 	}
 }
 
-// A skip must not record. In this change that is the mtime skip, which
-// establishes only that two timestamps are ordered a certain way -- not that
-// this copy matches the page -- so a line would claim a base nothing verified,
-// and would silence divergence detection for a page edited in the UI.
-func TestTheMtimeSkipRecordsNothing(t *testing.T) {
-	dir, path := inProject(t, "---\npage_id: 1\n---\nHello.\n")
-	past := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-	if err := os.Chtimes(path, past, past); err != nil {
-		t.Fatal(err)
-	}
-	c := clienttest.New(t, func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(pageWithVersion("1", 3, "2099-01-01T00:00:00Z")))
-	})
-
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
-	recordAction(actionlog.NewCache(), r)
-	if r.status != statusSkipped {
-		t.Fatalf("status = %q, want skipped", r.status)
-	}
-	if _, ok := baseIn(t, dir, "f.md"); ok {
-		t.Error("a skip recorded a base it never verified")
-	}
-}
-
 // Nothing claims the file, so there is no page for a base to be against.
 func TestAnUnmanagedFileRecordsNothing(t *testing.T) {
 	dir, path := inProject(t, "Just markdown, no frontmatter.\n")
@@ -138,7 +113,7 @@ func TestAnUnmanagedFileRecordsNothing(t *testing.T) {
 		t.Errorf("unexpected %s: an unmanaged file makes no request", r.Method)
 	})
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	recordAction(actionlog.NewCache(), r)
 	if !r.unmanaged {
 		t.Fatalf("result = %+v, want unmanaged", r)
@@ -175,7 +150,7 @@ func TestAFailedPublishIsRecordedAsAFailure(t *testing.T) {
 		_, _ = w.Write([]byte(`{"errors":[{"status":500,"title":"boom"}]}`))
 	})
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	recordAction(actionlog.NewCache(), r)
 	if r.ok {
 		t.Fatal("want a failed result")

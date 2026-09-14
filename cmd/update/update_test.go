@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mozilla/markfluence/internal/actionlog"
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/clienttest"
 	"github.com/mozilla/markfluence/internal/frontmatter"
@@ -179,7 +180,7 @@ func TestProcessFileRejectsNonNumericPageID(t *testing.T) {
 	}
 
 	c := client.New(client.Config{SiteURL: "https://wiki.example.net"})
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if r.ok {
 		t.Fatal("a non-numeric page_id must fail the file")
 	}
@@ -208,7 +209,7 @@ func TestProcessFileReportsMissingPage(t *testing.T) {
 		t.Fatalf("writing fixture: %v", err)
 	}
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if r.ok {
 		t.Fatal("a page_id that resolves to nothing must fail the file")
 	}
@@ -274,7 +275,7 @@ func TestProcessFilePublishesSuccessfully(t *testing.T) {
 
 	path := writeUpdateFixture(t, "---\npage_id: 1\n---\nHello.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if !r.ok || r.status != statusPublished {
 		t.Fatalf("result = %+v, want ok/published", r)
 	}
@@ -289,14 +290,26 @@ func TestProcessFilePublishesSuccessfully(t *testing.T) {
 	}
 }
 
-// TestProcessFileSkipsWhenFileOlderThanPage is the mtime-skip guarantee itself:
-// a file not modified since the page's last version must not republish.
-func TestProcessFileSkipsWhenFileOlderThanPage(t *testing.T) {
+// TestAnOldMtimeNoLongerSkips is the deletion, pinned. A file untouched since
+// long before the page's last version used to skip on that fact alone; it now
+// publishes, because with no recorded base there is nothing that says the page
+// already holds this content.
+//
+// This is the inversion of the guarantee that used to live here, and it is
+// deliberate: the mtime comparison's failure modes are the ones #149 exists to
+// fix -- git does not preserve mtimes, and it weighed the local filesystem's
+// clock against Atlassian's -- so keeping it as a fallback would have kept
+// every one of them for exactly the files that have no base.
+func TestAnOldMtimeNoLongerSkips(t *testing.T) {
+	var sawPut bool
 	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			t.Errorf("unexpected %s request: a skip must not touch the page further", r.Method)
+		switch r.Method {
+		case http.MethodGet:
+			_, _ = w.Write([]byte(pageWithVersion("1", 3, "2099-01-01T00:00:00Z")))
+		case http.MethodPut:
+			sawPut = true
+			_, _ = w.Write([]byte(pageWithVersion("1", 4, "2099-01-01T00:00:00Z")))
 		}
-		_, _ = w.Write([]byte(pageWithVersion("1", 3, "2099-01-01T00:00:00Z")))
 	})
 
 	path := writeUpdateFixture(t, "---\npage_id: 1\n---\nHello.\n")
@@ -305,18 +318,18 @@ func TestProcessFileSkipsWhenFileOlderThanPage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
-	if !r.ok || r.status != statusSkipped {
-		t.Fatalf("result = %+v, want ok/skipped", r)
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
+	if !r.ok || r.status != statusPublished {
+		t.Fatalf("result = %+v, want ok/published", r)
 	}
-	if r.versionNew != 3 {
-		t.Errorf("r.versionNew = %d, want 3 (unchanged by a skip)", r.versionNew)
+	if !sawPut {
+		t.Error("no PUT: an old mtime must no longer decide anything")
 	}
 }
 
-// TestProcessFileForceBypassesMtimeSkip: --force publishes even when the file
-// looks unchanged since the page's last version.
-func TestProcessFileForceBypassesMtimeSkip(t *testing.T) {
+// TestForcePublishesWithNoCheckAtAll: --force means "always PUT", so neither
+// check runs and an old mtime is as irrelevant as everything else.
+func TestForcePublishesWithNoCheckAtAll(t *testing.T) {
 	var sawPut bool
 	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -339,12 +352,12 @@ func TestProcessFileForceBypassesMtimeSkip(t *testing.T) {
 	force = true
 	t.Cleanup(func() { force = false })
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if !r.ok || r.status != statusPublished {
-		t.Fatalf("result = %+v, want ok/published: --force bypasses the mtime skip", r)
+		t.Fatalf("result = %+v, want ok/published: --force always PUTs", r)
 	}
 	if !sawPut {
-		t.Fatal("want UpdatePage to have been called despite the old mtime")
+		t.Fatal("want UpdatePage to have been called: --force never suppresses the request")
 	}
 }
 
@@ -390,7 +403,7 @@ func TestProcessFileRejectsEmptyTitle(t *testing.T) {
 	}
 
 	c := client.New(client.Config{SiteURL: "https://wiki.invalid"})
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if r.ok {
 		t.Fatal("a present-but-empty title must fail the file")
 	}
@@ -419,7 +432,7 @@ func TestProcessFileKeepsLiveTitleWhenAbsent(t *testing.T) {
 		t.Fatalf("writing fixture: %v", err)
 	}
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if r.title != "Live Title" {
 		t.Errorf("title = %q, want the live page's title", r.title)
 	}
@@ -462,7 +475,7 @@ func TestProcessFileAbsentLabelsMakesNoRequest(t *testing.T) {
 	c := labelServer(t, `{"results":[]}`, &paths)
 	path := writeUpdateFixture(t, "---\npage_id: 1\n---\nHello.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if !r.ok {
 		t.Fatalf("result = %+v, want ok", r)
 	}
@@ -485,7 +498,7 @@ func TestProcessFileAssertsTheDeclaredSet(t *testing.T) {
 	c := labelServer(t, live, &paths)
 	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: [runbook, howto]\n---\nHello.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if !r.ok || r.status != statusPublished {
 		t.Fatalf("result = %+v, want ok/published", r)
 	}
@@ -526,7 +539,7 @@ func TestProcessFileUnmanagedLabelsSurvive(t *testing.T) {
 	c := labelServer(t, live, &paths)
 	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: [runbook]\n---\nHello.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if !r.ok {
 		t.Fatalf("result = %+v, want ok", r)
 	}
@@ -544,7 +557,7 @@ func TestProcessFileEmptyLabelsRemovesThemAll(t *testing.T) {
 	c := labelServer(t, `{"results":[{"id":"1","name":"stale","prefix":"global"}]}`, &paths)
 	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: []\n---\nHello.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if !r.ok {
 		t.Fatalf("result = %+v, want ok", r)
 	}
@@ -569,7 +582,7 @@ func TestProcessFileInvalidLabelFailsBeforeAnyWrite(t *testing.T) {
 	})
 	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: [Runbook Two]\n---\nHello.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if r.ok {
 		t.Fatal("result ok, want a validation failure")
 	}
@@ -599,7 +612,7 @@ func TestProcessFileLabelFailureIsAWarning(t *testing.T) {
 	})
 	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: [runbook]\n---\nHello.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if !r.ok || r.status != statusPublished {
 		t.Fatalf("result = %+v, want the publish still reported as ok", r)
 	}
@@ -619,7 +632,7 @@ func TestProcessFileLabelCaseWarns(t *testing.T) {
 	c := labelServer(t, `{"results":[]}`, &paths)
 	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: [Runbook]\n---\nHello.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if !r.ok {
 		t.Fatalf("result = %+v, want ok", r)
 	}
@@ -628,27 +641,6 @@ func TestProcessFileLabelCaseWarns(t *testing.T) {
 	}
 	if len(r.labels) != 1 || r.labels[0].Name != "runbook" {
 		t.Errorf("labels = %v, want the lowercased name", r.labels)
-	}
-}
-
-// TestProcessFileSkippedFileSkipsLabels: a file the mtime check skipped is
-// skipped entirely, labels included.
-func TestProcessFileSkippedFileSkipsLabels(t *testing.T) {
-	var paths []string
-	c := clienttest.New(t, func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.Path, "label") {
-			paths = append(paths, r.URL.Path)
-		}
-		_, _ = w.Write([]byte(pageWithVersion("1", 3, "2999-01-01T00:00:00Z")))
-	})
-	path := writeUpdateFixture(t, "---\npage_id: 1\nlabels: [runbook]\n---\nHello.\n")
-
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
-	if r.status != statusSkipped {
-		t.Fatalf("status = %q, want skipped", r.status)
-	}
-	if len(paths) != 0 {
-		t.Errorf("label requests = %v, want none for a skipped file", paths)
 	}
 }
 
@@ -674,7 +666,7 @@ func TestProcessFileWarnsAboutAMentionThatNamesNobody(t *testing.T) {
 	path := writeUpdateFixture(t,
 		"---\npage_id: 1\n---\nPing [@Nobody](https://home.atlassian.com/people/"+bogus+") now.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if !r.ok {
 		t.Fatalf("result = %+v, want the page still published", r)
 	}
@@ -715,7 +707,7 @@ func TestProcessFileDoesNotWarnAboutAResolvableMention(t *testing.T) {
 	path := writeUpdateFixture(t,
 		"---\npage_id: 1\n---\nPing [@Ada](https://home.atlassian.com/people/"+good+") now.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if !r.ok {
 		t.Fatalf("result = %+v, want ok", r)
 	}
@@ -778,7 +770,7 @@ func TestProcessFileAppliesProjectWidth(t *testing.T) {
 	c := propertyServer(t, &paths)
 	path := writeProject(t, "page_width: narrow\n", "---\npage_id: 1\n---\nHello.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if !r.ok {
 		t.Fatalf("result not ok: %+v", r)
 	}
@@ -806,7 +798,7 @@ func TestProcessFileNoProjectWidthMakesNoWidthRequest(t *testing.T) {
 	c := propertyServer(t, &paths)
 	path := writeProject(t, "space: ENG\n", "---\npage_id: 1\n---\nHello.\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if !r.ok {
 		t.Fatalf("result not ok: %+v", r)
 	}
@@ -842,7 +834,7 @@ func TestProcessFileFrontmatterWidthBeatsProjectWidth(t *testing.T) {
 		"---\npage_id: 1\npage_width: wide\n---\nHello.\n")
 
 	if r := processFile(path, c, project.NewCache(""), linkindex.NewCache(),
-		pagedoc.NewUserCache()); !r.ok {
+		pagedoc.NewUserCache(), actionlog.NewCache()); !r.ok {
 		t.Fatalf("result not ok: %+v", r)
 	}
 	if len(bodies) == 0 {
@@ -887,7 +879,7 @@ func TestProcessFilePublishesFromAManifestEntry(t *testing.T) {
 	path := writeManifestProject(t,
 		"pages:\n  f.md:\n    title: From The Manifest\n    page_id: 1\n", "# Hello\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if !r.ok || r.status != statusPublished {
 		t.Fatalf("result = %+v, want published", r)
 	}
@@ -909,7 +901,7 @@ func TestProcessFileSkipsAnUnmanagedFile(t *testing.T) {
 	})
 	path := writeManifestProject(t, "pages:\n  other.md:\n    page_id: 9\n", "# Draft\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if !r.ok || r.status != statusSkipped {
 		t.Fatalf("result = %+v, want a successful skip", r)
 	}
@@ -931,7 +923,7 @@ func TestProcessFileSkipsForeignFrontmatter(t *testing.T) {
 	path := writeManifestProject(t, "space: ENG\n",
 		"---\nreviewers: [ana, bo]\nowner: sre\n---\n# Post\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if !r.ok || r.status != statusSkipped || !r.unmanaged {
 		t.Fatalf("result = %+v, want a successful unmanaged skip", r)
 	}
@@ -946,7 +938,7 @@ func TestProcessFileRegisteredWithNoPageIDFails(t *testing.T) {
 	})
 	path := writeManifestProject(t, "pages:\n  f.md:\n    title: Claimed\n", "# Hello\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if r.ok {
 		t.Fatalf("result = %+v, want a failure", r)
 	}
@@ -968,7 +960,7 @@ func TestProcessFileCoordinateDisagreementFails(t *testing.T) {
 	path := writeManifestProject(t, "pages:\n  f.md:\n    page_id: 1\n",
 		"---\npage_id: 999\n---\n# Hello\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if r.ok {
 		t.Fatalf("result = %+v, want a failure", r)
 	}
@@ -994,7 +986,7 @@ func TestProcessFileSoftDisagreementWarns(t *testing.T) {
 		"pages:\n  f.md:\n    title: Manifest Title\n    page_id: 1\n",
 		"---\ntitle: File Title\n---\n# Hello\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if !r.ok {
 		t.Fatalf("result = %+v, want success", r)
 	}
@@ -1041,7 +1033,7 @@ func TestRunBatchSkipsUnmanagedAndPublishesTheRest(t *testing.T) {
 
 	got := map[string]string{}
 	for _, name := range []string{"published.md", "draft.md"} {
-		r := processFile(filepath.Join(dir, name), c, roots, indexes, users)
+		r := processFile(filepath.Join(dir, name), c, roots, indexes, users, actionlog.NewCache())
 		if !r.ok {
 			t.Fatalf("%s failed: %s", name, r.errMsg)
 		}
@@ -1069,7 +1061,7 @@ func TestProcessFileUnmanagedSkipReportsNoSource(t *testing.T) {
 	// metadata -- but names no page, so nothing claims it.
 	path := writeManifestProject(t, "space: ENG\n", "---\ntitle: Draft\nspace: ENG\n---\n# Draft\n")
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
 	if !r.ok || r.status != statusSkipped || !r.unmanaged {
 		t.Fatalf("result = %+v, want an unmanaged skip", r)
 	}

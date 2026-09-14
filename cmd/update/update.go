@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
-	"time"
 
 	"github.com/mozilla/markfluence/internal/actionlog"
 	"github.com/mozilla/markfluence/internal/client"
@@ -63,12 +63,23 @@ var Cmd = &cobra.Command{
 		"page_id that no longer resolves fails that file and says what to do about\n" +
 		"it; one that is not a numeric id at all is reported without asking\n" +
 		"Confluence.\n\n" +
-		"A file that has not changed since the page's last version is skipped,\n" +
-		"compared by mtime, unless --force is given. Each file is processed\n" +
-		"independently; the command exits non-zero if any file failed.\n\n" +
+		"Two checks stand between a file and the page, and both compare against\n" +
+		"what a previous create, update or export recorded locally about that\n" +
+		"file. A page that has moved on since your copy was made is refused\n" +
+		"rather than overwritten -- re-export it, or use --force. A file whose\n" +
+		"rendered body already matches the page skips the body publish, while\n" +
+		"attachments, width and labels are applied as usual, so redrawing an\n" +
+		"image publishes it without churning the page's version history.\n\n" +
+		"A file nothing has recorded yet is published with no check and no\n" +
+		"warning of its own; the run reports how many those were. Protection\n" +
+		"accrues, so publishing once is what starts it.\n\n" +
+		"--force means always publish: it overrides both checks, which is what a\n" +
+		"CI workflow wants when the repository is the source of truth.\n\n" +
+		"Each file is processed independently; the command exits non-zero if any\n" +
+		"file failed, a refused page included.\n\n" +
 		"--dry-run previews the version bump, attachment uploads and any width or\n" +
-		"label change without writing to Confluence. It honours the mtime skip and\n" +
-		"--force exactly as a real run does, so its forecast matches.",
+		"label change without writing to Confluence. It makes the same two checks\n" +
+		"a real run does, so its forecast matches.",
 	Example: "  # Publish a file, taking the page id from its frontmatter or its entry\n" +
 		"  markfluence update docs/managing_an_incident.md\n\n" +
 		"  # Publish a whole tree -- the CI shape: metadata comes from the files\n" +
@@ -76,7 +87,7 @@ var Cmd = &cobra.Command{
 		"  markfluence update docs/**/*.md\n\n" +
 		"  # Publish a batch with a version message\n" +
 		"  markfluence update docs/*.md --message \"Bulk update\"\n\n" +
-		"  # Republish even though the file has not changed\n" +
+		"  # Publish regardless of what the page has become since your copy\n" +
 		"  markfluence update docs/foo.md --force\n\n" +
 		"  # Preview, write nothing\n" +
 		"  markfluence update docs/*.md --dry-run\n\n" +
@@ -89,7 +100,8 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().StringVar(&message, "message", "Updated via markfluence", "Version message.")
-	Cmd.Flags().BoolVar(&force, "force", false, "Skip the file-mtime check and always update the page.")
+	Cmd.Flags().BoolVar(&force, "force", false,
+		"Always publish: override both the moved-page and unchanged-body checks.")
 	Cmd.Flags().BoolVar(&dryRun, "dry-run", false,
 		"Preview what would be published without writing to Confluence.")
 }
@@ -129,7 +141,7 @@ func run(cmd *cobra.Command, args []string) error {
 	failures := 0
 	results := make([]*updateResult, 0, len(args))
 	for _, filename := range args {
-		r := processFile(filename, c, roots, indexes, users)
+		r := processFile(filename, c, roots, indexes, users, logs)
 		recordAction(logs, r)
 		results = append(results, r)
 		if !ui.IsJSON() {
@@ -139,6 +151,7 @@ func run(cmd *cobra.Command, args []string) error {
 			failures++
 		}
 	}
+	reportBaseGaps(results, logs)
 	for _, dir := range roots.Roots() {
 		ui.Info("root: " + dir)
 	}
@@ -174,7 +187,7 @@ func run(cmd *cobra.Command, args []string) error {
 // performs no output itself; the caller renders the result (human lines or JSON).
 func processFile(
 	filename string, c *client.ConfluenceClient, roots *project.Cache, indexes *linkindex.Cache,
-	users *pagedoc.UserCache,
+	users *pagedoc.UserCache, logs *actionlog.Cache,
 ) *updateResult {
 	r := &updateResult{file: filename, dryRun: dryRun}
 	mf, err := frontmatter.ParseFile(filename)
@@ -184,9 +197,17 @@ func processFile(
 
 	// The root comes first now: a file's metadata may live in the project
 	// file's pages: block rather than in the file, so nothing local can be
-	// checked until the root is known. The walk is cached, so asking early
-	// costs nothing; building the link *index* is still below the mtime check,
-	// so a file that is skipped never pays for one.
+	// checked until the root is known, and the root also decides which action
+	// log the base is read from. The walk is cached, so asking early costs
+	// nothing.
+	//
+	// Building the link *index* no longer sits below a cheap skip: the
+	// idempotence check compares a sha of the render, so a file skipped as
+	// unchanged has been rendered by then. The two cases that still return
+	// before it are an unmanaged file and a refused one -- divergence is
+	// decided from the version alone, precisely so a refusal pays for
+	// nothing. The index is cached per root, so the cost is one per batch
+	// rather than one per file, against files already read.
 	abs, err := filepath.Abs(filename)
 	if err != nil {
 		return r.fail(err, jsonout.CodeIO)
@@ -285,15 +306,34 @@ func processFile(
 	r.versionPrev = page.Version.Number
 	r.url = c.PageURL(page, pageID)
 
-	if !force && page.Version.CreatedAt != "" {
-		if pageUpdated, err := time.Parse(time.RFC3339, page.Version.CreatedAt); err == nil {
-			if info, err := os.Stat(filename); err == nil && !info.ModTime().After(pageUpdated) {
-				r.ok = true
-				r.status = statusSkipped
-				r.versionNew = page.Version.Number
-				return r
-			}
-		}
+	// The merge base: what this copy was derived from (#149). Read before the
+	// render, because the divergence check below needs no render and a refused
+	// file should pay for nothing.
+	//
+	// The mtime comparison that used to stand here is gone, with no fallback
+	// for a file that has no base. Its failure modes are precisely the ones
+	// this check exists to fix -- git does not preserve mtimes, so a clone,
+	// pull, checkout or touch all look exactly like an edit, and it compared
+	// the local filesystem's clock against Atlassian's -- so keeping it would
+	// have preserved every one of them for exactly the population with no
+	// base, which at first is everyone.
+	base, haveBase := usableBase(logs.Get(root), r.logKey, pageID)
+	if haveBase {
+		r.base = &base
+	}
+
+	// Divergence: the page has moved past this copy. Refused rather than
+	// warned, because a warning that publishes anyway is the silent data loss
+	// this exists to prevent with extra text on top. Deliberately not
+	// qualified by the sha: a page that moved must not be overwritten whether
+	// or not I also have local edits, and the case where I have none is the
+	// worse one -- publishing would replace their work with the very bytes
+	// they started from.
+	if !force && haveBase && base.PageVersion != 0 && page.Version.Number != base.PageVersion {
+		return r.fail(fmt.Errorf(
+			"the page has changed since your copy (v%d -> v%d); re-export it before publishing, "+
+				"or --force to publish over it", base.PageVersion, page.Version.Number),
+			jsonout.CodeConflict)
 	}
 
 	index, err := indexes.Get(root)
@@ -308,10 +348,25 @@ func processFile(
 		return r.fail(err, jsonout.CodeConvert)
 	}
 	// What the body PUT would send, hashed: the resolved title and the body.
-	// Recorded rather than compared -- the checks that read it are #149's
-	// second half. Taken here, from the same two values handed to UpdatePage
-	// below, so the two cannot drift apart.
+	// Taken from the same two values handed to UpdatePage below, so the
+	// recorded value and the published one cannot drift apart.
 	r.publishSHA = actionlog.Sum(title, pageContent.HTML)
+
+	// Idempotence: the page already holds what this file renders to, so the
+	// body PUT would change nothing. --force does not override it and must
+	// not: --force means "always PUT", and this is the check that decides
+	// whether there is a PUT to make at all -- so it only ever runs when
+	// --force is absent, and a forced run publishes unconditionally.
+	//
+	// It skips the *body* alone. The width, label and attachment passes below
+	// still run, which is the fix for a live bug: the old mtime skip returned
+	// before all three, so redrawing an image without touching the markdown
+	// never uploaded it and the page kept serving the old diagram.
+	bodyChanged := true
+	if !force && haveBase && base.PublishSHA256 != "" {
+		bodyChanged = base.PublishSHA256 != r.publishSHA
+		r.bodyChanged = &bodyChanged
+	}
 	r.broken = append(r.broken, pageContent.Broken...)
 	r.warnings = append(r.warnings, pageContent.Warnings...)
 	// Publishing needs no display names -- the account id is already in the
@@ -334,10 +389,13 @@ func processFile(
 			r.attachments = append(r.attachments, jsonout.Attachment{Action: a.Action, Filename: a.Filename})
 		}
 		r.versionNew = next
+		if !bodyChanged {
+			r.versionNew = page.Version.Number
+		}
 		r.previewWidth(c, pageID, width, applyWidth)
 		r.previewLabels(c, pageID, labelSet)
 		r.ok = true
-		r.status = statusPublished
+		r.status = statusFor(r, bodyChanged)
 		return r
 	}
 
@@ -352,12 +410,15 @@ func processFile(
 		r.attachments = append(r.attachments, jsonout.Attachment{Action: a.Action, Filename: a.Filename})
 	}
 
-	result, err := c.UpdatePage(pageID, title, pageContent.HTML, next, message)
-	if err != nil {
-		return r.fail(err, jsonout.CodeFor(err))
+	r.versionNew = page.Version.Number
+	if bodyChanged {
+		result, err := c.UpdatePage(pageID, title, pageContent.HTML, next, message)
+		if err != nil {
+			return r.fail(err, jsonout.CodeFor(err))
+		}
+		r.versionNew = next
+		r.url = c.PageURL(result, pageID)
 	}
-	r.versionNew = next
-	r.url = c.PageURL(result, pageID)
 
 	// Assert the page width (a separate content-property call) only when set;
 	// non-fatal (a failure is a warning, not an error).
@@ -383,8 +444,64 @@ func processFile(
 	r.applyLabels(c, pageID, labelSet)
 
 	r.ok = true
-	r.status = statusPublished
+	r.status = statusFor(r, bodyChanged)
 	return r
+}
+
+// usableBase returns the merge base recorded for this file, discarding one that
+// describes a different page.
+//
+// The page_id check is the case that would produce a *wrong* answer rather than
+// no answer: retarget a file at another page and the old entry's version is
+// about something else entirely, so comparing it would invent "the page moved
+// 40 versions" out of an edit to one line of frontmatter. Discarding leaves the
+// file unknown, which means publish -- the same answer it would get on a fresh
+// clone.
+func usableBase(log *actionlog.Log, key, pageID string) (actionlog.Entry, bool) {
+	e, ok := log.Base(key)
+	if !ok || e.PageID != pageID {
+		return actionlog.Entry{}, false
+	}
+	return e, true
+}
+
+// statusFor reports whether this run wrote anything to the page.
+//
+// "published" means the page was written to -- the body, a width, a label or
+// an attachment -- and "skipped" means nothing was. That keeps the status enum
+// as it is while letting the body be skipped on its own: a run that uploaded a
+// redrawn diagram and republished no prose is a publish, and shows it with
+// version.previous == version.new.
+//
+// "Skipping -- no changes" is finally true when it is printed: it now means
+// the render matched the recorded base and nothing else was found to do,
+// rather than that two timestamps happened to line up.
+func statusFor(r *updateResult, bodyChanged bool) string {
+	if bodyChanged || r.widthSet || wroteAnAttachment(r) || changedALabel(r) {
+		return statusPublished
+	}
+	return statusSkipped
+}
+
+// wroteAnAttachment reports whether any attachment was uploaded. "skipped" is
+// what SyncAttachments reports for one whose checksum already matches.
+func wroteAnAttachment(r *updateResult) bool {
+	for _, a := range r.attachments {
+		if a.Action != "skipped" {
+			return true
+		}
+	}
+	return false
+}
+
+// changedALabel reports whether any label was added or removed.
+func changedALabel(r *updateResult) bool {
+	for _, l := range r.labels {
+		if l.Action != labels.ActionUnchanged {
+			return true
+		}
+	}
+	return false
 }
 
 // previewWidth reports the width change a dry-run update would make. It reads the
@@ -526,18 +643,26 @@ func toJSONLabels(actions []labels.Action) []jsonout.Label {
 // on the next run, which sees a base trailing the live page by this publish and
 // reports a divergence that --force resolves.
 //
-// Four cases record nothing:
+// **A body-unchanged skip records too**, and that is load-bearing rather than
+// tidy: once the sha does the skipping most runs skip, so a publish-only log
+// would never accrue a base in a tree that is already published. A skip is a
+// perfectly good observation of the base -- the render matched the page at
+// version N -- which is exactly what the mtime skip could never claim, and why
+// that one recorded nothing.
+//
+// What records nothing:
 //
 //   - --dry-run, because a preview that logged would claim a publish happened.
 //   - A file nothing claims, because there is no page to have a base against.
 //   - A file with no manifest key, because a key is what a line is looked up by.
-//   - A skip. In this change that means the mtime skip, and it must not record:
-//     the skip establishes only that two timestamps are ordered a certain way,
-//     not that this copy matches the page, so a line would claim a base the
-//     check never verified. The content-based skip that replaces it does record
-//     one, because matching the page is exactly what it verified.
+//   - Anything that never reached the render, which is the divergence refusal
+//     and every earlier failure: those record a *failed* line when a page id is
+//     known, kept as history and never read as a base.
 func recordAction(logs *actionlog.Cache, r *updateResult) {
-	if dryRun || r.logKey == "" || r.pageID == "" || r.status == statusSkipped {
+	if dryRun || r.logKey == "" || r.pageID == "" {
+		return
+	}
+	if r.ok && r.publishSHA == "" {
 		return
 	}
 	log := logs.Get(r.root)
@@ -561,4 +686,78 @@ func recordAction(logs *actionlog.Cache, r *updateResult) {
 	if err := log.Append(entry); err != nil {
 		r.warnings = append(r.warnings, "could not record this publish in "+log.Path()+": "+err.Error())
 	}
+}
+
+// reportBaseGaps says, once per run, what the moved-page check could not cover.
+//
+// Once per run and not once per file, which is the whole design of it. Right
+// after this lands every file is unknown, so a per-file line would fire on 200
+// of 200 and say the same thing 200 times -- carrying no per-file information
+// and training people to scroll past it. One line extinguishes itself as bases
+// accrue, and a steady-state "3 of 200" is worth reading: those three came
+// from another machine or were never published from here.
+//
+// Silent under --force, where neither check ran and so there is no gap to
+// report, and silent under --json, where every ui helper is a no-op and the
+// per-file "base": null says it better anyway.
+//
+// The count and the two warnings below are deliberately different things. A
+// missing base is **transient** -- publishing records one and the line stops
+// -- while no project file and an unreadable log never self-heal, so each of
+// those names a remedy instead of being counted.
+func reportBaseGaps(results []*updateResult, logs *actionlog.Cache) {
+	if force {
+		return
+	}
+	checked, unknown := 0, 0
+	rootless := map[string]bool{}
+	for _, r := range results {
+		// No page id means nothing claims the file or it never resolved one,
+		// so there was no comparison to make and nothing to report.
+		if r.pageID == "" {
+			continue
+		}
+		checked++
+		if r.base == nil {
+			unknown++
+		}
+		if r.root != nil && r.root.File == "" {
+			rootless[r.root.Dir] = true
+		}
+	}
+	if unknown > 0 {
+		ui.Hint(fmt.Sprintf(
+			"no publish base for %d of %d file(s); published without the moved-page check",
+			unknown, checked))
+	}
+	for _, dir := range sortedKeys(rootless) {
+		ui.Warn("no " + project.Filename + " above " + dir +
+			": nothing can record what these files were published from, so a page somebody " +
+			"edited elsewhere is overwritten without warning. An empty " + project.Filename +
+			" there is enough.")
+	}
+	for _, l := range sortedLogs(logs) {
+		if err := l.ReadError(); err != nil {
+			ui.Warn("could not read " + l.Path() + ": " + err.Error() +
+				". No file under that root can be checked for a moved page.")
+		}
+	}
+}
+
+// sortedKeys returns a map's keys in order, so a multi-root batch reports the
+// same lines in the same order every run.
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// sortedLogs returns the batch's logs ordered by path, for the same reason.
+func sortedLogs(logs *actionlog.Cache) []*actionlog.Log {
+	out := logs.Logs()
+	sort.Slice(out, func(i, j int) bool { return out[i].Path() < out[j].Path() })
+	return out
 }
