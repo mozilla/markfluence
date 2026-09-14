@@ -46,6 +46,21 @@ per-command details a script author hits once and then needs to look up.
   which is hard from a CI log. A `null` source on `update` goes with
   `status: skipped`: nothing claims the file, which is not a failure —
   repositories legitimately hold markdown that is not published.
+- **`base` and `body_changed`** on `update` report what the moved-page and
+  unchanged-body checks had to work with (#149). `base` is the merge base a
+  previous `create`, `update` or `export` recorded locally for that file, and
+  `null` when none was usable — no log, no line for the file, or a line naming
+  a different page. That `null` is the signal a consumer needs and a human does
+  not: it means the checks could not run, so the file was published unchecked.
+  `body_changed: false` means the page already held what the file renders to,
+  so the body `PUT` was skipped and `version.previous` equals `version.new` —
+  the attachment, width and label passes still ran, so the result can be
+  `published` with no version bump. It is `null` under `--force`, which always
+  publishes and consults neither check.
+- **`code: "CONFLICT"`** is the refusal to overwrite a page that has moved past
+  your copy. It is not `VALIDATION`: nothing about the file is defective. The
+  remedy is to re-export the page or pass `--force`, and the run exits non-zero
+  with the rest of the batch unaffected.
 - **`check`'s `broken` status is `ok: false` with no `error`/`code`** — unlike
   every other failure, its `broken`/`warnings` arrays already say everything
   there is to say, so there's no separate operational error to attach. Only

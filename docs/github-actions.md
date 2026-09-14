@@ -45,6 +45,18 @@ inadvertently edited the page in the Confluence UI. All edits are in the
 Confluence history, so they can be recovered and applied to the repository
 correctly.
 
+**`--force` means "always publish", and nothing can suppress the request.** It
+overrides both checks `update` makes without it — the refusal to overwrite a
+page that has moved on, and the skip when the page already holds what the file
+renders to. That is deliberate and is what this arrangement needs: here a UI
+edit is drift rather than work, so refusing to overwrite it would stall the
+publish, and the second check depends on state a fresh CI checkout does not
+have ([the action log](root-model.md#markfluence-local-state-not-committed) is
+per-checkout and not committed).
+
+The consequence is that CI decides *which* files to publish, rather than
+`update` deciding for it. That is the next section.
+
 ### Publish only the files that changed
 
 `paths:` on the trigger decides whether the *job* runs. It does not narrow the
