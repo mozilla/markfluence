@@ -53,6 +53,7 @@ A violation here does damage, rather than producing a wrong answer.
 | **S5** | `remove-only-ours` | markfluence removes only what markfluence created. | Vacuous |
 | **S6** | `removal-is-previewable` | A command that removes says what it will remove before doing it, and honours `--dry-run`. | Vacuous |
 | **S7** | `no-partial-create` | A file that `create` fails to publish leaves no page behind. | Partial |
+| **S8** | `no-overwrite-of-a-moved-page` | A page that has moved past the local copy's base is not overwritten without `--force`. | Partial |
 
 **S1** is enforced by `attachfile.Resolve`, which refuses a traversing path
 rather than clipping it.
@@ -81,6 +82,31 @@ publishing at all (`_plans/026` commit 6).
 
 **S3** is enforced by `export`, which stats the destination and skips both the
 markdown and each attachment unless `--force`.
+
+### S8 is about the page, where S3 is about the file
+
+**S3** (`no-overwrite-without-force`) protects an existing *file* on disk and is
+about the filesystem. Nothing protected an existing *page* — the side with
+somebody else's work on it — which is what #149 was about, so S8 is a new
+guarantee rather than a widening of S3.
+
+It rests on a **merge base**: what this copy was derived from. That is
+necessarily per-copy — the page cannot know what a given local copy came from —
+so `create`, `update` and `export` record it locally
+(`internal/actionlog`), and `update` refuses when the live version has moved
+past it.
+
+**Partial**, and the gap is accrual rather than a defect. A file with no
+recorded base has nothing to compare and publishes, silently, which is what
+markfluence did before this existed. A file becomes protected the first time
+it is published or exported, so there is no init step and no adopt command —
+but the first run after this lands is unprotected for every existing file, and
+a fresh clone starts from nothing, because the log is per-checkout and not
+committed. `update` reports the count of unchecked files once per run.
+
+`--force` overriding it is the point rather than a hole: a repository that is
+the source of truth publishes with `--force`, where an edit made in the
+Confluence UI is drift to be overwritten rather than work to be protected.
 
 ### Overwriting and removing are not the same risk
 
@@ -211,6 +237,18 @@ what L2 forbids. It is also why `update` lost `--title`, `--page-id` and
 page a file publishes to no longer depends on how the command was invoked at
 all. L2's carve-out for flags is narrower than it was.
 
+One thing sits outside L2 and is worth stating rather than discovering. The
+action log (#149) is **per-checkout and uncommitted**, so two people running
+the same command on the same tree can get different *behaviour* — one refuses a
+moved page, the other publishes it, because only one of them has a base for
+that file. That is not L2 as written, which constrains how a reference resolves
+and what an attachment is named, and neither of those varies. But it is the
+spirit of the law, and it is the same reason `pagedoc.UserCache` is never
+persisted. It is also unavoidable: a merge base is per-copy by definition, and
+the alternative — committing it — would serve the one arrangement that does not
+need it. What *is* invariant is the published result: given the same files and
+the same page, a run that publishes publishes the same bytes.
+
 **L3** is what makes moving a page free. `images.go` records an attachment's
 `Source` relative to the root rather than to the referencing page, so identity
 follows the asset alone (`_plans/026` commit 4).
@@ -223,6 +261,25 @@ named by its base name, so moving an asset within the tree keeps its identity
 and restamps its recorded path, and reconstruction was never the name's job
 anyway — the comment carries the path. What identity still follows is the
 asset's *file name*, so renaming the file is what creates a new attachment.
+
+**L4** was marked Holds while it did not, and the correction is worth recording
+rather than quietly fixing. What implemented it was `update`'s mtime skip, and
+git does not preserve mtimes — so a clone, pull, checkout, `touch`, file copy
+or restored backup all looked exactly like an edit and republished an unchanged
+file. On a fresh CI checkout every file's mtime is the clone time, so the whole
+tree republished every run. That is a counterexample, not an edge case, and the
+guarantee should have read **Partial** from the day it was written.
+
+It holds now, and by construction rather than by approximation: `update`
+compares a sha of exactly what the body `PUT` would send — the resolved title
+and the rendered body — against the sha the last publish recorded, and sends no
+request when they match (#149, `internal/actionlog`). Nothing consults a clock.
+The one thing to know about its scope is that it is about the **body**: an
+attachment whose bytes changed is still uploaded, and a width or label the file
+declares is still asserted, because each has its own pass. That is what makes
+"no change" true rather than "no request at all" — republishing an unchanged
+body would bump the page version, notify every watcher, and fill the page
+history with identical versions.
 
 **L5** and **L6** stay **Partial**, and #59 -- the issue this file said would
 settle them -- is what established that they cannot be Holds as worded.
