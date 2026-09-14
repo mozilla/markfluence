@@ -36,13 +36,27 @@ page_id that no longer resolves fails that file and says what to do about
 it; one that is not a numeric id at all is reported without asking
 Confluence.
 
-A file that has not changed since the page's last version is skipped,
-compared by mtime, unless --force is given. Each file is processed
-independently; the command exits non-zero if any file failed.
+Two checks stand between a file and the page, and both compare against
+what a previous create, update or export recorded locally about that
+file. A page that has moved on since your copy was made is refused
+rather than overwritten -- re-export it, or use --force. A file whose
+rendered body already matches the page skips the body publish, while
+attachments, width and labels are applied as usual, so redrawing an
+image publishes it without churning the page's version history.
+
+A file nothing has recorded yet is published with no check and no
+warning of its own; the run reports how many those were. Protection
+accrues, so publishing once is what starts it.
+
+--force means always publish: it overrides both checks, which is what a
+CI workflow wants when the repository is the source of truth.
+
+Each file is processed independently; the command exits non-zero if any
+file failed, a refused page included.
 
 --dry-run previews the version bump, attachment uploads and any width or
-label change without writing to Confluence. It honours the mtime skip and
---force exactly as a real run does, so its forecast matches.
+label change without writing to Confluence. It makes the same two checks
+a real run does, so its forecast matches.
 
 ```
 markfluence update FILE... [flags]
@@ -61,7 +75,7 @@ markfluence update FILE... [flags]
   # Publish a batch with a version message
   markfluence update docs/*.md --message "Bulk update"
 
-  # Republish even though the file has not changed
+  # Publish regardless of what the page has become since your copy
   markfluence update docs/foo.md --force
 
   # Preview, write nothing
@@ -75,7 +89,7 @@ markfluence update FILE... [flags]
 
 ```
       --dry-run          Preview what would be published without writing to Confluence.
-      --force            Skip the file-mtime check and always update the page.
+      --force            Always publish: override both the moved-page and unchanged-body checks.
   -h, --help             help for update
       --message string   Version message. (default "Updated via markfluence")
 ```
