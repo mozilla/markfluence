@@ -420,6 +420,19 @@ no publish will ever record a base — so each earns its own warning naming the
 remedy, an empty `markfluence.yaml` or the file's mode. The other four rows are
 transient by construction: publishing records a base and the line stops.
 
+**The log is never a source of a page id, a path, or anything a request is
+built from.** It is read-only input to two comparisons -- a version against a
+version, a sha against a sha -- and the page a run writes to always comes from
+frontmatter or a `pages:` entry. That boundary is what keeps a corrupt or
+planted log from being able to redirect a publish rather than merely
+suppressing or provoking one, and PR 2 must not cross it. The `page_id` a line
+carries is compared, never followed.
+
+(The log's own file handling already obeys **S1** the way the rest of the tree
+does: every read and write goes through the root's `os.Root`, so a symlinked
+`.markfluence/log.jsonl` cannot make an append land outside the root. That was
+measured against the bare `os.OpenFile` first, which wrote straight through.)
+
 **Nothing about the log ever fails a command**, which is the rule behind every
 row above. It is advisory bookkeeping, so a missing, unreadable, corrupt or
 half-written one degrades the check and never the run. The only non-zero exit
