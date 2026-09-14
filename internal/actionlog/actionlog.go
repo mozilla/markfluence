@@ -143,7 +143,11 @@ func writePart(h hash.Hash, name, value string) {
 // Log is one root's action log. A nil *Log is usable and does nothing, which is
 // what a root with no project file resolves to.
 type Log struct {
-	dir string // the .markfluence directory, absolute
+	// root is held for its FS, an os.Root scoped to the project root: every
+	// read and write below goes through it rather than through bare os calls.
+	// That is what keeps S1 (no-write-outside-root) true of this package --
+	// see ensureDir.
+	root *project.Root
 	// bases is the last ok line per key, read once on first use. A batch
 	// publishing a hundred files under one root reads the log once.
 	bases map[string]Entry
@@ -168,15 +172,21 @@ func For(root *project.Root) *Log {
 	if root == nil || root.File == "" {
 		return nil
 	}
-	return &Log{dir: filepath.Join(root.Dir, Dirname)}
+	return &Log{root: root}
 }
 
-// Path is the log file's path. It is valid on a nil *Log, returning "".
+// relPath is the log's path relative to the project root, which is the form
+// every os.Root call takes.
+func relPath() string { return filepath.Join(Dirname, Filename) }
+
+// Path is the log file's absolute path, for a message naming it. Reads and
+// writes never use it -- they go through root.FS. Valid on a nil *Log,
+// returning "".
 func (l *Log) Path() string {
 	if l == nil {
 		return ""
 	}
-	return filepath.Join(l.dir, Filename)
+	return filepath.Join(l.root.Dir, relPath())
 }
 
 // Append records one line, creating the directory, its .gitignore and the log
@@ -208,7 +218,7 @@ func (l *Log) Append(e Entry) error {
 	if err := l.ensureDir(); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(l.Path(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := l.root.FS.OpenFile(relPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
@@ -227,20 +237,31 @@ func (l *Log) Append(e Entry) error {
 
 // ensureDir creates .markfluence and plants its .gitignore.
 //
+// Through root.FS rather than os.MkdirAll and os.WriteFile, and that is the
+// security-relevant part of this package rather than a style choice. A bare
+// os.OpenFile follows a symlink, so a `.markfluence/log.jsonl` symlinked
+// anywhere -- planted by whoever can write the project directory -- would have
+// markfluence append JSON to a file outside the root. Measured, not assumed:
+// the bare call wrote straight through such a link. S1
+// (no-write-outside-root) is stated as Holds, and this is the one write in the
+// tree that did not go through the os.Root every other path uses. An os.Root
+// refuses an escape even through a symlinked intermediate directory, which a
+// lexical check cannot see.
+//
 // The ignore file is written only when it is absent, never overwritten: a
 // project that has edited it has said something, and this is the one file here
 // somebody might reasonably have opinions about.
 func (l *Log) ensureDir() error {
-	if err := os.MkdirAll(l.dir, 0o755); err != nil {
+	if err := l.root.FS.Mkdir(Dirname, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
 		return err
 	}
-	path := filepath.Join(l.dir, ".gitignore")
-	if _, err := os.Stat(path); err == nil {
+	path := filepath.Join(Dirname, ".gitignore")
+	if _, err := l.root.FS.Stat(path); err == nil {
 		return nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	return os.WriteFile(path, []byte(gitignore), 0o644)
+	return l.root.FS.WriteFile(path, []byte(gitignore), 0o644)
 }
 
 // Base returns the merge base for a file: the most recent successful line
@@ -278,7 +299,7 @@ func (l *Log) load() {
 	l.loaded = true
 	l.bases = map[string]Entry{}
 
-	f, err := os.Open(l.Path())
+	f, err := l.root.FS.Open(relPath())
 	if err != nil {
 		// An absent log is the normal state of a project that has not
 		// published yet, and is not an error to report. Anything else is.
