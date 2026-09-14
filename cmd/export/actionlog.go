@@ -49,6 +49,12 @@ func newRecorder(dest string) *recorder {
 	}
 	root, err := project.Discover(dest)
 	if err != nil {
+		// Never fatal -- the files are what the command is for -- but not
+		// silent either. A malformed markfluence.yaml above the destination is
+		// fatal to `update` and inert here, so without this line the author
+		// gets no hint that the project file is why divergence detection will
+		// later find no bases.
+		ui.Debug("not recording this export: " + err.Error())
 		return nil
 	}
 	log := actionlog.For(root)
@@ -80,11 +86,20 @@ func (rec *recorder) key(destPath string) string {
 	return key
 }
 
-// append writes one line, reporting a failure as a hint rather than failing the
-// export: the file is on disk by the time this runs.
-func (rec *recorder) append(e actionlog.Entry) {
+// append writes one line, reporting a failure as a warning on the page's own
+// result rather than failing the export: the file is on disk by the time this
+// runs, so failing would say it is not.
+//
+// On the result and not through ui.Hint, which was the first version of this:
+// every ui helper is a no-op under --json, so an unwritable .markfluence --
+// a read-only checkout, a full disk, a file shadowing the directory -- made
+// `export --json` report every page as a clean success while recording no base
+// anywhere. A warning is a schema field, which is what update and create
+// already use for the identical failure.
+func (rec *recorder) append(res *result, e actionlog.Entry) {
 	if err := rec.log.Append(e); err != nil {
-		ui.Hint("could not record the export in " + rec.log.Path() + ": " + err.Error())
+		res.warnings = append(res.warnings,
+			"could not record this export in "+rec.log.Path()+": "+err.Error())
 	}
 }
 
@@ -96,7 +111,7 @@ func (rec *recorder) append(e actionlog.Entry) {
 // claiming it was derived from this version is a claim export has no grounds
 // for, and it would silence divergence detection for exactly the file most
 // likely to need it.
-func (rec *recorder) recordable(res result) (string, bool) {
+func (rec *recorder) recordable(res *result) (string, bool) {
 	if rec == nil || res.err != nil || res.page == nil || res.pageStatus != statusWrote {
 		return "", false
 	}
@@ -116,12 +131,12 @@ func (rec *recorder) recordable(res result) (string, bool) {
 //
 // Writing now rather than only at the end is #139 D10's rule: a run that dies
 // partway must leave every already-written page recorded.
-func (rec *recorder) recordWalk(res result) {
+func (rec *recorder) recordWalk(res *result) {
 	key, ok := rec.recordable(res)
 	if !ok {
 		return
 	}
-	rec.append(actionlog.Entry{
+	rec.append(res, actionlog.Entry{
 		Action:      actionlog.ActionExport,
 		Status:      actionlog.StatusOK,
 		File:        key,
@@ -153,22 +168,32 @@ func (rec *recorder) recordShas(c *client.ConfluenceClient, results []result) {
 	if rec == nil {
 		return
 	}
+	// Nothing to record means no index, which is not a micro-optimization:
+	// linkindex.Build walks and parses every .md under the *discovered* root
+	// rather than under what this run wrote. Re-running an export over an
+	// already-exported tree records nothing (every page is skipped), and a
+	// single-page export into a large docs repo would otherwise walk the whole
+	// ancestor project for one file.
+	if !rec.anyRecordable(results) {
+		return
+	}
 	// Built after the walk, deliberately: an index built before it would not
 	// see the files this run wrote, which is the whole reason for two passes.
 	index, err := linkindex.Build(rec.root)
 	if err != nil {
 		return
 	}
-	for _, res := range results {
+	for i := range results {
+		res := &results[i]
 		key, ok := rec.recordable(res)
 		if !ok {
 			continue
 		}
-		sha, ok := rec.publishSHA(c, index, res)
+		sha, ok := rec.publishSHA(c, index, *res)
 		if !ok {
 			continue
 		}
-		rec.append(actionlog.Entry{
+		rec.append(res, actionlog.Entry{
 			Action:        actionlog.ActionExport,
 			Status:        actionlog.StatusOK,
 			File:          key,
@@ -177,6 +202,17 @@ func (rec *recorder) recordShas(c *client.ConfluenceClient, results []result) {
 			PublishSHA256: sha,
 		})
 	}
+}
+
+// anyRecordable reports whether any result would produce a line, so the caller
+// can skip building an index nothing will use.
+func (rec *recorder) anyRecordable(results []result) bool {
+	for i := range results {
+		if _, ok := rec.recordable(&results[i]); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // publishSHA renders one exported file the way update would and returns its

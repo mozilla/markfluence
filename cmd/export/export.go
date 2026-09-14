@@ -408,7 +408,7 @@ func exportNodes(
 		if r.err != nil {
 			failed[page.ID] = true
 		}
-		rec.recordWalk(r)
+		rec.recordWalk(&r)
 		results = append(results, r)
 	}
 
@@ -447,7 +447,7 @@ func exportNodes(
 			if r.err != nil {
 				failed[n.ID] = true
 			}
-			rec.recordWalk(r)
+			rec.recordWalk(&r)
 			results = append(results, r)
 		}
 	}
