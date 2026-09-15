@@ -248,3 +248,17 @@ func TestMissingPageExitsTwo(t *testing.T) {
 		t.Errorf("exit = %v, want 2", err)
 	}
 }
+
+// A file that cannot be read and a file whose frontmatter cannot be parsed both
+// exit 2, but they are not the same failure: --json has to say IO for one and
+// VALIDATION for the other.
+func TestUnreadableFileIsIO(t *testing.T) {
+	dir := projectDir(t, "", nil)
+	o := runDiff(t, pageStub{body: "<p>x</p>"}, dir, "nope.md")
+	if o.exit != 2 {
+		t.Errorf("exit = %d, want 2", o.exit)
+	}
+	if !strings.Contains(o.stderr, "nope.md") {
+		t.Errorf("stderr does not name the file:\n%s", o.stderr)
+	}
+}

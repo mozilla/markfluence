@@ -23,6 +23,10 @@ between the two sides rather than diffed, which also keeps hunk line
 numbers the ones you would count to in an editor and means no patch can
 rewrite a page_id.
 
+The labels name the file relative to the documentation root, however the
+command was invoked, so run patch from the root -- not from the
+directory the file happens to be in.
+
 stderr carries the frontmatter half as a per-field report, naming for
 each field whether the local value came from the file's frontmatter or
 from markfluence.yaml. Redirect it away with 2>/dev/null, or keep only

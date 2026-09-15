@@ -23,6 +23,7 @@ package diff
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -60,6 +61,9 @@ var Cmd = &cobra.Command{
 		"between the two sides rather than diffed, which also keeps hunk line\n" +
 		"numbers the ones you would count to in an editor and means no patch can\n" +
 		"rewrite a page_id.\n\n" +
+		"The labels name the file relative to the documentation root, however the\n" +
+		"command was invoked, so run patch from the root -- not from the\n" +
+		"directory the file happens to be in.\n\n" +
 		"stderr carries the frontmatter half as a per-field report, naming for\n" +
 		"each field whether the local value came from the file's frontmatter or\n" +
 		"from markfluence.yaml. Redirect it away with 2>/dev/null, or keep only\n" +
@@ -122,7 +126,16 @@ func run(cmd *cobra.Command, args []string) error {
 
 	mf, err := frontmatter.ParseFile(filename)
 	if err != nil {
-		return fatalFail(err.Error(), jsonout.CodeOr(err, jsonout.CodeValidation))
+		// Two failures wear one signature here: the file could not be read, or
+		// its frontmatter could not be parsed. Only this command has one file
+		// to be specific about, and jsonout.CodeOr's own contract asks for the
+		// distinction -- IO when the file could not be read, VALIDATION when it
+		// is wrong.
+		code := jsonout.CodeValidation
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) {
+			code = jsonout.CodeIO
+		}
+		return fatalFail(err.Error(), code)
 	}
 	abs, err := filepath.Abs(filename)
 	if err != nil {
