@@ -44,6 +44,7 @@ markfluence [flags]
 * [markfluence check](markfluence_check.md)	 - Validate markdown files against the converter and frontmatter rules, offline
 * [markfluence children](markfluence_children.md)	 - List the pages and folders under a Confluence page, folder, or space
 * [markfluence create](markfluence_create.md)	 - Create new Confluence pages from markdown files
+* [markfluence diff](markfluence_diff.md)	 - Show what differs between a page and its local markdown file
 * [markfluence export](markfluence_export.md)	 - Write a Confluence page and its attachments to a directory
 * [markfluence find](markfluence_find.md)	 - Find Confluence pages and folders by exact title
 * [markfluence info](markfluence_info.md)	 - Print metadata about a Confluence page

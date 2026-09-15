@@ -13,6 +13,7 @@ import (
 	"github.com/mozilla/markfluence/cmd/check"
 	"github.com/mozilla/markfluence/cmd/children"
 	"github.com/mozilla/markfluence/cmd/create"
+	"github.com/mozilla/markfluence/cmd/diff"
 	"github.com/mozilla/markfluence/cmd/export"
 	"github.com/mozilla/markfluence/cmd/find"
 	"github.com/mozilla/markfluence/cmd/info"
@@ -177,6 +178,7 @@ func init() {
 	rootCmd.AddCommand(update.Cmd)
 	rootCmd.AddCommand(create.Cmd)
 	rootCmd.AddCommand(check.Cmd)
+	rootCmd.AddCommand(diff.Cmd)
 	rootCmd.AddCommand(info.Cmd)
 	rootCmd.AddCommand(read.Cmd)
 	rootCmd.AddCommand(children.Cmd)

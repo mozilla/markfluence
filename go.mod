@@ -3,6 +3,7 @@ module github.com/mozilla/markfluence
 go 1.25
 
 require (
+	github.com/aymanbagabas/go-udiff v0.4.1
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/goccy/go-yaml v1.19.2
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3

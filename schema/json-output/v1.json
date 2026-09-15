@@ -9,7 +9,7 @@
   "properties": {
     "schema_version": { "const": 1 },
     "markfluence_version": { "type": "string" },
-    "command": { "enum": ["info", "read", "update", "create", "check", "children", "find", "search", "attachment-list", "attachment-upload", "attachment-download", "export"] },
+    "command": { "enum": ["info", "read", "update", "create", "check", "diff", "children", "find", "search", "attachment-list", "attachment-upload", "attachment-download", "export"] },
     "roots": { "type": "array", "items": { "type": "string" }, "description": "Every distinct documentation root the command resolved, sorted. Empty for a command with no per-file root concept, and for a pre-flight failure that never reached root resolution." },
     "warnings": { "type": "array", "items": { "type": "string" }, "description": "Warnings about the invocation itself rather than about any page or file -- currently only the .env permission warning, raised when the .env that supplied the API token is reachable by anyone but its owner. Always present, [] when there is nothing to report, the same convention roots and results follow. Not per-result warnings: those live on the result." },
     "results": { "type": "array" },
@@ -58,6 +58,19 @@
         "properties": {
           "results": { "items": { "$ref": "#/$defs/checkResult" } },
           "summary": { "$ref": "#/$defs/checkSummary" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "command": { "const": "diff" } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "results": {
+            "items": {
+              "oneOf": [{ "$ref": "#/$defs/diffResult" }, { "$ref": "#/$defs/singleOpFailure" }]
+            }
+          },
+          "summary": { "$ref": "#/$defs/basicSummary" }
         }
       }
     },
@@ -376,6 +389,62 @@
         },
         "format": { "enum": ["markdown", "storage"] },
         "body": { "type": "string" }
+      }
+    },
+    "frontmatterDifference": {
+      "description": "One frontmatter field the file and the page disagree about. Only differing fields appear, and only fields the file declares: an absent labels or page_width leaves the page's own alone, so a field the file is silent about has no difference to have.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "confluence", "local", "source", "comparable", "note"],
+      "properties": {
+        "field": { "enum": ["title", "space", "parent", "page_width", "labels"] },
+        "confluence": {
+          "description": "The page's value; null when it could not be read, which is the one case comparable is false. A list is spelled in frontmatter's flow form, [a, b].",
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "local": { "type": "string" },
+        "source": {
+          "description": "Which location supplied the local value, named as the file to edit. Unlike metadata_source this does not collapse the both case: correcting a field that two locations supply means editing two files.",
+          "enum": ["frontmatter", "markfluence.yaml", "frontmatter and markfluence.yaml", "markfluence.yaml (project default)"]
+        },
+        "comparable": {
+          "description": "False when the page's side could not be fetched. Such a field is reported and does not set differs: nobody asked the page, so nothing may claim it disagrees.",
+          "type": "boolean"
+        },
+        "note": { "type": "string" }
+      }
+    },
+    "diffResult": {
+      "description": "What differs between one file and its page. diff exits 1 when differs is true and 2 for any trouble, which is diff(1)'s contract rather than this schema's usual 1/2 -- see docs/json-output.md.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ok", "file", "page_id", "title", "url", "metadata_source", "differs", "body_differs",
+        "added", "removed", "diff", "frontmatter", "warnings"
+      ],
+      "properties": {
+        "ok": { "const": true },
+        "file": { "type": "string" },
+        "page_id": { "type": "string" },
+        "title": { "type": "string" },
+        "url": { "type": "string" },
+        "metadata_source": { "$ref": "#/$defs/metadataSourceOrNull" },
+        "differs": {
+          "description": "Whether anything actually disagrees, which is what the exit code carries. False when the only rows reported are uncomparable ones.",
+          "type": "boolean"
+        },
+        "body_differs": {
+          "description": "Whether there is a patch, which is a different question: a file whose title alone changed differs with an empty diff.",
+          "type": "boolean"
+        },
+        "added": { "type": "integer" },
+        "removed": { "type": "integer" },
+        "diff": {
+          "description": "The unified diff of the body, always uncoloured, and \"\" when the bodies agree. Its --- and +++ labels are confluence/<path> and local/<path> so patch -p1 lands on the real file; --reverse swaps them.",
+          "type": "string"
+        },
+        "frontmatter": { "type": "array", "items": { "$ref": "#/$defs/frontmatterDifference" } },
+        "warnings": { "type": "array", "items": { "type": "string" } }
       }
     },
     "metadataSourceOrNull": {
