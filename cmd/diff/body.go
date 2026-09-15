@@ -79,7 +79,7 @@ func compare(confluence, local, file string, reverse bool) (bodyDiff, error) {
 	}
 
 	d := bodyDiff{Text: text}
-	for _, line := range strings.Split(text, "\n") {
+	for _, line := range bodyLines(text) {
 		switch classify(line) {
 		case lineAdded:
 			d.Added++
@@ -88,6 +88,26 @@ func compare(confluence, local, file string, reverse bool) (bodyDiff, error) {
 		}
 	}
 	return d, nil
+}
+
+// headerLines is how many lines of a unified diff are the ---/+++ file labels:
+// exactly two, at the top, and nowhere else.
+const headerLines = 2
+
+// bodyLines is every line of a unified diff past its two file labels.
+//
+// The split is positional and has to be, which is the bug this replaced: a
+// *removed* line is "-" followed by its content, so a body line beginning "--"
+// arrives as "---..." and a prefix test reads it as a file label -- leaving it
+// out of the counts and colouring it as one. A markdown thematic break and any
+// line starting with a long CLI flag both do it, which is most of this
+// repository's own documentation.
+func bodyLines(text string) []string {
+	lines := strings.Split(text, "\n")
+	if len(lines) < headerLines {
+		return nil
+	}
+	return lines[headerLines:]
 }
 
 // lineKind is what one line of a unified diff is, which decides how it is
@@ -99,10 +119,10 @@ const (
 	lineAdded
 	lineRemoved
 	lineHunk
-	lineHeader
 )
 
-// classify reads one line of unified-diff text.
+// classify reads one line of a unified diff's *body* -- everything past the two
+// file labels, which bodyLines has already removed.
 //
 // Done on the rendered text rather than on udiff's structured hunks
 // deliberately: re-rendering hunks would mean reimplementing the `@@ -a,b +c,d`
@@ -111,12 +131,11 @@ const (
 // only decides what colour each line is and whether it counts -- which cannot
 // disagree with what is printed, because it is what is printed.
 //
-// The three-character checks come first: a `+++`/`---` header would otherwise
-// read as an added or removed line and inflate every count by one.
+// There is deliberately no ---/+++ case. A label is recognised by its position
+// and nothing else, because content cannot be told from a label by prefix: a
+// removed "--json is a flag" arrives as "---json is a flag".
 func classify(line string) lineKind {
 	switch {
-	case strings.HasPrefix(line, "+++"), strings.HasPrefix(line, "---"):
-		return lineHeader
 	case strings.HasPrefix(line, "@@"):
 		return lineHunk
 	case strings.HasPrefix(line, "+"):
