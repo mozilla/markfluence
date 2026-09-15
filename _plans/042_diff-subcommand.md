@@ -151,9 +151,12 @@ of prose — goes into the shared prefix rather than into either body, so the
 joint is identical on both sides and a file with two blank lines there does not
 diff against a rendered side with one.
 
-Both sides are normalized to end with exactly one `"\n"`, so a file missing its
-final newline does not produce a `\ No newline at end of file` hunk over
-nothing.
+The **local side is never normalized** — not even a missing final newline. That
+was the plan's first answer and it is wrong: padding it would put a line in the
+last hunk's context that the file does not have, and the patch would not apply.
+Unified diff already has the `\ No newline at end of file` marker for exactly
+this, and `patch` understands it. Only the rendered side, being synthetic, is
+given one trailing newline.
 
 ### `--reverse`
 
@@ -215,6 +218,31 @@ So a file declaring only `page_id` and `title` reports on its title and nothing
 else, and the issue's list of frontmatter noise reduces to nothing. `page_id` is
 identical by construction — it is how the page was found — so it is never a
 difference; it names the page in the report's header line instead.
+
+### Two declaration sites the plan missed
+
+**`page_width` has a third one.** The project file's own `page_width:` setting
+(#100) is a real declaration that `update` acts on — `resolveWidth` applies it
+to a file that declares none — so a file with no `page_width` of its own still
+has one asserted, and not comparing it would under-report. It is labelled
+`markfluence.yaml (project default)` rather than plain `markfluence.yaml`,
+because it is a different place in the same file than a `pages:` entry and the
+label's whole job is to say where to go and edit. (`space` has the same chain in
+`create`, but `update` never sends a space at all, so there is nothing to
+inherit.)
+
+The rule is therefore a third copy of a two-step that also lives in `update`'s
+`resolveWidth` and `check`'s project-default lint. It cannot be shared from
+`internal/pagewidth`, which cannot import `internal/project` (`pagewidth` →
+`client` → `project`), and a new package for six lines would be worse.
+
+**`space` and `parent` are compared but reconciled by nothing.** `UpdatePage`
+sends neither a `spaceId` nor a `parentId`, so no verb moves a page today (#10).
+They are still compared — the file and the page disagreeing about where the page
+*is* is worth knowing, and the fix is by hand — which means "what publishing
+would change" is the rule for *which fields to compare*, not a promise about
+every row. Said once in `Long` and once per row as a `note`, rather than
+silently dropping two fields a reader would expect.
 
 ### The local side goes through `pagemeta`
 
@@ -337,13 +365,18 @@ fork of the same lineage with no commits since; `go-difflib` is archived;
 `go-diff` is character-oriented and larger than the job. This adds the project's
 **sixth** direct dependency.
 
-`ToUnifiedDiff` (structured hunks) rather than the plain string, for two
-reasons: the added/removed counts `--json` reports come from the same walk, and
-colour needs to know which lines are which. Rendering the hunks back out is
-ours, which also means the `---`/`+++` labels and `--reverse` need no string
-surgery. Colour goes through `internal/ui`, so `NO_COLOR` and a non-tty stdout
-already behave; a dedicated `+`/`-` pair is added there if `ui.Success`/
-`ui.Error` do not suffice.
+`ToUnified` — the canonical string — **not** `ToUnifiedDiff`'s structured hunks,
+which was the plan's first answer and is the wrong one. Re-rendering hunks means
+reimplementing the `@@ -a,b +c,d` arithmetic, which is precisely the surface a
+library was chosen to avoid getting subtly wrong. So the library's own output is
+what is printed, and a one-line classifier (`classify`) decides each line's
+colour and whether it counts. What is counted cannot disagree with what is
+printed, because it *is* what is printed.
+
+The `---`/`+++` labels and `--reverse` need no string surgery either way, since
+both are arguments to `ToUnified`. Colour goes through `internal/ui`'s new
+`DiffAdded`/`DiffRemoved`/`DiffHunk`, so `NO_COLOR` and a non-tty stdout already
+behave.
 
 **`--json`'s `diff` string is uncoloured**, whatever the terminal is doing.
 
@@ -405,11 +438,13 @@ both exit `2` here.
 
 ```
 cmd/diff/diff.go        the command: flags, resolution, orchestration
-cmd/diff/frontmatter.go the per-field comparison and its report
-cmd/diff/body.go        the two documents, the hunks, the rendering
+cmd/diff/frontmatter.go the per-field comparison
+cmd/diff/body.go        the two documents, the diff, the line classifier
+cmd/diff/report.go      human output: which half goes to which stream
 cmd/diff/json.go        diffResult and the envelope builder
 cmd/diff/*_test.go
 internal/pagemeta       Resolved.Origin
+internal/ui             DiffAdded / DiffRemoved / DiffHunk
 ```
 
 No new `internal` package. Nothing here is shared with another command yet, and
@@ -489,7 +524,19 @@ modulo two Partial guarantees is not a guarantee.
 - **`--json`**: `differs`, the counts, `frontmatter` as `[]` when nothing
   differs, and that `diff` is uncoloured with a style active.
 - **`pagemeta.Origin`**: its own tests in that package, covering the fast path.
+- **every source label validates**: the report's four spellings are checked
+  against the schema's `source` enum through the command's own `sourceLabel`,
+  so adding a fifth fails here rather than in somebody's `--json` consumer.
 - **the conformance test**, per the checklist.
+
+Verified live as well, against the standing fixture page in the personal space
+(2026-09-14): a page exported with `read` and diffed unedited reports **nothing
+on either stream and exits 0** — so the round-trip noise on a real
+markfluence-authored page with tables, macros, callouts and a TOC is zero in
+practice, not merely bounded. With a title, a width, a label and two body lines
+edited, the report and the patch are as designed, and `patch -R -p1` applied the
+patch to the real file, reverting the body while leaving the frontmatter edits
+untouched.
 
 Tests stub the client the way `cmd/read` and `cmd/export`'s do; no live instance
 is needed for any of the above.
