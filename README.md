@@ -3,6 +3,48 @@
 Markdown-centric Confluence cli tool. Works with Claude, works with GitHub
 actions, works with you.
 
+## Features
+
+- **Manage Confluence content outside of Confluence.** Supports one-file
+  editing, multi-file projects, page hierarchies, images, attachments, labels,
+  etc.
+- **Supports GitHub-Flavored Markdown with Confluence enhancements.**
+  Base Markdown plus tables, callouts, table cell background color,
+  table-of-contents macro, links, anchors, Confluence user mentions, etc.
+  Markdown files work in GitHub and preview apps.
+- **Supports content round trip.** `export` downloads a Confluence page, tree,
+  or entire Confluence space down to your machine. Those files publish back to
+  Confluence. Create files on your local machine and publish them to Confluence
+  fresh. Equivalence is semantic rather than byte-for-byte, but content
+  survives round trip.
+- **Supports batch publishing.** Publish single pages or entire trees at once.
+  Pages that don't have changes are a network no-op.
+- **Supports Confluence storage-format.** Allows you to express
+  Confluence-specific things even if they don't have a Markdown equivalent.
+- **Supports offline validation of Markdown files.** Finds dead links, broken
+  images, and invalid frontmatter without network access or credentials.
+- **Supports Confluence search.** `find` resolves an exact title to ids
+  including archived pages and folders. `search` searches Confluence and
+  returns results with excerpts, with raw CQL when you need it.
+- **Supports diff.** Know what's different between your local files and what's
+  in Confluence. Output is convenient for use with `patch -R`. Exit codes match
+  `diff`.
+- **Supports CI publish workflows.** Maintain your documentation in a repository
+  and publish to Confluence on merges.
+- **Careful with other people's edits.** markfluence maintains a local event
+  log and refuses to overwrite a page somebody else has changed since; it skips
+  a publish whose body is unchanged and doesn't delete attachments. Supports
+  a `--force` escape hatch.
+- **Supports personal access tokens and service account scoped API tokens.**
+  Supports both token types correctly.
+- **Supports `--dry-run` on publish and export commands.** Allows you to see
+  what is going to happen before you do it.
+- **Supports `--json`, proper exit codes, shell completions, tty handling,
+  proper stderr/stdout.** JSON output for all commands for scripting and AI
+  agents, proper exit codes, shell completions, colorized output except in
+  non-tty situations, and convenient stderr/stdout handling for shell
+  scripting.
+
 ## Location of documentation
 
 This file covers installing, configuring, and running each command. The rest
