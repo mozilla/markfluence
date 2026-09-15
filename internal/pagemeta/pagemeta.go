@@ -68,6 +68,19 @@ type Resolved struct {
 	Lists  map[string][]string
 	// Source is where the metadata came from.
 	Source Source
+
+	// Origin says which location supplied each field's effective value, keyed
+	// by field name across both Fields and Lists (a key is in exactly one of
+	// them). FromBoth means both locations supplied the same value, which is
+	// the case a reader most needs told: correcting such a field means editing
+	// two files.
+	//
+	// It exists because "the title differs" is ambiguous about which file to
+	// edit, which is what `diff` reports alongside every frontmatter
+	// difference. Recorded here rather than recomputed by the caller for the
+	// reason this package exists at all: a second copy of the precedence rules
+	// is a second copy whatever it is used for.
+	Origin map[string]Source
 	// Warnings are the soft disagreements, in field order.
 	Warnings []string
 
@@ -128,15 +141,20 @@ func (r Resolved) Managed() bool { return r.managed }
 func Resolve(key string, mf *frontmatter.MarkdownFile, root *project.Root) (Resolved, error) {
 	entry, hasEntry := entryFor(key, root)
 
-	r := Resolved{Fields: map[string]string{}, Lists: map[string][]string{}}
+	r := Resolved{
+		Fields: map[string]string{}, Lists: map[string][]string{},
+		Origin: map[string]Source{},
+	}
 	if !hasEntry {
 		// The common case, and the one that must stay byte-for-byte what it was
 		// before this package existed.
 		for k, v := range mf.Frontmatter {
 			r.Fields[k] = v
+			r.Origin[k] = FromFrontmatter
 		}
 		for k, v := range mf.Lists {
 			r.Lists[k] = v
+			r.Origin[k] = FromFrontmatter
 		}
 		r.Source = sourceOf(declaresPageField(mf.Frontmatter, mf.Lists), false)
 		r.managed = hasPageID(mf.Frontmatter)
@@ -147,6 +165,7 @@ func Resolve(key string, mf *frontmatter.MarkdownFile, root *project.Root) (Reso
 	// that where both speak they agree about anything destructive.
 	for k, v := range entry.Fields {
 		r.Fields[k] = v
+		r.Origin[k] = FromManifest
 	}
 	// One translation at the boundary: a path inside the manifest is
 	// root-relative, like every pages: key, but a `parent:` path everywhere
@@ -159,6 +178,7 @@ func Resolve(key string, mf *frontmatter.MarkdownFile, root *project.Root) (Reso
 	}
 	for k, v := range entry.Lists {
 		r.Lists[k] = v
+		r.Origin[k] = FromManifest
 	}
 
 	var conflicts []string
@@ -175,8 +195,13 @@ func Resolve(key string, mf *frontmatter.MarkdownFile, root *project.Root) (Reso
 			r.Warnings = append(r.Warnings, fmt.Sprintf(
 				"%s: frontmatter %q overrides %s's %q", k, file, project.Filename, manifest))
 			r.Fields[k] = file
+			r.Origin[k] = FromFrontmatter
 		case inFile:
 			r.Fields[k] = file
+			// Reaching here with inEntry means the two agree -- the first case
+			// catches every disagreement -- so both locations supplied this
+			// value and correcting it means editing both files.
+			r.Origin[k] = originOf(inEntry)
 		case !inEntry:
 			// Present in the file and blank, with nothing in the entry to fall
 			// back to. The *blank* has to survive rather than vanish: a
@@ -186,13 +211,15 @@ func Resolve(key string, mf *frontmatter.MarkdownFile, root *project.Root) (Reso
 			// (nonBlank), but it is still something the author wrote.
 			if v, present := mf.Frontmatter[k]; present {
 				r.Fields[k] = v
+				r.Origin[k] = FromFrontmatter
 			}
 		}
 	}
 	for _, k := range sortedListKeys(mf.Lists, entry.Lists) {
 		file, inFile := mf.Lists[k]
 		manifest, inEntry := entry.Lists[k]
-		if inFile && inEntry && !sameList(file, manifest) {
+		agree := inFile && inEntry && sameList(file, manifest)
+		if inFile && inEntry && !agree {
 			// labels is the only list field, and it is soft: declaring it
 			// asserts a set, which is visible on the page and reversible.
 			r.Warnings = append(r.Warnings, fmt.Sprintf(
@@ -201,6 +228,10 @@ func Resolve(key string, mf *frontmatter.MarkdownFile, root *project.Root) (Reso
 		}
 		if inFile {
 			r.Lists[k] = file
+			// Agreement is compared as a set, so a reordering is agreement:
+			// FromBoth is about the value, and Confluence has no label order
+			// for a reordering to change.
+			r.Origin[k] = originOf(agree)
 		}
 	}
 	if len(conflicts) > 0 {
@@ -282,6 +313,16 @@ func declaresPageField(fields map[string]string, lists map[string][]string) bool
 func hasPageID(fields map[string]string) bool {
 	_, ok := nonBlank(fields, "page_id")
 	return ok
+}
+
+// originOf names the location that supplied a field frontmatter declares:
+// both, when the entry declares the same value, and frontmatter alone
+// otherwise.
+func originOf(alsoInEntry bool) Source {
+	if alsoInEntry {
+		return FromBoth
+	}
+	return FromFrontmatter
 }
 
 func sourceOf(inFile, inEntry bool) Source {
