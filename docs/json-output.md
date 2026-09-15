@@ -45,7 +45,12 @@ per-command details a script author hits once and then needs to look up.
   page?" is otherwise only answerable by reproducing the resolution by hand,
   which is hard from a CI log. A `null` source on `update` goes with
   `status: skipped`: nothing claims the file, which is not a failure —
-  repositories legitimately hold markdown that is not published.
+  repositories legitimately hold markdown that is not published. `diff` reports
+  it too, and additionally a **per-field** `source` on every frontmatter
+  difference — which *does* distinguish the both case (`"frontmatter and
+  markfluence.yaml"`), because correcting a field two locations supply means
+  editing two files, and being told only one of them is how a value comes back
+  on the next run.
 - **`base` and `body_changed`** on `update` report what the moved-page and
   unchanged-body checks had to work with (#149). `base` is the merge base a
   previous `create`, `update` or `export` recorded locally for that file, and
@@ -70,6 +75,16 @@ per-command details a script author hits once and then needs to look up.
   reached the converter; `html` stays exactly what the converter produced
   (unindented), since it's meant to match what `update`/`create` would
   literally publish.
+- **`diff` splits its answer in two**, and under `--json` both halves are in
+  the payload: `diff` is the body's unified diff as one string (always
+  uncoloured, `""` when the bodies agree), and `frontmatter` is an array of the
+  fields that differ — `[]`, never `null`. `differs` is the question the exit
+  code answers; `body_differs` is the narrower "is there a patch", which a file
+  whose title alone changed answers `false` while `differs` is `true`. A row
+  with `comparable: false` has a `null` `confluence` value: its page-side read
+  failed, so it is reported and does **not** set `differs` — nobody asked the
+  page, so nothing may claim it disagrees. Only fields the file declares are
+  compared at all.
 - **Compound values are objects**, never display strings — `version`,
   `page_width`, and the `created`/`updated` author stamps on `info`.
 - **`create`'s preflight abort** (any file failing means nothing is created)
@@ -94,6 +109,13 @@ Errors and exit codes:
   typed error object to **stderr** and exits `1`, with no envelope on stdout.
   Emitting an empty `results` array would be worse than emitting nothing, since
   "no matches" is a meaningful answer that a caller acts on.
+- **`diff` uses `diff(1)`'s codes instead**, and it is the only command that
+  does: `0` identical, `1` differs, `2` any trouble — including the operational
+  failures every other command reports as `1`. An exit code is all a shell
+  script has (`if markfluence diff FILE >/dev/null 2>&1; then …`), so `1` is
+  spent on the answer rather than on failure. Trouble that names the page is
+  still a `results[0]` failure on stdout and trouble before that is still a
+  stderr error object; only the code differs.
 - **Fatal/pre-flight failures** (bad flags, credential resolution) print a typed
   error object to **stderr** and exit `2`:
 

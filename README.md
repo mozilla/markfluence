@@ -198,6 +198,7 @@ reach for.
 | [`create`](docs/commands/markfluence_create.md) | make new pages from files that have no `page_id` yet. Checks every file first, and creates nothing if any would fail |
 | [`update`](docs/commands/markfluence_update.md) | republish files that already have a `page_id`. Skips a file that has not changed |
 | [`check`](docs/commands/markfluence_check.md) | validate files with no network and no credentials — dead links, broken images, bad frontmatter |
+| [`diff`](docs/commands/markfluence_diff.md) | what differs between one file and its page. stdout is a patch; exits `1` when they differ |
 
 **Getting things out of Confluence:**
 
@@ -389,6 +390,10 @@ Exit codes:
 | `1` | a per-file or per-target failure; the envelope is still on stdout, with `ok: false` and an `error`/`code` on the failed results |
 | `2` | a fatal pre-flight failure (bad flags, credential resolution). No envelope; a typed error object goes to **stderr** instead |
 
+`diff` is the one exception, and uses `diff(1)`'s codes: `0` identical, `1`
+differs, `2` any trouble — so `if markfluence diff FILE >/dev/null 2>&1` means
+"in sync". Its operational failures are the `2` that is `1` everywhere else.
+
 ```json
 { "schema_version": 1, "command": "update", "error": "…", "code": "CONFIG", "warnings": [] }
 ```
@@ -409,7 +414,7 @@ from it — without reading it out of this repository:
 
 ```console
 $ markfluence schema | jq -r '.properties.command.enum | join(" ")'
-info read update create check children find search attachment-list attachment-upload attachment-download export
+info read update create check diff children find search attachment-list attachment-upload attachment-download export
 
 $ markfluence update docs/*.md --json > out.json
 $ markfluence schema > schema.json
