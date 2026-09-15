@@ -63,8 +63,16 @@ func frontmatterReport(r result, s styler) string {
 		return ""
 	}
 
+	// The heading has to answer to the exit code. r.fields also holds rows whose
+	// page-side value could not be read, and a run reporting only those exits 0
+	// with differs false -- "frontmatter differs" over the top of that is the
+	// command contradicting itself.
+	heading := "frontmatter differs"
+	if !r.differs() {
+		heading = "frontmatter could not be fully compared"
+	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "frontmatter differs (%s -> page %s):\n", r.file, r.page.ID)
+	fmt.Fprintf(&b, "%s (%s -> page %s):\n", heading, r.file, r.page.ID)
 	width := 0
 	for _, d := range r.fields {
 		if len(d.Field) > width {
@@ -122,12 +130,19 @@ func renderDiff(text string, s styler) string {
 	// element; rebuilding with Join puts the newline back and adds none.
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
+		// The two file labels are the first two lines and are recognised by
+		// that alone -- see bodyLines. A removed body line beginning "--"
+		// looks exactly like one.
+		if i < headerLines {
+			lines[i] = s.meta(line)
+			continue
+		}
 		switch classify(line) {
 		case lineAdded:
 			lines[i] = s.added(line)
 		case lineRemoved:
 			lines[i] = s.removed(line)
-		case lineHunk, lineHeader:
+		case lineHunk:
 			lines[i] = s.meta(line)
 		}
 	}

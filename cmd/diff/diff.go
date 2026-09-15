@@ -7,8 +7,9 @@
 // usable rather than merely readable:
 //
 //   - **stdout** carries the body as a real unified diff, and nothing else, so
-//     `markfluence diff FILE > my.diff` produces a patch that `patch -p1`
-//     applies to the actual file.
+//     `markfluence diff FILE > my.diff` produces a patch that applies to the
+//     actual file -- `patch -R -p1`, since the file on disk is the +++ side, or
+//     a plain `patch -p1` from `diff --reverse`.
 //   - **stderr** carries the frontmatter half as a per-field report. A value
 //     difference is a one-line fact rather than a hunk, and only a report can
 //     say *where the local value came from* -- its own frontmatter or
@@ -187,16 +188,18 @@ func run(cmd *cobra.Command, args []string) error {
 			pageref.NotFoundMessage(pageID,
 				"re-export the page, or correct the page_id")), jsonout.CodeNotFound)
 	}
-	if page.Body.Storage.Value == "" {
-		return operationalFail(roots, pageID, fmt.Errorf(
-			"page %s has no readable body (it may be a folder or an unsupported content type)",
-			pageID), jsonout.CodeValidation)
-	}
-
-	rendered, err := convert.StorageToMarkdown(page.Body.Storage.Value,
-		pagedoc.Options(c, page, placementFor(key), pagedoc.NewUserCache()))
-	if err != nil {
-		return operationalFail(roots, pageID, err, jsonout.CodeConvert)
+	// An empty body is compared as an empty body, not refused. read refuses one
+	// because it has nothing to print; here it is an answer -- the whole file is
+	// an addition. A folder cannot reach this point (every v2 page route answers
+	// a folder id with 404, handled above), so the reachable case is a
+	// genuinely empty page, which is exactly what `create` leaves behind for a
+	// body-less file and what a parent page often is.
+	rendered := ""
+	if page.Body.Storage.Value != "" {
+		if rendered, err = convert.StorageToMarkdown(page.Body.Storage.Value,
+			pagedoc.Options(c, page, placementFor(key), pagedoc.NewUserCache())); err != nil {
+			return operationalFail(roots, pageID, err, jsonout.CodeConvert)
+		}
 	}
 
 	confluence, local := documents(mf.Content, mf.Body, rendered)
@@ -257,15 +260,23 @@ func placementFor(key string) pagedoc.Placement {
 }
 
 // reportPath is the path the diff labels name, relative to the documentation
-// root when the file is under one.
+// root when there is a real one.
 //
 // Root-relative rather than as-typed so that `patch -p1` run from the root
 // lands on the file however the command was invoked -- `markfluence diff
-// ../docs/runbook.md` must not produce a patch naming ../docs/runbook.md. A
-// file outside any root keeps what was typed, which is all there is.
+// ../docs/runbook.md` must not produce a patch naming ../docs/runbook.md.
+//
+// "A real one" is the part that matters. With no markfluence.yaml anywhere,
+// project.Discover falls back to the *starting* directory, which for this
+// command is the file's own -- so a root-relative path would be the bare base
+// name, silently dropping the docs/ a reader typed and making the patch apply
+// only from that subdirectory. A project whose files carry their own page_id
+// needs no marker, so that is an ordinary configuration rather than an edge.
+// There the path as typed is the honest answer: it is what the reader sees, and
+// `patch -p1` lands from wherever they ran markfluence.
 func reportPath(root *project.Root, abs, typed string) string {
-	if root == nil || root.Dir == "" {
-		return filepath.ToSlash(typed)
+	if root == nil || root.Dir == "" || root.File == "" {
+		return filepath.ToSlash(filepath.Clean(typed))
 	}
 	rel, err := filepath.Rel(root.Dir, abs)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {

@@ -91,14 +91,19 @@ func compareMetadata(
 		add(parentDifference(page, meta, root, fileDir, local))
 	}
 
-	if d, w, ok := widthDifference(c, page, meta, root); ok {
+	// The warnings are collected whether or not there is a row, and that is
+	// load-bearing: a labels: value markfluence refuses yields *no* row, and
+	// gating the warning on the row made `diff` report "in sync" and exit 0
+	// about a file that cannot be published at all.
+	d, w, ok := widthDifference(c, page, meta, root)
+	warnings = append(warnings, w...)
+	if ok {
 		add(d)
-		warnings = append(warnings, w...)
 	}
-
-	if d, w, ok := labelDifference(c, page, meta); ok {
+	d, w, ok = labelDifference(c, page, meta)
+	warnings = append(warnings, w...)
+	if ok {
 		add(d)
-		warnings = append(warnings, w...)
 	}
 
 	sort.SliceStable(out, func(i, j int) bool {
@@ -208,7 +213,7 @@ func widthDifference(
 	}
 	d := difference{Field: "page_width", Local: local, Source: source, Comparable: true}
 
-	live, _, err := pagewidth.Read(c, page.ID)
+	live, explicit, err := pagewidth.Read(c, page.ID)
 	if err != nil {
 		// Uncomparable, not different. read/export omit the field on a failed
 		// fetch, which is right for them and actively misleading here: the
@@ -218,6 +223,13 @@ func widthDifference(
 		return d, []string{"page_width could not be compared: " + err.Error()}, true
 	}
 	d.Confluence = string(live)
+	if !explicit {
+		// The page carries no width property at all, so this is what it renders
+		// as rather than something it says. info draws the same distinction
+		// (page_width.default), and without it a file declaring narrow reads as
+		// agreeing with a page that has never been given a width.
+		d.Note = "the page states no width; narrow is the site default"
+	}
 	return d, nil, true
 }
 
@@ -263,13 +275,19 @@ func labelDifference(
 ) (difference, []string, bool) {
 	set, err := labels.Declared(meta.Lists, meta.Fields)
 	if err != nil {
-		// A labels: value markfluence refuses. `check` and `update` report it
-		// properly; here it simply cannot be compared.
+		// A labels: value markfluence refuses -- a scalar, a name Confluence
+		// would split on. `check` and `update` report it properly; here there
+		// is nothing to compare, so the warning is the whole report and must
+		// not be dropped.
 		return difference{}, []string{"labels could not be compared: " + err.Error()}, false
 	}
 	if !set.Declared {
 		return difference{}, nil, false
 	}
+	// Declared's own warnings travel too: a label it case-repaired is compared
+	// as the repaired name, which is what would publish, and saying so is how
+	// a reader understands a row that looks like it agrees with their file.
+	warnings := append([]string(nil), set.Warnings...)
 
 	d := difference{
 		Field: "labels", Local: renderList(set.Names),
@@ -279,12 +297,12 @@ func labelDifference(
 	if err != nil {
 		d.Comparable = false
 		d.Note = "the page's labels could not be read"
-		return d, []string{"labels could not be compared: " + err.Error()}, true
+		return d, append(warnings, "labels could not be compared: "+err.Error()), true
 	}
 	// Compared as a set: Confluence has no label order, so a reordering is not
 	// a difference and cannot reach the page.
 	d.Confluence = renderList(labels.Global(live))
-	return d, nil, true
+	return d, warnings, true
 }
 
 // renderList spells a declared list the way frontmatter's flow style does, and
