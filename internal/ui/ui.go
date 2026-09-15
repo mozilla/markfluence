@@ -78,6 +78,7 @@ var (
 	gray   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	bold   = lipgloss.NewStyle().Bold(true)
 	invert = lipgloss.NewStyle().Reverse(true)
+	cyan   = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 )
 
 // Header prints a bold section heading. No-op in JSON mode.
@@ -159,6 +160,30 @@ func Dim(msg string) {
 // when color is off (NO_COLOR, --no-color, or stdout not a terminal), so the
 // escape codes never reach a pipe.
 func Match(s string) string { return invert.Render(s) }
+
+// DiffAdded, DiffRemoved and DiffHunk style the three kinds of line in a
+// unified diff, returning the string rather than printing it: `diff` writes the
+// whole patch to stdout in one piece, unindented, because an indented patch is
+// not a patch.
+//
+// Green and red are the semantically right colors here for once -- an added
+// line is what publishing would put on the page and a removed line is what it
+// would take off -- so unlike Match these reuse them rather than reaching for
+// reverse video. Cyan for the hunk header is what every other diff tool uses,
+// and it is the one color ui had no claim on.
+//
+// No jsonMode guard, for Match's reason: they return a string to a caller
+// already inside a non-JSON branch, and lipgloss renders unstyled when color is
+// off, so escape codes never reach a pipe. --json builds its diff string
+// through the uncolored path regardless.
+func DiffAdded(s string) string { return green.Render(s) }
+
+// DiffRemoved styles a removed line. See DiffAdded.
+func DiffRemoved(s string) string { return red.Render(s) }
+
+// DiffHunk styles a hunk header (@@ ... @@) and the ---/+++ file labels. See
+// DiffAdded.
+func DiffHunk(s string) string { return cyan.Render(s) }
 
 // Debug prints a line only when debug mode is enabled.
 func Debug(msg string) {
