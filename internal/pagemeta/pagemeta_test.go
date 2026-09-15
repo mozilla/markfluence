@@ -436,3 +436,75 @@ func TestResolveUnknownKeysWithAKnownOneDoNotClaimAFile(t *testing.T) {
 		t.Errorf("reviewers = %#v, want it preserved", l)
 	}
 }
+
+// Origin is what `diff` reports beside every frontmatter difference: "the title
+// differs" is ambiguous about which file to edit.
+func TestResolveOriginNoEntry(t *testing.T) {
+	root := rootWith(t, "space: ENG\n")
+	r, err := Resolve("a.md", parse(t, "title: A\npage_id: 1\nlabels: [x]\n"), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	// The fast path returns early, so it needs its own coverage: a file in a
+	// project with no pages: block is the common case.
+	for _, field := range []string{"title", "page_id", "labels"} {
+		if r.Origin[field] != FromFrontmatter {
+			t.Errorf("Origin[%q] = %q, want frontmatter", field, r.Origin[field])
+		}
+	}
+	if _, ok := r.Origin["absent"]; ok {
+		t.Error("Origin holds a field nobody declared")
+	}
+}
+
+func TestResolveOriginFromManifest(t *testing.T) {
+	root := rootWith(t, "pages:\n  a.md:\n    title: A\n    page_id: 1\n    labels: [x]\n")
+	r, err := Resolve("a.md", parse(t, ""), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	for _, field := range []string{"title", "page_id", "labels"} {
+		if r.Origin[field] != FromManifest {
+			t.Errorf("Origin[%q] = %q, want manifest", field, r.Origin[field])
+		}
+	}
+}
+
+// Both locations supplying one value is the case a reader most needs told:
+// correcting the field means editing two files.
+func TestResolveOriginFromBoth(t *testing.T) {
+	root := rootWith(t, "pages:\n  a.md:\n    title: A\n    page_id: 1\n    labels: [x, y]\n")
+	r, err := Resolve("a.md", parse(t, "title: A\npage_id: 1\nlabels: [y, x]\n"), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	for _, field := range []string{"title", "page_id"} {
+		if r.Origin[field] != FromBoth {
+			t.Errorf("Origin[%q] = %q, want both", field, r.Origin[field])
+		}
+	}
+	// A reordering is agreement: labels is compared as a set, and Confluence
+	// has no label order for a reordering to change.
+	if r.Origin["labels"] != FromBoth {
+		t.Errorf("Origin[labels] = %q, want both for a reordering", r.Origin["labels"])
+	}
+}
+
+// A soft disagreement is frontmatter's value, so frontmatter is its origin --
+// the warning is what explains the override.
+func TestResolveOriginOnOverride(t *testing.T) {
+	root := rootWith(t, "pages:\n  a.md:\n    title: Manifest\n    labels: [a]\n    page_width: narrow\n")
+	r, err := Resolve("a.md", parse(t, "title: File\nlabels: [b]\n"), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	for _, field := range []string{"title", "labels"} {
+		if r.Origin[field] != FromFrontmatter {
+			t.Errorf("Origin[%q] = %q, want frontmatter", field, r.Origin[field])
+		}
+	}
+	// Only the entry declares page_width, so the override cases leave it alone.
+	if r.Origin["page_width"] != FromManifest {
+		t.Errorf("Origin[page_width] = %q, want manifest", r.Origin["page_width"])
+	}
+}
