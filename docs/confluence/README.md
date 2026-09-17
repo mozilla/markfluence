@@ -14,6 +14,7 @@ person who ran the experiment.
 - [folders.md](folders.md) — the Cloud folder type, and why child listing is v1
 - [spaces.md](spaces.md) — what sits at the top of a space, and how to enumerate it
 - [search.md](search.md) — finding content by title and by full text, and `/search`'s paging traps
+- [users.md](users.md) — the two user routes, and why only one sees a deactivated account
 
 ## How to read an entry
 
