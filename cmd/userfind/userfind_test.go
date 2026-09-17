@@ -157,31 +157,53 @@ func TestHitsAreSeparatedByABlankLine(t *testing.T) {
 }
 
 // Finding nobody is a success, matching find and search: an empty answer is one
-// a caller acts on.
+// a caller acts on. The line is ui.Info, so it is on stdout.
 func TestNoMatchesIsExitZero(t *testing.T) {
 	o := runFind(t, stub{rows: func(int) string { return "[]" }}, "10", "zzznobody")
 
 	if o.exit != 0 {
 		t.Fatalf("exit = %d, want 0", o.exit)
 	}
-	if !strings.Contains(o.stderr+o.stdout, "No users found.") {
-		t.Errorf("did not report an empty result:\nstdout %q\nstderr %q", o.stdout, o.stderr)
+	if !strings.Contains(o.stdout, "No users found.") {
+		t.Errorf("did not report an empty result on stdout:\nstdout %q\nstderr %q",
+			o.stdout, o.stderr)
 	}
 }
 
-// The "more exist" notice goes to stderr via ui.Info's own stream discipline,
-// and names the value that lifts the bound.
-func TestMoreExistIsReported(t *testing.T) {
+// The "more exist" notice goes to stderr, and the stream is the assertion: the
+// hits exist to be redirected somewhere, so a notice about --limit must not end
+// up pasted into a page alongside them.
+func TestMoreExistIsReportedOnStderrOnly(t *testing.T) {
 	o := runFind(t, stub{rows: func(int) string {
 		return people([2]string{"Ana", "id-a"}, [2]string{"Bo", "id-b"}, [2]string{"Cy", "id-c"})
 	}}, "2", "a")
 
-	all := o.stdout + o.stderr
-	if !strings.Contains(all, "more exist") || !strings.Contains(all, "--limit all") {
-		t.Errorf("no usable more-exist notice:\nstdout %q\nstderr %q", o.stdout, o.stderr)
+	if !strings.Contains(o.stderr, "more exist") || !strings.Contains(o.stderr, "--limit all") {
+		t.Errorf("no usable more-exist notice on stderr: %q", o.stderr)
+	}
+	if strings.Contains(o.stdout, "more exist") {
+		t.Errorf("the notice landed on stdout, which must hold nothing but hits:\n%q", o.stdout)
 	}
 	if strings.Contains(o.stdout, "id-c") {
 		t.Errorf("a third hit was printed against --limit 2:\n%s", o.stdout)
+	}
+}
+
+// Everything on stdout has to be a hit, because these lines are meant to be
+// redirected: every line is either a "name  id" header or an indented mention.
+func TestStdoutIsNothingButHits(t *testing.T) {
+	o := runFind(t, stub{rows: func(int) string {
+		return people([2]string{"Ana", "id-a"}, [2]string{"Bo", "id-b"}, [2]string{"Cy", "id-c"})
+	}}, "2", "a")
+
+	for _, line := range strings.Split(strings.TrimRight(o.stdout, "\n"), "\n") {
+		switch {
+		case line == "":
+		case strings.HasPrefix(line, "  [@"):
+		case strings.Contains(line, "  id-"):
+		default:
+			t.Errorf("stdout carries a line that is not a hit: %q", line)
+		}
 	}
 }
 

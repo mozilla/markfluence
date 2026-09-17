@@ -209,3 +209,28 @@ func queryParam(t *testing.T, rawQuery, key string) string {
 	}
 	return vals.Get(key)
 }
+
+// A short page is the only end-of-results signal this route gives, so a server
+// that stopped honouring start -- clamping it, or ignoring it the way
+// /wiki/rest/api/search ignores it outright -- would hand back full pages
+// forever. Without the page bound an unbounded walk never returns and collects
+// rows until it runs out of memory.
+func TestAWalkThatNeverEndsIsRefused(t *testing.T) {
+	c, queries := userServer(t, func(int) string { return userRows(0, 100) })
+
+	_, _, err := c.SearchUsers("everybody", 0)
+	if err == nil {
+		t.Fatal("SearchUsers = nil error against a server that never ends a page")
+	}
+	if !strings.Contains(err.Error(), "did not terminate") {
+		t.Errorf("error = %q, want it to say the walk did not terminate", err)
+	}
+	// Typed as a request failure, so a caller classifying by origin blames the
+	// server rather than the query.
+	if !FromRequest(err) {
+		t.Error("the error is not a request error, so --json would misreport its code")
+	}
+	if len(*queries) != maxUserPages {
+		t.Errorf("made %d requests, want the bound of %d", len(*queries), maxUserPages)
+	}
+}

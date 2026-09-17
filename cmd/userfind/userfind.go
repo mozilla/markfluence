@@ -121,9 +121,13 @@ func report(matches []client.UserMatch, more bool) error {
 	}
 	fmt.Println(blocks(matches))
 	if more {
-		// Blank line first, or the notice reads as part of the last block.
-		fmt.Println()
-		ui.Info(fmt.Sprintf("Showing %d matches; more exist (use --limit %s).",
+		// ui.Hint, not ui.Info, so stdout stays nothing but the hits. That
+		// matters more here than it does for search, whose hits nobody pipes:
+		// these lines exist to be redirected into a file or a clipboard, and a
+		// notice about --limit is not a line anybody wants pasted into a page.
+		// children --space hints for the same reason. Hint supplies its own
+		// leading blank line, so the notice cannot read as part of a block.
+		ui.Hint(fmt.Sprintf("Showing %d matches; more exist (use --limit %s).",
 			len(matches), limitAll))
 	}
 	return nil
