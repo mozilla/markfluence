@@ -25,7 +25,9 @@ actions, works with you.
   images, and invalid frontmatter without network access or credentials.
 - **Supports Confluence search.** `find` resolves an exact title to ids
   including archived pages and folders. `search` searches Confluence and
-  returns results with excerpts, with raw CQL when you need it.
+  returns results with excerpts, with raw CQL when you need it. `user-find`
+  resolves a person's name to the account id a mention needs, and prints the
+  markdown line that mentions them.
 - **Supports diff.** Know what's different between your local files and what's
   in Confluence. Output is convenient for use with `patch -R`. Exit codes match
   `diff`.
@@ -257,6 +259,7 @@ reach for.
 | [`find`](docs/commands/markfluence_find.md) | resolve an exact title to ids. Sees archived pages and folders, which `search` cannot |
 | [`search`](docs/commands/markfluence_search.md) | full text, for when you do not know the title. Takes raw CQL with `--cql` |
 | [`children`](docs/commands/markfluence_children.md) | list what is under a page, a folder, or a space |
+| [`user-find`](docs/commands/markfluence_user-find.md) | resolve a person's name to the account id and the markdown line that mentions them |
 
 **Attachments** — `create`/`update` handle a page's images for you; these are for
 everything else:
@@ -456,7 +459,7 @@ from it — without reading it out of this repository:
 
 ```console
 $ markfluence schema | jq -r '.properties.command.enum | join(" ")'
-info read update create check diff children find search attachment-list attachment-upload attachment-download export
+info read update create check diff children find search user-find attachment-list attachment-upload attachment-download export
 
 $ markfluence update docs/*.md --json > out.json
 $ markfluence schema > schema.json
