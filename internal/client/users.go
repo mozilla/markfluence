@@ -39,6 +39,21 @@ const userSearchPath = "/wiki/rest/api/search/user"
 // all. Verified 2026-09-15 against a query matching 304 people.
 const userPageSize = 100
 
+// maxUserPages bounds the walk, the way maxSearchPages bounds searchCQLBounded.
+//
+// A short page is the only end-of-results signal this route offers, so a server
+// that stopped honouring start -- by clamping it at some maximum offset, or by
+// ignoring it the way /wiki/rest/api/search ignores it outright -- would hand
+// back a full page forever, and an unbounded walk would collect rows until it
+// ran out of memory. Paging past the 304 rows this was measured against is
+// listed Unverified in docs/confluence/users.md, which makes it the one
+// unverified behaviour here with an unbounded consequence.
+//
+// 200 pages is 20,000 accounts, well past any directory a name fragment should
+// reach, so hitting this is a server behaving unexpectedly rather than a large
+// instance.
+const maxUserPages = 200
+
 // UserMatch is one account the user directory matched.
 //
 // The account id is carried as the server spelled it and is never parsed: two
@@ -79,6 +94,13 @@ func (c *ConfluenceClient) SearchUsers(query string, max int) ([]UserMatch, bool
 
 	var all []UserMatch
 	for page := 0; ; page++ {
+		if page >= maxUserPages {
+			// A request failure, not a local one: the server kept handing back
+			// full pages. Typed so a caller classifying by origin reports it as
+			// a server problem rather than a defect in the query.
+			return nil, false, wrapRequest(fmt.Errorf(
+				"user search did not terminate after %d pages (query: %s)", maxUserPages, cql))
+		}
 		var out struct {
 			Results []struct {
 				User struct {
@@ -101,6 +123,15 @@ func (c *ConfluenceClient) SearchUsers(query string, max int) ([]UserMatch, bool
 			// A row with no account id cannot be mentioned -- the id is the
 			// whole of what a mention stores -- so it is skipped rather than
 			// reported as a person nobody can link to.
+			//
+			// Not counted, unlike searchCQL's skipped rows, and the difference
+			// is how often it happens: `type = space` answers with hundreds of
+			// contentless rows as a matter of course, so a silent skip there
+			// turns a real result set into "no matches". Here every row of
+			// every probe carried an id, so this branch is defensive, and a
+			// summary field for a case never once observed is surface with
+			// nothing behind it. If it is ever seen, count it -- the reason to
+			// is search's, and it is a better reason than this one.
 			if r.User.AccountID == "" {
 				continue
 			}
