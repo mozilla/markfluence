@@ -93,19 +93,32 @@ per-command details a script author hits once and then needs to look up.
 - **Warnings and broken image/link notices** are data (`warnings`/`broken`
   arrays on each result), not stderr log lines.
 - **The discovery commands list what they found**, so `results` is one object per
-  match (`find`, `search`) or per node (`children`), and `summary.total` is that
-  count. `search`'s summary carries two extra fields: `truncated`, meaning
-  `--limit` was reached with matches left over, and `skipped`, counting index rows
-  that had no page id to report (reachable only via `--cql` or `--type all`).
-  Neither is a count of matches you could get by asking again for more.
+  match (`find`, `search`, `user-find`) or per node (`children`), and
+  `summary.total` is that count. `search`'s summary carries two extra fields:
+  `truncated`, meaning `--limit` was reached with matches left over, and
+  `skipped`, counting index rows that had no page id to report (reachable only
+  via `--cql` or `--type all`). Neither is a count of matches you could get by
+  asking again for more. `user-find`'s summary carries `truncated` for the same
+  reason and with a stronger one behind it: the user route's `totalSize` reports
+  the rows on the page just fetched rather than the size of the result set, so
+  there is no remainder to count even in principle.
+- **`user-find` carries the mention markdown as a field**, rather than leaving a
+  consumer to build it from `account_id`. It is the same string the converter
+  writes when it renders a mention *out* of storage, so pasting
+  `.results[0].mention` into a body and publishing round-trips exactly — and
+  assembling it by hand means knowing both that the profile host is Atlassian
+  Home rather than your site and that the leading `@` is what makes it a mention
+  instead of a link to somebody's profile. There is no `type` field even though
+  the API returns one: every account answers `known`, automation and
+  page-template accounts included, so it distinguishes nothing.
 
 Errors and exit codes:
 
 - **Per-file operational failures** appear in `results` as
   `{ "ok": false, "error": "…", "code": "…" }`; the command exits `1` if any
   file failed.
-- **`find` and `search` have no failed-result variant.** They name no page, so
-  there is no id to attach a failure to: an operational failure prints the same
+- **`find`, `search` and `user-find` have no failed-result variant.** They name
+  no page, so there is no id to attach a failure to: an operational failure prints the same
   typed error object to **stderr** and exits `1`, with no envelope on stdout.
   Emitting an empty `results` array would be worse than emitting nothing, since
   "no matches" is a meaningful answer that a caller acts on.

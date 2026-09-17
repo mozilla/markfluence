@@ -52,4 +52,5 @@ markfluence [flags]
 * [markfluence schema](markfluence_schema.md)	 - Print the JSON Schema for --json output
 * [markfluence search](markfluence_search.md)	 - Find Confluence pages by full-text search
 * [markfluence update](markfluence_update.md)	 - Publish one or more markdown files to Confluence pages
+* [markfluence user-find](markfluence_user-find.md)	 - Find a Confluence user's account id and mention markdown
 
