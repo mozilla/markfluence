@@ -32,12 +32,12 @@ func (s stub) handler(t *testing.T) http.HandlerFunc {
 		}
 		if s.status != 0 {
 			w.WriteHeader(s.status)
-			fmt.Fprint(w, `{"message":"nope"}`)
+			_, _ = fmt.Fprint(w, `{"message":"nope"}`)
 			return
 		}
 		start, _ := strconv.Atoi(r.URL.Query().Get("start"))
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"results":%s,"start":%d,"limit":100,"totalSize":1}`, s.rows(start), start)
+		_, _ = fmt.Fprintf(w, `{"results":%s,"start":%d,"limit":100,"totalSize":1}`, s.rows(start), start)
 	}
 }
 

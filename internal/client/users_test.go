@@ -35,7 +35,7 @@ func userServer(t *testing.T, page func(start int) string) (*ConfluenceClient, *
 		queries = append(queries, r.URL.RawQuery)
 		start, _ := strconv.Atoi(r.URL.Query().Get("start"))
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"results":%s,"start":%d,"limit":100,"totalSize":3}`, page(start), start)
+		_, _ = fmt.Fprintf(w, `{"results":%s,"start":%d,"limit":100,"totalSize":3}`, page(start), start)
 	}))
 	t.Cleanup(srv.Close)
 	return New(Config{SiteURL: srv.URL, Username: "u", Token: "t"}), &queries
