@@ -480,3 +480,28 @@ func TestMarkedUpLinkBodyIsStillNotEscaped(t *testing.T) {
 		t.Errorf("markdown = %q, want the markup left alone", got)
 	}
 }
+
+// MentionMarkdown is what `user-find` prints and what the inverse converter
+// writes, and the point of sharing it is that those two cannot disagree. This
+// pins both halves: the builder escapes the name, and a rendered mention is
+// byte-identical to what the builder produces for the same person.
+func TestMentionMarkdownIsWhatTheConverterEmits(t *testing.T) {
+	const name = "Ada [Countess] Lovelace"
+
+	line := convert.MentionMarkdown(name, probeID)
+	want := `[@Ada \[Countess\] Lovelace](https://home.atlassian.com/people/` + probeID + `)`
+	if line != want {
+		t.Errorf("MentionMarkdown = %q, want %q", line, want)
+	}
+
+	got, err := convert.StorageToMarkdown(mentionStorage(""), convert.StorageOptions{
+		SiteURL:   "https://wiki.example.net",
+		UserNames: map[string]string{probeID: name},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, line) {
+		t.Errorf("rendered mention %q does not contain the builder's line %q", got, line)
+	}
+}

@@ -290,6 +290,22 @@ func MentionURL(accountID string) string {
 	return mentionHost + "/people/" + accountID
 }
 
+// MentionMarkdown is the whole markdown line a mention renders to: the profile
+// link with an "@" on its text.
+//
+// Exported for `user-find` (#143), which prints it as the paste-ready answer to
+// "how do I mention this person". Sharing the builder rather than formatting a
+// second copy there is what makes the two agree by construction: the line an
+// author pastes is byte-identical to the one `read`/`export` would write for
+// the same mention, so pasting it and publishing round-trips.
+//
+// The name is escaped here, not by the caller: the "@" belongs outside the
+// escape, and a name holding "[" or "]" would otherwise produce a line that
+// does not parse as a link at all.
+func MentionMarkdown(displayName, accountID string) string {
+	return mdLink("@"+escapeLinkText(displayName), MentionURL(accountID))
+}
+
 // unknownUserName is the display name rendered for a mention whose account
 // genuinely does not resolve.
 //
@@ -341,7 +357,7 @@ func (r *mdRenderer) renderUserMention(n, target *snode) string {
 	if name == "" {
 		name = unknownUserName
 	}
-	return mdLink("@"+escapeLinkText(name), MentionURL(id))
+	return MentionMarkdown(name, id)
 }
 
 // renderAnchorLink renders a link to a heading on this same page.
