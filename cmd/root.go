@@ -21,6 +21,7 @@ import (
 	"github.com/mozilla/markfluence/cmd/schema"
 	"github.com/mozilla/markfluence/cmd/search"
 	"github.com/mozilla/markfluence/cmd/update"
+	"github.com/mozilla/markfluence/cmd/userfind"
 	"github.com/mozilla/markfluence/internal/buildinfo"
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/completion"
@@ -184,6 +185,7 @@ func init() {
 	rootCmd.AddCommand(children.Cmd)
 	rootCmd.AddCommand(find.Cmd)
 	rootCmd.AddCommand(search.Cmd)
+	rootCmd.AddCommand(userfind.Cmd)
 	rootCmd.AddCommand(attachmentlist.Cmd)
 	rootCmd.AddCommand(attachmentupload.Cmd)
 	rootCmd.AddCommand(attachmentdownload.Cmd)
