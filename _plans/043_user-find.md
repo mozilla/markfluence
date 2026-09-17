@@ -2,15 +2,11 @@
 
 Closes #143.
 
-#91 made a mention round-trip, but gave it no on-ramp. Writing one from scratch
-needs an Atlassian account id, and markfluence has no way to produce one, so the
-author leaves their editor, opens Confluence, finds the person, clicks them,
-copies the profile link out of the modal, and pastes a URL whose `?cloudId=`
-markfluence then ignores. The motivation is in the issue and is not repeated
-here.
-
-It completes the finder family: `find` resolves a title to page ids, `search`
-resolves full text to pages, `user-find` resolves a name to an account id.
+#91 added support for user mentions, but there was no good way to determine
+the Atlassian account id for a user when writing Markdown leaving the author to
+figure it out from Confluence. Issue 143 adds another command to the finder
+family: `find` resolves a title to page ids, `search` resolves full text to
+pages, `user-find` resolves a name to an account id.
 
 **The paste-ready markdown line is the deliverable, not the account id.** The id
 is what the *tool* needs. The line is what the author needs, and building it by
@@ -18,6 +14,61 @@ hand means knowing two things nothing tells you: that the host is
 `home.atlassian.com` and not the site, and that the `@` on the link text is what
 makes it a mention rather than a plain profile link (#91,
 [links-and-anchors.md](../docs/confluence/links-and-anchors.md)).
+
+## The command
+
+```
+markfluence user-find NAME
+```
+
+Exactly one argument, free text, no `--space` (the route has no space field and
+a Confluence account is not space-scoped). Nothing writes; no credentials beyond
+the usual resolution.
+
+Output is a **block per hit** rather than a table, for `search`'s reason: the
+paste-ready line is far too long for a column, and it is the line the author
+came for.
+
+Example looking for an existing user:
+
+```shell
+$ markfluence user-find kahn
+William Kahn-Greene  60c36d0718e9f60071326951
+  [@William Kahn-Greene](https://home.atlassian.com/people/60c36d0718e9f60071326951)
+$ echo $?
+0
+$ markfluence user-find reid
+Ashley Roybal-Reid  63ab265b7cde7bff9d7876ce
+  [@Ashley Roybal-Reid](https://home.atlassian.com/people/63ab265b7cde7bff9d7876ce)
+
+Brittany Reid  712020:75e6f4e8-1ad1-42a9-9d5c-5f867110c36a
+  [@Brittany Reid](https://home.atlassian.com/people/712020:75e6f4e8-1ad1-42a9-9d5c-5f867110c36a)
+
+Kathy Reid  712020:f1e7dc96-f235-4f1c-bfd5-142ccddc9d74
+  [@Kathy Reid](https://home.atlassian.com/people/712020:f1e7dc96-f235-4f1c-bfd5-142ccddc9d74)
+$ echo $?
+0
+```
+
+Two shapes of account id are live on one instance — a 24-character hex string
+and a `712020:`-prefixed UUID — which is why #91 refused to pattern-validate one
+and why nothing here parses one either.
+
+The markdown line is built by `convert.MentionURL`, already exported for
+precisely this reason ("the forward direction has to recognise what this
+direction emits, and a second copy of the path would be a second thing to keep
+in step"). The display name goes through `convert`'s link-text escaping, or a
+person whose name contains `[` or `]` gets a line that does not parse as a link.
+
+Finding nothing is a success — `No users found.` and exit 0 — matching `find`
+and `search`, since an empty answer is one a caller acts on.
+
+```shell
+$ markfluence user-find nonuser
+No users found.
+$ echo $?
+0
+```
 
 ## What the live probe changed — verified 2026-09-15
 
@@ -130,49 +181,6 @@ README's copy-pasteable list on a guess. Adding a scope to that list that a
 token does not need is cheap; omitting one it does need is a 401 in CI with a
 misleading message. The README list gets the scope only once someone has run the
 command with a scoped token — noted as the one follow-up this leaves open.
-
-## The command
-
-```
-markfluence user-find NAME
-```
-
-Exactly one argument, free text, no `--space` (the route has no space field and
-a Confluence account is not space-scoped). Nothing writes; no credentials beyond
-the usual resolution.
-
-Output is a **block per hit** rather than a table, for `search`'s reason: the
-paste-ready line is far too long for a column, and it is the line the author
-came for.
-
-```
-$ markfluence user-find kahn
-William Kahn-Greene  60c36d0718e9f60071326951
-  [@William Kahn-Greene](https://home.atlassian.com/people/60c36d0718e9f60071326951)
-
-$ markfluence user-find reid
-Ashley Roybal-Reid  63ab265b7cde7bff9d7876ce
-  [@Ashley Roybal-Reid](https://home.atlassian.com/people/63ab265b7cde7bff9d7876ce)
-
-Brittany Reid  712020:75e6f4e8-1ad1-42a9-9d5c-5f867110c36a
-  [@Brittany Reid](https://home.atlassian.com/people/712020:75e6f4e8-1ad1-42a9-9d5c-5f867110c36a)
-
-Kathy Reid  712020:f1e7dc96-f235-4f1c-bfd5-142ccddc9d74
-  [@Kathy Reid](https://home.atlassian.com/people/712020:f1e7dc96-f235-4f1c-bfd5-142ccddc9d74)
-```
-
-Two shapes of account id are live on one instance — a 24-character hex string
-and a `712020:`-prefixed UUID — which is why #91 refused to pattern-validate one
-and why nothing here parses one either.
-
-The markdown line is built by `convert.MentionURL`, already exported for
-precisely this reason ("the forward direction has to recognise what this
-direction emits, and a second copy of the path would be a second thing to keep
-in step"). The display name goes through `convert`'s link-text escaping, or a
-person whose name contains `[` or `]` gets a line that does not parse as a link.
-
-Finding nothing is a success — `No users found.` and exit 0 — matching `find`
-and `search`, since an empty answer is one a caller acts on.
 
 ### `--limit`, and why it is not optional
 
