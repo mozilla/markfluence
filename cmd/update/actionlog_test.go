@@ -12,6 +12,7 @@ import (
 	"github.com/mozilla/markfluence/internal/clienttest"
 	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/pagedoc"
+	"github.com/mozilla/markfluence/internal/pagestatus"
 	"github.com/mozilla/markfluence/internal/project"
 )
 
@@ -59,7 +60,7 @@ func publishingServer(t *testing.T) *client.ConfluenceClient {
 func runOne(t *testing.T, path string) *updateResult {
 	t.Helper()
 	r := processFile(path, publishingServer(t), project.NewCache(""),
-		linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
+		linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache(), pagestatus.NewCache())
 	recordAction(actionlog.NewCache(), r)
 	return r
 }
@@ -113,7 +114,8 @@ func TestAnUnmanagedFileRecordsNothing(t *testing.T) {
 		t.Errorf("unexpected %s: an unmanaged file makes no request", r.Method)
 	})
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(),
+		pagedoc.NewUserCache(), actionlog.NewCache(), pagestatus.NewCache())
 	recordAction(actionlog.NewCache(), r)
 	if !r.unmanaged {
 		t.Fatalf("result = %+v, want unmanaged", r)
@@ -150,7 +152,8 @@ func TestAFailedPublishIsRecordedAsAFailure(t *testing.T) {
 		_, _ = w.Write([]byte(`{"errors":[{"status":500,"title":"boom"}]}`))
 	})
 
-	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(), pagedoc.NewUserCache(), actionlog.NewCache())
+	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(),
+		pagedoc.NewUserCache(), actionlog.NewCache(), pagestatus.NewCache())
 	recordAction(actionlog.NewCache(), r)
 	if r.ok {
 		t.Fatal("want a failed result")

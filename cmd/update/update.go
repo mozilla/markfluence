@@ -21,6 +21,7 @@ import (
 	"github.com/mozilla/markfluence/internal/pagedoc"
 	"github.com/mozilla/markfluence/internal/pagemeta"
 	"github.com/mozilla/markfluence/internal/pageref"
+	"github.com/mozilla/markfluence/internal/pagestatus"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/project"
 	"github.com/mozilla/markfluence/internal/ui"
@@ -42,8 +43,8 @@ var Cmd = &cobra.Command{
 		"a 'pages:' entry for it in markfluence.yaml -- a file can stay pristine and\n" +
 		"keep its metadata there instead. Both places are legal and agreement is\n" +
 		"silent; where they disagree about page_id, space or parent the file fails,\n" +
-		"and where they disagree about title, page_width or labels the frontmatter\n" +
-		"wins with a warning.\n\n" +
+		"and where they disagree about title, page_width, page_status or labels the\n" +
+		"frontmatter wins with a warning.\n\n" +
 		"A file that neither place mentions is skipped, not failed: a repository\n" +
 		"legitimately holds markdown that is not published, so a glob over a docs\n" +
 		"tree does not go red because somebody added a draft. A file that IS\n" +
@@ -58,6 +59,13 @@ var Cmd = &cobra.Command{
 		"left untouched. Labels work the same way: a labels: line is asserted\n" +
 		"exactly (anything on the page the file does not list is removed), and no\n" +
 		"labels: line means the page's labels are left alone, not even read.\n\n" +
+		"A page_status: line asserts the page's status -- the coloured lozenge\n" +
+		"beside its title -- naming one the space offers. Omitted, the page's own\n" +
+		"status is left alone and never even read. The statuses a space offers are\n" +
+		"its own configuration rather than a fixed list, so a name that matches\n" +
+		"none of them fails that file and reports the ones it can have; markfluence\n" +
+		"info shows them too. Writing one bumps the page version, so a status that\n" +
+		"already matches is left alone rather than re-sent.\n\n" +
 		"update never writes back to the file or to markfluence.yaml, so fixing a\n" +
 		"wrong page_id is always safe: nothing is as you left it by accident. A\n" +
 		"page_id that no longer resolves fails that file and says what to do about\n" +
@@ -137,11 +145,14 @@ func run(cmd *cobra.Command, args []string) error {
 	// One cache for the batch: a batch of files mentioning the same on-call
 	// rotation resolves each person once, not once per file.
 	users := pagedoc.NewUserCache()
+	// One cache for the batch: a space's page-status vocabulary is one request
+	// per *space*, not per file, and a tree normally lives in one space.
+	statuses := pagestatus.NewCache()
 
 	failures := 0
 	results := make([]*updateResult, 0, len(args))
 	for _, filename := range args {
-		r := processFile(filename, c, roots, indexes, users, logs)
+		r := processFile(filename, c, roots, indexes, users, logs, statuses)
 		recordAction(logs, r)
 		results = append(results, r)
 		if !ui.IsJSON() {
@@ -187,7 +198,7 @@ func run(cmd *cobra.Command, args []string) error {
 // performs no output itself; the caller renders the result (human lines or JSON).
 func processFile(
 	filename string, c *client.ConfluenceClient, roots *project.Cache, indexes *linkindex.Cache,
-	users *pagedoc.UserCache, logs *actionlog.Cache,
+	users *pagedoc.UserCache, logs *actionlog.Cache, statuses *pagestatus.Cache,
 ) *updateResult {
 	r := &updateResult{file: filename, dryRun: dryRun}
 	mf, err := frontmatter.ParseFile(filename)
@@ -286,6 +297,13 @@ func processFile(
 		return r.fail(err, jsonout.CodeValidation)
 	}
 	r.warnings = append(r.warnings, labelSet.Warnings...)
+	// Offline half only: a present-but-empty page_status is a defect in the
+	// file. The *name* cannot be checked until the page is known, since the
+	// vocabulary is a property of its space.
+	statusName, statusDeclared, err := pagestatus.Declared(meta.Fields)
+	if err != nil {
+		return r.fail(err, jsonout.CodeValidation)
+	}
 
 	// GetPageOrNil, not GetPage: a 404 here means the page_id is wrong, which is
 	// worth saying in words. Every other transport failure still reports itself.
@@ -305,6 +323,20 @@ func processFile(
 	r.title = title
 	r.versionPrev = page.Version.Number
 	r.url = c.PageURL(page, pageID)
+
+	// The name half of page_status, resolved to the status to write before any
+	// request that could change the page: the file names a status and the wire
+	// format is an id, and a name Confluence does not recognise would *create*
+	// a status no API route can delete (docs/confluence/page-status.md). A name
+	// matching nothing is a local failure carrying what the space does offer,
+	// which is the main way an author learns the vocabulary at all.
+	var status client.ContentState
+	if statusDeclared {
+		status, err = pagestatus.Resolve(c, statuses, page.SpaceID, pageID, statusName)
+		if err != nil {
+			return r.fail(err, jsonout.CodeOr(err, jsonout.CodeValidation))
+		}
+	}
 
 	// The merge base: what this copy was derived from (#149). Read before the
 	// render, because the divergence check below needs no render and a refused
@@ -409,6 +441,7 @@ func processFile(
 		}
 		r.previewWidth(c, pageID, width, applyWidth)
 		r.previewLabels(c, pageID, labelSet)
+		r.previewStatus(c, pageID, status, statusDeclared)
 		r.ok = true
 		r.status = statusFor(r, bodyChanged)
 		return r
@@ -457,10 +490,26 @@ func processFile(
 	// the publish did not happen. A declared-but-unapplied set leaves labels
 	// null rather than claiming a set that is not there.
 	r.applyLabels(c, pageID, labelSet)
+	r.applyStatus(c, pageID, status, statusDeclared)
+	// After every write, and only when the status pass actually wrote: that is
+	// the one pass that bumps the page version, so the base has to name where
+	// the page ended up rather than where the body PUT left it.
+	if setAStatus(r) {
+		r.logVersion = pagestatus.VersionAfter(c, pageID, r.versionNew)
+	}
 
 	r.ok = true
 	r.status = statusFor(r, bodyChanged)
 	return r
+}
+
+// loggedVersion is the page version to record as this run's base: where the
+// page actually ended up. See updateResult.logVersion.
+func (r *updateResult) loggedVersion() int {
+	if r.logVersion != 0 {
+		return r.logVersion
+	}
+	return r.versionNew
 }
 
 // usableBase returns the merge base recorded for this file, discarding one that
@@ -492,7 +541,7 @@ func usableBase(log *actionlog.Log, key, pageID string) (actionlog.Entry, bool) 
 // the render matched the recorded base and nothing else was found to do,
 // rather than that two timestamps happened to line up.
 func statusFor(r *updateResult, bodyChanged bool) string {
-	if bodyChanged || r.widthSet || wroteAnAttachment(r) || changedALabel(r) {
+	if bodyChanged || r.widthSet || wroteAnAttachment(r) || changedALabel(r) || setAStatus(r) {
 		return statusPublished
 	}
 	return statusSkipped
@@ -507,6 +556,14 @@ func wroteAnAttachment(r *updateResult) bool {
 		}
 	}
 	return false
+}
+
+// setAStatus reports whether the page status was written this run. "unchanged"
+// is not a change, and the distinction matters more here than for a label: a
+// status write bumps the page version, so reporting "published" for an
+// unchanged one would claim a version bump that deliberately did not happen.
+func setAStatus(r *updateResult) bool {
+	return r.pageStatus != nil && r.pageStatus.Action == "set"
 }
 
 // changedALabel reports whether any label was added or removed.
@@ -642,6 +699,50 @@ func (r *updateResult) previewLabels(c *client.ConfluenceClient, pageID string, 
 	r.labels = toJSONLabels(actions)
 }
 
+// applyStatus asserts the declared page status, recording what it did.
+//
+// Non-fatal, for the reason pagewidth.Apply and labels.Apply are: the page is
+// published by the time this runs, so failing the result would report a publish
+// that happened as one that did not. A declared-but-unapplied status leaves the
+// field null rather than claiming a lozenge that is not there.
+//
+// An undeclared status makes no request at all -- not even the read Apply does
+// to avoid a needless version bump -- which is the property that keeps this free
+// for every tree not using the field.
+func (r *updateResult) applyStatus(
+	c *client.ConfluenceClient, pageID string, status client.ContentState, declared bool,
+) {
+	if !declared {
+		return
+	}
+	action, err := pagestatus.Apply(c, pageID, status)
+	if err != nil {
+		r.warnings = append(r.warnings, "could not set page status: "+err.Error())
+		return
+	}
+	r.pageStatus = &jsonout.PageStatus{Name: action.Name, Action: action.Action}
+}
+
+// previewStatus reports the status change a dry run would make, read-only.
+// A read failure is a warning, not fatal -- mirroring previewWidth.
+func (r *updateResult) previewStatus(
+	c *client.ConfluenceClient, pageID string, status client.ContentState, declared bool,
+) {
+	if !declared {
+		return
+	}
+	live, err := pagestatus.Read(c, pageID)
+	if err != nil {
+		r.warnings = append(r.warnings, "could not read page status: "+err.Error())
+		return
+	}
+	action := "set"
+	if live != nil && live.ID == status.ID {
+		action = "unchanged"
+	}
+	r.pageStatus = &jsonout.PageStatus{Name: status.Name, Action: action}
+}
+
 // toJSONLabels converts label actions to the reported shape, always non-nil so
 // a declared-but-empty set renders as [] rather than null.
 func toJSONLabels(actions []labels.Action) []jsonout.Label {
@@ -696,7 +797,7 @@ func recordAction(logs *actionlog.Cache, r *updateResult) {
 		Status:        actionlog.StatusOK,
 		File:          r.logKey,
 		PageID:        r.pageID,
-		PageVersion:   r.versionNew,
+		PageVersion:   r.loggedVersion(),
 		PublishSHA256: r.publishSHA,
 	}
 	if !r.ok {

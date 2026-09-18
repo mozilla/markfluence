@@ -37,7 +37,14 @@ type updateResult struct {
 	// precedent page_width already sets for "not asserted this run" -- and it
 	// is load-bearing rather than cosmetic here, since an empty set is a
 	// meaningful declaration that means "remove them all".
-	labels      []jsonout.Label
+	labels []jsonout.Label
+	// pageStatus is nil when the file declares no page_status key, or when
+	// asserting it failed -- the labels/page_width convention for "not
+	// asserted this run". Named apart from status above, which is this
+	// result's own verb (published/skipped/failed); the collision is the
+	// reason info's Confluence lifecycle status is reported as
+	// content_status.
+	pageStatus  *jsonout.PageStatus
 	attachments []jsonout.Attachment
 	broken      []string
 	warnings    []string
@@ -64,6 +71,12 @@ type updateResult struct {
 	root       *project.Root
 	logKey     string
 	publishSHA string
+	// logVersion is the version the *page* was left at, which is versionNew
+	// except when a page status was written: that is the one metadata pass
+	// that bumps the page version, and recording the body PUT's version would
+	// leave the base one behind and make the next run report a divergence.
+	// Zero means "use versionNew".
+	logVersion int
 
 	// base is the merge base found for this file, nil when none was usable.
 	// Reported as --json's "base" -- a fact about the log rather than about
@@ -139,6 +152,9 @@ func (r *updateResult) renderHuman() {
 			ui.Info(fmt.Sprintf("%s label %s: %s", prefix, l.Action, l.Name))
 		}
 	}
+	if r.pageStatus != nil && r.pageStatus.Action != "unchanged" {
+		ui.Info(prefix + " page status: " + r.pageStatus.Name)
+	}
 	if !bodyMoved {
 		ui.Success(fmt.Sprintf("%s Body unchanged at v%d: %s", prefix, r.versionNew, r.url))
 		return
@@ -159,6 +175,7 @@ type jsonUpdateResult struct {
 	Version     *jsonUpdateVersion   `json:"version"`
 	PageWidth   *jsonout.PageWidth   `json:"page_width"`
 	Labels      *[]jsonout.Label     `json:"labels"`
+	PageStatus  *jsonout.PageStatus  `json:"page_status"`
 	Attachments []jsonout.Attachment `json:"attachments"`
 	Warnings    []string             `json:"warnings"`
 	Broken      []string             `json:"broken"`
@@ -201,6 +218,7 @@ func (r *updateResult) jsonResult() jsonUpdateResult {
 		URL:         strOrNil(r.url),
 		PageWidth:   r.width,
 		Labels:      labelsOrNil(r.labels),
+		PageStatus:  r.pageStatus,
 		Attachments: nonNilAttachments(r.attachments),
 		Warnings:    nonNilStrings(r.warnings),
 		Broken:      nonNilStrings(r.broken),
