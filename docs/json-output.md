@@ -29,10 +29,10 @@ per-command details a script author hits once and then needs to look up.
 - **Status verbs** are per-command: `published`/`skipped` (`update`),
   `created`/`not_created` (`create`), `clean`/`warnings`/`broken` (`check`),
   `created`/`updated`/`skipped` (`attachment-upload`),
-  `downloaded`/`skipped` (`attachment-download`), plus `failed`. `info`, `read`,
+  `downloaded`/`skipped` (`attachment-download`), plus `failed`. `page-info`, `read`,
   and `attachment-list` results carry data only (no status verb).
 - **One result per target**, and the target is per-command: the page for
-  `info`/`read`/`export` (always one), the file for `update`/`create`/`check`,
+  `page-info`/`read`/`export` (always one), the file for `update`/`create`/`check`,
   and the attachment for the three `attachment-*` commands — so
   `.results[] | .filename` works and `summary.total` is the attachment count.
   `export` nests the files it wrote in an `attachments` array on its page
@@ -86,16 +86,16 @@ per-command details a script author hits once and then needs to look up.
   page, so nothing may claim it disagrees. Only fields the file declares are
   compared at all.
 - **Compound values are objects**, never display strings — `version`,
-  `page_width`, and the `created`/`updated` author stamps on `info`.
+  `page_width`, and the `created`/`updated` author stamps on `page-info`.
 - **Two fields wear the word "status", and they are different things.**
-  `content_status` on `info` is Confluence's content status — `current`,
+  `content_status` on `page-info` is Confluence's content status — `current`,
   `archived`, `trashed`. `page_status` is the coloured lozenge beside the page
   title, and its shape follows what the command can say about it: `update` and
   `create` report `{name, action}`, where `action` is `set` or `unchanged`
   (`unchanged` is worth reporting because writing a status bumps the page
   version, so it is the evidence that a run which changed nothing added none);
-  `info` and `read` report the bare name. It is `null` wherever the file
-  declares no status, the page carries none, or the read failed. `info` also
+  `page-info` and `read` report the bare name. It is `null` wherever the file
+  declares no status, the page carries none, or the read failed. `page-info` also
   carries `page_status_available`, the statuses **that page** can be given by
   the account that ran the command — `[]` when it can be given none and `null`
   when that read failed. It is *not* a space property: Confluence decides the

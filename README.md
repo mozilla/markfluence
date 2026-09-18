@@ -252,7 +252,7 @@ reach for.
 |---|---|
 | [`read`](docs/commands/markfluence_read.md) | one page as markdown on stdout, or as raw storage |
 | [`export`](docs/commands/markfluence_export.md) | a page, a subtree, or a whole space to files, attachments included |
-| [`info`](docs/commands/markfluence_info.md) | one page's metadata: space, parent, version, width, labels, authors |
+| [`page-info`](docs/commands/markfluence_page-info.md) | one page's metadata: space, parent, version, width, labels, authors |
 
 **Finding pages:**
 
@@ -330,7 +330,7 @@ markfluence update docs/*.md docs/**/*.md
 ```
 
 Pick up changes somebody made in Confluence. Every command that writes goes one
-way — your files to the page — so this direction is a read plus an edit: `info`
+way — your files to the page — so this direction is a read plus an edit: `page-info`
 shows a page's labels and width, `read` prints it as markdown, and `export`
 writes the whole thing to disk, frontmatter included. Nothing rewrites an
 existing file's frontmatter from a page.
@@ -378,12 +378,12 @@ JSON document to stdout instead of the human output, for scripting and CI. It
 pipes cleanly to `jq`:
 
 ```sh
-markfluence info 1234567890 --json | jq '.results[0].page_width'
+markfluence page-info 1234567890 --json | jq '.results[0].page_width'
 markfluence update docs/*.md --json | jq '.summary'
 ```
 
 Output is a stable, versioned **envelope**. `results` always holds one object per
-target (a single element for `info`/`read`); `summary` carries batch counts:
+target (a single element for `page-info`/`read`); `summary` carries batch counts:
 
 ```json
 {

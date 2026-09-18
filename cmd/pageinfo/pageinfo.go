@@ -1,5 +1,5 @@
 // Package info implements the `markfluence info` command: print a page's metadata.
-package info
+package pageinfo
 
 import (
 	"encoding/json"
@@ -27,7 +27,7 @@ var showProperties bool
 
 // Cmd is the info command.
 var Cmd = &cobra.Command{
-	Use:   "info PAGE",
+	Use:   "page-info PAGE",
 	Short: "Print metadata about a Confluence page",
 	Long: "Print metadata about a Confluence page.\n\n" +
 		"Id, title, content status, space, parent, version, page width, page\n" +
@@ -46,9 +46,9 @@ var Cmd = &cobra.Command{
 		"--properties also lists every one of the page's content properties, which\n" +
 		"is where Confluence keeps things like the page width.",
 	Example: "  # By page id\n" +
-		"  markfluence info 1234567890\n\n" +
+		"  markfluence page-info 1234567890\n\n" +
 		"  # By the file that publishes to it, with content properties\n" +
-		"  markfluence info docs/foo.md --properties",
+		"  markfluence page-info docs/foo.md --properties",
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
 	RunE:              run,
@@ -85,7 +85,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	rep := buildReport(page, c, showProperties)
 	if ui.IsJSON() {
-		env := jsonout.NewEnvelope("info", []any{rep.jsonResult()},
+		env := jsonout.NewEnvelope("page-info", []any{rep.jsonResult()},
 			map[string]int{"total": 1, "succeeded": 1, "failed": 0})
 		if err := jsonout.Emit(os.Stdout, env); err != nil {
 			return err
@@ -100,7 +100,7 @@ func run(cmd *cobra.Command, args []string) error {
 // stderr under --json, else a human error line, exiting 2.
 func fatalFail(msg string, code jsonout.Code) error {
 	if ui.IsJSON() {
-		_ = jsonout.EmitError(os.Stderr, "info", msg, code)
+		_ = jsonout.EmitError(os.Stderr, "page-info", msg, code)
 	} else {
 		ui.Error(msg)
 	}
@@ -123,7 +123,7 @@ func operationalFail(pageID string, err error, code jsonout.Code) error {
 // conformance test can validate the envelope this command really emits instead
 // of a hand-copied duplicate of it.
 func failEnvelope(pageID string, err error, code jsonout.Code) jsonout.Envelope {
-	return jsonout.NewEnvelope("info", []any{jsonout.NewSingleOpFailure(pageID, err, code)},
+	return jsonout.NewEnvelope("page-info", []any{jsonout.NewSingleOpFailure(pageID, err, code)},
 		map[string]int{"total": 1, "succeeded": 0, "failed": 1})
 }
 

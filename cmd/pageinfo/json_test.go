@@ -1,4 +1,4 @@
-package info
+package pageinfo
 
 import (
 	"bytes"
@@ -131,7 +131,7 @@ func TestJSONResultNoAuthorWhenIDMissing(t *testing.T) {
 // TestSchemaConformance validates real info envelopes (success and the
 // operational-failure single-target shape) against the published JSON Schema.
 func TestSchemaConformance(t *testing.T) {
-	success := jsonout.NewEnvelope("info", []any{fullReport().jsonResult()},
+	success := jsonout.NewEnvelope("page-info", []any{fullReport().jsonResult()},
 		map[string]int{"total": 1, "succeeded": 1, "failed": 0})
 	var buf bytes.Buffer
 	if err := jsonout.Emit(&buf, success); err != nil {

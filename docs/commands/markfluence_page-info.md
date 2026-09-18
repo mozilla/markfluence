@@ -1,4 +1,4 @@
-## markfluence info
+## markfluence page-info
 
 Print metadata about a Confluence page
 
@@ -27,23 +27,23 @@ whose frontmatter has a page_id.
 is where Confluence keeps things like the page width.
 
 ```
-markfluence info PAGE [flags]
+markfluence page-info PAGE [flags]
 ```
 
 ### Examples
 
 ```
   # By page id
-  markfluence info 1234567890
+  markfluence page-info 1234567890
 
   # By the file that publishes to it, with content properties
-  markfluence info docs/foo.md --properties
+  markfluence page-info docs/foo.md --properties
 ```
 
 ### Options
 
 ```
-  -h, --help         help for info
+  -h, --help         help for page-info
       --properties   Also list all of the page's content properties.
 ```
 

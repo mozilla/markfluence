@@ -9,7 +9,7 @@
   "properties": {
     "schema_version": { "const": 1 },
     "markfluence_version": { "type": "string" },
-    "command": { "enum": ["info", "read", "update", "create", "check", "diff", "children", "find", "search", "user-find", "attachment-list", "attachment-upload", "attachment-download", "export"] },
+    "command": { "enum": ["page-info", "read", "update", "create", "check", "diff", "children", "find", "search", "user-find", "attachment-list", "attachment-upload", "attachment-download", "export"] },
     "roots": { "type": "array", "items": { "type": "string" }, "description": "Every distinct documentation root the command resolved, sorted. Empty for a command with no per-file root concept, and for a pre-flight failure that never reached root resolution." },
     "warnings": { "type": "array", "items": { "type": "string" }, "description": "Warnings about the invocation itself rather than about any page or file -- currently only the .env permission warning, raised when the .env that supplied the API token is reachable by anyone but its owner. Always present, [] when there is nothing to report, the same convention roots and results follow. Not per-result warnings: those live on the result." },
     "results": { "type": "array" },
@@ -17,7 +17,7 @@
   },
   "allOf": [
     {
-      "if": { "properties": { "command": { "const": "info" } }, "required": ["command"] },
+      "if": { "properties": { "command": { "const": "page-info" } }, "required": ["command"] },
       "then": {
         "properties": {
           "results": { "items": { "oneOf": [{ "$ref": "#/$defs/infoResult" }, { "$ref": "#/$defs/singleOpFailure" }] } },
