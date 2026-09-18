@@ -36,6 +36,7 @@ import (
 	"github.com/mozilla/markfluence/internal/pagedoc"
 	"github.com/mozilla/markfluence/internal/pagemeta"
 	"github.com/mozilla/markfluence/internal/pageref"
+	"github.com/mozilla/markfluence/internal/pagestatus"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/project"
 	"github.com/mozilla/markfluence/internal/ui"
@@ -63,6 +64,12 @@ var Cmd = &cobra.Command{
 		"wins. The parent comes from --parent or frontmatter and may be a page or\n" +
 		"a Cloud folder -- give a folder's id the same way you would a page's.\n" +
 		"Page width follows the same chain and defaults to max.\n\n" +
+		"A page_status: line sets the created page's status -- the coloured\n" +
+		"lozenge beside its title -- naming one the space offers. The statuses a\n" +
+		"space offers are its own configuration rather than a fixed list, so a\n" +
+		"name matching none of them fails preflight, before anything is created,\n" +
+		"and reports the ones the space does have. Omitted, the page is created\n" +
+		"with no status.\n\n" +
 		"Every file is checked first -- including converting it -- and if any would\n" +
 		"fail, nothing is created. A page_id that resolves to nothing is a failure\n" +
 		"too, not a fresh page: create will not publish a second copy and overwrite\n" +
@@ -165,6 +172,13 @@ type record struct {
 	// and carried rather than re-read so publish cannot disagree with what was
 	// checked.
 	labels labels.Set
+	// status is the page status to assert, resolved in preflight from the name
+	// the file declares. Resolved rather than carried as a name because the
+	// wire format is an id and a name Confluence does not recognise creates a
+	// status no route can delete -- so the lookup belongs where a bad name can
+	// still abort the batch, not after a page exists.
+	status         client.ContentState
+	statusDeclared bool
 	// metadataSource is which location supplied this file's metadata, carried
 	// from preflight so the published result reports what was actually read.
 	metadataSource string
@@ -376,13 +390,17 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 	}
 	spaceCache := map[string]string{}
+	// One per batch, and both only touched by a file declaring page_status: the
+	// space's status vocabulary, and the homepage id used to ask for it.
+	statuses := pagestatus.NewCache()
+	homepages := map[string]string{}
 	indexes := linkindex.NewCache()
 
 	// Phase 1: validate every file, create nothing.
 	var records []record
 	var errs []failure
 	for _, filename := range args {
-		r, err := resolveFile(filename, c, inSetAbs, spaceCache, roots, indexes)
+		r, err := resolveFile(filename, c, inSetAbs, spaceCache, roots, indexes, statuses, homepages)
 		if err != nil {
 			errs = append(errs, newFailure(filename, err))
 			continue
@@ -657,6 +675,11 @@ func publishOne(
 			res.warnings = append(res.warnings, r.labels.Warnings...)
 			res.labels = toJSONLabels(labels.Actions(r.labels.Names, nil, nil, nil))
 		}
+		// Always "set", for the same reason: a page that does not exist carries
+		// no status, so there is nothing for Apply's read to find unchanged.
+		if r.statusDeclared {
+			res.pageStatus = &jsonout.PageStatus{Name: r.status.Name, Action: "set"}
+		}
 		res.ok = true
 		res.status = statusCreated
 		return res
@@ -723,6 +746,27 @@ func publishOne(
 		}
 	}
 
+	// After the labels, non-fatal for the same reason. The name was resolved to
+	// an id in preflight, so nothing here can fail for a reason the file could
+	// have been told about earlier.
+	if r.statusDeclared {
+		action, err := pagestatus.Apply(c, pageID, r.status)
+		switch {
+		case err != nil:
+			res.warnings = append(res.warnings, "could not set page status: "+err.Error())
+		default:
+			res.pageStatus = &jsonout.PageStatus{Name: action.Name, Action: action.Action}
+			// A status write is the one metadata pass that bumps the page
+			// version, so the base recorded below has to name where the page
+			// ended up. Recording the body PUT's version instead left every
+			// created page with a status looking one version behind itself,
+			// and the next update refused the file as diverged.
+			if action.Action == "set" {
+				res.pageVersion = pagestatus.VersionAfter(c, pageID, res.pageVersion)
+			}
+		}
+	}
+
 	res.ok = true
 	res.status = statusCreated
 	return res
@@ -731,6 +775,7 @@ func publishOne(
 func resolveFile(
 	filename string, c *client.ConfluenceClient, inSetAbs map[string]bool, spaceCache map[string]string,
 	roots *project.Cache, indexes *linkindex.Cache,
+	statuses *pagestatus.Cache, homepages map[string]string,
 ) (record, error) {
 	mf, err := frontmatter.ParseFile(filename)
 	if err != nil {
@@ -797,6 +842,13 @@ func resolveFile(
 	if err != nil {
 		return record{}, err
 	}
+	// The offline half of page_status, beside the labels check for the same
+	// reason: a present-but-empty value is a defect in the file. The name needs
+	// the space, resolved below.
+	statusName, statusDeclared, err := pagestatus.Declared(meta.Fields)
+	if err != nil {
+		return record{}, err
+	}
 
 	// Before the space, parent, and duplicate-title lookups: a page_id that is
 	// already taken or already broken is the most specific thing wrong with the
@@ -819,6 +871,37 @@ func resolveFile(
 	}
 	if spaceID == "" {
 		return record{}, fmt.Errorf("space %q not found", spaceKey)
+	}
+
+	// The name half of page_status, resolved here in preflight so a name the
+	// space does not offer aborts the batch before anything is reserved -- the
+	// alternative is #127's failure mode, a created page with no status and a
+	// warning the author has to act on by hand.
+	//
+	// The vocabulary route is per-page and this page does not exist yet, so the
+	// probe is the space's homepage: a page id in the target space that always
+	// exists, and whose answer is a property of the space rather than of itself.
+	// Both lookups are cached per space and both are skipped entirely for a file
+	// that declares no status.
+	var status client.ContentState
+	if statusDeclared {
+		homepage, ok := homepages[spaceKey]
+		if !ok {
+			homepage, err = c.ResolveSpaceHomepage(spaceKey)
+			if err != nil {
+				return record{}, err
+			}
+			homepages[spaceKey] = homepage
+		}
+		if homepage == "" {
+			return record{}, fmt.Errorf(
+				"cannot check page_status: space %q reports no homepage to ask "+
+					"which statuses it offers", spaceKey)
+		}
+		status, err = pagestatus.Resolve(c, statuses, spaceID, homepage, statusName)
+		if err != nil {
+			return record{}, err
+		}
 	}
 
 	parent, err := resolveParent(filename, meta.Fields, inSetAbs, c, spaceID, root)
@@ -863,6 +946,8 @@ func resolveFile(
 	return record{
 		filename: filename, absPath: abs, mdfile: mf, title: title, spaceKey: spaceKey,
 		spaceID: spaceID, parent: parent, width: width, labels: labelSet, root: root, index: index,
+		status:         status,
+		statusDeclared: statusDeclared,
 		metadataSource: string(meta.MetadataSource()),
 		toManifest:     toManifestDest(meta, root, key),
 		manifestKey:    key,
@@ -1106,8 +1191,22 @@ func toManifestDest(meta pagemeta.Resolved, root *project.Root, key string) bool
 // them would also rewrite them -- labels.Set carries the normalized names, so
 // a declared `[Runbook, ci/cd]` would come back `[ci/cd, runbook]` while the
 // case warning still told the author to update the file to match.
+//
+// page_status is left out for both of those reasons and is not an oversight.
+// Persist records what create *resolved* -- the id of a page that did not exist
+// before, the parent it landed under -- and a status is something the author
+// declared, already written down wherever they declared it. Writing it back
+// would also rewrite it, since what the record carries is the space's canonical
+// spelling rather than the author's.
 func persistToManifest(r record, pageID, parentID string) error {
-	entry := project.Entry{
+	return r.root.SetPageEntry(r.manifestKey, persistEntry(r, pageID, parentID))
+}
+
+// persistEntry builds the entry persistToManifest writes. Split out so the
+// field list is assertable: what is *absent* from it is a decision, not an
+// oversight, and only a test keeps it that way.
+func persistEntry(r record, pageID, parentID string) project.Entry {
+	return project.Entry{
 		Fields: map[string]string{
 			"title":      r.title,
 			"space":      r.spaceKey,
@@ -1117,7 +1216,6 @@ func persistToManifest(r record, pageID, parentID string) error {
 		},
 		Lists: map[string][]string{},
 	}
-	return r.root.SetPageEntry(r.manifestKey, entry)
 }
 
 // orNullValue renders an empty parent as the null every other writer uses, so

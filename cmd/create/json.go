@@ -36,7 +36,11 @@ type createResult struct {
 	// labels is nil when the file declares no labels key -- the same "not
 	// asserted this run" convention page_width uses, and load-bearing here
 	// because an empty declared set is itself a declaration.
-	labels      []jsonout.Label
+	labels []jsonout.Label
+	// pageStatus is nil when the file declares no page_status key, or when
+	// asserting it failed -- the labels convention. Named apart from status
+	// above, this result's own verb.
+	pageStatus  *jsonout.PageStatus
 	persisted   bool
 	attachments []jsonout.Attachment
 	broken      []string
@@ -113,6 +117,9 @@ func (r *createResult) renderHuman() {
 			ui.Info(fmt.Sprintf("%s label %s: %s", prefix, l.Action, l.Name))
 		}
 	}
+	if r.pageStatus != nil {
+		ui.Info(prefix + " page status: " + r.pageStatus.Name)
+	}
 	// A dry-run has created no page, so there is no id or URL to print; name the
 	// title and space instead. Every other line above is identical to a real run.
 	if r.dryRun {
@@ -137,6 +144,7 @@ type jsonCreateResult struct {
 	URL         *string              `json:"url"`
 	PageWidth   *jsonout.PageWidth   `json:"page_width"`
 	Labels      *[]jsonout.Label     `json:"labels"`
+	PageStatus  *jsonout.PageStatus  `json:"page_status"`
 	Persisted   bool                 `json:"persisted"`
 	Attachments []jsonout.Attachment `json:"attachments"`
 	Warnings    []string             `json:"warnings"`
@@ -164,6 +172,7 @@ func (r *createResult) jsonResult() jsonCreateResult {
 		URL:         nullableStr(r.url),
 		PageWidth:   r.width,
 		Labels:      labelsOrNil(r.labels),
+		PageStatus:  r.pageStatus,
 		Persisted:   r.persisted,
 		Attachments: nonNilAttachments(r.attachments),
 		Warnings:    nonNilStrings(r.warnings),

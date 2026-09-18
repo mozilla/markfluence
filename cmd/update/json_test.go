@@ -69,6 +69,7 @@ func TestJSONResultPublished(t *testing.T) {
     "default": false
   },
   "labels": null,
+  "page_status": null,
   "attachments": [
     {
       "action": "updated",

@@ -11,6 +11,18 @@ type PageWidth struct {
 	Default bool   `json:"default"`
 }
 
+// PageStatus is what a publishing verb did with a page's status -- the lozenge
+// next to the title -- naming the status it asserted.
+//
+// Action is "set" or "unchanged", and the pair is reported rather than just the
+// name because a state write bumps the page version: "unchanged" is the evidence
+// that a run which touched nothing did not silently add one
+// (docs/confluence/page-status.md).
+type PageStatus struct {
+	Name   string `json:"name"`
+	Action string `json:"action"`
+}
+
 // Author identifies a Confluence user by account id and resolved display name.
 // Name may be empty when the lookup fails.
 type Author struct {

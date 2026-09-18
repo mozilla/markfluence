@@ -131,6 +131,7 @@ func TestJSONResultCreated(t *testing.T) {
     "default": false
   },
   "labels": null,
+  "page_status": null,
   "persisted": true,
   "attachments": [],
   "warnings": [],
