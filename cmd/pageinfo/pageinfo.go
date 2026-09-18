@@ -1,4 +1,5 @@
-// Package info implements the `markfluence info` command: print a page's metadata.
+// Package pageinfo implements the `markfluence page-info` command: print a
+// page's metadata.
 package pageinfo
 
 import (

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/mozilla/markfluence/schema/json-output/v1.json",
   "title": "markfluence --json output (schema_version 1)",
-  "description": "The single JSON document markfluence writes to stdout under --json. results holds one object per target (a single element for info/read; one per attachment for attachment-list); its item shape and the summary shape depend on command. The typed error object written to stderr on a fatal/pre-flight failure conforms to #/$defs/errorObject.",
+  "description": "The single JSON document markfluence writes to stdout under --json. results holds one object per target (a single element for page-info/read; one per attachment for attachment-list); its item shape and the summary shape depend on command. The typed error object written to stderr on a fatal/pre-flight failure conforms to #/$defs/errorObject.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "markfluence_version", "command", "roots", "warnings", "results", "summary"],
@@ -365,7 +365,7 @@
       ]
     },
     "singleOpFailure": {
-      "description": "An operational failure for a single-target command (info/read): page not found, fetch error, etc.",
+      "description": "An operational failure for a single-target command (page-info/read): page not found, fetch error, etc.",
       "type": "object",
       "additionalProperties": false,
       "required": ["ok", "page_id", "error", "code"],
@@ -448,7 +448,7 @@
           "$ref": "#/$defs/stringOrNull"
         },
         "labels": {
-          "description": "The managed labels that went into the rendered frontmatter, sorted; null when the fetch failed. A different shape from info's labels on purpose: info describes the page, read describes the document it produced.",
+          "description": "The managed labels that went into the rendered frontmatter, sorted; null when the fetch failed. A different shape from page-info's labels on purpose: page-info describes the page, read describes the document it produced.",
           "oneOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }]
         },
         "format": { "enum": ["markdown", "storage"] },
@@ -762,7 +762,7 @@
       }
     },
     "basicSummary": {
-      "description": "info/read batch summary (total:1), and attachment-list (total: the attachment count).",
+      "description": "page-info/read batch summary (total:1), and attachment-list (total: the attachment count).",
       "type": "object",
       "additionalProperties": false,
       "required": ["total", "succeeded", "failed"],
