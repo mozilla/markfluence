@@ -65,13 +65,12 @@ var Cmd = &cobra.Command{
 		"a Cloud folder -- give a folder's id the same way you would a page's.\n" +
 		"Page width follows the same chain and defaults to max.\n\n" +
 		"A page_status: line sets the created page's status -- the coloured\n" +
-		"lozenge beside its title -- naming one the space offers. The statuses a\n" +
-		"space offers are its own configuration rather than a fixed list, so a\n" +
-		"name matching none of them fails preflight, before anything is created,\n" +
-		"and reports the ones the space does have. Omitted, the page is created\n" +
-		"with no status. Since a preflight failure aborts the whole batch, a tree\n" +
-		"exported from one space and created in another fails on the first file\n" +
-		"whose status the destination space does not offer.\n\n" +
+		"lozenge beside its title. Which statuses a page may be given is decided\n" +
+		"by Confluence per page and per account rather than by a fixed list, and\n" +
+		"the only page that can answer for a new page is the new page, so unlike\n" +
+		"labels the name is checked after the page exists: a name it will not\n" +
+		"take leaves the page created, with no status and a warning naming the\n" +
+		"ones it would take. Omitted, the page is created with no status.\n\n" +
 		"Every file is checked first -- including converting it -- and if any would\n" +
 		"fail, nothing is created. A page_id that resolves to nothing is a failure\n" +
 		"too, not a fresh page: create will not publish a second copy and overwrite\n" +
@@ -179,7 +178,24 @@ type record struct {
 	// wire format is an id and a name Confluence does not recognise creates a
 	// status no route can delete -- so the lookup belongs where a bad name can
 	// still abort the batch, not after a page exists.
-	status         client.ContentState
+	// statusName is the page status the file declares, carried as the *name*
+	// rather than as a resolved status -- unlike labels, which preflight
+	// validates.
+	//
+	// It cannot be resolved in preflight, and the reason is a measured
+	// property of Confluence rather than an ordering choice: the statuses a
+	// page may be given depend on the (caller, page) pair, not on the space
+	// (see pagestatus.Resolve), so the only page whose answer is authoritative
+	// is the one being created -- which does not exist yet. Asking the parent
+	// or the space homepage instead answers a different question and was
+	// measured refusing a name the new page went on to accept.
+	//
+	// The cost is #127's, knowingly: a misspelled status is a warning on a
+	// created page rather than a refusal before anything is made. That is the
+	// right trade only because the alternative refuses files whose status is
+	// fine, and because the offline half -- a present-but-empty value -- is
+	// still caught in preflight by pagestatus.Declared.
+	statusName     string
 	statusDeclared bool
 	// metadataSource is which location supplied this file's metadata, carried
 	// from preflight so the published result reports what was actually read.
@@ -392,17 +408,13 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 	}
 	spaceCache := map[string]string{}
-	// One per batch, and both only touched by a file declaring page_status: the
-	// space's status vocabulary, and the homepage id used to ask for it.
-	statuses := pagestatus.NewCache()
-	homepages := map[string]string{}
 	indexes := linkindex.NewCache()
 
 	// Phase 1: validate every file, create nothing.
 	var records []record
 	var errs []failure
 	for _, filename := range args {
-		r, err := resolveFile(filename, c, inSetAbs, spaceCache, roots, indexes, statuses, homepages)
+		r, err := resolveFile(filename, c, inSetAbs, spaceCache, roots, indexes)
 		if err != nil {
 			errs = append(errs, newFailure(filename, err))
 			continue
@@ -679,8 +691,11 @@ func publishOne(
 		}
 		// Always "set", for the same reason: a page that does not exist carries
 		// no status, so there is nothing for Apply's read to find unchanged.
+		// The name as the file spells it: a dry run creates no page, and the
+		// page that would be created is the only one that can say what the
+		// space's canonical spelling of it is.
 		if r.statusDeclared {
-			res.pageStatus = &jsonout.PageStatus{Name: r.status.Name, Action: "set"}
+			res.pageStatus = &jsonout.PageStatus{Name: r.statusName, Action: "set"}
 		}
 		res.ok = true
 		res.status = statusCreated
@@ -752,7 +767,17 @@ func publishOne(
 	// an id in preflight, so nothing here can fail for a reason the file could
 	// have been told about earlier.
 	if r.statusDeclared {
-		action, err := pagestatus.Apply(c, pageID, r.status)
+		// Resolved here rather than in preflight: this is the only page whose
+		// answer is authoritative, and it did not exist until a moment ago.
+		// See record.statusName.
+		status, err := pagestatus.Resolve(c, pageID, r.statusName)
+		if err != nil {
+			res.warnings = append(res.warnings, "could not set page status: "+err.Error())
+			res.ok = true
+			res.status = statusCreated
+			return res
+		}
+		action, err := pagestatus.Apply(c, pageID, status)
 		switch {
 		case err != nil:
 			res.warnings = append(res.warnings, "could not set page status: "+err.Error())
@@ -784,7 +809,6 @@ func publishOne(
 func resolveFile(
 	filename string, c *client.ConfluenceClient, inSetAbs map[string]bool, spaceCache map[string]string,
 	roots *project.Cache, indexes *linkindex.Cache,
-	statuses *pagestatus.Cache, homepages map[string]string,
 ) (record, error) {
 	mf, err := frontmatter.ParseFile(filename)
 	if err != nil {
@@ -882,42 +906,10 @@ func resolveFile(
 		return record{}, fmt.Errorf("space %q not found", spaceKey)
 	}
 
-	// The name half of page_status, resolved here in preflight so a name the
-	// space does not offer aborts the batch before anything is reserved -- the
-	// alternative is #127's failure mode, a created page with no status and a
-	// warning the author has to act on by hand.
-	//
-	// The vocabulary route is per-page and this page does not exist yet, so the
-	// probe is the space's homepage: a page id in the target space that always
-	// exists, and whose answer is a property of the space rather than of itself.
-	// Both lookups are cached per space and both are skipped entirely for a file
-	// that declares no status.
-	var status client.ContentState
-	if statusDeclared {
-		homepage, ok := homepages[spaceKey]
-		if !ok {
-			homepage, err = c.ResolveSpaceHomepage(spaceKey)
-			if err != nil {
-				return record{}, err
-			}
-			homepages[spaceKey] = homepage
-		}
-		if homepage == "" {
-			return record{}, fmt.Errorf(
-				"cannot check page_status: space %q reports no homepage to ask "+
-					"which statuses it offers", spaceKey)
-		}
-		status, err = pagestatus.Resolve(c, statuses, spaceID, homepage, statusName)
-		if err != nil {
-			return record{}, err
-		}
-	}
-
 	parent, err := resolveParent(filename, meta.Fields, inSetAbs, c, spaceID, root)
 	if err != nil {
 		return record{}, err
 	}
-
 	if err := checkTitleFree(c, title, spaceKey, spaceID); err != nil {
 		return record{}, err
 	}
@@ -955,7 +947,7 @@ func resolveFile(
 	return record{
 		filename: filename, absPath: abs, mdfile: mf, title: title, spaceKey: spaceKey,
 		spaceID: spaceID, parent: parent, width: width, labels: labelSet, root: root, index: index,
-		status:         status,
+		statusName:     statusName,
 		statusDeclared: statusDeclared,
 		metadataSource: string(meta.MetadataSource()),
 		toManifest:     toManifestDest(meta, root, key),

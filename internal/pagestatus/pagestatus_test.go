@@ -92,7 +92,7 @@ func TestAnAbsentFieldAsksNothing(t *testing.T) {
 func TestResolveIsCaseInsensitive(t *testing.T) {
 	c, _ := server(t, `{}`, vocabulary)
 	for _, spelling := range []string{"Ready for review", "ready for review", "READY FOR REVIEW"} {
-		got, err := Resolve(c, nil, "space-1", "123", spelling)
+		got, err := Resolve(c, "123", spelling)
 		if err != nil {
 			t.Fatalf("Resolve(%q): %v", spelling, err)
 		}
@@ -111,7 +111,7 @@ func TestResolveIsCaseInsensitive(t *testing.T) {
 // carry it.
 func TestResolveUnknownNamesTheSpacesOwn(t *testing.T) {
 	c, _ := server(t, `{}`, vocabulary)
-	_, err := Resolve(c, nil, "space-1", "123", "Reviewed")
+	_, err := Resolve(c, "123", "Reviewed")
 	if err == nil {
 		t.Fatal("Resolve succeeded, want an error")
 	}
@@ -131,7 +131,7 @@ func TestResolveRefusesACustomStatusByName(t *testing.T) {
 	available := `{"spaceContentStates":[{"id":10,"name":"Rough draft","color":"#ffc400"}],
 		"customContentStates":[{"id":99,"name":"Mine alone","color":"#ff0000"}]}`
 	c, _ := server(t, `{}`, available)
-	_, err := Resolve(c, nil, "space-1", "123", "Mine alone")
+	_, err := Resolve(c, "123", "Mine alone")
 	if err == nil {
 		t.Fatal("Resolve succeeded, want a refusal")
 	}
@@ -139,7 +139,7 @@ func TestResolveRefusesACustomStatusByName(t *testing.T) {
 		t.Errorf("err = %v, want it to explain that a custom status is account-scoped", err)
 	}
 	if !strings.Contains(err.Error(), "Rough draft") {
-		t.Errorf("err = %v, want it to name what the space does offer", err)
+		t.Errorf("err = %v, want it to name what the page can be given", err)
 	}
 }
 
@@ -150,7 +150,7 @@ func TestResolveRefusesAnAmbiguousMatch(t *testing.T) {
 		{"id":1,"name":"Draft","color":"#ffc400"},
 		{"id":2,"name":"draft","color":"#2684ff"}],"customContentStates":[]}`
 	c, _ := server(t, `{}`, available)
-	_, err := Resolve(c, nil, "space-1", "123", "DRAFT")
+	_, err := Resolve(c, "123", "DRAFT")
 	if err == nil {
 		t.Fatal("Resolve succeeded, want an ambiguity error")
 	}
@@ -215,43 +215,14 @@ func TestApplySetsAStatusOnAPageWithNone(t *testing.T) {
 	}
 }
 
-// The cache is keyed by space, not by the page id the route takes: a batch of
-// files in one space must ask once.
-func TestCacheAsksOncePerSpace(t *testing.T) {
-	c, seen := server(t, `{}`, vocabulary)
-	cache := NewCache()
-	for _, pageID := range []string{"1", "2", "3"} {
-		if _, err := Resolve(c, cache, "space-1", pageID, "Verified"); err != nil {
-			t.Fatalf("Resolve: %v", err)
-		}
-	}
-	if len(*seen) != 1 {
-		t.Errorf("requests = %v, want one", *seen)
-	}
-	if _, err := Resolve(c, cache, "space-2", "9", "Verified"); err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if len(*seen) != 2 {
-		t.Errorf("requests = %v, want a second space to ask again", *seen)
-	}
-}
-
-// A nil cache is what single-page callers pass, and it must work rather than
-// panic.
-func TestNilCacheReadsThrough(t *testing.T) {
-	c, seen := server(t, `{}`, vocabulary)
-	for range 2 {
-		if _, err := Resolve(c, nil, "space-1", "1", "Verified"); err != nil {
-			t.Fatalf("Resolve: %v", err)
-		}
-	}
-	if len(*seen) != 2 {
-		t.Errorf("requests = %v, want one per call", *seen)
-	}
-}
-
 // Available reports the space's own statuses and not the caller's custom ones:
 // info's row describes the page for whoever reads it, not for whoever ran it.
+//
+// The per-page rule Resolve rests on is measured in
+// docs/confluence/page-status.md and cannot be stubbed usefully here; what is
+// pinned is that nothing caches one page's answer for another, which is now
+// true by construction -- Resolve takes the page it is asking about and holds
+// no state.
 func TestAvailableDropsCustomStatuses(t *testing.T) {
 	available := `{"spaceContentStates":[{"id":10,"name":"Rough draft","color":"#ffc400"}],
 		"customContentStates":[{"id":99,"name":"Mine alone","color":"#ff0000"}]}`

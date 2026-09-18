@@ -15,7 +15,6 @@ import (
 	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/pagedoc"
-	"github.com/mozilla/markfluence/internal/pagestatus"
 	"github.com/mozilla/markfluence/internal/project"
 )
 
@@ -59,7 +58,7 @@ func publish(t *testing.T, c *client.ConfluenceClient, path string) *updateResul
 	t.Helper()
 	logs := actionlog.NewCache()
 	r := processFile(path, c, project.NewCache(""), linkindex.NewCache(),
-		pagedoc.NewUserCache(), logs, pagestatus.NewCache())
+		pagedoc.NewUserCache(), logs)
 	recordAction(logs, r)
 	return r
 }

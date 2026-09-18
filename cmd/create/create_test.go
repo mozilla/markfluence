@@ -10,7 +10,6 @@ import (
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/linkindex"
-	"github.com/mozilla/markfluence/internal/pagestatus"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/project"
 )
@@ -455,8 +454,7 @@ func TestResolveFileNoTitle(t *testing.T) {
 	roots := project.NewCache("")
 	t.Cleanup(roots.Close)
 
-	_, err := resolveFile(path, testClient(), map[string]bool{}, map[string]string{}, roots,
-		linkindex.NewCache(), pagestatus.NewCache(), map[string]string{})
+	_, err := resolveFile(path, testClient(), map[string]bool{}, map[string]string{}, roots, linkindex.NewCache())
 	if err == nil || !strings.Contains(err.Error(), "no title given") {
 		t.Errorf("err = %v, want a no-title error", err)
 	}
@@ -468,8 +466,7 @@ func TestResolveFileNoSpace(t *testing.T) {
 	roots := project.NewCache("")
 	t.Cleanup(roots.Close)
 
-	_, err := resolveFile(path, testClient(), map[string]bool{}, map[string]string{}, roots,
-		linkindex.NewCache(), pagestatus.NewCache(), map[string]string{})
+	_, err := resolveFile(path, testClient(), map[string]bool{}, map[string]string{}, roots, linkindex.NewCache())
 	if err == nil || !strings.Contains(err.Error(), "no space given") {
 		t.Errorf("err = %v, want a no-space error", err)
 	}
@@ -484,8 +481,7 @@ func TestResolveFileSpaceConflict(t *testing.T) {
 	spaceOpt = "ENG"
 	t.Cleanup(func() { spaceOpt = "" })
 
-	_, err := resolveFile(path, testClient(), map[string]bool{}, map[string]string{}, roots,
-		linkindex.NewCache(), pagestatus.NewCache(), map[string]string{})
+	_, err := resolveFile(path, testClient(), map[string]bool{}, map[string]string{}, roots, linkindex.NewCache())
 	want := `--space "ENG" conflicts with frontmatter space "OPS"`
 	if err == nil || err.Error() != want {
 		t.Errorf("err = %v, want %q", err, want)

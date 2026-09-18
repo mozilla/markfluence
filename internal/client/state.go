@@ -49,13 +49,18 @@ func (c *ConfluenceClient) PageState(pageID string) (*ContentState, error) {
 // halves the route reports rather than merged, because they are not the same
 // kind of thing.
 //
-// Space is the space's own configuration, the same for everyone who can see the
-// page. Custom follows the **account**: a custom status one person creates shows
-// up as available on pages in spaces they do not own (verified). So only Space
-// is valid for a frontmatter field -- a file validated against the union would
-// publish for its author and fail for a colleague -- and Custom is carried only
-// so that refusal can say why, which is otherwise an unresolvable "it works for
-// me" bug report.
+// Space is what this caller may give *this page*, which is not the same as what
+// the space is configured with: one account was offered four statuses on a page
+// it had created and three on a page in the same space that it had not, and the
+// write enforces the difference. Do not read it as a space property or cache it
+// across pages.
+//
+// Custom follows the **account** rather than the page: a custom status one
+// person creates shows up as available on pages in spaces they do not own
+// (verified). So only Space is valid for a frontmatter field -- a file
+// validated against the union would publish for its author and fail for a
+// colleague -- and Custom is carried only so that refusal can say why, which is
+// otherwise an unresolvable "it works for me" bug report.
 type StateVocabulary struct {
 	Space  []ContentState
 	Custom []ContentState
@@ -69,10 +74,16 @@ type StateVocabulary struct {
 // GET /space/{key}/state returns the four product defaults whatever the space
 // actually offers -- it reported "Verified" for a space whose real list is three
 // states -- and GET /space/{key}/state/settings, which is correct, is space-admin
-// only and 403s for an ordinary author. Every page in a space answers
-// identically, so any page id is a probe for its space.
+// only and 403s for an ordinary author.
 //
-// And its two halves mean different things: see StateVocabulary.
+// But "per page" is literal, not an accident of the route's shape: ask it about
+// the page the status is going on, and nothing else. Its answer varies with the
+// caller and with the page, and its two halves mean different things -- see
+// StateVocabulary.
+//
+// It also needs **edit** permission on the page asked about, consistent with
+// the write scope it sits behind, which makes it a free "can this account edit
+// this page?" probe and makes a space homepage a poor choice of page.
 func (c *ConfluenceClient) AvailableStates(pageID string) (StateVocabulary, error) {
 	var out struct {
 		SpaceContentStates  []ContentState `json:"spaceContentStates"`

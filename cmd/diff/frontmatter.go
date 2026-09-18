@@ -285,12 +285,14 @@ func statusDifference(
 		d.Note = "the page carries no status"
 	}
 
-	// The id comparison the doc comment is about. Resolving needs the space's
-	// vocabulary, and a failure there leaves the name comparison standing --
-	// which is right rather than a fallback: two different spellings of one
-	// status is the only case the ids would have settled differently, and
-	// reporting a difference there is a miss, not a false alarm.
-	want, resolveErr := pagestatus.Resolve(c, nil, page.SpaceID, page.ID, local)
+	// The id comparison the doc comment is about, asked of this page: the
+	// vocabulary is per (caller, page), so the page being diffed is the only
+	// one whose answer is about this comparison. A failure leaves the name
+	// comparison standing -- which is right rather than a fallback: two
+	// spellings of one status is the only case the ids would have settled
+	// differently, and reporting a difference there is a miss, not a false
+	// alarm.
+	want, resolveErr := pagestatus.Resolve(c, page.ID, local)
 	switch {
 	case resolveErr != nil:
 		warn := pagestatus.Field + " could not be resolved against the space: " + resolveErr.Error()

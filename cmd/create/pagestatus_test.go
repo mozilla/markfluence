@@ -48,50 +48,45 @@ func resolveWithStatus(t *testing.T, c *client.ConfluenceClient, body string) (r
 	path := write(t, dir, "a.md", body)
 	roots := project.NewCache("")
 	t.Cleanup(roots.Close)
-	return resolveFile(path, c, map[string]bool{}, map[string]string{}, roots,
-		linkindex.NewCache(), pagestatus.NewCache(), map[string]string{})
+	return resolveFile(path, c, map[string]bool{}, map[string]string{}, roots, linkindex.NewCache())
 }
 
-// The name is resolved in preflight, against the space's homepage, because the
-// page being created does not exist yet and the vocabulary route is per-page.
-func TestPreflightResolvesTheStatusAgainstTheSpaceHomepage(t *testing.T) {
+// preflight carries the name and resolves nothing, and asks for no vocabulary
+// while doing it. The statuses a page may be given depend on the (caller,
+// page) pair rather than on the space, so the only authoritative page is the
+// one being created -- and it does not exist yet. Probing the parent or the
+// homepage instead was measured refusing a name the new page went on to
+// accept, and needing edit permission the account creating pages need not
+// have.
+func TestPreflightCarriesTheNameAndAsksNothing(t *testing.T) {
 	c, paths := preflightServer(t, createVocabulary)
 	r, err := resolveWithStatus(t, c,
 		"---\ntitle: X\nspace: ENG\npage_status: Ready for review\n---\nbody\n")
 	if err != nil {
 		t.Fatalf("resolveFile: %v", err)
 	}
-	if !r.statusDeclared || r.status.ID != 12 {
-		t.Fatalf("record status = %+v declared=%v", r.status, r.statusDeclared)
+	if !r.statusDeclared || r.statusName != "Ready for review" {
+		t.Fatalf("record = %q declared=%v", r.statusName, r.statusDeclared)
 	}
-	var askedHomepage bool
 	for _, p := range *paths {
-		if p == "GET /wiki/rest/api/content/5000/state/available" {
-			askedHomepage = true
+		if strings.Contains(p, "/state") {
+			t.Errorf("paths = %v, want no vocabulary request in preflight", *paths)
 		}
-	}
-	if !askedHomepage {
-		t.Errorf("paths = %v, want the space homepage asked for the vocabulary", *paths)
 	}
 }
 
-// A bad name fails preflight, which is the whole reason the lookup is there: the
-// alternative is a created page with no status and a warning the author has to
-// undo by hand (#127's reasoning).
-func TestPreflightRefusesAnUnknownStatusWithNothingWritten(t *testing.T) {
-	c, paths := preflightServer(t, createVocabulary)
-	_, err := resolveWithStatus(t, c,
-		"---\ntitle: X\nspace: ENG\npage_status: Reviewed\n---\nbody\n")
-	if err == nil {
-		t.Fatal("resolveFile succeeded, want a refusal")
+// A name the page will refuse is therefore *not* a preflight failure, and that
+// is the knowing cost: it is a warning on a created page instead. The offline
+// half is still caught (see TestPreflightRefusesAnEmptyStatus).
+func TestPreflightAcceptsAnyNonEmptyName(t *testing.T) {
+	c, _ := preflightServer(t, createVocabulary)
+	r, err := resolveWithStatus(t, c,
+		"---\ntitle: X\nspace: ENG\npage_status: Probably Not Real\n---\nbody\n")
+	if err != nil {
+		t.Fatalf("resolveFile: %v, want the name carried for the publish phase", err)
 	}
-	if !strings.Contains(err.Error(), "Ready for review") {
-		t.Errorf("err = %v, want the space's statuses named", err)
-	}
-	for _, p := range *paths {
-		if strings.HasPrefix(p, "POST") || strings.HasPrefix(p, "PUT") {
-			t.Errorf("paths = %v, want nothing written", *paths)
-		}
+	if r.statusName != "Probably Not Real" {
+		t.Errorf("statusName = %q", r.statusName)
 	}
 }
 
@@ -136,7 +131,7 @@ func TestPreflightRefusesAnEmptyStatus(t *testing.T) {
 func TestPersistDoesNotRecordTheStatus(t *testing.T) {
 	r := record{
 		title: "X", spaceKey: "ENG", width: "max",
-		status: client.ContentState{ID: 12, Name: "Ready for review"}, statusDeclared: true,
+		statusName: "Ready for review", statusDeclared: true,
 	}
 	entry := persistEntry(r, "456", "123")
 	if _, ok := entry.Fields[pagestatus.Field]; ok {
