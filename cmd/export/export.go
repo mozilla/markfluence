@@ -60,8 +60,8 @@ var Cmd = &cobra.Command{
 		"walk is one pair of requests per page and folder in it and should be\n" +
 		"asked for rather than typed by accident.\n\n" +
 		"The page is written as markdown with title/space/parent/page_id/\n" +
-		"page_width frontmatter, so an exported file can be edited and\n" +
-		"published back with update. For a page at the top of the export this\n" +
+		"labels/page_status/page_width frontmatter, so an exported file can be\n" +
+		"edited and published back with update. For a page at the top of the export this\n" +
 		"is exactly what `read` prints; deeper in a tree the paths in it are\n" +
 		"relative to where the file sits, which `read` cannot know.\n\n" +
 		"--depth exports the page's descendants too, mirroring the Confluence\n" +

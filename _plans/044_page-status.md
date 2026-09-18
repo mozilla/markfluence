@@ -149,11 +149,14 @@ carrying no status and a warning the author has to act on by hand. The space's
 `create` can get while resolving the space, and the vocabulary a page reports is
 a property of its space (verified across four pages in one). So preflight
 resolves the name there, beside `resolveWidth` and the label validation, and a
-bad name aborts the batch before anything is reserved. The homepage id costs no
-request at all: it is a field of the `GET /wiki/api/v2/spaces?keys=` response
-`ResolveSpaceID` already makes, so the change there is one field on an anonymous
-struct plus a sibling that returns it (not a new signature on `ResolveSpaceID`,
-which has five callers that want the id alone).
+bad name aborts the batch before anything is reserved. The homepage id needs no new
+route: it is a field of the `GET /wiki/api/v2/spaces?keys=` response
+`ResolveSpaceID` already reads, so the change there is one field on a struct
+plus a sibling that returns it (not a new signature on `ResolveSpaceID`, which
+has five callers that want the id alone). It is a second *request* to that
+route rather than a free ride on the first — `resolveSpace` is not memoized —
+bounded to once per space per run by `create`'s own cache, and not made at all
+for a file that declares no status.
 
 **`page_status` is a visible field in `pagemeta`, not a coordinate.** A
 disagreement between frontmatter and a `pages:` entry warns and frontmatter

@@ -69,7 +69,9 @@ var Cmd = &cobra.Command{
 		"space offers are its own configuration rather than a fixed list, so a\n" +
 		"name matching none of them fails preflight, before anything is created,\n" +
 		"and reports the ones the space does have. Omitted, the page is created\n" +
-		"with no status.\n\n" +
+		"with no status. Since a preflight failure aborts the whole batch, a tree\n" +
+		"exported from one space and created in another fails on the first file\n" +
+		"whose status the destination space does not offer.\n\n" +
 		"Every file is checked first -- including converting it -- and if any would\n" +
 		"fail, nothing is created. A page_id that resolves to nothing is a failure\n" +
 		"too, not a fresh page: create will not publish a second copy and overwrite\n" +
@@ -762,7 +764,14 @@ func publishOne(
 			// created page with a status looking one version behind itself,
 			// and the next update refused the file as diverged.
 			if action.Action == "set" {
-				res.pageVersion = pagestatus.VersionAfter(c, pageID, res.pageVersion)
+				version, err := pagestatus.VersionAfter(c, pageID, res.pageVersion)
+				res.pageVersion = version
+				if err != nil {
+					res.warnings = append(res.warnings,
+						"page status set, but the page's new version could not be read ("+
+							err.Error()+"); the first update of this file may report a "+
+							"conflict -- re-run it, or use --force")
+				}
 			}
 		}
 	}
