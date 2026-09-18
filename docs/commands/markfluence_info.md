@@ -6,9 +6,16 @@ Print metadata about a Confluence page
 
 Print metadata about a Confluence page.
 
-Id, title, status, space, parent, version, page width, labels, the
-created/updated author stamps, and the page URL. An empty field is
-omitted rather than printed blank.
+Id, title, content status, space, parent, version, page width, page
+status, labels, the created/updated author stamps, and the page URL. An
+empty field is omitted rather than printed blank.
+
+Two of those wear the word status and mean different things.
+content_status is current, archived or trashed. page_status is the
+coloured lozenge beside the title, and page_status/available lists the
+ones this page's space offers -- which is how to find out what a
+page_status: line in a markdown file may say, since a space's statuses
+are its own configuration rather than a fixed list.
 
 PAGE is a numeric page id, a Confluence page URL, or a markdown file
 whose frontmatter has a page_id.

@@ -487,6 +487,7 @@ space: ENG
 parent: null
 page_id: 1234567890
 page_width: max
+page_status: Ready for review
 ---
 
 # Body starts here

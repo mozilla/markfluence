@@ -343,6 +343,17 @@ file that declares none, so an omitted field is not left alone there. `labels`
 holds in both verbs: absent means no label request is made at all, which is
 stronger than "no write" and is pinned by a test in `cmd/update`.
 
+`page_status` (#168) holds in both verbs on the same terms as `labels`, with the
+same "no request at all" test. One asymmetry against `labels` is worth writing
+down rather than leaving to be inferred: a status can be **set and changed but
+not cleared** from a file. `labels: []` can mean "remove them all" because a
+sequence has an empty spelling distinguishable from a null scalar, and a scalar
+field has no equivalent -- `page_status:`, `page_status: ~` and
+`page_status: null` all read as `""`, which is exactly what an unfinished edit
+looks like. So an empty value is refused. That is a missing *declaration*, not
+an unasserted one, and does not weaken the law; clearing a status is a UI
+action until somebody asks for a spelling.
+
 The law now has **no exception**, which it did until `fix` was removed (#151).
 `fix` reconciled the *file* to the page, so there the page was the authority and
 an absent field got filled in — an absent `labels` key meant "leave the page
@@ -351,8 +362,8 @@ kind of asymmetry a reader has to hold in their head. Every verb that writes now
 writes in one direction, and the law describes all of them.
 
 Adopting a page somebody labeled or resized by hand is consequently a manual
-step: look at the page (`info` shows labels and width; `read` and `export` emit
-them) and edit the file. #154 (`markfluence diff`) is the intended way to see
+step: look at the page (`info` shows labels, width and page status; `read` and
+`export` emit all three) and edit the file. #154 (`markfluence diff`) is the intended way to see
 what differs; nothing writes the file for you, deliberately.
 
 Status unchanged: `create`'s default width is what makes L9 partial, and that

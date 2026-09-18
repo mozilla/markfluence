@@ -10,8 +10,8 @@ Each file's title and page id come from its own YAML frontmatter, or from
 a 'pages:' entry for it in markfluence.yaml -- a file can stay pristine and
 keep its metadata there instead. Both places are legal and agreement is
 silent; where they disagree about page_id, space or parent the file fails,
-and where they disagree about title, page_width or labels the frontmatter
-wins with a warning.
+and where they disagree about title, page_width, page_status or labels the
+frontmatter wins with a warning.
 
 A file that neither place mentions is skipped, not failed: a repository
 legitimately holds markdown that is not published, so a glob over a docs
@@ -29,6 +29,14 @@ entry, or the project-wide default -- otherwise the live page's width is
 left untouched. Labels work the same way: a labels: line is asserted
 exactly (anything on the page the file does not list is removed), and no
 labels: line means the page's labels are left alone, not even read.
+
+A page_status: line asserts the page's status -- the coloured lozenge
+beside its title -- naming one the space offers. Omitted, the page's own
+status is left alone and never even read. The statuses a space offers are
+its own configuration rather than a fixed list, so a name that matches
+none of them fails that file and reports the ones it can have; markfluence
+info shows them too. Writing one bumps the page version, so a status that
+already matches is left alone rather than re-sent.
 
 update never writes back to the file or to markfluence.yaml, so fixing a
 wrong page_id is always safe: nothing is as you left it by accident. A

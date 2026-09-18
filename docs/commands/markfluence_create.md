@@ -13,6 +13,13 @@ wins. The parent comes from --parent or frontmatter and may be a page or
 a Cloud folder -- give a folder's id the same way you would a page's.
 Page width follows the same chain and defaults to max.
 
+A page_status: line sets the created page's status -- the coloured
+lozenge beside its title -- naming one the space offers. The statuses a
+space offers are its own configuration rather than a fixed list, so a
+name matching none of them fails preflight, before anything is created,
+and reports the ones the space does have. Omitted, the page is created
+with no status.
+
 Every file is checked first -- including converting it -- and if any would
 fail, nothing is created. A page_id that resolves to nothing is a failure
 too, not a fresh page: create will not publish a second copy and overwrite
