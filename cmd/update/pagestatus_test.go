@@ -233,12 +233,19 @@ func TestAStatusWriteIsRecordedAtThePagesFinalVersion(t *testing.T) {
 	if !r.ok {
 		t.Fatalf("result = %+v, want ok: %s", r, r.errMsg)
 	}
-	if got := r.loggedVersion(); got != 9 {
-		t.Errorf("loggedVersion = %d, want 9: the base must name where the page ended up", got)
+	if got := r.finalVersion(); got != 9 {
+		t.Errorf("finalVersion = %d, want 9: the base must name where the page ended up", got)
 	}
-	// The human output still reports the body publish it actually made.
+	// The "Updating (vA -> vB)" line stays on the body publish's own version.
 	if r.versionNew != 4 {
 		t.Errorf("versionNew = %d, want 4: that is the version the body PUT produced", r.versionNew)
+	}
+	// And --json's version.new is where the page is, not where the body PUT
+	// left it: a consumer comparing it against a later info must not see a
+	// mismatch for a bump markfluence made itself.
+	res := r.jsonResult()
+	if res.Version == nil || res.Version.New != 9 {
+		t.Errorf("version.new = %+v, want 9", res.Version)
 	}
 }
 
@@ -247,10 +254,10 @@ func TestNoStatusWriteLeavesTheLoggedVersionAlone(t *testing.T) {
 	c, _ := statusServer(t, `{}`)
 	_, path := inProject(t, "---\npage_id: 1\n---\nHello.\n")
 	r := publishWith(t, c, path)
-	if r.logVersion != 0 {
-		t.Errorf("logVersion = %d, want 0 (unset)", r.logVersion)
+	if r.versionFinal != 0 {
+		t.Errorf("versionFinal = %d, want 0 (unset)", r.versionFinal)
 	}
-	if r.loggedVersion() != r.versionNew {
-		t.Errorf("loggedVersion = %d, want versionNew %d", r.loggedVersion(), r.versionNew)
+	if r.finalVersion() != r.versionNew {
+		t.Errorf("finalVersion = %d, want versionNew %d", r.finalVersion(), r.versionNew)
 	}
 }

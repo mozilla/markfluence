@@ -71,12 +71,17 @@ type updateResult struct {
 	root       *project.Root
 	logKey     string
 	publishSHA string
-	// logVersion is the version the *page* was left at, which is versionNew
+	// versionFinal is the version the *page* was left at, which is versionNew
 	// except when a page status was written: that is the one metadata pass
-	// that bumps the page version, and recording the body PUT's version would
-	// leave the base one behind and make the next run report a divergence.
-	// Zero means "use versionNew".
-	logVersion int
+	// that bumps the page version. Zero means "use versionNew".
+	//
+	// It is what the base records -- the body PUT's version would leave the
+	// base one behind and make the next run report a divergence -- and what
+	// --json and the success line report, since those describe where the page
+	// is. versionNew stays the body publish's own version, which is what the
+	// "Updating (vA -> vB)" line is about; a status write then shows as its own
+	// line and one more version.
+	versionFinal int
 
 	// base is the merge base found for this file, nil when none was usable.
 	// Reported as --json's "base" -- a fact about the log rather than about
@@ -156,10 +161,10 @@ func (r *updateResult) renderHuman() {
 		ui.Info(prefix + " page status: " + r.pageStatus.Name)
 	}
 	if !bodyMoved {
-		ui.Success(fmt.Sprintf("%s Body unchanged at v%d: %s", prefix, r.versionNew, r.url))
+		ui.Success(fmt.Sprintf("%s Body unchanged at v%d: %s", prefix, r.finalVersion(), r.url))
 		return
 	}
-	ui.Success(fmt.Sprintf("%s Published v%d: %s", prefix, r.versionNew, r.url))
+	ui.Success(fmt.Sprintf("%s Published v%d: %s", prefix, r.finalVersion(), r.url))
 }
 
 // jsonUpdateResult is update's --json result shape.
@@ -234,7 +239,7 @@ func (r *updateResult) jsonResult() jsonUpdateResult {
 	}
 	// version is present once we know the live version (all non-early failures).
 	if r.versionPrev != 0 || r.versionNew != 0 {
-		res.Version = &jsonUpdateVersion{Previous: r.versionPrev, New: r.versionNew}
+		res.Version = &jsonUpdateVersion{Previous: r.versionPrev, New: r.finalVersion()}
 	}
 	if !r.ok {
 		res.Error = &r.errMsg

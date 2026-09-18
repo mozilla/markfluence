@@ -196,12 +196,22 @@ func Apply(c *client.ConfluenceClient, pageID string, state client.ContentState)
 // not carry a page version and inferring one would be wrong the moment somebody
 // else edited in between -- which is exactly the case the base exists to catch.
 // Called only when a status was actually written, so it costs nothing otherwise.
-func VersionAfter(c *client.ConfluenceClient, pageID string, fallback int) int {
+//
+// The error is returned rather than folded into the fallback because failing
+// here is not benign: the status write has already landed, so the fallback is a
+// version *known* to be behind the page, and recording it makes the next update
+// of that file refuse it as diverged -- reporting a conflict for a change
+// markfluence itself made. The caller must say so rather than leave that
+// inexplicable.
+func VersionAfter(c *client.ConfluenceClient, pageID string, fallback int) (int, error) {
 	page, err := c.GetPageOrNil(pageID)
-	if err != nil || page == nil {
-		return fallback
+	if err != nil {
+		return fallback, err
 	}
-	return page.Version.Number
+	if page == nil {
+		return fallback, fmt.Errorf("page %s could not be found", pageID)
+	}
+	return page.Version.Number, nil
 }
 
 // Read reports a live page's status, or nil when it has none.
