@@ -10,6 +10,7 @@ person who ran the experiment.
 - [storage-format.md](storage-format.md) — tables, macros, what Confluence rewrites
 - [links-and-anchors.md](links-and-anchors.md) — heading anchors and page links
 - [page-width.md](page-width.md) — the content properties behind `page_width`
+- [page-status.md](page-status.md) — the lozenge next to the title, and why it is written by id
 - [labels.md](labels.md) — what Confluence does to a label name, and why removal is `?name=`
 - [folders.md](folders.md) — the Cloud folder type, and why child listing is v1
 - [spaces.md](spaces.md) — what sits at the top of a space, and how to enumerate it
