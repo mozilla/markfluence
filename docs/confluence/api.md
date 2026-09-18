@@ -321,6 +321,9 @@ below.
 | `ListLabels` | v2 | `GET /pages/{id}/labels` | `read:page:confluence` |
 | `AddLabels` | v1 | `POST /content/{id}/label` | `write:confluence-content` |
 | `RemoveLabel` | v1 | `DELETE /content/{id}/label?name=…` | `write:confluence-content` |
+| `PageState` | v1 | `GET /content/{id}/state` | `read:confluence-content.summary` |
+| `AvailableStates` | v1 | `GET /content/{id}/state/available` | `write:confluence-content` |
+| `SetPageState` | v1 | `PUT /content/{id}/state` | `write:confluence-content` |
 
 Union, which is what a token needs:
 
@@ -338,11 +341,14 @@ write:confluence-content
 ```
 
 `write:confluence-content` is the newest entry and the one most likely to be
-missing from a token granted before labels existed (#138). It buys nothing but
-the two label writes: reading a page's labels is covered by
-`read:page:confluence`, which a token doing anything at all already has. So the
-failure mode is narrow and recognizable — every command works, and only the
-label half of `create`/`update` 401s.
+missing from a token granted before labels existed (#138). It buys the two label
+writes and, since #168, the page-status write and the route that lists a space's
+statuses (see [page-status.md](page-status.md) — that vocabulary route is a
+*read* behind a write scope, which is Atlassian's oddity, not ours). Reading a
+page's labels is covered by `read:page:confluence`, which a token doing anything
+at all already has. So the failure mode stays narrow and recognizable — every
+command works, and only the label and page-status halves of `create`/`update`
+401.
 
 ### The list is deliberately mixed, and that is the whole trap
 

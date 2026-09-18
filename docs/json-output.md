@@ -87,6 +87,19 @@ per-command details a script author hits once and then needs to look up.
   compared at all.
 - **Compound values are objects**, never display strings — `version`,
   `page_width`, and the `created`/`updated` author stamps on `info`.
+- **Two fields wear the word "status", and they are different things.**
+  `content_status` on `info` is Confluence's content status — `current`,
+  `archived`, `trashed`. `page_status` is the coloured lozenge beside the page
+  title, and its shape follows what the command can say about it: `update` and
+  `create` report `{name, action}`, where `action` is `set` or `unchanged`
+  (`unchanged` is worth reporting because writing a status bumps the page
+  version, so it is the evidence that a run which changed nothing added none);
+  `info` and `read` report the bare name. It is `null` wherever the file
+  declares no status, the page carries none, or the read failed. `info` also
+  carries `page_status_available`, the statuses the page's **space** offers,
+  which is `[]` for a space offering none and `null` when that read failed —
+  and never includes a custom status of your own, which the space does not
+  offer to anyone else.
 - **`create`'s preflight abort** (any file failing means nothing is created)
   lists every input file — failed ones with an `error`, the rest as
   `not_created` — and sets `summary.aborted: true`.

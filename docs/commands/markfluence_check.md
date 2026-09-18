@@ -8,7 +8,8 @@ Validate one or more markdown FILEs against the converter and frontmatter
 rules, with no network access and no credentials -- fast, safe, and
 CI/agent-friendly. Reports conversion warnings and broken image/link
 references, and metadata sanity (parseable, page_width valid, page_id
-numeric when present). Each file is processed independently; the command
+numeric when present, page_status non-empty when present). Each file is
+processed independently; the command
 exits non-zero if any file is broken or failed outright. Warnings alone do
 not fail.
 
@@ -18,6 +19,11 @@ when its file is one of the FILEs given, so one bad entry never blocks
 checking the rest of a repository. Two locations naming different pages is
 an error; a file keeping its own keys in a project that uses 'pages:' is a
 warning, since both work.
+
+One thing check cannot decide: whether a page_status: names a status the
+space actually offers. A space's statuses are its own configuration, read
+from Confluence, and check makes no requests -- so an empty page_status is
+reported and a misspelled one is not. update and create check the name.
 
 "link not resolved: TARGET" means TARGET is a sibling .md file that exists
 under the documentation root but has no page_id yet -- the normal state of

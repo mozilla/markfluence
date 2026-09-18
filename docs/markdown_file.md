@@ -10,6 +10,7 @@ space: ENG
 parent: null
 page_id: 1234567890
 page_width: max
+page_status: Ready for review
 ---
 
 # Body starts here
@@ -48,6 +49,7 @@ A page genuinely titled `null` is written `title: "null"`.
 | `title` | text (**required**) | The Confluence page title. |
 | `labels` | a list of label names, e.g. `[ci/cd, howto]` | The page's labels. **Present means asserted exactly** — a label on the page that the file does not list is removed — and `labels: []` removes them all. **Absent means untouched**, so a page labeled by hand is safe from a run that never mentioned labels. Only `global:` labels are managed; a `my:`/`team:` label is shown by `info` and never written or removed — and if an unmanaged label shares a name with a surplus managed one, the removal is skipped with a warning, because Confluence's removal takes a name with no prefix and would delete the personal label instead. Names are lowercased (with a warning) since Confluence does that anyway; anything else invalid is an error before any write. To adopt a page labeled in the UI, `info` shows what it carries and you copy it into the file — nothing writes the file for you. |
 | `page_width` | `narrow`, `wide`, or `max` | The published page width (the UI's "Adjust width" options; `narrow`/`wide`/`max` map to the `default`/`full-width`/`max` appearance properties). A declared width is **asserted on every publish**, so a width set in the Confluence UI is overwritten unless the file matches. The two verbs differ on what *absent* means: `create` defaults to `max`, while `update` leaves the live width alone and makes no width request at all. `--page-width` and a project-wide `page_width:` both count as declared (see below). |
+| `page_status` | the display name of a status the page's **space** offers, e.g. `Ready for review` | The coloured lozenge Confluence shows beside the page title. **Present means asserted**, **absent means untouched** — and untouched literally: no verb even reads the page's status for a file that does not declare one. A space's statuses are its own configuration rather than a fixed vocabulary, so a name matching none of them fails the file and the error lists the ones the space has; `info` lists them too (`page_status/available`). The match ignores case, since only the status's id is ever sent to Confluence — so `ready for review` publishes, and `read`/`export` write the space's own spelling back. A *custom* status is refused even when your own Confluence picker offers it: those belong to your account, not the space, so a file naming one would publish for you and fail for everyone else. There is **no way to clear** a status from a file — `page_status:` with no value is an error, not an instruction — because every empty spelling of a scalar is indistinguishable from an unfinished edit; clear it in the UI. Writing one bumps the page version, so a status that already matches is left alone. |
 
 To create a page, you only need to specify the `title` in the frontmatter.
 
@@ -65,6 +67,11 @@ page_width: max
 The chain is **flag > frontmatter > project file** — the answer closest to the
 content wins — and the project file is only consulted when both levels above it
 are silent, so it never conflicts with either.
+
+`page_status` is deliberately **not** one of these. A width is house style, which
+a whole tree can sensibly share; a status is a claim about one page's maturity,
+and a project-wide `page_status: Rough draft` would assert something false about
+most of the tree on every publish.
 
 ### The same block, somewhere else
 
