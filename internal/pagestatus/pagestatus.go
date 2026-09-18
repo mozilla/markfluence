@@ -59,18 +59,16 @@ func Declared(fields map[string]string) (string, bool, error) {
 	return name, true, nil
 }
 
-// Resolve turns a declared name into the status to write, asking probePageID's
-// space what it offers.
+// Resolve turns a declared name into the status to write, asking what pageID
+// itself may be given.
 //
-// probePageID is any page in the target space -- the page being published for
-// update, the space homepage for create, which has no page of its own yet. The
-// vocabulary route is per-page but its answer is a property of the space, so any
-// page in it is a probe.
-//
-// spaceID is that space, and is only the cache key: the caller always has it
-// already (update from the page it fetched, create from the space it resolved),
-// so passing it costs nothing and saves this package a lookup of its own. Pass
-// "" to skip caching.
+// It must be the page the status will be written to, and that is not a
+// convenience: the vocabulary is per **(caller, page)**, not per space. The
+// same account, in one space, was offered four statuses on a page it had
+// created and three on a page it had not -- and the write enforces the
+// difference, with `User is not permitted to use this ContentState on this
+// content.` Asking a different page in the same space is therefore a guess,
+// and caching one page's answer for another is a wrong one.
 //
 // The match is case-insensitive, and this is the one place that decides so.
 // Unlike labels -- which repairs case and warns, because it sends the author's
@@ -84,10 +82,8 @@ func Declared(fields map[string]string) (string, bool, error) {
 // because that list is the only place an author can learn it: the vocabulary is
 // per-space server state, so there is nothing for --help to document and nothing
 // completion can offer (it may not call Confluence).
-func Resolve(
-	c *client.ConfluenceClient, cache *Cache, spaceID, probePageID, name string,
-) (client.ContentState, error) {
-	available, err := cache.available(c, spaceID, probePageID)
+func Resolve(c *client.ConfluenceClient, pageID, name string) (client.ContentState, error) {
+	available, err := c.AvailableStates(pageID)
 	if err != nil {
 		return client.ContentState{}, err
 	}
@@ -100,7 +96,8 @@ func Resolve(
 		return client.ContentState{}, unknownStatus(name, available)
 	default:
 		return client.ContentState{}, fmt.Errorf(
-			"%s %q matches more than one status in this space (%s); write it exactly as the space spells it",
+			"%s %q matches more than one of this page's statuses (%s); "+
+				"write it exactly as Confluence spells it",
 			Field, name, strings.Join(names(matches), ", "))
 	}
 }
@@ -118,26 +115,32 @@ func matching(states []client.ContentState, name string) []client.ContentState {
 }
 
 // unknownStatus is the error an unmatched name gets. It names every status the
-// space offers, since a validation failure is where most authors will first
-// learn what the space allows.
+// page can be given, since a validation failure is where most authors will
+// first learn what is allowed.
+//
+// "This page", not "this space", and the wording is deliberate: Confluence
+// decides the list per (caller, page), not per space -- one account was offered
+// four statuses on a page it had created and three on a page in the same space
+// that it had not. Saying "this space offers" would send an author looking at
+// space settings for a difference that is not there.
 //
 // A name matching one of the caller's *custom* statuses gets its own message.
-// Those follow the account rather than the space, so the file works for whoever
-// created the status and fails for everyone else -- and a message listing the
-// space's statuses without mentioning the one the author can plainly see in
-// Confluence's own picker is how that becomes an unresolvable bug report.
+// Those follow the account, so the file works for whoever created the status
+// and fails for everyone else -- and a message listing what the page allows
+// without mentioning the one the author can plainly see in Confluence's own
+// picker is how that becomes an unresolvable bug report.
 func unknownStatus(name string, available client.StateVocabulary) error {
 	if len(matching(available.Custom, name)) > 0 {
 		return fmt.Errorf(
-			"%s %q is one of your own custom statuses, not one space offers; "+
-				"only a space's own statuses can be published from a file, since a "+
-				"custom one exists for your account alone. This space offers %s",
+			"%s %q is one of your own custom statuses, which cannot be published "+
+				"from a file: a custom status exists for your account alone, so the "+
+				"file would fail for everyone else. This page can be given %s",
 			Field, name, strings.Join(names(available.Space), ", "))
 	}
 	if len(available.Space) == 0 {
-		return fmt.Errorf("%s %q: this space offers no page statuses", Field, name)
+		return fmt.Errorf("%s %q: this page can be given no statuses", Field, name)
 	}
-	return fmt.Errorf("invalid %s %q; this space offers %s",
+	return fmt.Errorf("invalid %s %q; this page can be given %s",
 		Field, name, strings.Join(names(available.Space), ", "))
 }
 
@@ -219,54 +222,22 @@ func Read(c *client.ConfluenceClient, pageID string) (*client.ContentState, erro
 	return c.PageState(pageID)
 }
 
-// Cache holds each space's status vocabulary for the length of a run, so a
-// batch asks once instead of once per file.
+// Available lists the statuses this page may be given, for reporting rather
+// than validation -- info's row. The order is the one the route reports, which
+// is the order Confluence's picker shows and therefore the order an author
+// recognises.
 //
-// Keyed by space id rather than by the page id the route takes, because the
-// route reports a property of the space: keying by page would re-request for
-// every file in a tree, which is the whole cost this exists to remove. Threaded
-// in from the caller the way project.Cache and pagedoc.UserCache are, and like
-// them it assumes one goroutine. A nil Cache works and caches nothing, which is
-// what single-page callers pass.
-type Cache struct {
-	bySpace map[string]client.StateVocabulary
-}
-
-// NewCache returns an empty cache, good for one run.
-func NewCache() *Cache {
-	return &Cache{bySpace: map[string]client.StateVocabulary{}}
-}
-
-// available reports the statuses probePageID's space offers, remembered against
-// spaceID. A nil cache, or an empty spaceID, reads through every time.
-func (ca *Cache) available(
-	c *client.ConfluenceClient, spaceID, probePageID string,
-) (client.StateVocabulary, error) {
-	if ca == nil || spaceID == "" {
-		return c.AvailableStates(probePageID)
-	}
-	if states, ok := ca.bySpace[spaceID]; ok {
-		return states, nil
-	}
-	states, err := c.AvailableStates(probePageID)
-	if err != nil {
-		return client.StateVocabulary{}, err
-	}
-	ca.bySpace[spaceID] = states
-	return states, nil
-}
-
-// Available lists the statuses a page's space offers, for reporting rather than
-// validation -- info's row. The order is the space's own, which is the order
-// Confluence's picker shows and therefore the order an author recognises.
+// "This page", not "this space": see Resolve. info is reporting what the page
+// in front of it can hold, which is the useful answer and also the only
+// accurate one.
 func Available(c *client.ConfluenceClient, pageID string) ([]client.ContentState, error) {
 	states, err := c.AvailableStates(pageID)
 	if err != nil {
 		return nil, err
 	}
-	// The space's own, not the union: reporting a caller's custom statuses as
-	// something a page_status: line may say would be wrong for anyone else
-	// reading the same page.
+	// The space's own, not the union: a custom status belongs to the account
+	// that made it, so reporting one as something a page_status: line may say
+	// would be wrong for anyone else reading the same page.
 	return states.Space, nil
 }
 

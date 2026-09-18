@@ -18,7 +18,6 @@ import (
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/pagemeta"
-	"github.com/mozilla/markfluence/internal/pagestatus"
 	"github.com/mozilla/markfluence/internal/project"
 	"github.com/mozilla/markfluence/internal/schematest"
 	"github.com/mozilla/markfluence/internal/ui"
@@ -242,7 +241,7 @@ func buildRecords(t *testing.T, c *client.ConfluenceClient, files []string) []re
 
 	var records []record
 	for _, f := range files {
-		r, err := resolveFile(f, c, inSetAbs, spaceCache, roots, indexes, pagestatus.NewCache(), map[string]string{})
+		r, err := resolveFile(f, c, inSetAbs, spaceCache, roots, indexes)
 		if err != nil {
 			t.Fatalf("resolveFile(%s): %v", f, err)
 		}

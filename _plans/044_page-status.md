@@ -76,8 +76,18 @@ routes are the two that do not work: `GET /space/{key}/state` returned four
 states for `AGILE` where the real answer is three, and
 `GET /space/{key}/state/settings` — which is correct — 403s for anyone who is
 not a space admin. So validation reads `GET /content/{pageId}/state/available`,
-which an ordinary author can call. Verified stable across four pages in one
-space, which is what makes any page in the space a legitimate probe.
+which an ordinary author can call, and which must be asked of the page the
+status is going on.
+
+**Superseded after implementation, by live testing with a second account**
+(2026-09-18): this said "verified stable across four pages in one space, which
+is what makes any page in the space a legitimate probe". That held for one
+account and does not generalise. The list is per (caller, page) — the same
+account saw four statuses on a page it had created and three on one in the same
+space that it had not, and the write enforces it — and the route needs *edit*
+permission on the page it is asked about. What changed as a result: there is no
+vocabulary cache, and `create` resolves the name after the page exists rather
+than against a probe. See [docs/confluence/page-status.md](../docs/confluence/page-status.md).
 
 **Only `spaceContentStates` are valid; `customContentStates` are refused.** The
 custom half of that response follows the **account**, not the space: a state
@@ -142,21 +152,16 @@ is the same property `labels` pins for an absent key, and it is what keeps this
 free for the trees that do not use it. Declared, it costs two GETs and at most
 one PUT per page; the `state/available` read is cached per space for the run.
 
-**`create` validates against the space homepage.** Preflight has no page id yet,
-and validating after the page exists is the #127 failure mode — a created page
-carrying no status and a warning the author has to act on by hand. The space's
-`homepageId` is a page id in the target space that always exists and that
-`create` can get while resolving the space, and the vocabulary a page reports is
-a property of its space (verified across four pages in one). So preflight
-resolves the name there, beside `resolveWidth` and the label validation, and a
-bad name aborts the batch before anything is reserved. The homepage id needs no new
-route: it is a field of the `GET /wiki/api/v2/spaces?keys=` response
-`ResolveSpaceID` already reads, so the change there is one field on a struct
-plus a sibling that returns it (not a new signature on `ResolveSpaceID`, which
-has five callers that want the id alone). It is a second *request* to that
-route rather than a free ride on the first — `resolveSpace` is not memoized —
-bounded to once per space per run by `create`'s own cache, and not made at all
-for a file that declares no status.
+**`create` validates against the space homepage.** *Superseded — see the note
+under "The vocabulary comes from the page" above.* The reasoning below was
+right about the problem (#127: validating after the page exists leaves a
+created page with no status) and wrong about the remedy, because it assumed the
+answer was a property of the space. It is not, so there is no probe to use and
+`create` resolves after the page exists, warning rather than refusing.
+
+> Preflight has no page id yet, and validating after the page exists is the
+> #127 failure mode. The space's `homepageId` is a page id in the target space
+> that always exists, so preflight resolves the name there.
 
 **`page_status` is a visible field in `pagemeta`, not a coordinate.** A
 disagreement between frontmatter and a `pages:` entry warns and frontmatter
@@ -291,7 +296,6 @@ document with the command's own builder.
 | file | change |
 |---|---|
 | `internal/client/state.go` | new |
-| `internal/client/client.go` | `homepageId` beside `ResolveSpaceID` |
 | `internal/pagestatus/pagestatus.go` | new |
 | `cmd/{update,create,check,info,read,export,diff}/` | field handling and `--json` |
 | `internal/frontmatter/frontmatter.go` | `scalarFields` |

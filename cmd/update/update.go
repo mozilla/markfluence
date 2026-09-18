@@ -145,14 +145,10 @@ func run(cmd *cobra.Command, args []string) error {
 	// One cache for the batch: a batch of files mentioning the same on-call
 	// rotation resolves each person once, not once per file.
 	users := pagedoc.NewUserCache()
-	// One cache for the batch: a space's page-status vocabulary is one request
-	// per *space*, not per file, and a tree normally lives in one space.
-	statuses := pagestatus.NewCache()
-
 	failures := 0
 	results := make([]*updateResult, 0, len(args))
 	for _, filename := range args {
-		r := processFile(filename, c, roots, indexes, users, logs, statuses)
+		r := processFile(filename, c, roots, indexes, users, logs)
 		recordAction(logs, r)
 		results = append(results, r)
 		if !ui.IsJSON() {
@@ -198,7 +194,7 @@ func run(cmd *cobra.Command, args []string) error {
 // performs no output itself; the caller renders the result (human lines or JSON).
 func processFile(
 	filename string, c *client.ConfluenceClient, roots *project.Cache, indexes *linkindex.Cache,
-	users *pagedoc.UserCache, logs *actionlog.Cache, statuses *pagestatus.Cache,
+	users *pagedoc.UserCache, logs *actionlog.Cache,
 ) *updateResult {
 	r := &updateResult{file: filename, dryRun: dryRun}
 	mf, err := frontmatter.ParseFile(filename)
@@ -365,11 +361,15 @@ func processFile(
 	// a status no API route can delete (docs/confluence/page-status.md) -- and
 	// after the divergence check, which is a request a refused file must not
 	// pay for, the same rule the merge-base read above follows. A name matching
-	// nothing is a local failure carrying what the space does offer, which is
+	// nothing is a local failure carrying what the page does offer, which is
 	// the main way an author learns the vocabulary at all.
+	//
+	// Asked of this page rather than of its space, and not cached across a
+	// batch: the vocabulary is per (caller, page), so another page's answer is
+	// a guess -- see pagestatus.Resolve.
 	var status client.ContentState
 	if statusDeclared {
-		status, err = pagestatus.Resolve(c, statuses, page.SpaceID, pageID, statusName)
+		status, err = pagestatus.Resolve(c, pageID, statusName)
 		if err != nil {
 			return r.fail(err, jsonout.CodeOr(err, jsonout.CodeValidation))
 		}

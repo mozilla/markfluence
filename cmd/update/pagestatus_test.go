@@ -11,7 +11,6 @@ import (
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/pagedoc"
-	"github.com/mozilla/markfluence/internal/pagestatus"
 	"github.com/mozilla/markfluence/internal/project"
 )
 
@@ -50,7 +49,7 @@ func statusServer(t *testing.T, liveState string) (*client.ConfluenceClient, *[]
 func publishWith(t *testing.T, c *client.ConfluenceClient, path string) *updateResult {
 	t.Helper()
 	return processFile(path, c, project.NewCache(""), linkindex.NewCache(),
-		pagedoc.NewUserCache(), actionlog.NewCache(), pagestatus.NewCache())
+		pagedoc.NewUserCache(), actionlog.NewCache())
 }
 
 // stateRequests filters the recorded paths down to the state routes.

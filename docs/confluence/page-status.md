@@ -106,6 +106,62 @@ plus *custom states, which follow the caller*. Validating a committed
 frontmatter field against the union would make the same file valid for one
 person and invalid for another.
 
+### The vocabulary is per (caller, page) — not per space
+
+**Verified 2026-09-18**, with a scoped service-account token given collaborator
+access to a personal space, alongside that space owner's own token. This
+supersedes the "any page in the space is a probe" reading of the section below:
+that held across four pages *for one account*, and does not hold across
+accounts or across pages with different permissions.
+
+`GET /content/{id}/state/available`, same space, same account (the service
+account), two pages:
+
+| page | `spaceContentStates` |
+|---|---|
+| one the account had created | Rough draft, In progress, Ready for review, **Verified** |
+| one it had not (owned by the space owner) | Rough draft, In progress, Ready for review |
+
+The space owner's own token saw all four on both. So `Verified` is gated on
+something about the caller's relationship to the individual page, not on space
+configuration — and `GET /space/{key}/state` reported all four to the service
+account throughout, which is a second way that route misleads.
+
+**The filter is enforced on write, not merely on display.** `PUT` of the hidden
+status's id against a page that did not offer it:
+
+```
+403 PermissionException: User is not permitted to use this ContentState on this content.
+```
+
+Three consequences, all of which markfluence now depends on:
+
+- The page to ask is **the page the status will be written to**. `update` does
+  exactly that. Nothing may cache one page's answer for another, which is why
+  there is no vocabulary cache.
+- `create` cannot validate a name up front at all: the only authoritative page
+  is the one it has not made yet. Probing the parent or the space homepage
+  answers a different question — measured refusing `Verified` for a page that
+  then accepted it.
+- An error message must say "this page can be given …", never "this space
+  offers …", or it sends an author to space settings for a difference that is
+  not there.
+
+### `state/available` needs **edit** permission on the page it is asked about
+
+Same probes. An account with read access but no edit gets:
+
+```
+403 PermissionException: User does not have Page edit permission.
+```
+
+which is consistent with the route sitting behind `write:confluence-content`.
+Two things follow. It is a free, write-free "can this account edit this page?"
+probe, which is how the permission half of the testing above was done without
+creating anything. And the space **homepage** is the worst possible probe for a
+collaborator account: a space can grant page creation while keeping its
+homepage restricted, which is exactly what was measured.
+
 ### `space/{key}/state` returns the product defaults, not the space's list
 
 This is the trap. For `AGILE`, the two routes disagree:
@@ -126,10 +182,10 @@ states have been materialised (real ids rather than `0`-`3`), both routes agree
 on four.
 
 `state/available`'s ids are array indices in the unmaterialised case, which is
-consistent with it returning the space's real list while `space/{key}/state`
-returns the hardcoded four. Whichever way round the implementation is,
-`space/{key}/state` demonstrably reports a state the space does not offer, so it
-cannot be used to validate anything. This is the README's first trap in
+consistent with it returning the real list while `space/{key}/state` returns the
+hardcoded four. Whichever way round the implementation is, `space/{key}/state`
+demonstrably reports a state the caller cannot use, so it cannot be used to
+validate anything. This is the README's first trap in
 miniature: the cheap route answers plausibly and is wrong, and only comparing it
 against another answer shows it.
 
