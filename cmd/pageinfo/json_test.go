@@ -128,7 +128,7 @@ func TestJSONResultNoAuthorWhenIDMissing(t *testing.T) {
 	}
 }
 
-// TestSchemaConformance validates real info envelopes (success and the
+// TestSchemaConformance validates real page-info envelopes (success and the
 // operational-failure single-target shape) against the published JSON Schema.
 func TestSchemaConformance(t *testing.T) {
 	success := jsonout.NewEnvelope("page-info", []any{fullReport().jsonResult()},

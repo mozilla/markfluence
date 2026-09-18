@@ -461,7 +461,7 @@ from it — without reading it out of this repository:
 
 ```console
 $ markfluence schema | jq -r '.properties.command.enum | join(" ")'
-info read update create check diff children find search user-find attachment-list attachment-upload attachment-download export
+page-info read update create check diff children find search user-find attachment-list attachment-upload attachment-download export
 
 $ markfluence update docs/*.md --json > out.json
 $ markfluence schema > schema.json

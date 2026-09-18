@@ -177,6 +177,6 @@ func TestRunJSONOutput(t *testing.T) {
 		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
 	}
 	if env.Command != "page-info" || len(env.Results) != 1 || env.Results[0].PageID != "1" {
-		t.Errorf("envelope = %+v, want command=info with one result page_id=1", env)
+		t.Errorf("envelope = %+v, want command=page-info with one result page_id=1", env)
 	}
 }
