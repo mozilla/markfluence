@@ -828,20 +828,55 @@ func (c *ConfluenceClient) GetPageBodyOrNil(pageID string) (*Page, error) {
 
 // ResolveSpaceID resolves a space key to its numeric space id, or "" if unknown.
 func (c *ConfluenceClient) ResolveSpaceID(spaceKey string) (string, error) {
+	space, err := c.resolveSpace(spaceKey)
+	if err != nil || space == nil {
+		return "", err
+	}
+	return space.ID, nil
+}
+
+// ResolveSpaceHomepage resolves a space key to the id of its homepage, or "" if
+// the space is unknown.
+//
+// It is a sibling of ResolveSpaceID rather than a widening of it because the
+// homepage is wanted in one place and the id in five, and it costs no extra
+// request: homepageId is a field of the same /spaces response.
+//
+// Its one caller is create, which needs *some* page id in the target space to
+// ask what page statuses the space offers (the vocabulary route is per-page --
+// see AvailableStates) at a point where the page it is about to make does not
+// exist yet. A space always has a homepage, which makes it the one page id
+// available before anything is published.
+func (c *ConfluenceClient) ResolveSpaceHomepage(spaceKey string) (string, error) {
+	space, err := c.resolveSpace(spaceKey)
+	if err != nil || space == nil {
+		return "", err
+	}
+	return space.HomepageID, nil
+}
+
+// spaceSummary is the part of a v2 space markfluence reads.
+type spaceSummary struct {
+	ID         string `json:"id"`
+	HomepageID string `json:"homepageId"`
+}
+
+// resolveSpace looks a space up by key, returning nil when there is no such
+// space. An unknown key is not an error here: the callers report it themselves,
+// in their own words.
+func (c *ConfluenceClient) resolveSpace(spaceKey string) (*spaceSummary, error) {
 	var out struct {
-		Results []struct {
-			ID string `json:"id"`
-		} `json:"results"`
+		Results []spaceSummary `json:"results"`
 	}
 	err := c.doJSON(http.MethodGet, c.baseURL+"/wiki/api/v2/spaces",
 		url.Values{"keys": {spaceKey}}, nil, &out, timeoutRead)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if len(out.Results) == 0 {
-		return "", nil
+		return nil, nil
 	}
-	return out.Results[0].ID, nil
+	return &out.Results[0], nil
 }
 
 // Page statuses accepted by the v2 pages route's status filter. The parameter
