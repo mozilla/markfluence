@@ -508,3 +508,23 @@ func TestResolveOriginOnOverride(t *testing.T) {
 		t.Errorf("Origin[page_width] = %q, want manifest", r.Origin["page_width"])
 	}
 }
+
+// page_status is a visible field, not a coordinate: a disagreement warns and
+// frontmatter wins, like title/page_width/labels. It cannot publish over the
+// wrong page, which is what the coordinate grading exists for.
+func TestPageStatusDisagreementWarnsAndFrontmatterWins(t *testing.T) {
+	root := rootWith(t, "pages:\n  a.md:\n    page_id: 1\n    page_status: Rough draft\n")
+	r, err := Resolve("a.md", parse(t, "page_status: Verified\n"), root)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if r.Fields["page_status"] != "Verified" {
+		t.Errorf("page_status = %q, want the frontmatter value", r.Fields["page_status"])
+	}
+	if len(r.Warnings) != 1 || !strings.Contains(r.Warnings[0], "page_status") {
+		t.Errorf("Warnings = %v, want one naming page_status", r.Warnings)
+	}
+	if r.Origin["page_status"] != FromFrontmatter {
+		t.Errorf("Origin[page_status] = %q, want frontmatter", r.Origin["page_status"])
+	}
+}

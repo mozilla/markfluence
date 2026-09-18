@@ -84,10 +84,11 @@ var typedFields = map[string]bool{"page_id": true, "parent": true}
 // names, and deliberately so: the alternative -- allowing only `labels` to be a
 // sequence -- would refuse an unknown list key like `reviewers`, which is the
 // generality #21 and #100 need. Unknown keys stay permissive in both
-// directions; these five do not, because their readers return a plain string
-// with nowhere to put an error.
+// directions; the names below do not, because their readers return a plain
+// string with nowhere to put an error.
 var scalarFields = map[string]bool{
 	"title": true, "space": true, "parent": true, "page_id": true, "page_width": true,
+	"page_status": true,
 }
 
 // keyLess orders two frontmatter keys: fieldOrder first, in that order, then
