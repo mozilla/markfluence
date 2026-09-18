@@ -101,3 +101,25 @@ fold it into `info` behind an opt-in flag instead, so default `info` stays compa
 - **Empty / error.** No properties → `content properties: (none)`. A fetch failure →
   `content properties: (could not fetch: <error>)` and **exit 0** (tolerant, like
   the width read — `info` is a display command and the core metadata still renders).
+
+## Renamed to `page-info` (2026-09-18)
+
+The command this plan describes is now **`markfluence page-info`**. Everything
+above still describes what it does; only the name changed, and the body is left
+as written because a plan records what was decided when it was written.
+
+The reason is in `_plans/045_space-info.md`: once `space-info` exists (#170), a
+bare `info` reads as though it were the general case and the space one a special
+case, when they are siblings. `page-info`/`space-info` also complete together
+under `markfluence <TAB>`, the way `attachment-<TAB>` already does.
+
+Breaking, with no alias — markfluence is unreleased, so there is nothing to be
+compatible with, and an alias would make permanent the two-names-for-one-idea
+the rename removes. The `--json` `command` value changed with it, so the schema
+moved too.
+
+Two other things in this plan are older than the rename and are **not** how
+markfluence works now: the file paths are the pre-port Python ones
+(`src/markfluence/info.py`, `cli.py` — the Go implementation is `cmd/pageinfo/`),
+and `--json` is described here as deferred, which #138 later built. `fix`, cited
+above for its blank-aware `page_id` reading, was removed in #151.
