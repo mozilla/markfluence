@@ -292,6 +292,10 @@
       "description": "null when the file declares no page_status, or when asserting it failed.",
       "oneOf": [{ "$ref": "#/$defs/pageStatus" }, { "type": "null" }]
     },
+    "pageStatusNamesOrNull": {
+      "description": "The page statuses a space offers, in the space's own order; [] for a space that offers none, null when the fetch failed.",
+      "oneOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }]
+    },
     "author": {
       "type": "object",
       "additionalProperties": false,
@@ -376,14 +380,18 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "ok", "page_id", "title", "page_status", "space", "parent", "parent_type",
-        "version", "page_width", "labels", "created", "updated", "message", "url", "properties"
+        "ok", "page_id", "title", "content_status", "space", "parent", "parent_type",
+        "version", "page_width", "page_status", "page_status_available", "labels",
+        "created", "updated", "message", "url", "properties"
       ],
       "properties": {
         "ok": { "const": true },
         "page_id": { "type": "string" },
         "title": { "type": "string" },
-        "page_status": { "type": "string" },
+        "content_status": {
+          "description": "Confluence's content status: current, archived or trashed. Named apart from page_status, which is the lozenge beside the title, and from the action commands' own result status.",
+          "type": "string"
+        },
         "space": { "type": "string" },
         "parent": { "$ref": "#/$defs/stringOrNull" },
         "parent_type": { "$ref": "#/$defs/parentTypeOrNull" },
@@ -394,6 +402,11 @@
           "properties": { "number": { "type": "integer" } }
         },
         "page_width": { "$ref": "#/$defs/pageWidthOrNull" },
+        "page_status": {
+          "description": "The page status the page carries -- the lozenge beside its title -- null when it has none or the fetch failed.",
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "page_status_available": { "$ref": "#/$defs/pageStatusNamesOrNull" },
         "labels": { "$ref": "#/$defs/labelInfoListOrNull" },
         "created": { "$ref": "#/$defs/stampOrNull" },
         "updated": { "$ref": "#/$defs/stampOrNull" },
@@ -419,8 +432,8 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "ok", "page_id", "title", "space", "parent", "parent_type", "page_width", "labels",
-        "format", "body"
+        "ok", "page_id", "title", "space", "parent", "parent_type", "page_width",
+        "page_status", "labels", "format", "body"
       ],
       "properties": {
         "ok": { "const": true },
@@ -430,6 +443,10 @@
         "parent": { "$ref": "#/$defs/stringOrNull" },
         "parent_type": { "$ref": "#/$defs/parentTypeOrNull" },
         "page_width": { "$ref": "#/$defs/pageWidthOrNull" },
+        "page_status": {
+          "description": "The page status that went into the rendered frontmatter; null when the page has none or the fetch failed, which emit the same document -- no page_status key at all.",
+          "$ref": "#/$defs/stringOrNull"
+        },
         "labels": {
           "description": "The managed labels that went into the rendered frontmatter, sorted; null when the fetch failed. A different shape from info's labels on purpose: info describes the page, read describes the document it produced.",
           "oneOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }]
@@ -444,7 +461,7 @@
       "additionalProperties": false,
       "required": ["field", "confluence", "local", "source", "comparable", "note"],
       "properties": {
-        "field": { "enum": ["title", "space", "parent", "page_width", "labels"] },
+        "field": { "enum": ["title", "space", "parent", "page_status", "page_width", "labels"] },
         "confluence": {
           "description": "The page's value; null when it could not be read, which is the one case comparable is false. A list is spelled in frontmatter's flow form, [a, b].",
           "$ref": "#/$defs/stringOrNull"

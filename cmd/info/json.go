@@ -6,28 +6,39 @@ import (
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/labels"
+	"github.com/mozilla/markfluence/internal/pagestatus"
 )
 
 // jsonInfoResult is info's --json result shape. Keys are always present (per the
 // stable-schema rule); optional fetches that failed and top-level pages surface
-// as null. page_status is Confluence's page status, renamed to avoid colliding
-// with the action commands' result-status concept.
+// as null.
+//
+// content_status is Confluence's content status -- current/archived/trashed --
+// named apart from the action commands' result-status concept and, since #168,
+// from page_status, which is the lozenge beside the title. Three things wearing
+// one word is why neither of these is called "status".
 type jsonInfoResult struct {
-	OK         bool                 `json:"ok"`
-	PageID     string               `json:"page_id"`
-	Title      string               `json:"title"`
-	PageStatus string               `json:"page_status"`
-	Space      string               `json:"space"`
-	Parent     *string              `json:"parent"`
-	ParentType *string              `json:"parent_type"`
-	Version    jsonVersion          `json:"version"`
-	PageWidth  *jsonout.PageWidth   `json:"page_width"`
-	Labels     *[]jsonout.LabelInfo `json:"labels"`
-	Created    *jsonout.Stamp       `json:"created"`
-	Updated    *jsonout.Stamp       `json:"updated"`
-	Message    string               `json:"message"`
-	URL        string               `json:"url"`
-	Properties []jsonProperty       `json:"properties"`
+	OK            bool               `json:"ok"`
+	PageID        string             `json:"page_id"`
+	Title         string             `json:"title"`
+	ContentStatus string             `json:"content_status"`
+	Space         string             `json:"space"`
+	Parent        *string            `json:"parent"`
+	ParentType    *string            `json:"parent_type"`
+	Version       jsonVersion        `json:"version"`
+	PageWidth     *jsonout.PageWidth `json:"page_width"`
+	// PageStatus is the status the page carries, null when it has none or the
+	// fetch failed. PageStatusAvailable is what the space offers -- null on a
+	// failed fetch, [] for a space that offers none, which is a real answer
+	// and the reason these two cannot share one field.
+	PageStatus          *string              `json:"page_status"`
+	PageStatusAvailable *[]string            `json:"page_status_available"`
+	Labels              *[]jsonout.LabelInfo `json:"labels"`
+	Created             *jsonout.Stamp       `json:"created"`
+	Updated             *jsonout.Stamp       `json:"updated"`
+	Message             string               `json:"message"`
+	URL                 string               `json:"url"`
+	Properties          []jsonProperty       `json:"properties"`
 }
 
 type jsonVersion struct {
@@ -42,18 +53,29 @@ type jsonProperty struct {
 // jsonResult renders the report as info's JSON result.
 func (r report) jsonResult() jsonInfoResult {
 	res := jsonInfoResult{
-		OK:         true,
-		PageID:     r.id,
-		Title:      r.title,
-		PageStatus: r.status,
-		Space:      r.space,
-		Parent:     nullable(r.parentID),
-		ParentType: nullable(r.parentType),
-		Version:    jsonVersion{Number: r.versionNum},
-		Created:    stamp(r.createdAt, r.creatorID, r.creator),
-		Updated:    stamp(r.updatedAt, r.editorID, r.editor),
-		Message:    r.message,
-		URL:        r.url,
+		OK:            true,
+		PageID:        r.id,
+		Title:         r.title,
+		ContentStatus: r.status,
+		Space:         r.space,
+		Parent:        nullable(r.parentID),
+		ParentType:    nullable(r.parentType),
+		Version:       jsonVersion{Number: r.versionNum},
+		Created:       stamp(r.createdAt, r.creatorID, r.creator),
+		Updated:       stamp(r.updatedAt, r.editorID, r.editor),
+		Message:       r.message,
+		URL:           r.url,
+	}
+	if r.pageStatus != nil {
+		name := r.pageStatus.Name
+		res.PageStatus = &name
+	}
+	if r.statusesKnown {
+		names := pagestatus.Names(r.statuses)
+		if names == nil {
+			names = []string{}
+		}
+		res.PageStatusAvailable = &names
 	}
 	if r.widthKnown {
 		w := r.width

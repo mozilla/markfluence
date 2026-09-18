@@ -65,6 +65,7 @@ func TestJSONReadResultMarshal(t *testing.T) {
     "value": "max",
     "default": true
   },
+  "page_status": null,
   "labels": null,
   "format": "markdown",
   "body": "# X\n\nhello"

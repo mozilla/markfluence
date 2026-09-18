@@ -14,6 +14,7 @@ import (
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/pageref"
+	"github.com/mozilla/markfluence/internal/pagestatus"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
@@ -29,9 +30,15 @@ var Cmd = &cobra.Command{
 	Use:   "info PAGE",
 	Short: "Print metadata about a Confluence page",
 	Long: "Print metadata about a Confluence page.\n\n" +
-		"Id, title, status, space, parent, version, page width, labels, the\n" +
-		"created/updated author stamps, and the page URL. An empty field is\n" +
-		"omitted rather than printed blank.\n\n" +
+		"Id, title, content status, space, parent, version, page width, page\n" +
+		"status, labels, the created/updated author stamps, and the page URL. An\n" +
+		"empty field is omitted rather than printed blank.\n\n" +
+		"Two of those wear the word status and mean different things.\n" +
+		"content_status is current, archived or trashed. page_status is the\n" +
+		"coloured lozenge beside the title, and page_status/available lists the\n" +
+		"ones this page's space offers -- which is how to find out what a\n" +
+		"page_status: line in a markdown file may say, since a space's statuses\n" +
+		"are its own configuration rather than a fixed list.\n\n" +
 		"PAGE is a numeric page id, a Confluence page URL, or a markdown file\n" +
 		"whose frontmatter has a page_id.\n\n" +
 		"--properties also lists every one of the page's content properties, which\n" +
@@ -142,6 +149,16 @@ type report struct {
 	// rather than a split it would then have to re-derive.
 	labelsKnown bool
 	labels      []client.Label
+	// pageStatus is the page's status -- the lozenge beside its title -- nil
+	// when it has none *or* when the fetch failed, which info treats alike
+	// because both leave the row out. statusesKnown separates the two for the
+	// available list, where [] and null differ: a space really can offer none.
+	//
+	// Not to be confused with status above, which is the Confluence content
+	// status (current/archived) this command reports as content_status.
+	pageStatus    *client.ContentState
+	statusesKnown bool
+	statuses      []client.ContentState
 }
 
 // buildReport resolves a page (and, when withProps is set, its content
@@ -194,6 +211,18 @@ func buildReport(page *client.Page, c *client.ConfluenceClient, withProps bool) 
 		r.width = jsonout.PageWidth{Value: string(width), Default: !explicit}
 	}
 
+	// Both best-effort, like the width and the labels. The available list is
+	// fetched even when the page carries no status, because "what can I write
+	// here" is the question info is being asked -- there is no other offline
+	// way to learn a space's vocabulary (see internal/pagestatus).
+	if state, err := pagestatus.Read(c, page.ID); err == nil {
+		r.pageStatus = state
+	}
+	if states, err := pagestatus.Available(c, page.ID); err == nil {
+		r.statusesKnown = true
+		r.statuses = states
+	}
+
 	// Best-effort, like the width: a page nobody can label is still worth
 	// describing, so a failed fetch leaves the rows out rather than failing the
 	// command.
@@ -221,11 +250,13 @@ func (r report) human() string {
 	rows := [][2]string{
 		{"id", r.id},
 		{"title", r.title},
-		{"status", r.status},
+		{"content_status", r.status},
 		{"space", r.space},
 		{"parent", parent},
 		{"version", versionNumber(r.versionNum)},
 		{"page_width", widthDisplay},
+		{"page_status", pageStatusName(r.pageStatus)},
+		{"page_status/available", strings.Join(pagestatus.Names(r.statuses), ", ")},
 		{"labels", strings.Join(labels.Global(r.labels), ", ")},
 		{"labels/unmanaged", strings.Join(labels.Unmanaged(r.labels), ", ")},
 		{"created", withAuthor(r.createdAt, r.creator)},
@@ -256,6 +287,16 @@ func (r report) human() string {
 		b.WriteString(propertiesSection(r.properties, r.propsErr))
 	}
 	return b.String()
+}
+
+// pageStatusName is the page's status for the human row, empty when it has none
+// or the fetch failed -- an empty row is dropped, which is what every other
+// best-effort row here does.
+func pageStatusName(state *client.ContentState) string {
+	if state == nil {
+		return ""
+	}
+	return state.Name
 }
 
 func propertiesSection(properties []client.Property, err error) string {

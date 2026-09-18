@@ -24,9 +24,13 @@ type pageStub struct {
 	body     string
 	width    string
 	labels   []string
-	// widthFails and labelsFail make those two reads error, which is the
-	// uncomparable case rather than a difference.
-	widthFails, labelsFail bool
+	// status is the page's own page status, empty for a page with none.
+	// statuses is what its space offers; nil means the four this suite uses.
+	status   string
+	statuses []string
+	// widthFails, labelsFail and statusFails make those reads error, which is
+	// the uncomparable case rather than a difference.
+	widthFails, labelsFail, statusFails bool
 }
 
 func (p pageStub) withDefaults() pageStub {
@@ -41,6 +45,9 @@ func (p pageStub) withDefaults() pageStub {
 	}
 	if p.width == "" {
 		p.width = "full-width" // the stored spelling of page_width: max
+	}
+	if p.statuses == nil {
+		p.statuses = []string{"Rough draft", "In progress", "Ready for review", "Verified"}
 	}
 	return p
 }
@@ -57,6 +64,34 @@ func (p pageStub) handler(t *testing.T) http.HandlerFunc {
 			}
 		}
 		switch {
+		case strings.HasSuffix(r.URL.Path, "/state/available"):
+			if p.statusFails {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			states := []map[string]any{}
+			for i, name := range p.statuses {
+				states = append(states, map[string]any{"id": i + 10, "name": name, "color": "#000000"})
+			}
+			write(map[string]any{"spaceContentStates": states, "customContentStates": []any{}})
+		case strings.HasSuffix(r.URL.Path, "/state"):
+			if p.statusFails {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			if p.status == "" {
+				write(map[string]any{})
+				return
+			}
+			for i, name := range p.statuses {
+				if name == p.status {
+					write(map[string]any{"contentState": map[string]any{
+						"id": i + 10, "name": name, "color": "#000000",
+					}})
+					return
+				}
+			}
+			t.Errorf("stub status %q is not in the space's list", p.status)
 		case strings.HasSuffix(r.URL.Path, "/properties"):
 			if p.widthFails {
 				w.WriteHeader(http.StatusInternalServerError)
@@ -419,7 +454,7 @@ func TestUndeclaredFieldsAreNotCompared(t *testing.T) {
 	if o.exit != 0 {
 		t.Errorf("exit = %d, want 0; stderr:\n%s", o.exit, o.stderr)
 	}
-	for _, field := range []string{"title", "space", "parent", "page_width", "labels"} {
+	for _, field := range []string{"title", "space", "parent", "page_status", "page_width", "labels"} {
 		if strings.Contains(o.stderr, field) {
 			t.Errorf("%s was compared though the file declares none:\n%s", field, o.stderr)
 		}
@@ -547,5 +582,72 @@ func TestAttachmentPathIsRelativeToTheFile(t *testing.T) {
 	if err != nil && ui.ExitCode(err) != 0 {
 		t.Fatalf("exit = %d, want 0 (the paths agree)\nstdout:\n%s\nstderr:\n%s",
 			ui.ExitCode(err), stdout, stderr)
+	}
+}
+
+// --- page_status ---------------------------------------------------------------
+
+// A case variant is not a difference: the match is case-insensitive and only the
+// id travels, so the two spellings name one status. This is parent's rule --
+// compare what the value resolves to, not how it is written.
+func TestPageStatusCaseVariantIsNotADifference(t *testing.T) {
+	dir := projectDir(t, "", map[string]string{
+		"runbook.md": "---\npage_id: 1234567890\npage_status: ready for review\n---\n\nHello.\n",
+	})
+	o := runDiff(t, pageStub{body: "<p>Hello.</p>", status: "Ready for review"}, dir, "runbook.md")
+
+	if o.exit != 0 {
+		t.Errorf("exit = %d, want 0; stderr:\n%s", o.exit, o.stderr)
+	}
+	if strings.Contains(o.stderr, "page_status") {
+		t.Errorf("a case variant was reported as a difference:\n%s", o.stderr)
+	}
+}
+
+func TestPageStatusDifferenceIsReported(t *testing.T) {
+	dir := projectDir(t, "", map[string]string{
+		"runbook.md": "---\npage_id: 1234567890\npage_status: Verified\n---\n\nHello.\n",
+	})
+	o := runDiff(t, pageStub{body: "<p>Hello.</p>", status: "Rough draft"}, dir, "runbook.md")
+
+	if o.exit != 1 {
+		t.Fatalf("exit = %d, want 1; stderr:\n%s", o.exit, o.stderr)
+	}
+	if !strings.Contains(o.stderr, "page_status") || !strings.Contains(o.stderr, "Rough draft") {
+		t.Errorf("the status difference is not reported:\n%s", o.stderr)
+	}
+}
+
+// A page with no status at all differs from a file declaring one, and the report
+// says so rather than showing an empty page side.
+func TestPageStatusAgainstAPageWithNone(t *testing.T) {
+	dir := projectDir(t, "", map[string]string{
+		"runbook.md": "---\npage_id: 1234567890\npage_status: Verified\n---\n\nHello.\n",
+	})
+	o := runDiff(t, pageStub{body: "<p>Hello.</p>"}, dir, "runbook.md")
+
+	if o.exit != 1 {
+		t.Fatalf("exit = %d, want 1; stderr:\n%s", o.exit, o.stderr)
+	}
+	if !strings.Contains(o.stderr, "carries no status") {
+		t.Errorf("the report does not say the page has no status:\n%s", o.stderr)
+	}
+}
+
+// A failed read is uncomparable, not different: the declared status may well be
+// the live one, and claiming a difference nobody could check is worse than
+// saying nothing.
+func TestPageStatusFailedFetchIsUncomparable(t *testing.T) {
+	dir := projectDir(t, "", map[string]string{
+		"runbook.md": "---\npage_id: 1234567890\npage_status: Verified\n---\n\nHello.\n",
+	})
+	o := runDiff(t, pageStub{body: "<p>Hello.</p>", statusFails: true}, dir, "runbook.md")
+
+	if o.exit != 0 {
+		t.Errorf("exit = %d, want 0: an uncomparable field is not a difference; stderr:\n%s",
+			o.exit, o.stderr)
+	}
+	if !strings.Contains(o.stderr, "could not be read") {
+		t.Errorf("the report does not say the status could not be compared:\n%s", o.stderr)
 	}
 }

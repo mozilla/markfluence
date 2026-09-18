@@ -23,6 +23,7 @@ import (
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/pageslug"
+	"github.com/mozilla/markfluence/internal/pagestatus"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/ui"
 )
@@ -385,8 +386,9 @@ func SourcesFrom(atts []client.Attachment) map[string]string {
 }
 
 // Frontmatter builds the YAML frontmatter prefix: title, space, parent,
-// page_id, and (best-effort) page_width. A failed page_width read is tolerated
-// -- the field is simply omitted rather than failing the render.
+// page_id, and (best-effort) page_width, page_status and labels. A failed read
+// of any of those is tolerated -- the field is simply omitted rather than
+// failing the render.
 //
 // parentOverride replaces the parent field when set; empty derives it from the
 // page, which is "null" for a top-level page and the parent's id otherwise
@@ -415,20 +417,33 @@ func Frontmatter(c *client.ConfluenceClient, page *client.Page, parentOverride s
 	if live, err := labels.Read(c, page.ID); err == nil {
 		names = labels.Global(live)
 	}
+	// The space's canonical spelling of the status, since that is what the page
+	// carries. A page with no status, and a read that failed, both emit no key
+	// -- the labels rule, and here it needs no argument of its own: there is no
+	// spelling of page_status that clears one, so an emitted empty value would
+	// not parse as an instruction at all.
+	status := ""
+	if state, err := pagestatus.Read(c, page.ID); err == nil && state != nil {
+		status = state.Name
+	}
 	return RenderFrontmatter(
-		page.Title, client.SpaceKeyFromWebUI(page.Links.WebUI), parent, page.ID, width, names)
+		page.Title, client.SpaceKeyFromWebUI(page.Links.WebUI), parent, page.ID, width, status, names)
 }
 
 // RenderFrontmatter assembles the frontmatter block from resolved field values,
 // omitting space/parent/page_width when empty. frontmatter.Render emits them in
 // the canonical order and quotes values as YAML needs.
 //
+// status is empty both when the page has none and when the fetch failed, and
+// emits no key either way, for the labels reason below in its simplest form:
+// nothing clears a status, so there is no empty value worth writing.
+//
 // labels is nil when the fetch failed and empty when the page has none, and the
 // two are written the same way -- no labels: key at all. That differs from
 // update's reading of the field, deliberately: an emitted "labels: []" would
 // tell a later publish to remove every label, which is not something a read of
 // a page with no labels should assert on the author's behalf.
-func RenderFrontmatter(title, space, parent, pageID, width string, labels []string) string {
+func RenderFrontmatter(title, space, parent, pageID, width, status string, labels []string) string {
 	fields := []frontmatter.Field{{Key: "title", Value: title}}
 	if space != "" {
 		fields = append(fields, frontmatter.Field{Key: "space", Value: space})
@@ -439,6 +454,9 @@ func RenderFrontmatter(title, space, parent, pageID, width string, labels []stri
 	fields = append(fields, frontmatter.Field{Key: "page_id", Value: pageID})
 	if width != "" {
 		fields = append(fields, frontmatter.Field{Key: "page_width", Value: width})
+	}
+	if status != "" {
+		fields = append(fields, frontmatter.Field{Key: "page_status", Value: status})
 	}
 	if len(labels) > 0 {
 		fields = append(fields, frontmatter.Field{Key: "labels", List: labels})

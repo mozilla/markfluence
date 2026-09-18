@@ -803,3 +803,38 @@ func TestRunReportsASoftDisagreement(t *testing.T) {
 		t.Errorf("output = %q, want the title-override warning", out)
 	}
 }
+
+// --- page_status ---------------------------------------------------------------
+
+// A present-but-empty page_status is the one half of the field check can decide:
+// both verbs reject it, so no verb makes it valid and there is no false positive
+// to have. It is the title exception's reasoning, applied to a second field.
+func TestRunEmptyPageStatusIsBroken(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "main.md"), "---\ntitle: Main\npage_id: 1\npage_status:\n---\n# Main\n")
+
+	out, err := captureOutput(t, func() error { return run(testCmd(t, ""), []string{filepath.Join(dir, "main.md")}) })
+	if !ui.IsSilent(err) || ui.ExitCode(err) != 1 {
+		t.Fatalf("run = %v, want a silent exit-1 error", err)
+	}
+	if !strings.Contains(out, "page_status") || !strings.Contains(out, "has no value") {
+		t.Errorf("output = %q, want the empty-page_status message", out)
+	}
+}
+
+// The other half is *not* check's to decide, and must not be: a space's statuses
+// are read from Confluence, and check makes no requests. A name that is merely
+// wrong has to pass here, or check would be guessing.
+func TestRunAMisspelledPageStatusIsClean(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "main.md"),
+		"---\ntitle: Main\npage_id: 1\npage_status: Probably Not A Real Status\n---\n# Main\n")
+
+	out, err := captureOutput(t, func() error { return run(testCmd(t, ""), []string{filepath.Join(dir, "main.md")}) })
+	if err != nil {
+		t.Fatalf("run = %v, want success: check cannot know a space's statuses", err)
+	}
+	if strings.Contains(out, "page_status") {
+		t.Errorf("output = %q, want nothing said about a name check cannot validate", out)
+	}
+}

@@ -49,7 +49,7 @@ func TestJSONResultFull(t *testing.T) {
   "ok": true,
   "page_id": "123",
   "title": "Foo",
-  "page_status": "current",
+  "content_status": "current",
   "space": "ENG",
   "parent": "456",
   "parent_type": "page",
@@ -60,6 +60,8 @@ func TestJSONResultFull(t *testing.T) {
     "value": "max",
     "default": true
   },
+  "page_status": null,
+  "page_status_available": null,
   "labels": null,
   "created": {
     "at": "2026-07-01T00:00:00Z",
