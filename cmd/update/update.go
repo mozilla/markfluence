@@ -324,20 +324,6 @@ func processFile(
 	r.versionPrev = page.Version.Number
 	r.url = c.PageURL(page, pageID)
 
-	// The name half of page_status, resolved to the status to write before any
-	// request that could change the page: the file names a status and the wire
-	// format is an id, and a name Confluence does not recognise would *create*
-	// a status no API route can delete (docs/confluence/page-status.md). A name
-	// matching nothing is a local failure carrying what the space does offer,
-	// which is the main way an author learns the vocabulary at all.
-	var status client.ContentState
-	if statusDeclared {
-		status, err = pagestatus.Resolve(c, statuses, page.SpaceID, pageID, statusName)
-		if err != nil {
-			return r.fail(err, jsonout.CodeOr(err, jsonout.CodeValidation))
-		}
-	}
-
 	// The merge base: what this copy was derived from (#149). Read before the
 	// render, because the divergence check below needs no render and a refused
 	// file should pay for nothing.
@@ -371,6 +357,22 @@ func processFile(
 				"`export --force` before publishing, or `update --force` to publish over it",
 			base.PageVersion, page.Version.Number),
 			jsonout.CodeConflict)
+	}
+
+	// The name half of page_status, resolved to the status to write. Before any
+	// request that could change the page -- the file names a status and the wire
+	// format is an id, and a name Confluence does not recognise would *create*
+	// a status no API route can delete (docs/confluence/page-status.md) -- and
+	// after the divergence check, which is a request a refused file must not
+	// pay for, the same rule the merge-base read above follows. A name matching
+	// nothing is a local failure carrying what the space does offer, which is
+	// the main way an author learns the vocabulary at all.
+	var status client.ContentState
+	if statusDeclared {
+		status, err = pagestatus.Resolve(c, statuses, page.SpaceID, pageID, statusName)
+		if err != nil {
+			return r.fail(err, jsonout.CodeOr(err, jsonout.CodeValidation))
+		}
 	}
 
 	index, err := indexes.Get(root)
@@ -495,7 +497,18 @@ func processFile(
 	// the one pass that bumps the page version, so the base has to name where
 	// the page ended up rather than where the body PUT left it.
 	if setAStatus(r) {
-		r.logVersion = pagestatus.VersionAfter(c, pageID, r.versionNew)
+		version, err := pagestatus.VersionAfter(c, pageID, r.versionNew)
+		r.versionFinal = version
+		if err != nil {
+			// Warned rather than swallowed: the recorded base is now one
+			// version behind the page, so the next run of this file will
+			// refuse it as diverged, and this line is the only thing that
+			// explains a conflict markfluence caused itself.
+			r.warnings = append(r.warnings,
+				"page status set, but the page's new version could not be read ("+err.Error()+
+					"); the next update of this file may report a conflict -- re-run this one, "+
+					"or use --force")
+		}
 	}
 
 	r.ok = true
@@ -503,11 +516,11 @@ func processFile(
 	return r
 }
 
-// loggedVersion is the page version to record as this run's base: where the
-// page actually ended up. See updateResult.logVersion.
-func (r *updateResult) loggedVersion() int {
-	if r.logVersion != 0 {
-		return r.logVersion
+// finalVersion is where the page actually ended up: what the base records and
+// what --json reports. See updateResult.versionFinal.
+func (r *updateResult) finalVersion() int {
+	if r.versionFinal != 0 {
+		return r.versionFinal
 	}
 	return r.versionNew
 }
@@ -797,7 +810,7 @@ func recordAction(logs *actionlog.Cache, r *updateResult) {
 		Status:        actionlog.StatusOK,
 		File:          r.logKey,
 		PageID:        r.pageID,
-		PageVersion:   r.loggedVersion(),
+		PageVersion:   r.finalVersion(),
 		PublishSHA256: r.publishSHA,
 	}
 	if !r.ok {
