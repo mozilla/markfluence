@@ -254,8 +254,16 @@ func widthDifference(
 func statusDifference(
 	c *client.ConfluenceClient, page *client.Page, meta pagemeta.Resolved,
 ) (difference, []string, bool) {
-	local, ok := declared(meta, pagestatus.Field)
-	if !ok {
+	// pagestatus.Declared rather than declared(): a present-but-empty value is
+	// silence to the second and a *failure* to the first, and neither verb will
+	// publish such a file. Reporting no row and no warning is the bug the
+	// labels comparison above was fixed for -- "in sync", exit 0, about a file
+	// that cannot be published at all.
+	local, declaredHere, err := pagestatus.Declared(meta.Fields)
+	if err != nil {
+		return difference{}, []string{err.Error()}, false
+	}
+	if !declaredHere {
 		return difference{}, nil, false
 	}
 	d := difference{
@@ -263,13 +271,13 @@ func statusDifference(
 		Source: sourceLabel(meta.Origin[pagestatus.Field]), Comparable: true,
 	}
 
-	live, err := pagestatus.Read(c, page.ID)
-	if err != nil {
+	live, readErr := pagestatus.Read(c, page.ID)
+	if readErr != nil {
 		// Uncomparable, not different, for widthDifference's reason: the
 		// declared status may well be the live one.
 		d.Comparable = false
 		d.Note = "the page's status could not be read"
-		return d, []string{pagestatus.Field + " could not be compared: " + err.Error()}, true
+		return d, []string{pagestatus.Field + " could not be compared: " + readErr.Error()}, true
 	}
 	if live != nil {
 		d.Confluence = live.Name

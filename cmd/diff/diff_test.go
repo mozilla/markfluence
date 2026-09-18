@@ -651,3 +651,18 @@ func TestPageStatusFailedFetchIsUncomparable(t *testing.T) {
 		t.Errorf("the report does not say the status could not be compared:\n%s", o.stderr)
 	}
 }
+
+// A present-but-empty page_status is a file neither verb will publish, so diff
+// must not report it "in sync". The labels comparison was fixed for exactly
+// this: gating the warning on a row made diff exit 0 about an unpublishable
+// file.
+func TestEmptyPageStatusIsWarnedAbout(t *testing.T) {
+	dir := projectDir(t, "", map[string]string{
+		"runbook.md": "---\npage_id: 1234567890\npage_status:\n---\n\nHello.\n",
+	})
+	o := runDiff(t, pageStub{body: "<p>Hello.</p>"}, dir, "runbook.md")
+
+	if !strings.Contains(o.stderr, "page_status") || !strings.Contains(o.stderr, "has no value") {
+		t.Errorf("an unpublishable page_status went unreported:\n%s", o.stderr)
+	}
+}
