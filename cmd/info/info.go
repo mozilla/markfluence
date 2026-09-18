@@ -35,10 +35,12 @@ var Cmd = &cobra.Command{
 		"empty field is omitted rather than printed blank.\n\n" +
 		"Two of those wear the word status and mean different things.\n" +
 		"content_status is current, archived or trashed. page_status is the\n" +
-		"coloured lozenge beside the title, and page_status/available lists the\n" +
-		"ones this page's space offers -- which is how to find out what a\n" +
-		"page_status: line in a markdown file may say, since a space's statuses\n" +
-		"are its own configuration rather than a fixed list.\n\n" +
+		"coloured lozenge beside the title, and page_status/available lists what\n" +
+		"THIS page can be given, for the account you are running as.\n\n" +
+		"That list is not a property of the space, and reading it as one will\n" +
+		"mislead you: Confluence decides it per page and per account, so another\n" +
+		"page in the same space may allow more or fewer. To learn what a\n" +
+		"page_status: line may say for some page, ask about that page.\n\n" +
 		"PAGE is a numeric page id, a Confluence page URL, or a markdown file\n" +
 		"whose frontmatter has a page_id.\n\n" +
 		"--properties also lists every one of the page's content properties, which\n" +

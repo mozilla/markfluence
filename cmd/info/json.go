@@ -28,9 +28,11 @@ type jsonInfoResult struct {
 	Version       jsonVersion        `json:"version"`
 	PageWidth     *jsonout.PageWidth `json:"page_width"`
 	// PageStatus is the status the page carries, null when it has none or the
-	// fetch failed. PageStatusAvailable is what the space offers -- null on a
-	// failed fetch, [] for a space that offers none, which is a real answer
-	// and the reason these two cannot share one field.
+	// fetch failed. PageStatusAvailable is what *this page* can be given, for
+	// the account running the command -- not a space property, which is the
+	// one thing a reader must not assume about it. Null on a failed fetch, []
+	// for a page that can be given none, which is a real answer and the reason
+	// these two cannot share one field.
 	PageStatus          *string              `json:"page_status"`
 	PageStatusAvailable *[]string            `json:"page_status_available"`
 	Labels              *[]jsonout.LabelInfo `json:"labels"`
@@ -71,10 +73,9 @@ func (r report) jsonResult() jsonInfoResult {
 		res.PageStatus = &name
 	}
 	if r.statusesKnown {
+		// Names always builds a slice, so [] for a page offering none needs no
+		// guard here; the null case is statusesKnown being false.
 		names := pagestatus.Names(r.statuses)
-		if names == nil {
-			names = []string{}
-		}
 		res.PageStatusAvailable = &names
 	}
 	if r.widthKnown {

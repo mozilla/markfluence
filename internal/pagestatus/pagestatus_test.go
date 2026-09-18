@@ -235,3 +235,22 @@ func TestAvailableDropsCustomStatuses(t *testing.T) {
 		t.Errorf("Available = %+v, want the space's own only", got)
 	}
 }
+
+// A page that can be given nothing, by a caller holding a same-named custom
+// status, must still get a sentence that finishes: the custom branch used to
+// run first and end "This page can be given " with an empty list.
+func TestUnknownStatusWithNoSpaceStatusesReadsWell(t *testing.T) {
+	available := `{"spaceContentStates":[],
+		"customContentStates":[{"id":99,"name":"Mine alone","color":"#ff0000"}]}`
+	c, _ := server(t, `{}`, available)
+	_, err := Resolve(c, "123", "Mine alone")
+	if err == nil {
+		t.Fatal("Resolve succeeded, want a refusal")
+	}
+	if strings.HasSuffix(err.Error(), "given ") || strings.HasSuffix(err.Error(), ": ") {
+		t.Errorf("err = %q, want a sentence that finishes", err)
+	}
+	if !strings.Contains(err.Error(), "custom") {
+		t.Errorf("err = %q, want the custom-status reason kept", err)
+	}
+}

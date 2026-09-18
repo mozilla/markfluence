@@ -96,10 +96,12 @@ per-command details a script author hits once and then needs to look up.
   version, so it is the evidence that a run which changed nothing added none);
   `info` and `read` report the bare name. It is `null` wherever the file
   declares no status, the page carries none, or the read failed. `info` also
-  carries `page_status_available`, the statuses the page's **space** offers,
-  which is `[]` for a space offering none and `null` when that read failed —
-  and never includes a custom status of your own, which the space does not
-  offer to anyone else.
+  carries `page_status_available`, the statuses **that page** can be given by
+  the account that ran the command — `[]` when it can be given none and `null`
+  when that read failed. It is *not* a space property: Confluence decides the
+  list per page and per account, so another page in the same space may allow
+  more or fewer, and a write of a status absent from it is refused. It also
+  never includes a custom status of your own, which no one else can use.
 - **`create`'s preflight abort** (any file failing means nothing is created)
   lists every input file — failed ones with an `error`, the rest as
   `not_created` — and sets `summary.aborted: true`.

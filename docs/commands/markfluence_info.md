@@ -12,10 +12,13 @@ empty field is omitted rather than printed blank.
 
 Two of those wear the word status and mean different things.
 content_status is current, archived or trashed. page_status is the
-coloured lozenge beside the title, and page_status/available lists the
-ones this page's space offers -- which is how to find out what a
-page_status: line in a markdown file may say, since a space's statuses
-are its own configuration rather than a fixed list.
+coloured lozenge beside the title, and page_status/available lists what
+THIS page can be given, for the account you are running as.
+
+That list is not a property of the space, and reading it as one will
+mislead you: Confluence decides it per page and per account, so another
+page in the same space may allow more or fewer. To learn what a
+page_status: line may say for some page, ask about that page.
 
 PAGE is a numeric page id, a Confluence page URL, or a markdown file
 whose frontmatter has a page_id.
