@@ -17,8 +17,8 @@ walk is one pair of requests per page and folder in it and should be
 asked for rather than typed by accident.
 
 The page is written as markdown with title/space/parent/page_id/
-page_width frontmatter, so an exported file can be edited and
-published back with update. For a page at the top of the export this
+labels/page_status/page_width frontmatter, so an exported file can be
+edited and published back with update. For a page at the top of the export this
 is exactly what `read` prints; deeper in a tree the paths in it are
 relative to where the file sits, which `read` cannot know.
 

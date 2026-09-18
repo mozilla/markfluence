@@ -18,7 +18,9 @@ lozenge beside its title -- naming one the space offers. The statuses a
 space offers are its own configuration rather than a fixed list, so a
 name matching none of them fails preflight, before anything is created,
 and reports the ones the space does have. Omitted, the page is created
-with no status.
+with no status. Since a preflight failure aborts the whole batch, a tree
+exported from one space and created in another fails on the first file
+whose status the destination space does not offer.
 
 Every file is checked first -- including converting it -- and if any would
 fail, nothing is created. A page_id that resolves to nothing is a failure

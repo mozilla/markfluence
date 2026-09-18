@@ -34,9 +34,9 @@ var Cmd = &cobra.Command{
 		"/wiki/.../pages/<id>/... form or a legacy ?pageId=<id> URL), or a\n" +
 		"markdown file whose frontmatter has a page_id.\n\n" +
 		"It composes with shell redirection.\n\n" +
-		"--format markdown (the default) carries\n" +
-		"title/space/parent/page_id/labels/page_width frontmatter and is a\n" +
-		"best-effort inverse of what create/update publish. The Confluence API has\n" +
+		"--format markdown (the default) carries title/space/parent/page_id/\n" +
+		"labels/page_status/page_width frontmatter and is a best-effort inverse\n" +
+		"of what create/update publish. The Confluence API has\n" +
 		"no markdown representation, so the storage body is converted here:\n" +
 		"constructs markfluence emits round-trip faithfully, while editor-authored\n" +
 		"content degrades gracefully -- a macro markfluence does not map, and a\n" +

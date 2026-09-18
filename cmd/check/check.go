@@ -48,15 +48,15 @@ var Cmd = &cobra.Command{
 		"CI/agent-friendly. Reports conversion warnings and broken image/link\n" +
 		"references, and metadata sanity (parseable, page_width valid, page_id\n" +
 		"numeric when present, page_status non-empty when present). Each file is\n" +
-		"processed independently; the command\n" +
-		"exits non-zero if any file is broken or failed outright. Warnings alone do\n" +
-		"not fail.\n\n" +
+		"processed independently; the command exits non-zero if any file is broken\n" +
+		"or failed outright. Warnings alone do not fail.\n\n" +
 		"A file's metadata is checked wherever it lives -- its own frontmatter or a\n" +
 		"'pages:' entry for it in markfluence.yaml -- and an entry is reported only\n" +
 		"when its file is one of the FILEs given, so one bad entry never blocks\n" +
 		"checking the rest of a repository. Two locations naming different pages is\n" +
 		"an error; a file keeping its own keys in a project that uses 'pages:' is a\n" +
-		"warning, since both work.\n\n" + "One thing check cannot decide: whether a page_status: names a status the\n" +
+		"warning, since both work.\n\n" +
+		"One thing check cannot decide: whether a page_status: names a status the\n" +
 		"space actually offers. A space's statuses are its own configuration, read\n" +
 		"from Confluence, and check makes no requests -- so an empty page_status is\n" +
 		"reported and a misspelled one is not. update and create check the name.\n\n" +

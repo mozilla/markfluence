@@ -12,9 +12,9 @@ markdown file whose frontmatter has a page_id.
 
 It composes with shell redirection.
 
---format markdown (the default) carries
-title/space/parent/page_id/labels/page_width frontmatter and is a
-best-effort inverse of what create/update publish. The Confluence API has
+--format markdown (the default) carries title/space/parent/page_id/
+labels/page_status/page_width frontmatter and is a best-effort inverse
+of what create/update publish. The Confluence API has
 no markdown representation, so the storage body is converted here:
 constructs markfluence emits round-trip faithfully, while editor-authored
 content degrades gracefully -- a macro markfluence does not map, and a

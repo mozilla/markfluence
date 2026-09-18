@@ -839,8 +839,11 @@ func (c *ConfluenceClient) ResolveSpaceID(spaceKey string) (string, error) {
 // the space is unknown.
 //
 // It is a sibling of ResolveSpaceID rather than a widening of it because the
-// homepage is wanted in one place and the id in five, and it costs no extra
-// request: homepageId is a field of the same /spaces response.
+// homepage is wanted in one place and the id in five. It reads the same /spaces
+// response, but this is a second *request* -- resolveSpace is not memoized --
+// so a caller wanting both pays twice. That is bounded to once per space per
+// run by create's own cache, and widening ResolveSpaceID to return a pair for
+// five callers that want the id alone would be the worse trade.
 //
 // Its one caller is create, which needs *some* page id in the target space to
 // ask what page statuses the space offers (the vocabulary route is per-page --
