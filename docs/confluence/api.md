@@ -311,6 +311,7 @@ below.
 | `SetContentProperty` (create) | v2 | `POST /pages/{id}/properties` | `read:page:confluence`, `write:page:confluence` |
 | `SetContentProperty` (update) | v2 | `PUT /pages/{id}/properties/{propId}` | `read:page:confluence`, `write:page:confluence` |
 | `GetUser` | v1 | `GET /user` | `read:confluence-user` |
+| `SearchUsers` | v1 | `GET /search/user` | `read:content-details:confluence` — **granular, and implied by nothing else** ([users.md](users.md)) |
 | `searchCQL` | v1 | `GET /search` | `search:confluence` |
 | attachment upload | v1 | `POST /content/{id}/child/attachment` | `write:confluence-file` |
 | attachment re-upload | v1 | `POST /content/{id}/child/attachment/{attId}/data` | `write:confluence-file` |
@@ -338,17 +339,32 @@ write:confluence-file
 readonly:content.attachment:confluence
 read:confluence-content.summary
 write:confluence-content
+read:content-details:confluence
 ```
 
-`write:confluence-content` is the newest entry and the one most likely to be
-missing from a token granted before labels existed (#138). It buys the two label
-writes and, since #168, the page-status write and the route that lists a space's
-statuses (see [page-status.md](page-status.md) — that vocabulary route is a
-*read* behind a write scope, which is Atlassian's oddity, not ours). Reading a
-page's labels is covered by `read:page:confluence`, which a token doing anything
-at all already has. So the failure mode stays narrow and recognizable — every
-command works, and only the label and page-status halves of `create`/`update`
-401.
+`write:confluence-content` is the entry most likely to be missing from a token
+granted before labels existed (#138). It buys the two label writes and, since
+#168, the page-status write and the route that lists a space's statuses (see
+[page-status.md](page-status.md) — that vocabulary route is a *read* behind a
+write scope, which is Atlassian's oddity, not ours). Reading a page's labels is
+covered by `read:page:confluence`, which a token doing anything at all already
+has. So the failure mode stays narrow and recognizable — every command works,
+and only the label and page-status halves of `create`/`update` 401.
+
+`read:content-details:confluence` is the newest, and the only one a *whole
+command* depends on: without it `user-find` 401s with `scope does not match`
+and everything else works. It is granular, and **nothing implies it** —
+measured, not derived, with a token holding fifteen other scopes including
+`read:confluence-content.all` ([users.md](users.md)).
+
+**A scope is not a permission, and the two fail differently.** Measured with
+the same token, against a space its account could read but not edit: the
+missing scope is a `401` saying `scope does not match`, while a missing
+permission is a `403` naming it (`User does not have Page edit permission.`) —
+or, on a v2 route, the `404` this file's first section is about. A token with
+every scope here still writes nothing until its account has Confluence
+permission on the space, which is granted separately and is not markfluence's
+to ask for.
 
 ### The list is deliberately mixed, and that is the whole trap
 

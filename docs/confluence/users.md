@@ -151,19 +151,34 @@ Escaping is not optional: an unescaped quote in a name ends the string literal
 and the rest of the value becomes query syntax
 ([search.md](search.md#cql-is-an-injection-surface)).
 
+### The scope is `read:content-details:confluence`, and nothing else implies it
+
+**Verified 2026-09-18** with a scoped service-account token, which is what this
+took: the earlier probes all used an unscoped personal token, whose 200 said
+nothing about a scoped token's grants.
+
+The token held the nine scopes the README listed at the time plus
+`read:confluence-content.all`, `read:confluence-props`,
+`write:confluence-props` and `write:confluence-content` — ten of them classic,
+five granular — and `user-find` still failed:
+
+```
+HTTP 401: {"code":401,"message":"Unauthorized; scope does not match"}
+```
+
+Every other command worked with that token. So the route's only `Current`
+scope, `read:content-details:confluence`, is required and is implied by nothing
+else — not by the classic `read:confluence-content.summary`, not by
+`read:confluence-content.all`, and not by `search:confluence`, which covers the
+*other* two search routes. This is [api.md](api.md#scopes)'s classic/granular
+warning landing exactly where it was predicted to.
+
+It is now in the README's copy-pasteable list. Note the shape of the failure
+for anyone debugging one: a 401 whose body says `scope does not match`, which
+is markfluence's third auth phrasing and the one that names the cause plainly.
+
 ## Unverified
 
-- **The scope a scoped token needs.** The route's only `Current` scope in
-  Atlassian's list is `read:content-details:confluence`, which is **granular**,
-  while markfluence's required union holds the *classic*
-  `read:confluence-content.summary` — and [api.md](api.md#scopes) is explicit
-  that neither vocabulary implies the other. The probe above cannot settle it:
-  its token is an unscoped personal one carrying full user permissions, so its
-  200 through the `api.atlassian.com` gateway says nothing about a scoped
-  token's grants. Until somebody runs `user-find` with a scoped token, the
-  scope is **not** in the README's copy-pasteable list, because adding one a
-  token does not need costs nothing while omitting one it does need is a 401 in
-  CI with a misleading message.
 - **Whether `sitePermissionTypeFilter` has any effect at all.** Three values were
   measured and none changed a result set. It may matter on an instance with
   external collaborators; this one appears to have none matching the probes.
