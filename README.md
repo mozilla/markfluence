@@ -201,6 +201,8 @@ read:confluence-user
 write:confluence-file
 readonly:content.attachment:confluence
 read:confluence-content.summary
+write:confluence-content
+read:content-details:confluence
 ```
 
 > [!NOTE]
