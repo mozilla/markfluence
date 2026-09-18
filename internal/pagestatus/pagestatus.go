@@ -35,7 +35,7 @@ const Field = "page_status"
 // Declared reports the status name a file declares, and whether it declared one
 // at all.
 //
-// An absent key is (", false, nil) and means the page's status is left alone --
+// An absent key is ("", false, nil) and means the page's status is left alone --
 // no request of any kind is made for it.
 //
 // A **present but empty** value is an error rather than "leave it alone" or
@@ -130,15 +130,25 @@ func matching(states []client.ContentState, name string) []client.ContentState {
 // without mentioning the one the author can plainly see in Confluence's own
 // picker is how that becomes an unresolvable bug report.
 func unknownStatus(name string, available client.StateVocabulary) error {
+	// Before the custom branch: with nothing to list, that branch's message
+	// ends "This page can be given " and trails off. A page whose space
+	// offers nothing while the caller has a same-named custom status is the
+	// narrow case, but it is the one where the author most needs a sentence
+	// that finishes.
+	if len(available.Space) == 0 {
+		if len(matching(available.Custom, name)) > 0 {
+			return fmt.Errorf(
+				"%s %q is one of your own custom statuses, which cannot be published "+
+					"from a file, and this page can be given no others", Field, name)
+		}
+		return fmt.Errorf("%s %q: this page can be given no statuses", Field, name)
+	}
 	if len(matching(available.Custom, name)) > 0 {
 		return fmt.Errorf(
 			"%s %q is one of your own custom statuses, which cannot be published "+
 				"from a file: a custom status exists for your account alone, so the "+
 				"file would fail for everyone else. This page can be given %s",
 			Field, name, strings.Join(names(available.Space), ", "))
-	}
-	if len(available.Space) == 0 {
-		return fmt.Errorf("%s %q: this page can be given no statuses", Field, name)
 	}
 	return fmt.Errorf("invalid %s %q; this page can be given %s",
 		Field, name, strings.Join(names(available.Space), ", "))

@@ -173,11 +173,6 @@ type record struct {
 	// and carried rather than re-read so publish cannot disagree with what was
 	// checked.
 	labels labels.Set
-	// status is the page status to assert, resolved in preflight from the name
-	// the file declares. Resolved rather than carried as a name because the
-	// wire format is an id and a name Confluence does not recognise creates a
-	// status no route can delete -- so the lookup belongs where a bad name can
-	// still abort the batch, not after a page exists.
 	// statusName is the page status the file declares, carried as the *name*
 	// rather than as a resolved status -- unlike labels, which preflight
 	// validates.
@@ -763,13 +758,14 @@ func publishOne(
 		}
 	}
 
-	// After the labels, non-fatal for the same reason. The name was resolved to
-	// an id in preflight, so nothing here can fail for a reason the file could
-	// have been told about earlier.
+	// After the labels, and non-fatal for the same reason -- but unlike the
+	// labels this is also where the name is *checked*, so unlike them it can
+	// fail for something the file got wrong. That is the trade record.statusName
+	// describes: a misspelled status is a warning on a page that exists rather
+	// than a refusal before anything is made.
 	if r.statusDeclared {
-		// Resolved here rather than in preflight: this is the only page whose
-		// answer is authoritative, and it did not exist until a moment ago.
-		// See record.statusName.
+		// This is the only page whose answer is authoritative, and it did not
+		// exist until a moment ago. See record.statusName.
 		status, err := pagestatus.Resolve(c, pageID, r.statusName)
 		if err != nil {
 			res.warnings = append(res.warnings, "could not set page status: "+err.Error())

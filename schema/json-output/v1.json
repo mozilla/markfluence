@@ -293,7 +293,7 @@
       "oneOf": [{ "$ref": "#/$defs/pageStatus" }, { "type": "null" }]
     },
     "pageStatusNamesOrNull": {
-      "description": "The page statuses a space offers, in the space's own order; [] for a space that offers none, null when the fetch failed.",
+      "description": "The page statuses THIS page can be given, for the account that ran the command, in the order Confluence reports them. Not a space property: Confluence decides it per page and per account, so another page in the same space may allow more or fewer, and a write of a status absent here is refused. [] when the page can be given none, null when the fetch failed.",
       "oneOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }]
     },
     "author": {
