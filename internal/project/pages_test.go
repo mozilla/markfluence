@@ -98,7 +98,7 @@ func TestReadPagesRefusals(t *testing.T) {
 			`page "a.md" has an unknown field "titel"`},
 		"unknown field names the known ones": {
 			"pages:\n  a.md:\n    titel: A\n",
-			"known: labels, page_id, page_width, parent, space, title"},
+			"known: labels, page_id, page_status, page_width, parent, space, title"},
 		"unknown field suggests a newer markfluence": {
 			"pages:\n  a.md:\n    titel: A\n", "needs a newer markfluence"},
 		"scalar field given a list": {

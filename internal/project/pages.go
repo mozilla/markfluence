@@ -41,12 +41,13 @@ type Entry struct {
 // adding it here would make a field expressible in a file and not in an entry,
 // which is the "same keys" half of the equivalence above.
 var entryFields = map[string]kind{
-	"title":      kindScalar,
-	"space":      kindScalar,
-	"parent":     kindScalar,
-	"page_id":    kindScalar,
-	"page_width": kindScalar,
-	"labels":     kindList,
+	"title":       kindScalar,
+	"space":       kindScalar,
+	"parent":      kindScalar,
+	"page_id":     kindScalar,
+	"page_status": kindScalar,
+	"page_width":  kindScalar,
+	"labels":      kindList,
 }
 
 // readPages reads the pages: mapping into entries keyed by normalized path.

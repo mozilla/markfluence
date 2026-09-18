@@ -774,6 +774,7 @@ func TestScalarFieldAsListIsRejected(t *testing.T) {
 		"space: [ENG]",
 		"page_id: [123]",
 		"page_width: [max]",
+		"page_status: [Verified]",
 	} {
 		_, err := frontmatter.Parse("doc.md", "---\n"+block+"\n---\nbody\n")
 		if err == nil {
