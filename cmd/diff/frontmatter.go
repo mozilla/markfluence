@@ -14,6 +14,7 @@ import (
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/pagemeta"
+	"github.com/mozilla/markfluence/internal/pagestatus"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/project"
 )
@@ -45,7 +46,7 @@ type difference struct {
 //
 // page_id is absent deliberately. It is how the page was found, so it cannot
 // differ; it names the page in the report's header instead.
-var fieldOrder = []string{"title", "space", "parent", "page_width", "labels"}
+var fieldOrder = []string{"title", "space", "parent", "page_status", "page_width", "labels"}
 
 // compareMetadata compares every field the local side declares against the
 // page, and returns the differences in fieldOrder plus any warnings raised on
@@ -101,6 +102,11 @@ func compareMetadata(
 		add(d)
 	}
 	d, w, ok = labelDifference(c, page, meta)
+	warnings = append(warnings, w...)
+	if ok {
+		add(d)
+	}
+	d, w, ok = statusDifference(c, page, meta)
 	warnings = append(warnings, w...)
 	if ok {
 		add(d)
@@ -229,6 +235,62 @@ func widthDifference(
 		// (page_width.default), and without it a file declaring narrow reads as
 		// agreeing with a page that has never been given a width.
 		d.Note = "the page states no width; narrow is the site default"
+	}
+	return d, nil, true
+}
+
+// statusDifference compares the page status, resolving the declared name to the
+// status it names before comparing.
+//
+// Compared as a resolved **id**, parent's precedent and for the same reason: the
+// match is case-insensitive, so `ready for review` and `Ready for review` are
+// one target and reporting them as a difference would be reporting a spelling.
+// The row still shows the two names, which is what a reader can act on.
+//
+// A name the space does not offer is left to `update` to refuse, as an invalid
+// page_width is: this command compares, and failing a file over a typo would
+// hide every other difference in it. It is reported as a warning so the run does
+// not read as clean.
+func statusDifference(
+	c *client.ConfluenceClient, page *client.Page, meta pagemeta.Resolved,
+) (difference, []string, bool) {
+	local, ok := declared(meta, pagestatus.Field)
+	if !ok {
+		return difference{}, nil, false
+	}
+	d := difference{
+		Field: pagestatus.Field, Local: local,
+		Source: sourceLabel(meta.Origin[pagestatus.Field]), Comparable: true,
+	}
+
+	live, err := pagestatus.Read(c, page.ID)
+	if err != nil {
+		// Uncomparable, not different, for widthDifference's reason: the
+		// declared status may well be the live one.
+		d.Comparable = false
+		d.Note = "the page's status could not be read"
+		return d, []string{pagestatus.Field + " could not be compared: " + err.Error()}, true
+	}
+	if live != nil {
+		d.Confluence = live.Name
+	} else {
+		d.Note = "the page carries no status"
+	}
+
+	// The id comparison the doc comment is about. Resolving needs the space's
+	// vocabulary, and a failure there leaves the name comparison standing --
+	// which is right rather than a fallback: two different spellings of one
+	// status is the only case the ids would have settled differently, and
+	// reporting a difference there is a miss, not a false alarm.
+	want, resolveErr := pagestatus.Resolve(c, nil, page.SpaceID, page.ID, local)
+	switch {
+	case resolveErr != nil:
+		warn := pagestatus.Field + " could not be resolved against the space: " + resolveErr.Error()
+		return d, []string{warn}, true
+	case live != nil && live.ID == want.ID:
+		// Same status, possibly spelled differently. Reported as agreement, and
+		// the page's own spelling is what add() then compares.
+		d.Local = live.Name
 	}
 	return d, nil, true
 }

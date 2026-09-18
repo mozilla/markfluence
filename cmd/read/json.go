@@ -4,6 +4,7 @@ import (
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/labels"
+	"github.com/mozilla/markfluence/internal/pagestatus"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 )
 
@@ -19,9 +20,14 @@ type jsonReadResult struct {
 	Parent     *string            `json:"parent"`
 	ParentType *string            `json:"parent_type"`
 	PageWidth  *jsonout.PageWidth `json:"page_width"`
-	Labels     *[]string          `json:"labels"`
-	Format     string             `json:"format"`
-	Body       string             `json:"body"`
+	// PageStatus is the page's status, null when it has none or the read
+	// failed. A bare name rather than an object, matching the labels field
+	// just below: read describes the document it produced, and the name is
+	// exactly what went into the rendered frontmatter.
+	PageStatus *string   `json:"page_status"`
+	Labels     *[]string `json:"labels"`
+	Format     string    `json:"format"`
+	Body       string    `json:"body"`
 }
 
 // buildResult assembles the JSON result. Unlike the human path, the metadata is
@@ -47,6 +53,10 @@ func buildResult(c *client.ConfluenceClient, page *client.Page, format, body str
 	}
 	if w, explicit, err := pagewidth.Read(c, page.ID); err == nil {
 		res.PageWidth = &jsonout.PageWidth{Value: string(w), Default: !explicit}
+	}
+	if state, err := pagestatus.Read(c, page.ID); err == nil && state != nil {
+		name := state.Name
+		res.PageStatus = &name
 	}
 	// A plain string array, deliberately a different shape from info's: info
 	// describes the page, read describes the document it produced. So this is

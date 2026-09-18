@@ -19,6 +19,7 @@ import (
 	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/pagemeta"
 	"github.com/mozilla/markfluence/internal/pageref"
+	"github.com/mozilla/markfluence/internal/pagestatus"
 	"github.com/mozilla/markfluence/internal/pagewidth"
 	"github.com/mozilla/markfluence/internal/project"
 	"github.com/mozilla/markfluence/internal/ui"
@@ -46,7 +47,8 @@ var Cmd = &cobra.Command{
 		"rules, with no network access and no credentials -- fast, safe, and\n" +
 		"CI/agent-friendly. Reports conversion warnings and broken image/link\n" +
 		"references, and metadata sanity (parseable, page_width valid, page_id\n" +
-		"numeric when present). Each file is processed independently; the command\n" +
+		"numeric when present, page_status non-empty when present). Each file is\n" +
+		"processed independently; the command\n" +
 		"exits non-zero if any file is broken or failed outright. Warnings alone do\n" +
 		"not fail.\n\n" +
 		"A file's metadata is checked wherever it lives -- its own frontmatter or a\n" +
@@ -54,7 +56,10 @@ var Cmd = &cobra.Command{
 		"when its file is one of the FILEs given, so one bad entry never blocks\n" +
 		"checking the rest of a repository. Two locations naming different pages is\n" +
 		"an error; a file keeping its own keys in a project that uses 'pages:' is a\n" +
-		"warning, since both work.\n\n" +
+		"warning, since both work.\n\n" + "One thing check cannot decide: whether a page_status: names a status the\n" +
+		"space actually offers. A space's statuses are its own configuration, read\n" +
+		"from Confluence, and check makes no requests -- so an empty page_status is\n" +
+		"reported and a misspelled one is not. update and create check the name.\n\n" +
 		"\"link not resolved: TARGET\" means TARGET is a sibling .md file that exists\n" +
 		"under the documentation root but has no page_id yet -- the normal state of\n" +
 		"a tree that hasn't been published, not a defect. \"same-page anchor not\n" +
@@ -234,6 +239,19 @@ func processFile(filename string, roots *project.Cache, indexes *linkindex.Cache
 	if title, present := meta.Fields["title"]; present && strings.TrimSpace(title) == "" {
 		localBroken = append(localBroken,
 			"the title is present but empty; give it a value or remove it")
+	}
+	// The shape of page_status and nothing more. A present-but-empty value is
+	// the title case exactly -- both verbs reject it, so no verb makes it valid
+	// and there is no false positive to have.
+	//
+	// The *name* is deliberately unchecked, and cannot be checked here: the
+	// statuses a space offers are that space's own configuration, read from
+	// Confluence per space, and check has no client, no credentials and no
+	// network. This is the first frontmatter field whose vocabulary is server
+	// state rather than a fixed list, which is why check's Long says so --
+	// otherwise a clean run reads as a promise the status will publish.
+	if _, _, err := pagestatus.Declared(meta.Fields); err != nil {
+		localBroken = append(localBroken, err.Error())
 	}
 
 	// "No half-and-half" (#139): a file carrying its own markfluence keys in a

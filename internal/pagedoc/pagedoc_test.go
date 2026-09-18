@@ -13,7 +13,7 @@ import (
 func TestRenderFrontmatter(t *testing.T) {
 	// Fields come out in the canonical order (title, space, parent, page_id, then
 	// the rest) regardless of the order renderFrontmatter writes them.
-	got := RenderFrontmatter("My Page", "ENG", "456", "123456", "max", nil)
+	got := RenderFrontmatter("My Page", "ENG", "456", "123456", "max", "", nil)
 	want := "---\ntitle: My Page\nspace: ENG\nparent: 456\npage_id: 123456\npage_width: max\n---\n"
 	if got != want {
 		t.Errorf("RenderFrontmatter =\n%q\nwant\n%q", got, want)
@@ -22,7 +22,7 @@ func TestRenderFrontmatter(t *testing.T) {
 
 func TestRenderFrontmatterTopLevelParent(t *testing.T) {
 	// A top-level page carries parent: null.
-	got := RenderFrontmatter("T", "ENG", "null", "1", "max", nil)
+	got := RenderFrontmatter("T", "ENG", "null", "1", "max", "", nil)
 	want := "---\ntitle: T\nspace: ENG\nparent: null\npage_id: 1\npage_width: max\n---\n"
 	if got != want {
 		t.Errorf("RenderFrontmatter =\n%q\nwant\n%q", got, want)
@@ -30,7 +30,7 @@ func TestRenderFrontmatterTopLevelParent(t *testing.T) {
 }
 
 func TestRenderFrontmatterOmitsEmptyFields(t *testing.T) {
-	got := RenderFrontmatter("T", "", "", "1", "", nil)
+	got := RenderFrontmatter("T", "", "", "1", "", "", nil)
 	want := "---\ntitle: T\npage_id: 1\n---\n"
 	if got != want {
 		t.Errorf("RenderFrontmatter =\n%q\nwant\n%q", got, want)
@@ -39,7 +39,7 @@ func TestRenderFrontmatterOmitsEmptyFields(t *testing.T) {
 
 func TestRenderFrontmatterQuotesWhenNeeded(t *testing.T) {
 	// A title with a leading '#' would be read as a comment unless quoted.
-	got := RenderFrontmatter("# Sharp", "", "", "1", "", nil)
+	got := RenderFrontmatter("# Sharp", "", "", "1", "", "", nil)
 	want := "---\ntitle: \"# Sharp\"\npage_id: 1\n---\n"
 	if got != want {
 		t.Errorf("RenderFrontmatter =\n%q\nwant\n%q", got, want)
@@ -93,7 +93,7 @@ func TestDocString(t *testing.T) {
 // is not in fieldOrder, so it sorts alphabetically among the trailing keys and
 // lands after page_id but before page_width.
 func TestRenderFrontmatterEmitsLabels(t *testing.T) {
-	got := RenderFrontmatter("T", "ENG", "null", "1", "max", []string{"ci/cd", "runbook"})
+	got := RenderFrontmatter("T", "ENG", "null", "1", "max", "", []string{"ci/cd", "runbook"})
 	want := "---\ntitle: T\nspace: ENG\nparent: null\npage_id: 1\nlabels: [ci/cd, runbook]\npage_width: max\n---\n"
 	if got != want {
 		t.Errorf("RenderFrontmatter =\n%q\nwant\n%q", got, want)
@@ -111,7 +111,7 @@ func TestRenderFrontmatterOmitsEmptyLabels(t *testing.T) {
 		"fetch failed": nil,
 		"none on page": {},
 	} {
-		got := RenderFrontmatter("T", "", "", "1", "", given)
+		got := RenderFrontmatter("T", "", "", "1", "", "", given)
 		if strings.Contains(got, "labels") {
 			t.Errorf("%s: RenderFrontmatter = %q, want no labels key", name, got)
 		}
@@ -124,7 +124,7 @@ func TestRenderFrontmatterOmitsEmptyLabels(t *testing.T) {
 // break a flow sequence is in the server's reject set -- which is exactly why
 // it is worth pinning that the general path is still being used.
 func TestRenderFrontmatterQuotesALabelThatNeedsIt(t *testing.T) {
-	got := RenderFrontmatter("T", "", "", "1", "", []string{"a,b"})
+	got := RenderFrontmatter("T", "", "", "1", "", "", []string{"a,b"})
 	if !strings.Contains(got, `"a,b"`) {
 		t.Errorf("RenderFrontmatter = %q, want the comma-bearing label quoted", got)
 	}
@@ -332,5 +332,28 @@ func TestBlankDisplayNameIsNotAConfirmedAbsence(t *testing.T) {
 	Options(c, page, Placement{}, users)
 	if asked < 2 {
 		t.Errorf("asked = %d, want the unanswerable lookup retried rather than remembered", asked)
+	}
+}
+
+// TestRenderFrontmatterEmitsPageStatus pins the field's place in the block:
+// page_status is not in fieldOrder either, so it sorts among the trailing keys
+// and lands between labels and page_width.
+func TestRenderFrontmatterEmitsPageStatus(t *testing.T) {
+	got := RenderFrontmatter("T", "ENG", "null", "1", "max", "Ready for review", nil)
+	want := "---\ntitle: T\nspace: ENG\nparent: null\npage_id: 1\n" +
+		"page_status: Ready for review\npage_width: max\n---\n"
+	if got != want {
+		t.Errorf("RenderFrontmatter =\n%q\nwant\n%q", got, want)
+	}
+}
+
+// A page with no status and a page whose status could not be read both get no
+// page_status: key. The labels rule, and simpler: no spelling of the field
+// clears a status, so an emitted empty value would not parse as an instruction
+// at all -- it would just be a file update refuses.
+func TestRenderFrontmatterOmitsAnEmptyPageStatus(t *testing.T) {
+	got := RenderFrontmatter("T", "", "", "1", "", "", nil)
+	if strings.Contains(got, "page_status") {
+		t.Errorf("RenderFrontmatter = %q, want no page_status key", got)
 	}
 }
