@@ -232,7 +232,7 @@ case below was observed, and the page was purged afterward:
 - `labels: []` removes both managed labels and leaves `my:mine` alone.
 - A file with **no** `labels:` key publishes without touching the two labels
   applied by hand, and reports `labels: null`.
-- `info` shows `labels:` and `labels/unmanaged:` as separate rows.
+- `page-info` shows `labels:` and `labels/unmanaged:` as separate rows.
 - `read` emits `labels: [howto, runbook]` — global-only, sorted, between
   `page_id` and `page_width`.
 - A block-style `labels:` list rewritten by the frontmatter writer comes back as
@@ -260,7 +260,7 @@ case below was observed, and the page was purged afterward:
 A **purged** page's v2 404 body is
 `{"errors":[{"status":404,"code":"NOT_FOUND","title":"Not Found","detail":null}]}`
 — a bare title naming nothing, which is exactly the shape `RejectedCredential`
-uses to identify a revoked token. So `info` on a purged page reports "the
+uses to identify a revoked token. So `page-info` on a purged page reports "the
 credentials were rejected" against credentials that are fine.
 
 `client.go`'s comment claims "every genuine v2 404 *names* what it could not

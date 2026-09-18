@@ -1,4 +1,4 @@
-package info
+package pageinfo
 
 import (
 	"encoding/json"
@@ -176,7 +176,7 @@ func TestRunJSONOutput(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &env); err != nil {
 		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
 	}
-	if env.Command != "info" || len(env.Results) != 1 || env.Results[0].PageID != "1" {
+	if env.Command != "page-info" || len(env.Results) != 1 || env.Results[0].PageID != "1" {
 		t.Errorf("envelope = %+v, want command=info with one result page_id=1", env)
 	}
 }

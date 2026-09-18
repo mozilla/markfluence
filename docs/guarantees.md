@@ -362,7 +362,7 @@ kind of asymmetry a reader has to hold in their head. Every verb that writes now
 writes in one direction, and the law describes all of them.
 
 Adopting a page somebody labeled or resized by hand is consequently a manual
-step: look at the page (`info` shows labels, width and page status; `read` and
+step: look at the page (`page-info` shows labels, width and page status; `read` and
 `export` emit all three) and edit the file. #154 (`markfluence diff`) is the intended way to see
 what differs; nothing writes the file for you, deliberately.
 

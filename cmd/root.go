@@ -16,7 +16,7 @@ import (
 	"github.com/mozilla/markfluence/cmd/diff"
 	"github.com/mozilla/markfluence/cmd/export"
 	"github.com/mozilla/markfluence/cmd/find"
-	"github.com/mozilla/markfluence/cmd/info"
+	"github.com/mozilla/markfluence/cmd/pageinfo"
 	"github.com/mozilla/markfluence/cmd/read"
 	"github.com/mozilla/markfluence/cmd/schema"
 	"github.com/mozilla/markfluence/cmd/search"
@@ -180,7 +180,7 @@ func init() {
 	rootCmd.AddCommand(create.Cmd)
 	rootCmd.AddCommand(check.Cmd)
 	rootCmd.AddCommand(diff.Cmd)
-	rootCmd.AddCommand(info.Cmd)
+	rootCmd.AddCommand(pageinfo.Cmd)
 	rootCmd.AddCommand(read.Cmd)
 	rootCmd.AddCommand(children.Cmd)
 	rootCmd.AddCommand(find.Cmd)

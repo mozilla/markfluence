@@ -30,7 +30,7 @@ func TestErrorObjectSchemaConformance(t *testing.T) {
 
 func TestEmitEnvelope(t *testing.T) {
 	var buf bytes.Buffer
-	env := NewEnvelope("info", []any{map[string]any{"ok": true}}, map[string]any{"total": 1})
+	env := NewEnvelope("page-info", []any{map[string]any{"ok": true}}, map[string]any{"total": 1})
 	if err := Emit(&buf, env); err != nil {
 		t.Fatalf("Emit: %v", err)
 	}
@@ -38,10 +38,10 @@ func TestEmitEnvelope(t *testing.T) {
 	if !strings.HasSuffix(out, "\n") {
 		t.Errorf("output not newline-terminated: %q", out)
 	}
-	if !strings.Contains(out, "\n  \"command\": \"info\"") {
+	if !strings.Contains(out, "\n  \"command\": \"page-info\"") {
 		t.Errorf("output not 2-space indented:\n%s", out)
 	}
-	for _, want := range []string{`"schema_version": 1`, `"command": "info"`, `"results"`, `"summary"`} {
+	for _, want := range []string{`"schema_version": 1`, `"command": "page-info"`, `"results"`, `"summary"`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
