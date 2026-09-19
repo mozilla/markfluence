@@ -407,3 +407,27 @@ func TestCommandIsInTheSchemaEnum(t *testing.T) {
 		t.Error("user-info is not in the schema's command enum")
 	}
 }
+
+// --spaces surveys the **credentials**, not a named account: the route takes
+// no accountId and reports what the authenticated user may do. Allowing both
+// would print this caller's writable spaces under somebody else's name, which
+// is a wrong answer rather than a missing one.
+func TestSpacesRefusesAnAccountID(t *testing.T) {
+	withSpaces = true
+	t.Cleanup(func() { withSpaces = false })
+	err := run(Cmd, []string{"60c36d07"})
+	if !ui.IsSilent(err) || ui.ExitCode(err) != 2 {
+		t.Fatalf("run = %v, want a silent exit-2 refusal", err)
+	}
+}
+
+// The no-argument form is marked, so the two forms do not produce
+// structurally identical blocks with no sign of which account is described.
+func TestTheSelfFormIsMarked(t *testing.T) {
+	if out := (stub{}).build(t, "", false).human(); !strings.Contains(out, "(these credentials)") {
+		t.Errorf("output = %q, want the self form marked", out)
+	}
+	if out := (stub{}).build(t, "acc-1", false).human(); strings.Contains(out, "these credentials") {
+		t.Errorf("output = %q, must not claim somebody else is you", out)
+	}
+}

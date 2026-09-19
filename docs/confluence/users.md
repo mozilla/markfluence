@@ -224,6 +224,13 @@ Atlassian names for the permission is the one that will not drift.
 Measured with two accounts: a scoped service-account token saw 525 spaces, 97
 writable, 2 administered; a personal token saw 533, 102, 11.
 
+**The route answers for the authenticated credentials and takes no account
+id**, so there is no way to ask it "where may *this other person* publish".
+That is why `user-info --spaces` refuses an `ACCOUNT_ID` rather than reporting
+the caller's own access beside somebody else's name. `/api/v2/spaces/{id}/permissions`
+lists principals and groups instead, and resolving those to one person's
+effective access is a different question.
+
 Neither is page *edit*, which is not a space property at all
 ([page-status.md](page-status.md)): `create:page` is a space grant and page
 `update` appears only on a page's own operations.

@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -154,8 +155,14 @@ func (c *ConfluenceClient) UserInfo(accountID string) (*User, error) {
 const spacePageSize = 250
 
 // maxSpacePages bounds the walk. Termination here is an empty page, so a server
-// that clamped start would return rows forever; this is searchCQLBounded's
-// guard for the same hazard.
+// that clamped start -- the exact failure this pager exists for -- would hand
+// back full pages forever.
+//
+// Exceeding it is an **error**, not a truncated list, which is
+// searchCQLBounded's rule and SearchUsers': a short answer that looks complete
+// is the failure this whole route is written to avoid, and returning nil here
+// would print "visible spaces: 50000" over the same rows collected two hundred
+// times, exit 0.
 const maxSpacePages = 200
 
 // WalkSpaceOperations hands every space the account can see, with what it may
@@ -210,5 +217,6 @@ func (c *ConfluenceClient) WalkSpaceOperations(visit func(SpaceRef, []SpaceOpera
 		// which is the trap above.
 		start += len(out.Results)
 	}
-	return nil
+	return fmt.Errorf("walking spaces: no empty page after %d requests of %d; "+
+		"the server may be ignoring the start offset", maxSpacePages, spacePageSize)
 }
