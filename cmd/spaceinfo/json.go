@@ -297,7 +297,7 @@ func (r report) created() string {
 	if r.counts == nil {
 		return ""
 	}
-	return fmt.Sprintf("%d in the last %s", r.counts.Created, window(r.sinceDays))
+	return fmt.Sprintf("%d %s", r.counts.Created, window(r.sinceDays))
 }
 
 // touched names the overlap inline, so the two counts are never added up.
@@ -305,20 +305,24 @@ func (r report) touched() string {
 	if r.counts == nil {
 		return ""
 	}
-	out := fmt.Sprintf("%d in the last %s", r.counts.Touched, window(r.sinceDays))
+	out := fmt.Sprintf("%d %s", r.counts.Touched, window(r.sinceDays))
 	if r.counts.CreatedTouched > 0 {
 		out += fmt.Sprintf(" (%d of them also created then)", r.counts.CreatedTouched)
 	}
 	return out
 }
 
+// window names the --since window as the counts actually measure it: from
+// midnight UTC that many days ago. Zero is "today", not "the last day", which
+// is the phrase a 24-hour window should produce and would make a zero count
+// for today indistinguishable from one for yesterday-and-today.
 func window(days int) string {
 	switch days {
 	case 0:
-		return "day"
+		return "today"
 	case 1:
-		return "1 day"
+		return "since yesterday"
 	default:
-		return fmt.Sprintf("%d days", days)
+		return fmt.Sprintf("in the last %d days", days)
 	}
 }
