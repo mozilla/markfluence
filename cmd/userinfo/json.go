@@ -191,6 +191,10 @@ func (r report) adminAccess() string {
 // operator asking where they can publish wants the keys; one with 102 of them
 // wants the number and a --json call.
 //
+// The long form says *why* it is not listing them. "(--json lists them)" alone
+// read as though --json were the only place the keys existed, rather than as a
+// line that ran out of room.
+//
 // The total is **not** repeated here. It is on its own "visible spaces" row
 // above, and printing "N of M spaces" on both this line and the admin one put
 // the same number on screen three times.
@@ -202,5 +206,5 @@ func countAndKeys(keys []string) string {
 	if len(keys) <= nameLimit {
 		return fmt.Sprintf("%d -- %s", len(keys), strings.Join(keys, ", "))
 	}
-	return fmt.Sprintf("%d (--json lists them)", len(keys))
+	return fmt.Sprintf("%d (too many to list; see --json output)", len(keys))
 }

@@ -32,7 +32,7 @@ personal space:  ~60c36d0718e9f60071326951  https://mozilla-hub.atlassian.net/wi
 $ markfluence user-info --spaces
 ...
 visible spaces:  525
-write access:    97 (--json lists them)
+write access:    97 (too many to list; see --json output)
 admin access:    2 -- airmoArchive, CD
 ```
 

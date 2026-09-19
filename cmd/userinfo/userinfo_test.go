@@ -295,7 +295,7 @@ func TestALongListIsSummarised(t *testing.T) {
 	s := stub{spacePages: map[int]string{0: "[" + strings.Join(rows, ",") + "]"}}
 	r := s.build(t, "", true)
 	out := r.human()
-	if !strings.Contains(out, "write access:   20 (--json lists them)") {
+	if !strings.Contains(out, "write access:   20 (too many to list; see --json output)") {
 		t.Errorf("output = %q, want a count and a pointer to --json", out)
 	}
 	// The total belongs to the "visible spaces" row alone: repeating it on
