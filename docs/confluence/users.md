@@ -225,8 +225,8 @@ Measured with two accounts: a scoped service-account token saw 525 spaces, 97
 writable, 2 administered; a personal token saw 533, 102, 11.
 
 **The route answers for the authenticated credentials and takes no account
-id**, which is why `user-info --spaces` refuses an `ACCOUNT_ID` rather than
-reporting the caller's own access beside somebody else's name.
+id**, which is why `user-info` surveys spaces only for its no-argument form, rather
+than reporting the caller's own access beside a named account's name.
 
 Asking it for another account is possible and expensive, which is worth
 writing down so nobody re-derives it. Both pieces exist and both answer a

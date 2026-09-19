@@ -163,7 +163,8 @@ type report struct {
 	// no-argument form, and --json carries it as a field, so neither leaves a
 	// reader guessing whether the account described is their own.
 	self bool
-	// spaces is nil without --spaces, and also when the survey failed.
+	// spaces is nil for the account-id form -- the survey can only describe
+	// the caller -- and also when it failed.
 	spaces *spaceSurvey
 }
 
@@ -187,7 +188,18 @@ type spaceSurvey struct {
 // do; the one Atlassian names for the permission is the one that will not drift.
 func surveySpaces(c *client.ConfluenceClient) (*spaceSurvey, error) {
 	survey := &spaceSurvey{}
+	// Deduplicated by space id, which is **defensive rather than a fix**: the
+	// walk was measured returning 533 rows and 533 distinct keys, so this
+	// route's offset does count rows returned and the advance is right. It is
+	// guarded anyway because this is the route that already surprised us once
+	// (a short page is not the end), and a duplicate here would inflate a
+	// count nobody can sanity-check and print the same key twice.
+	seen := map[string]bool{}
 	err := c.WalkSpaceOperations(func(space client.SpaceRef, ops []client.SpaceOperation) error {
+		if seen[space.ID] {
+			return nil
+		}
+		seen[space.ID] = true
 		survey.Visible++
 		for _, op := range ops {
 			switch {
