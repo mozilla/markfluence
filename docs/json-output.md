@@ -107,6 +107,18 @@ per-command details a script author hits once and then needs to look up.
   `not_created` — and sets `summary.aborted: true`.
 - **Warnings and broken image/link notices** are data (`warnings`/`broken`
   arrays on each result), not stderr log lines.
+- **`space-info` degrades in three independent places, each visible.** `access`
+  is `null` when the space's permissions could not be read — "could not be
+  determined", never "may do nothing" — and its `create_pages` is deliberately
+  not called `write`, since editing an existing page is not a space grant at
+  all. `pages` and `recent` are `null` *together* when the page walk failed,
+  never partial, because a wrong count is worse than no count. And
+  `page_statuses` is always an object carrying `source`: `"space"` is the
+  space's configured list (space admins only), `"page"` is what the running
+  account may set on `probe_page_id` and is **not** the space's list, and
+  `null` means neither could be read. `recent`'s counts are of **pages, not
+  edits**, and `pages_created`/`pages_touched` overlap — `pages_created_and_touched`
+  reports the intersection so the two are never summed.
 - **The discovery commands list what they found**, so `results` is one object per
   match (`find`, `search`, `user-find`) or per node (`children`), and
   `summary.total` is that count. `search`'s summary carries two extra fields:
