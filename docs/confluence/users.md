@@ -204,6 +204,14 @@ It is also genuinely optional: an `app` account returns `personalSpace: null`
 while a person returns a space, so the field is absent for every
 service-account token rather than only in theory.
 
+The expansion also carries **`_links.webui`** (`/spaces/~60c36d07…`,
+context-relative like the rest of v1), so the browser URL comes from the
+response rather than being assembled. That matters for the same reason the key
+does: an email-keyed personal space links as `/spaces/~amuntner@mozilla.com`
+with the `@` **unescaped**, so building the path locally would mean inventing
+an escaping rule, and getting it wrong for exactly the keys that are already
+the awkward case.
+
 ### `GET /rest/api/space?expand=operations` answers "where can this account write?"
 
 The operations expansion works on the **collection**, not only the single-space

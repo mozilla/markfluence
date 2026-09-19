@@ -426,11 +426,15 @@
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["id", "key", "name"],
+              "required": ["id", "key", "name", "url"],
               "properties": {
                 "id": { "type": "string" },
                 "key": { "type": "string" },
-                "name": { "type": "string" }
+                "name": { "type": "string" },
+                "url": {
+                  "description": "The space in a browser, from the response's own link rather than built from the key -- personal space keys come in an email form and an id form, and the escaping differs. \"\" when the response carried no link.",
+                  "type": "string"
+                }
               }
             },
             { "type": "null" }

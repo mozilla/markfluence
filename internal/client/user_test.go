@@ -218,3 +218,32 @@ func userRouteServer(t *testing.T, body string) *ConfluenceClient {
 	t.Cleanup(srv.Close)
 	return New(Config{SiteURL: srv.URL, Username: "u", Token: "t"})
 }
+
+// The personal space URL comes from the response's own link, made absolute
+// against SiteURL. Building it from the key instead would need an escaping
+// rule -- an email-keyed personal space links as /spaces/~a@example.com, with
+// the @ unescaped -- and inventing one here is a second place to get it wrong.
+func TestPersonalSpaceURLComesFromTheLink(t *testing.T) {
+	c := userRouteServer(t, `{"accountId":"a","displayName":"A Person",
+		"personalSpace":{"id":766,"key":"~a@example.com","name":"A Person",
+		"_links":{"webui":"/spaces/~a@example.com"}}}`)
+	u, err := c.CurrentUser()
+	if err != nil {
+		t.Fatalf("CurrentUser: %v", err)
+	}
+	if want := c.SiteURL() + "/wiki/spaces/~a@example.com"; u.PersonalSpace.URL != want {
+		t.Errorf("URL = %q, want %q", u.PersonalSpace.URL, want)
+	}
+}
+
+// No link means no URL, not a half-built one.
+func TestPersonalSpaceWithoutALinkHasNoURL(t *testing.T) {
+	c := userRouteServer(t, `{"accountId":"a","personalSpace":{"id":1,"key":"~a","name":"A"}}`)
+	u, err := c.CurrentUser()
+	if err != nil {
+		t.Fatalf("CurrentUser: %v", err)
+	}
+	if u.PersonalSpace.URL != "" {
+		t.Errorf("URL = %q, want empty", u.PersonalSpace.URL)
+	}
+}

@@ -34,6 +34,10 @@ type jsonPersonalSpace struct {
 	ID   string `json:"id"`
 	Key  string `json:"key"`
 	Name string `json:"name"`
+	// URL is the space in a browser, taken from the response's own link rather
+	// than built from the key -- an email-keyed personal space would need an
+	// escaping rule this has no business inventing. "" when no link came back.
+	URL string `json:"url"`
 }
 
 // jsonSpaces is the --spaces survey.
@@ -62,7 +66,7 @@ func (r report) jsonResult() jsonUserInfoResult {
 		Guest:         r.user.IsGuest,
 	}
 	if ps := r.user.PersonalSpace; ps != nil {
-		res.PersonalSpace = &jsonPersonalSpace{ID: ps.ID, Key: ps.Key, Name: ps.Name}
+		res.PersonalSpace = &jsonPersonalSpace{ID: ps.ID, Key: ps.Key, Name: ps.Name, URL: ps.URL}
 	}
 	if r.spaces != nil {
 		res.Spaces = &jsonSpaces{
@@ -144,17 +148,21 @@ func yesNo(b bool) string {
 	return "no"
 }
 
-// personalSpace shows the key and name, or says the account has none. Never
-// built from the account id -- personal space keys come in two live formats.
+// personalSpace shows the key and its URL, or says the account has none.
+//
+// The URL rather than the name: the name is almost always the person's own
+// display name, already on the line above, where the URL is the thing somebody
+// reading this actually wants to click. Never built from the account id --
+// personal space keys come in two live formats.
 func (r report) personalSpace() string {
 	ps := r.user.PersonalSpace
 	if ps == nil {
 		return "(none)"
 	}
-	if ps.Name == "" {
+	if ps.URL == "" {
 		return ps.Key
 	}
-	return ps.Key + "  " + ps.Name
+	return ps.Key + "  " + ps.URL
 }
 
 func (r report) visible() string {
