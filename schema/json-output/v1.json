@@ -9,7 +9,7 @@
   "properties": {
     "schema_version": { "const": 1 },
     "markfluence_version": { "type": "string" },
-    "command": { "enum": ["page-info", "read", "update", "create", "check", "diff", "children", "find", "search", "user-find", "attachment-list", "attachment-upload", "attachment-download", "export"] },
+    "command": { "enum": ["page-info", "space-info", "read", "update", "create", "check", "diff", "children", "find", "search", "user-find", "attachment-list", "attachment-upload", "attachment-download", "export"] },
     "roots": { "type": "array", "items": { "type": "string" }, "description": "Every distinct documentation root the command resolved, sorted. Empty for a command with no per-file root concept, and for a pre-flight failure that never reached root resolution." },
     "warnings": { "type": "array", "items": { "type": "string" }, "description": "Warnings about the invocation itself rather than about any page or file -- currently only the .env permission warning, raised when the .env that supplied the API token is reachable by anyone but its owner. Always present, [] when there is nothing to report, the same convention roots and results follow. Not per-result warnings: those live on the result." },
     "results": { "type": "array" },
@@ -21,6 +21,15 @@
       "then": {
         "properties": {
           "results": { "items": { "oneOf": [{ "$ref": "#/$defs/infoResult" }, { "$ref": "#/$defs/singleOpFailure" }] } },
+          "summary": { "$ref": "#/$defs/basicSummary" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "command": { "const": "space-info" } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "results": { "items": { "$ref": "#/$defs/spaceInfoResult" } },
           "summary": { "$ref": "#/$defs/basicSummary" }
         }
       }
@@ -374,6 +383,96 @@
         "page_id": { "type": "string" },
         "error": { "type": "string" },
         "code": { "$ref": "#/$defs/code" }
+      }
+    },
+    "spaceInfoResult": {
+      "description": "One space's metadata, what the calling account may do in it, the page statuses a page_status: line here may use, and exact page counts. space-info reports exactly one of these; an operational failure is an errorObject on stderr instead, since there is no page id to name in a result.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ok", "key", "name", "id", "type", "status", "description", "labels",
+        "homepage_id", "homepage_title", "access", "page_statuses", "pages", "recent"
+      ],
+      "properties": {
+        "ok": { "const": true },
+        "key": { "type": "string" },
+        "name": { "type": "string" },
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "status": {
+          "description": "The space's own status. An archived space still reports its counts, and this is how a reader knows to interpret them.",
+          "type": "string"
+        },
+        "description": { "type": "string" },
+        "labels": { "type": "array", "items": { "type": "string" } },
+        "homepage_id": { "type": "string" },
+        "homepage_title": {
+          "description": "null when the homepage could not be fetched, which is separate from the space having none -- then homepage_id is \"\".",
+          "$ref": "#/$defs/stringOrNull"
+        },
+        "access": {
+          "description": "What the SPACE grants this account, null when its permissions could not be read -- which is \"could not be determined\", not \"may do nothing\". create_pages is deliberately not called write: permission to edit an existing page is not a space grant and Confluence decides it per page, so an account that can create pages here may still be refused on a particular one.",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["read", "create_pages", "admin"],
+              "properties": {
+                "read": { "type": "boolean" },
+                "create_pages": { "type": "boolean" },
+                "admin": { "type": "boolean" }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "page_statuses": {
+          "description": "What a page_status: line for a page in this space may say, and where the answer came from. source \"space\" is the space's own configured list, readable only by a space admin. source \"page\" is what THIS account may set on probe_page_id, which is NOT the space's list: Confluence decides the list per (caller, page), so another page in the same space may allow more or fewer, and a write of a status absent from it is refused. source null with names null means neither could be read.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "probe_page_id", "names"],
+          "properties": {
+            "source": { "enum": ["space", "page", null] },
+            "probe_page_id": { "$ref": "#/$defs/stringOrNull" },
+            "names": {
+              "oneOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }]
+            }
+          }
+        },
+        "pages": {
+          "description": "Exact counts from one walk of the space; null when that walk failed. Never partial -- a wrong count is worse than no count here. roots counts pages with no parent, which is what children --space and export --space seed from.",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["current", "archived", "roots"],
+              "properties": {
+                "current": { "type": "integer" },
+                "archived": { "type": "integer" },
+                "roots": { "type": "integer" }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "recent": {
+          "description": "Activity in the --since window, null when the page walk failed. These count PAGES, not edits: a page revised nine times inside the window contributes 1, because only its latest version's timestamp is available without a request per page. pages_created and pages_touched overlap -- a page created inside the window has its first version inside it too -- so pages_created_and_touched reports the intersection and the two must not be added.",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["days", "pages_created", "pages_touched", "pages_created_and_touched", "last_activity"],
+              "properties": {
+                "days": { "type": "integer" },
+                "pages_created": { "type": "integer" },
+                "pages_touched": { "type": "integer" },
+                "pages_created_and_touched": { "type": "integer" },
+                "last_activity": { "$ref": "#/$defs/stringOrNull" }
+              }
+            },
+            { "type": "null" }
+          ]
+        }
       }
     },
     "infoResult": {
