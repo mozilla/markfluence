@@ -1379,11 +1379,32 @@ const v2PageSize = 250
 // start, needs the /wiki prefix added to its next link, and reports short pages
 // mid-collection -- see searchCQL and docs/confluence/search.md.
 func listV2[T any](c *ConfluenceClient, path string, params url.Values) ([]T, error) {
+	var all []T
+	err := walkV2(c, path, params, func(page []T) error {
+		all = append(all, page...)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return all, nil
+}
+
+// walkV2 is listV2's cursor loop, handing each page to visit instead of
+// collecting it. It exists so a caller that only needs to *count* a collection
+// does not hold it in memory -- WalkSpacePages over a 20k-page space -- and it
+// is shared rather than copied because a second implementation of v2 paging is
+// how one of them comes to terminate on a short page.
+//
+// visit is called once per response page, never with an empty slice from a
+// terminal request; an error from it stops the walk and is returned as-is.
+func walkV2[T any](
+	c *ConfluenceClient, path string, params url.Values, visit func([]T) error,
+) error {
 	q := url.Values{"limit": {strconv.Itoa(v2PageSize)}}
 	for k, vs := range params {
 		q[k] = vs
 	}
-	var all []T
 	rawURL := c.baseURL + path
 	for rawURL != "" {
 		var out struct {
@@ -1393,13 +1414,17 @@ func listV2[T any](c *ConfluenceClient, path string, params url.Values) ([]T, er
 			} `json:"_links"`
 		}
 		if err := c.doJSON(http.MethodGet, rawURL, q, nil, &out, timeoutRead); err != nil {
-			return nil, err
+			return err
 		}
-		all = append(all, out.Results...)
+		if len(out.Results) > 0 {
+			if err := visit(out.Results); err != nil {
+				return err
+			}
+		}
 		rawURL = resolveNext(c.baseURL, out.Links.Next)
 		q = nil
 	}
-	return all, nil
+	return nil
 }
 
 // ListContentProperties returns all of a page's content properties, following
