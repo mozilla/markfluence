@@ -124,9 +124,12 @@ per-command details a script author hits once and then needs to look up.
   account id was given, so a consumer never has to infer it. `personal_space`
   is `null` when the account has none — a real answer, since a service account
   has none — and its `key` cannot be constructed from `account_id`, because
-  personal spaces keyed by email and by account id are both live. `spaces` is
-  `null` without `--spaces` *and* when the survey failed; its `write` lists the
-  spaces the account may **create pages in**, which is a space grant and not
+  personal spaces keyed by email and by account id are both live. `spaces` is present only
+  for the no-argument form and `null` otherwise — including when the survey
+  failed — because it describes the **authenticated** credentials and the
+  route takes no account id, so reporting it beside a named account would
+  attribute the caller's access to them. Its `write` lists the spaces those
+  credentials may **create pages in**, which is a space grant and not
   permission to edit an existing page.
 - **The discovery commands list what they found**, so `results` is one object per
   match (`find`, `search`, `user-find`) or per node (`children`), and

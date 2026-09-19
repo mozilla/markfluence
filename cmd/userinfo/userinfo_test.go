@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -57,13 +60,21 @@ func (s stub) client(t *testing.T) (*client.ConfluenceClient, *[]string) {
 	return c, &paths
 }
 
+// spaceRow builds one row of the space collection. The id is derived from the
+// key rather than fixed, because the survey deduplicates by id: a shared id
+// would make every row in a fixture collapse into one.
 func spaceRow(key string, ops ...string) string {
 	items := make([]string, 0, len(ops))
 	for _, o := range ops {
 		parts := strings.SplitN(o, ":", 2)
 		items = append(items, fmt.Sprintf(`{"operation":%q,"targetType":%q}`, parts[0], parts[1]))
 	}
-	return fmt.Sprintf(`{"id":1,"key":%q,"name":"N","operations":[%s]}`, key, strings.Join(items, ","))
+	id := 0
+	for _, r := range key {
+		id = id*31 + int(r)
+	}
+	return fmt.Sprintf(`{"id":%d,"key":%q,"name":"N","operations":[%s]}`,
+		id, key, strings.Join(items, ","))
 }
 
 func (s stub) build(t *testing.T, accountID string, spaces bool) report {
@@ -180,16 +191,22 @@ func TestPersonalSpaceKeyIsNotDerived(t *testing.T) {
 		"_links":{"webui":"/spaces/~a@example.com"}}}`}
 	r := s.build(t, "60c36d07", false)
 	res := r.jsonResult()
-	// The URL is what a reader wants to click, and the human row shows it
-	// rather than the name, which is the display name already a line above.
-	if !strings.Contains(r.human(), "/wiki/spaces/~a@example.com") {
-		t.Errorf("output = %q, want the personal space URL", r.human())
+	// The nil check first: if user() ever regresses to dropping a space the
+	// response carried -- the regression this test exists for -- reading a
+	// field off it panics instead of reporting the failure.
+	if res.PersonalSpace == nil {
+		t.Fatal("personal_space is null though the response carried one")
+	}
+	if res.PersonalSpace.Key != "~a@example.com" {
+		t.Fatalf("personal_space = %+v, want the key as the API gave it", res.PersonalSpace)
 	}
 	if res.PersonalSpace.URL == "" {
 		t.Error("personal_space.url is empty though the response carried a link")
 	}
-	if res.PersonalSpace == nil || res.PersonalSpace.Key != "~a@example.com" {
-		t.Fatalf("personal_space = %+v, want the key as the API gave it", res.PersonalSpace)
+	// The URL is what a reader wants to click, and the human row shows it
+	// rather than the name, which is the display name already a line above.
+	if !strings.Contains(r.human(), "/wiki/spaces/~a@example.com") {
+		t.Errorf("output = %q, want the personal space URL", r.human())
 	}
 	if res.PersonalSpace.Key == "~"+res.AccountID {
 		t.Error("the key looks derived from the account id, which is not a valid construction")
@@ -409,6 +426,99 @@ func TestCommandIsInTheSchemaEnum(t *testing.T) {
 	}
 }
 
+// The attribution rule, through run() rather than around it.
+//
+// Deleting the `if rep.self` guard leaves every other test in this file
+// passing while the command starts printing the caller's writable spaces
+// under whatever account id was named -- which is the wrong answer the guard
+// exists to prevent. So this drives the real entry point and asserts on the
+// requests the server saw.
+func TestRunNeverSurveysForANamedAccount(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/wiki/rest/api/space" {
+			_, _ = w.Write([]byte(`{"results":[` + spaceRow("ENG", "read:space", "create:page") + `]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"accountId":"someone-else","displayName":"Someone Else"}`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("CONFLUENCE_URL", srv.URL)
+	t.Setenv("CONFLUENCE_USERNAME", "u")
+	t.Setenv("CONFLUENCE_TOKEN", "t")
+
+	out := captureStdout(t, func() {
+		if err := run(Cmd, []string{"someone-else"}); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+	})
+	for _, p := range paths {
+		if p == "/wiki/rest/api/space" {
+			t.Errorf("surveyed spaces for a named account: %v", paths)
+		}
+	}
+	for _, leaked := range []string{"visible spaces", "write access", "admin access", "ENG"} {
+		if strings.Contains(out, leaked) {
+			t.Errorf("output attributes the caller's access to a named account:\n%s", out)
+		}
+	}
+}
+
+// And the no-argument form does survey, so the guard is not simply off.
+func TestRunSurveysForTheSelfForm(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/wiki/rest/api/space" {
+			start := r.URL.Query().Get("start")
+			if start != "0" {
+				_, _ = w.Write([]byte(`{"results":[]}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"results":[` + spaceRow("ENG", "read:space", "create:page") + `]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"accountId":"me","displayName":"Me"}`))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("CONFLUENCE_URL", srv.URL)
+	t.Setenv("CONFLUENCE_USERNAME", "u")
+	t.Setenv("CONFLUENCE_TOKEN", "t")
+
+	out := captureStdout(t, func() {
+		if err := run(Cmd, nil); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+	})
+	if !strings.Contains(out, "write access:   1 -- ENG") {
+		t.Errorf("the no-argument form did not survey:\n%s", out)
+	}
+}
+
+// captureStdout runs fn with stdout redirected, returning what it printed.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe: %v", err)
+	}
+	saved := os.Stdout
+	os.Stdout = w
+	done := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		done <- buf.String()
+	}()
+	fn()
+	_ = w.Close()
+	os.Stdout = saved
+	return <-done
+}
+
 // The flag is gone: the survey is part of the no-argument form and is absent
 // from the other, because the route answers for the authenticated account.
 func TestThereIsNoSpacesFlag(t *testing.T) {
@@ -426,5 +536,26 @@ func TestTheSelfFormIsMarked(t *testing.T) {
 	}
 	if out := (stub{}).build(t, "acc-1", false).human(); strings.Contains(out, "these credentials") {
 		t.Errorf("output = %q, must not claim somebody else is you", out)
+	}
+}
+
+// The survey deduplicates by space id. Measured, this route does not repeat a
+// row -- 533 rows, 533 distinct keys -- so this guards against a paging
+// semantic that was not observed rather than one that was. It is worth having
+// because a duplicate would inflate "visible spaces" and list a key twice,
+// neither of which a reader can check.
+func TestTheSurveyDeduplicates(t *testing.T) {
+	row := spaceRow("ENG", "read:space", "create:page")
+	s := stub{spacePages: map[int]string{
+		0: "[" + row + "]",
+		1: "[" + row + "]", // the same space again, as an overlapping window would
+	}}
+	res := s.build(t, "", true).jsonResult()
+	if res.Spaces.Visible != 1 {
+		t.Errorf("visible = %d, want 1: a repeated row must not inflate the count",
+			res.Spaces.Visible)
+	}
+	if len(res.Spaces.Write) != 1 {
+		t.Errorf("write = %v, want the key once", res.Spaces.Write)
 	}
 }

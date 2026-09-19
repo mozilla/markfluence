@@ -263,7 +263,7 @@ reach for.
 | [`search`](docs/commands/markfluence_search.md) | full text, for when you do not know the title. Takes raw CQL with `--cql` |
 | [`children`](docs/commands/markfluence_children.md) | list what is under a page, a folder, or a space |
 | [`user-find`](docs/commands/markfluence_user-find.md) | resolve a person's name to the account id and the markdown line that mentions them |
-| [`user-info`](docs/commands/markfluence_user-info.md) | who these credentials are, or who an account id names; `--spaces` surveys where the account may publish |
+| [`user-info`](docs/commands/markfluence_user-info.md) | who these credentials are and where they may publish, or who an account id names |
 
 **Attachments** — `create`/`update` handle a page's images for you; these are for
 everything else:

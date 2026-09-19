@@ -59,7 +59,8 @@ and `accountId` is the only way to match yourself against a page's
 while `/user?accountId=` returns one. So "who was this person on a three-year-old
 page?" has exactly one route and no command exposes it.
 
-**"Where can this account write?"** — answerable, and cheaply (below).
+**"Where can these credentials write?"** — answerable, and cheaply (below),
+for the caller alone.
 
 A fourth reason that is not about features: both user routes need only
 `read:confluence-user`, which every working token already carries. `user-find`
@@ -223,9 +224,9 @@ is how a new command's conformance test goes green while validating nothing.
   "spaces": { "visible": 525, "write": ["ENG", "…"], "admin": ["CD"] } }
 ```
 
-`personal_space` is `null` for an account without one. `spaces` is `null`
-without `--spaces`, and its lists are keys rather than counts, since a consumer
-asking the question wants to know *which*.
+`personal_space` is `null` for an account without one. `spaces` is `null` for
+the account-id form, and its lists are keys rather than counts, since a
+consumer asking the question wants to know *which*.
 
 ## Files
 
@@ -250,7 +251,8 @@ asking the question wants to know *which*.
   the expansion otherwise -- never built from the account id.
 - The no-argument and one-argument forms hit `/user/current` and
   `/user?accountId=` respectively, and neither touches `/search/user`.
-- Without `--spaces`, exactly one request is made.
+- The account-id form makes exactly one request, and never touches the
+  space directory.
 - Schema conformance, built with the command's own builder.
 
 ## Not in scope

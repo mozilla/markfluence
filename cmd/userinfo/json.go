@@ -42,7 +42,7 @@ type jsonPersonalSpace struct {
 	URL string `json:"url"`
 }
 
-// jsonSpaces is the --spaces survey.
+// jsonSpaces is the space survey, which the no-argument form carries.
 //
 // write lists the spaces the account may **create pages in**. That is a space
 // grant; permission to edit an existing page is not in it and Confluence
