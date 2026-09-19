@@ -114,11 +114,19 @@ func TestNoVisibleSpacesWalksNothing(t *testing.T) {
 func TestTheSpaceWalkIsBounded(t *testing.T) {
 	c, starts := spaceServer(t, func(int) string { return spaceRows(0, 250) })
 	var seen int
-	if err := c.WalkSpaceOperations(func(SpaceRef, []SpaceOperation) error {
+	err := c.WalkSpaceOperations(func(SpaceRef, []SpaceOperation) error {
 		seen++
 		return nil
-	}); err != nil {
-		t.Fatalf("WalkSpaceOperations: %v", err)
+	})
+	// An **error**, not a truncated list: returning the rows collected so far
+	// would report "visible spaces: 50000" over the same page two hundred
+	// times, exit 0 -- the confident wrong answer this pager exists to stop.
+	if err == nil {
+		t.Fatal("hitting the page guard returned no error; a short answer that looks complete " +
+			"is the failure this route is written to avoid")
+	}
+	if !strings.Contains(err.Error(), "start offset") {
+		t.Errorf("err = %v, want it to name the likely cause", err)
 	}
 	if len(*starts) != maxSpacePages {
 		t.Errorf("made %d requests against a server that never ends, want the %d-page guard",

@@ -91,7 +91,7 @@ func nonNil(s []string) []string {
 // rule, and the same shape.
 func (r report) human() string {
 	rows := [][2]string{
-		{"account id", r.user.AccountID},
+		{"account id", r.accountID()},
 		{"name", r.user.DisplayName},
 		{"email", r.user.Email},
 		{"type", r.accountType()},
@@ -122,6 +122,16 @@ func (r report) human() string {
 		fmt.Fprintf(&b, "%-*s %s", width, row[0]+":", row[1])
 	}
 	return b.String()
+}
+
+// accountID marks the no-argument form, so a reader knows at a glance whether
+// they are looking at themselves or at somebody they named. Without it the two
+// forms produce structurally identical blocks.
+func (r report) accountID() string {
+	if r.self {
+		return r.user.AccountID + "  (these credentials)"
+	}
+	return r.user.AccountID
 }
 
 // accountType spells out what "app" means rather than leaving a reader to

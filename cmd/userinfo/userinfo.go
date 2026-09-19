@@ -33,12 +33,16 @@ var Cmd = &cobra.Command{
 		"'type' tells a person (atlassian) from a service account (app), which is\n" +
 		"most of why permissions surprise people, and 'external'/'guest' name a\n" +
 		"restricted account directly.\n\n" +
-		"--spaces additionally surveys every space the account can see and reports\n" +
-		"where it may create pages and which it administers. That is a walk of the\n" +
-		"space directory rather than one request, which is why it is opt-in.\n" +
+		"--spaces additionally surveys every space **the credentials you are\n" +
+		"running as** can see, and reports where they may create pages and which\n" +
+		"they administer. It describes the authenticated account and nothing\n" +
+		"else, so it cannot be combined with an ACCOUNT_ID: Confluence has no\n" +
+		"route that answers \"where may this other person publish\". That is a\n" +
+		"walk of the space directory rather than one request, which is why it is\n" +
+		"opt-in.\n\n" +
 		"'write access' means creating pages in a space: permission to edit an\n" +
-		"existing page is not a space grant at all, so an account listed here may\n" +
-		"still be refused on a particular page.\n\n" +
+		"existing page is not a space grant at all, so a space listed here may\n" +
+		"still refuse a particular page.\n\n" +
 		"Read-only. Nothing is written to Confluence or to disk.",
 	Example: "  # Who am I, and can this token do anything?\n" +
 		"  markfluence user-info\n\n" +
@@ -59,6 +63,20 @@ func init() {
 func run(cmd *cobra.Command, args []string) error {
 	accountID := ""
 	if len(args) == 1 {
+		if withSpaces {
+			// The survey answers for the **credentials**, not for the named
+			// account: GET /space?expand=operations takes no accountId and
+			// reports what the authenticated user may do. Running both would
+			// print this caller's writable spaces underneath somebody else's
+			// name, which is a wrong answer rather than a missing one. There
+			// is no route that answers it for another account -- the space
+			// permissions API lists principals and groups, and resolving those
+			// to "can this person publish" is a different command.
+			return fatalFail(
+				"--spaces describes the account you are authenticated as, not the one you "+
+					"named, so the two cannot be combined; run it without an account id",
+				jsonout.CodeValidation)
+		}
 		accountID = strings.TrimSpace(args[0])
 		if accountID == "" {
 			// Before the credentials: a local defect should not cost a request
@@ -87,10 +105,20 @@ func run(cmd *cobra.Command, args []string) error {
 
 	rep := report{user: user, self: accountID == ""}
 	if withSpaces {
-		// Best-effort, like every optional read in page-info and space-info: a
-		// survey that fails leaves its field null and the identity stands.
-		if survey, err := surveySpaces(c); err == nil {
+		// Best-effort, like the optional reads in page-info and space-info --
+		// but *said out loud*, unlike theirs. Those are implicit; this one the
+		// caller asked for by name, so a silent omission is byte-identical to
+		// not having passed the flag at all.
+		survey, err := surveySpaces(c)
+		switch {
+		case err == nil:
 			rep.spaces = survey
+		case ui.IsJSON():
+			// stderr under --json is a schema-validated document, so the note
+			// travels in the envelope's warnings array instead.
+			jsonout.AddWarning("could not survey spaces: " + err.Error())
+		default:
+			ui.Warn("could not survey spaces: " + err.Error())
 		}
 	}
 
@@ -134,8 +162,9 @@ func emitFailure(msg string, code jsonout.Code, exit int) error {
 // report is what the command found, feeding both renderers.
 type report struct {
 	user *client.User
-	// self records which question was asked, so the output can say "these
-	// credentials" rather than describing a stranger.
+	// self records which question was asked: the human output marks the
+	// no-argument form, and --json carries it as a field, so neither leaves a
+	// reader guessing whether the account described is their own.
 	self bool
 	// spaces is nil without --spaces, and also when the survey failed.
 	spaces *spaceSurvey

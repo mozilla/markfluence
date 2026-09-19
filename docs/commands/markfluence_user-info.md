@@ -19,12 +19,17 @@ an old page names its person here and nowhere else.
 most of why permissions surprise people, and 'external'/'guest' name a
 restricted account directly.
 
---spaces additionally surveys every space the account can see and reports
-where it may create pages and which it administers. That is a walk of the
-space directory rather than one request, which is why it is opt-in.
+--spaces additionally surveys every space **the credentials you are
+running as** can see, and reports where they may create pages and which
+they administer. It describes the authenticated account and nothing
+else, so it cannot be combined with an ACCOUNT_ID: Confluence has no
+route that answers "where may this other person publish". That is a
+walk of the space directory rather than one request, which is why it is
+opt-in.
+
 'write access' means creating pages in a space: permission to edit an
-existing page is not a space grant at all, so an account listed here may
-still be refused on a particular page.
+existing page is not a space grant at all, so a space listed here may
+still refuse a particular page.
 
 Read-only. Nothing is written to Confluence or to disk.
 
