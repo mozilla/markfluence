@@ -19,15 +19,18 @@ an old page names its person here and nowhere else.
 most of why permissions surprise people, and 'external'/'guest' name a
 restricted account directly.
 
---spaces additionally surveys every space **the credentials you are
-running as** can see, and reports where they may create pages and which
-they administer. It describes the authenticated account and nothing
-else, so it cannot be combined with an ACCOUNT_ID. Asking where somebody
-else may publish would mean reading every space's permission grants and
-resolving them against that person's group memberships -- over a
-thousand requests here, and a local reimplementation of Confluence's
-permission rules. That is a walk of the space directory rather than one
-request, which is why even the caller's own survey is opt-in.
+With no argument it also surveys every space those credentials can see,
+reporting where they may create pages and which they administer. That
+survey is a walk of the space directory rather than one request, so the
+no-argument form takes a few seconds.
+
+It is absent from the ACCOUNT_ID form, and not by omission: the route
+answers for the authenticated account and takes no account id, so
+reporting it beside somebody else's name would attribute your access to
+them. Asking where another person may publish means reading every
+space's permission grants and resolving them against their group
+memberships -- over a thousand requests, and a local reimplementation of
+Confluence's permission rules.
 
 'write access' means creating pages in a space: permission to edit an
 existing page is not a space grant at all, so a space listed here may
@@ -42,21 +45,20 @@ markfluence user-info [ACCOUNT_ID] [flags]
 ### Examples
 
 ```
-  # Who am I, and can this token do anything?
+  # Who am I, and where can these credentials publish?
   markfluence user-info
 
   # Who is this account id on an old page?
   markfluence user-info 60c36d0718e9f60071326951
 
-  # Where can these credentials publish?
-  markfluence user-info --spaces
+  # Just the spaces, as data
+  markfluence user-info --json | jq '.results[0].spaces'
 ```
 
 ### Options
 
 ```
-  -h, --help     help for user-info
-      --spaces   Also survey which spaces the account may create pages in and administer.
+  -h, --help   help for user-info
 ```
 
 ### Options inherited from parent commands
