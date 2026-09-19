@@ -177,6 +177,69 @@ It is now in the README's copy-pasteable list. Note the shape of the failure
 for anyone debugging one: a 401 whose body says `scope does not match`, which
 is markfluence's third auth phrasing and the one that names the cause plainly.
 
+## Verified 2026-09-18 — the identity routes, and the space survey (#171)
+
+### `GET /user/current` and `GET /user?accountId=` carry the same shape
+
+Both `read:confluence-user`, which every working token has — unlike the
+directory route above. Measured fields: `accountId`, `displayName`,
+`publicName`, `email`, `accountType` (`atlassian` for a person, `app` for a
+service account), `accountStatus`, `isExternalCollaborator`, `isGuest`.
+
+`accountType` is the field worth knowing about: an `app` account is a
+service-account token, is in none of the groups a person is, and is therefore
+the explanation for most permission surprises.
+
+### `?expand=personalSpace` gives a personal space, and the key cannot be constructed
+
+The expansion returns the space's `id`, `key`, `name`, `type` and `status`.
+
+**Do not build the key from the account id.** `~{accountId}` is right for some
+accounts (`~60c36d0718e9f60071326951`) and wrong for others: this instance
+carries personal spaces keyed by **email** (`~aalexander@mozilla.com`,
+`~amuntner@mozilla.com`) in the same directory. Both forms are live, so the key
+is a lookup and never a format.
+
+It is also genuinely optional: an `app` account returns `personalSpace: null`
+while a person returns a space, so the field is absent for every
+service-account token rather than only in theory.
+
+### `GET /rest/api/space?expand=operations` answers "where can this account write?"
+
+The operations expansion works on the **collection**, not only the single-space
+route, so the survey is one walk rather than one request per space. `create:page`
+means the account may create pages there; `administer:space` means it
+administers the space — an admin's row also carries `archive:space`,
+`delete:space`, `export:space` and six `manage_*` operations, so the one
+Atlassian names for the permission is the one that will not drift.
+
+Measured with two accounts: a scoped service-account token saw 525 spaces, 97
+writable, 2 administered; a personal token saw 533, 102, 11.
+
+Neither is page *edit*, which is not a space property at all
+([page-status.md](page-status.md)): `create:page` is a space grant and page
+`update` appears only on a page's own operations.
+
+### **`/rest/api/space` returns short pages that are not the end**
+
+The trap, and the reason this route does not go through `listV1`.
+
+```
+limit=250&start=0    ->  200 rows
+limit=250&start=200  ->  250 rows
+limit=500&start=0    ->  500 rows
+```
+
+The real total was 525. `listV1` stops when a page comes back shorter than it
+asked for, so under it this route reports **200 spaces and 39 writable**,
+silently, with no error — which is exactly what the first version of this probe
+did before `start=200` was tried. Termination here is an **empty** page and
+nothing else, and the offset advances by rows *returned* rather than by the
+limit requested, because the two differ.
+
+This is the [README](README.md)'s opening trap arriving from a new direction:
+the cheap answer looked right and was not.
+
 ## Unverified
 
 - **Whether `sitePermissionTypeFilter` has any effect at all.** Three values were

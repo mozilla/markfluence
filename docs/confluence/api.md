@@ -126,6 +126,33 @@ Two problems, hence the `start`/`limit` offset paging in `ListAttachments`:
    to the `/wiki` context, not a v2-style path. The same response reports
    `_links.base = https://SITE/wiki` and `_links.context = /wiki`.
 
+## `/rest/api/space` pages by offset, and a short page is **not** the end
+
+**Verified 2026-09-18** (#171), and the reason `WalkSpaceOperations` has its own
+pager instead of calling `listV1`:
+
+```
+limit=250&start=0    ->  200 rows
+limit=250&start=200  ->  250 rows
+limit=500&start=0    ->  500 rows
+```
+
+525 spaces in total. `listV1` terminates when a page comes back shorter than it
+asked for — correct for the child and attachment collections above, and wrong
+here — so pointing this route at it reports **200 spaces**, silently, with no
+error. The first version of that probe did exactly this and produced a
+confident wrong answer.
+
+Termination is an **empty** page and nothing else, and the offset advances by
+rows *returned* rather than by the limit requested, because the two differ. The
+walk is also bounded (`maxSpacePages`), since an empty page is the only end
+signal offset paging has here: a server that clamped `start` would otherwise
+hand back rows forever.
+
+So the offset rule has two shapes, and picking by "is it v1?" is not enough —
+the child/attachment collections end on a short page and this one does not.
+Full evidence: [users.md](users.md).
+
 ## v2 collections paginate with a cursor
 
 `_links.next` on a v2 collection is a site-relative absolute path carrying the
@@ -310,7 +337,9 @@ below.
 | `ListContentProperties` | v2 | `GET /pages/{id}/properties` | `read:page:confluence` |
 | `SetContentProperty` (create) | v2 | `POST /pages/{id}/properties` | `read:page:confluence`, `write:page:confluence` |
 | `SetContentProperty` (update) | v2 | `PUT /pages/{id}/properties/{propId}` | `read:page:confluence`, `write:page:confluence` |
-| `GetUser` | v1 | `GET /user` | `read:confluence-user` |
+| `GetUser`, `UserInfo` | v1 | `GET /user` | `read:confluence-user` |
+| `CurrentUser` | v1 | `GET /user/current` | `read:confluence-user` |
+| `GetSpace`, `WalkSpaceOperations` | v1 | `GET /space`, `GET /space/{key}` | **undocumented for GET, see below** |
 | `SearchUsers` | v1 | `GET /search/user` | `read:content-details:confluence` — **granular, and implied by nothing else** ([users.md](users.md)) |
 | `searchCQL` | v1 | `GET /search` | `search:confluence` |
 | attachment upload | v1 | `POST /content/{id}/child/attachment` | `write:confluence-file` |
@@ -350,6 +379,12 @@ write scope, which is Atlassian's oddity, not ours). Reading a page's labels is
 covered by `read:page:confluence`, which a token doing anything at all already
 has. So the failure mode stays narrow and recognizable — every command works,
 and only the label and page-status halves of `create`/`update` 401.
+
+The `GET` on `/rest/api/space` and `/rest/api/space/{key}` is **undocumented** —
+Atlassian's OpenAPI document carries only `POST` for the collection and
+`PUT`/`DELETE` for the single space — so their scopes are observed rather than
+derived, the same footing as the three v1 child-listing routes above. Both work
+with the union below.
 
 `read:content-details:confluence` is the newest, and the only one a *whole
 command* depends on: without it `user-find` 401s with `scope does not match`
