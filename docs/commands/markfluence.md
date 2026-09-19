@@ -51,6 +51,7 @@ markfluence [flags]
 * [markfluence read](markfluence_read.md)	 - Fetch a Confluence page and print its body
 * [markfluence schema](markfluence_schema.md)	 - Print the JSON Schema for --json output
 * [markfluence search](markfluence_search.md)	 - Find Confluence pages by full-text search
+* [markfluence space-info](markfluence_space-info.md)	 - Print metadata about a Confluence space
 * [markfluence update](markfluence_update.md)	 - Publish one or more markdown files to Confluence pages
 * [markfluence user-find](markfluence_user-find.md)	 - Find a Confluence user's account id and mention markdown
 

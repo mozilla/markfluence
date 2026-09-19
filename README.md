@@ -253,6 +253,7 @@ reach for.
 | [`read`](docs/commands/markfluence_read.md) | one page as markdown on stdout, or as raw storage |
 | [`export`](docs/commands/markfluence_export.md) | a page, a subtree, or a whole space to files, attachments included |
 | [`page-info`](docs/commands/markfluence_page-info.md) | one page's metadata: space, parent, version, width, labels, authors |
+| [`space-info`](docs/commands/markfluence_space-info.md) | one space's metadata: what you may do in it, the page statuses it offers, exact page counts |
 
 **Finding pages:**
 

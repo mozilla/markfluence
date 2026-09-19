@@ -233,6 +233,34 @@ is `_links`, `authorId`, `body`, `createdAt`, `id`, `lastOwnerId`, `ownerId`,
 There is no expansion that adds it. A page's lozenge is one extra v1 request per
 page, always.
 
+### Asking a space "what statuses do you offer" has no good answer (#170)
+
+`space-info` needs to report the statuses a `page_status:` line may use, and
+the finding above is what makes that hard: there is no space-wide list. What
+markfluence does, and why each source is not enough on its own:
+
+1. **`state/settings`** — the space's real configuration, and authoritative.
+   **Space admin only**: re-confirmed 2026-09-18 with a collaborator-level
+   account, which gets a 403 even in a space it can create pages in.
+2. **`state/available` on the homepage** — what *this caller* may set on *that
+   page*. Reported labelled as both ("yours, on the homepage"), because it is
+   not the space's list.
+3. Neither — reported as unavailable, pointing at `page-info PAGE`.
+
+The fallback exists because **the population that needs this is mostly
+non-admins**: an author filling in `page_status:` is exactly who
+`state/settings` refuses.
+
+**Measured caveat, and it is a real limitation rather than a theoretical one.**
+Source 2 needs *edit* permission on the homepage, and a collaborator who can
+create pages in a space frequently cannot edit its homepage — the same shape
+that broke `create`'s original probe. Tested against two spaces with a
+collaborator token, source 2 failed in **both**, so for that token the field
+never answers. A page the caller *owns* would almost certainly work, and the
+space walk already sees every page's `ownerId`, but pairing them needs the
+caller's own account id. Recorded here rather than built, because the fix
+belongs with `user-info` (#171), which is where "who am I" is answered.
+
 ## What is not verified
 
 - **Whether a *scoped* token can do any of this.** The probes used an unscoped

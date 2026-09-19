@@ -140,6 +140,87 @@ per node. Tempting, and rejected twice over:
 - **It includes archived pages by default**, as the archived root page above
   demonstrates.
 
+## Verified 2026-09-18 — what a space itself can be asked (#170)
+
+### The v2 flat listing *is* usable for counting, which is a different question
+
+The section above rejects `GET /wiki/api/v2/spaces/{id}/pages` for building a
+tree, and that still holds. For **counting** it is the right route and the only
+exact one: each row carries `status`, `parentId`, `createdAt` and
+`version.createdAt`, so one cursor walk yields current pages, archived pages,
+root pages, pages created in a window, pages touched in it, and the date of the
+newest edit.
+
+Measured on `SRE`: **5 requests** at `limit=250` for 1126 current + 40 archived,
+about 9 seconds. The personal space is one request.
+
+Two things to keep straight. The counts are of **pages, not edits** —
+`version.createdAt` is only the *latest* version's timestamp, so a page revised
+nine times in a window contributes one, and the number of edits would need
+`/pages/{id}/versions` per page. And a page created inside the window has its
+first version inside it too, so "created" and "touched" are **not disjoint**;
+markfluence reports the intersection so the two are never added.
+
+### `totalSize` is present on this collection and must still be ignored
+
+The walk's responses carry `totalSize`, and on every space probed it agreed with
+the walk exactly — 1126 for `SRE`, 37 for the personal space. It is still not
+usable, for the reason [search.md](search.md) records against `/search`: the
+field is an estimate that has been measured drifting (294, 292, 291 against 289
+real rows) and reporting `1` against an empty `results`. A count that is usually
+right and occasionally wrong, with no way to tell which, is worse than a walk.
+
+### `?expand=operations` says what the calling account may do
+
+`GET /wiki/rest/api/space/{key}?expand=operations` resolves the caller's own
+permissions — no group membership to interpret, no test write, one request:
+
+| space | operations |
+|---|---|
+| `SRE` | `read:space` |
+| `AGILE` | `read:space`, `create:page`, `create:blogpost`, `create:comment`, `create:attachment` |
+| a personal space with collaborator access granted | as `AGILE` |
+| `AIM` | `read:space`, `create:comment` |
+| a space the account administers | `administer:space`, `archive:space`, `delete:space`, `export:space`, `manage_content:space`, `manage_guest_users:space`, `manage_look_and_feel:space`, `manage_public_links:space`, `manage_templates:space`, `manage_users:space`, `read:space`, `update:space` |
+
+So `create:page` is the write predicate and `administer:space` the admin one.
+It matches behaviour seen independently: the account showing only `read:space`
+on `SRE` is the one that got `403 User does not have Page edit permission`
+against an `SRE` page.
+
+**It does not answer whether a given page is editable.** `create:page` is a
+*space* grant; page `update` is not in this list at all, and per
+[page-status.md](page-status.md) an account can create pages in a space and be
+refused on a page in it. Anything reporting this must say "create pages", not
+"write".
+
+### One request answers identity, permissions, description, labels *and* homepage
+
+The same call takes `expand=operations,description.plain,metadata.labels,homepage`,
+and the homepage expansion carries its **title**, so a space's homepage costs no
+second request.
+
+### The v1 space `id` is a number where every v2 route reports a string
+
+In one response: `"id": 27918390` (bare number) and `"homepage": {"id":
+"27918392"}` (string). A Go struct with a plain `string` field for the first
+fails outright —
+
+```
+json: cannot unmarshal number into Go struct field .id of type string
+```
+
+— which is how this was found, after a test stub had served both as strings and
+hidden it. `client.GetSpace` decodes the space id as a `json.Number`; do not
+"tidy" the two into one type.
+
+### The `GET` on `/rest/api/space/{key}` is undocumented
+
+Atlassian's OpenAPI document carries only `PUT` and `DELETE` for that path, so
+the `GET`'s scope is **observed rather than derived** — the same footing as the
+three v1 child-listing routes in [api.md](api.md#scopes). It works with the
+union markfluence already requires.
+
 ## Unverified
 
 - **Which scope the v1 root-pages route needs.** Everything above was measured
