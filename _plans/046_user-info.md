@@ -31,8 +31,9 @@ personal space:  ~60c36d0718e9f60071326951  https://mozilla-hub.atlassian.net/wi
 
 $ markfluence user-info --spaces
 ...
-write access:    97 of 525 spaces
-admin access:    2 spaces -- airmoArchive, CD
+visible spaces:  525
+write access:    97 (--json lists them)
+admin access:    2 -- airmoArchive, CD
 ```
 
 Read-only. No markdown file, nothing written.
