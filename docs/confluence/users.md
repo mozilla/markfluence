@@ -225,11 +225,20 @@ Measured with two accounts: a scoped service-account token saw 525 spaces, 97
 writable, 2 administered; a personal token saw 533, 102, 11.
 
 **The route answers for the authenticated credentials and takes no account
-id**, so there is no way to ask it "where may *this other person* publish".
-That is why `user-info --spaces` refuses an `ACCOUNT_ID` rather than reporting
-the caller's own access beside somebody else's name. `/api/v2/spaces/{id}/permissions`
-lists principals and groups instead, and resolving those to one person's
-effective access is a different question.
+id**, which is why `user-info --spaces` refuses an `ACCOUNT_ID` rather than
+reporting the caller's own access beside somebody else's name.
+
+Asking it for another account is possible and expensive, which is worth
+writing down so nobody re-derives it. Both pieces exist and both answer a
+non-admin: `GET /rest/api/user/memberof?accountId=` lists an account's groups
+(42 for one person here) and `GET /api/v2/spaces/{id}/permissions` lists a
+space's grants as principal/operation pairs. But the grants are **per space**,
+run **250+ rows each and paginate**, and there are 533 spaces — over a thousand
+requests against three for the caller's own answer. It also means resolving
+Confluence's permission model locally: group grants, individual grants,
+defaults, space versus global. A subtle error there reports another person's
+access with full confidence, which is the failure mode this directory exists to
+prevent.
 
 Neither is page *edit*, which is not a space property at all
 ([page-status.md](page-status.md)): `create:page` is a space grant and page

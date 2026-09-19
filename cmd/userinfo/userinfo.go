@@ -36,10 +36,12 @@ var Cmd = &cobra.Command{
 		"--spaces additionally surveys every space **the credentials you are\n" +
 		"running as** can see, and reports where they may create pages and which\n" +
 		"they administer. It describes the authenticated account and nothing\n" +
-		"else, so it cannot be combined with an ACCOUNT_ID: Confluence has no\n" +
-		"route that answers \"where may this other person publish\". That is a\n" +
-		"walk of the space directory rather than one request, which is why it is\n" +
-		"opt-in.\n\n" +
+		"else, so it cannot be combined with an ACCOUNT_ID. Asking where somebody\n" +
+		"else may publish would mean reading every space's permission grants and\n" +
+		"resolving them against that person's group memberships -- over a\n" +
+		"thousand requests here, and a local reimplementation of Confluence's\n" +
+		"permission rules. That is a walk of the space directory rather than one\n" +
+		"request, which is why even the caller's own survey is opt-in.\n\n" +
 		"'write access' means creating pages in a space: permission to edit an\n" +
 		"existing page is not a space grant at all, so a space listed here may\n" +
 		"still refuse a particular page.\n\n" +
@@ -68,13 +70,23 @@ func run(cmd *cobra.Command, args []string) error {
 			// account: GET /space?expand=operations takes no accountId and
 			// reports what the authenticated user may do. Running both would
 			// print this caller's writable spaces underneath somebody else's
-			// name, which is a wrong answer rather than a missing one. There
-			// is no route that answers it for another account -- the space
-			// permissions API lists principals and groups, and resolving those
-			// to "can this person publish" is a different command.
+			// name, which is a wrong answer rather than a missing one.
+			//
+			// Answering it properly is *possible* and deliberately not done.
+			// The pieces exist -- /user/memberof gives an account's groups and
+			// /api/v2/spaces/{id}/permissions gives a space's grants -- but
+			// measured on this instance that is 42 groups against 533 spaces
+			// whose grant lists are 250+ rows each and paginate, so well over
+			// a thousand requests where the caller's own answer costs three.
+			// And it means reimplementing Confluence's permission resolution
+			// locally: group grants, individual grants, defaults, space versus
+			// global. Getting that subtly wrong reports somebody else's access
+			// with full confidence, which is the worst shape a bug here can
+			// take.
 			return fatalFail(
-				"--spaces describes the account you are authenticated as, not the one you "+
-					"named, so the two cannot be combined; run it without an account id",
+				"--spaces reports what the account you are authenticated as may do, not the "+
+					"account you named, so the two cannot be combined; run it without an "+
+					"account id",
 				jsonout.CodeValidation)
 		}
 		accountID = strings.TrimSpace(args[0])
