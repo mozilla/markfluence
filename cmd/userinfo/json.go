@@ -26,7 +26,9 @@ type jsonUserInfoResult struct {
 	// from the account id, since personal spaces keyed by email and by id are
 	// both live on one instance.
 	PersonalSpace *jsonPersonalSpace `json:"personal_space"`
-	// Spaces is null without --spaces, and also when the survey failed.
+	// Spaces is present only for the no-argument form -- the survey describes
+	// the authenticated credentials -- and null otherwise, including when it
+	// failed.
 	Spaces *jsonSpaces `json:"spaces"`
 }
 

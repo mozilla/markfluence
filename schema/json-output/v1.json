@@ -441,7 +441,7 @@
           ]
         },
         "spaces": {
-          "description": "The --spaces survey, null when it was not asked for and also when it failed. It describes the AUTHENTICATED credentials, never the account named by an argument -- the route takes no account id -- which is why --spaces and an ACCOUNT_ID cannot be combined. write lists the spaces those credentials may CREATE PAGES in -- a space grant. Permission to edit an existing page is not in it and Confluence decides that per page, so an account listed here may still be refused on a particular page. visible is every space the account can see, which is what makes \"97 of 525\" meaningful. [] means none, which is distinct from the null above.",
+          "description": "The space survey, present only for the no-argument form (self true) and null otherwise, including when the survey itself failed. It describes the AUTHENTICATED credentials and cannot describe an account named by an argument, because the route takes no account id -- reporting it beside somebody else's name would attribute the caller's access to them. write lists the spaces those credentials may CREATE PAGES in -- a space grant. Permission to edit an existing page is not in it and Confluence decides that per page, so an account listed here may still be refused on a particular page. visible is every space the account can see, which is what makes \"97 of 525\" meaningful. [] means none, which is distinct from the null above.",
           "oneOf": [
             {
               "type": "object",

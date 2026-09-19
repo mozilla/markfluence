@@ -15,8 +15,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var withSpaces bool
-
 // Cmd is the user-info command.
 var Cmd = &cobra.Command{
 	Use:   "user-info [ACCOUNT_ID]",
@@ -33,62 +31,35 @@ var Cmd = &cobra.Command{
 		"'type' tells a person (atlassian) from a service account (app), which is\n" +
 		"most of why permissions surprise people, and 'external'/'guest' name a\n" +
 		"restricted account directly.\n\n" +
-		"--spaces additionally surveys every space **the credentials you are\n" +
-		"running as** can see, and reports where they may create pages and which\n" +
-		"they administer. It describes the authenticated account and nothing\n" +
-		"else, so it cannot be combined with an ACCOUNT_ID. Asking where somebody\n" +
-		"else may publish would mean reading every space's permission grants and\n" +
-		"resolving them against that person's group memberships -- over a\n" +
-		"thousand requests here, and a local reimplementation of Confluence's\n" +
-		"permission rules. That is a walk of the space directory rather than one\n" +
-		"request, which is why even the caller's own survey is opt-in.\n\n" +
+		"With no argument it also surveys every space those credentials can see,\n" +
+		"reporting where they may create pages and which they administer. That\n" +
+		"survey is a walk of the space directory rather than one request, so the\n" +
+		"no-argument form takes a few seconds.\n\n" +
+		"It is absent from the ACCOUNT_ID form, and not by omission: the route\n" +
+		"answers for the authenticated account and takes no account id, so\n" +
+		"reporting it beside somebody else's name would attribute your access to\n" +
+		"them. Asking where another person may publish means reading every\n" +
+		"space's permission grants and resolving them against their group\n" +
+		"memberships -- over a thousand requests, and a local reimplementation of\n" +
+		"Confluence's permission rules.\n\n" +
 		"'write access' means creating pages in a space: permission to edit an\n" +
 		"existing page is not a space grant at all, so a space listed here may\n" +
 		"still refuse a particular page.\n\n" +
 		"Read-only. Nothing is written to Confluence or to disk.",
-	Example: "  # Who am I, and can this token do anything?\n" +
+	Example: "  # Who am I, and where can these credentials publish?\n" +
 		"  markfluence user-info\n\n" +
 		"  # Who is this account id on an old page?\n" +
 		"  markfluence user-info 60c36d0718e9f60071326951\n\n" +
-		"  # Where can these credentials publish?\n" +
-		"  markfluence user-info --spaces",
+		"  # Just the spaces, as data\n" +
+		"  markfluence user-info --json | jq '.results[0].spaces'",
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completion.Values(),
 	RunE:              run,
 }
 
-func init() {
-	Cmd.Flags().BoolVar(&withSpaces, "spaces", false,
-		"Also survey which spaces the account may create pages in and administer.")
-}
-
 func run(cmd *cobra.Command, args []string) error {
 	accountID := ""
 	if len(args) == 1 {
-		if withSpaces {
-			// The survey answers for the **credentials**, not for the named
-			// account: GET /space?expand=operations takes no accountId and
-			// reports what the authenticated user may do. Running both would
-			// print this caller's writable spaces underneath somebody else's
-			// name, which is a wrong answer rather than a missing one.
-			//
-			// Answering it properly is *possible* and deliberately not done.
-			// The pieces exist -- /user/memberof gives an account's groups and
-			// /api/v2/spaces/{id}/permissions gives a space's grants -- but
-			// measured on this instance that is 42 groups against 533 spaces
-			// whose grant lists are 250+ rows each and paginate, so well over
-			// a thousand requests where the caller's own answer costs three.
-			// And it means reimplementing Confluence's permission resolution
-			// locally: group grants, individual grants, defaults, space versus
-			// global. Getting that subtly wrong reports somebody else's access
-			// with full confidence, which is the worst shape a bug here can
-			// take.
-			return fatalFail(
-				"--spaces reports what the account you are authenticated as may do, not the "+
-					"account you named, so the two cannot be combined; run it without an "+
-					"account id",
-				jsonout.CodeValidation)
-		}
 		accountID = strings.TrimSpace(args[0])
 		if accountID == "" {
 			// Before the credentials: a local defect should not cost a request
@@ -116,11 +87,25 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	rep := report{user: user, self: accountID == ""}
-	if withSpaces {
+	// Surveyed only for the self form, and that is the whole rule rather than a
+	// default: GET /space?expand=operations answers for the **authenticated**
+	// account and takes no account id, so printing it under somebody else's
+	// name would attribute this caller's access to them -- a wrong answer, not
+	// a missing one.
+	//
+	// Answering it properly for another account is possible and deliberately
+	// not done. Both pieces exist (/user/memberof for an account's groups,
+	// /api/v2/spaces/{id}/permissions for a space's grants) but measured here
+	// that is 42 groups against 533 spaces whose grant lists run 250+ rows
+	// each and paginate -- over a thousand requests where this costs three --
+	// plus a local reimplementation of Confluence's permission resolution,
+	// which reports somebody else's access wrongly with full confidence when
+	// it is subtly off.
+	if rep.self {
 		// Best-effort, like the optional reads in page-info and space-info --
-		// but *said out loud*, unlike theirs. Those are implicit; this one the
-		// caller asked for by name, so a silent omission is byte-identical to
-		// not having passed the flag at all.
+		// but *said out loud*, unlike theirs. Those are implicit; this one is
+		// part of what the bare command promises, so a silent omission leaves
+		// no sign anything was missed.
 		survey, err := surveySpaces(c)
 		switch {
 		case err == nil:

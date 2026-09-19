@@ -198,23 +198,24 @@ func TestPersonalSpaceKeyIsNotDerived(t *testing.T) {
 
 // --- the space survey ----------------------------------------------------------
 
-// Without --spaces nothing is surveyed: the identity half is one request and
-// the survey is a walk, which is why it is opt-in.
-func TestWithoutSpacesNothingIsWalked(t *testing.T) {
+// An account id is never surveyed, and the point is attribution rather than
+// cost: the route reports what the *authenticated* account may do, so printing
+// it under a named account's name would be a wrong answer.
+func TestAnAccountIDIsNotSurveyed(t *testing.T) {
 	s := stub{spacePages: map[int]string{0: "[" + spaceRow("ENG", "read:space") + "]"}}
 	c, paths := s.client(t)
-	user, err := lookup(c, "")
+	user, err := lookup(c, "acc-1")
 	if err != nil {
 		t.Fatalf("lookup: %v", err)
 	}
-	rep := report{user: user, self: true}
+	rep := report{user: user, self: false}
 	for _, p := range *paths {
 		if p == "/wiki/rest/api/space" {
-			t.Errorf("walked the space directory without --spaces: %v", *paths)
+			t.Errorf("surveyed spaces for an account the caller named: %v", *paths)
 		}
 	}
 	if res := rep.jsonResult(); res.Spaces != nil {
-		t.Errorf("spaces = %+v, want null when not asked for", res.Spaces)
+		t.Errorf("spaces = %+v, want null for a named account", res.Spaces)
 	}
 }
 
@@ -408,16 +409,12 @@ func TestCommandIsInTheSchemaEnum(t *testing.T) {
 	}
 }
 
-// --spaces surveys the **credentials**, not a named account: the route takes
-// no accountId and reports what the authenticated user may do. Allowing both
-// would print this caller's writable spaces under somebody else's name, which
-// is a wrong answer rather than a missing one.
-func TestSpacesRefusesAnAccountID(t *testing.T) {
-	withSpaces = true
-	t.Cleanup(func() { withSpaces = false })
-	err := run(Cmd, []string{"60c36d07"})
-	if !ui.IsSilent(err) || ui.ExitCode(err) != 2 {
-		t.Fatalf("run = %v, want a silent exit-2 refusal", err)
+// The flag is gone: the survey is part of the no-argument form and is absent
+// from the other, because the route answers for the authenticated account.
+func TestThereIsNoSpacesFlag(t *testing.T) {
+	if f := Cmd.Flags().Lookup("spaces"); f != nil {
+		t.Error("--spaces exists; the survey belongs to the no-argument form, " +
+			"and cannot describe an account the caller named")
 	}
 }
 

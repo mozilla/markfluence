@@ -29,7 +29,7 @@ type:            atlassian
 status:          active
 personal space:  ~60c36d0718e9f60071326951  https://mozilla-hub.atlassian.net/wiki/spaces/~60c36d0718e9f60071326951
 
-$ markfluence user-info --spaces
+$ markfluence user-info          # the no-argument form also surveys spaces
 ...
 visible spaces:  525
 write access:    97 (too many to list; see --json output)
@@ -156,10 +156,14 @@ guess would be wrong in the interesting direction, since a deactivated person
 *has* an id that works here and a name that finds nothing there. The `Long`
 cross-references it in both directions.
 
-**The space survey is `--spaces`, not default.** The identity half is one
-request; the survey is 3+ and answers a different question. `info --properties`
-is the precedent, and it is the same trade: the expensive half is opt-in so the
-cheap half stays instant.
+**The space survey is part of the no-argument form, with no flag.** Written as
+`--spaces` on `info --properties`' precedent -- the expensive half opt-in so
+the cheap half stays instant -- and changed during implementation, because the
+survey turned out to be answerable *only* for the caller: the route takes no
+account id. A flag that is refused beside an argument and redundant without
+one is two rules for one fact, so the survey simply belongs to the form it can
+describe. The cost, knowingly: the bare command takes a few seconds where it
+could have taken one request.
 
 **Every optional field degrades independently.** Only the identity lookup is
 fatal. `personalSpace` absent is a *real answer* (`(none)`), not a failure —
