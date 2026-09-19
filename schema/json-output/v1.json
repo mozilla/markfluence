@@ -9,7 +9,7 @@
   "properties": {
     "schema_version": { "const": 1 },
     "markfluence_version": { "type": "string" },
-    "command": { "enum": ["page-info", "space-info", "read", "update", "create", "check", "diff", "children", "find", "search", "user-find", "attachment-list", "attachment-upload", "attachment-download", "export"] },
+    "command": { "enum": ["page-info", "space-info", "user-info", "read", "update", "create", "check", "diff", "children", "find", "search", "user-find", "attachment-list", "attachment-upload", "attachment-download", "export"] },
     "roots": { "type": "array", "items": { "type": "string" }, "description": "Every distinct documentation root the command resolved, sorted. Empty for a command with no per-file root concept, and for a pre-flight failure that never reached root resolution." },
     "warnings": { "type": "array", "items": { "type": "string" }, "description": "Warnings about the invocation itself rather than about any page or file -- currently only the .env permission warning, raised when the .env that supplied the API token is reachable by anyone but its owner. Always present, [] when there is nothing to report, the same convention roots and results follow. Not per-result warnings: those live on the result." },
     "results": { "type": "array" },
@@ -30,6 +30,15 @@
       "then": {
         "properties": {
           "results": { "items": { "$ref": "#/$defs/spaceInfoResult" } },
+          "summary": { "$ref": "#/$defs/basicSummary" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "command": { "const": "user-info" } }, "required": ["command"] },
+      "then": {
+        "properties": {
+          "results": { "items": { "$ref": "#/$defs/userInfoResult" } },
           "summary": { "$ref": "#/$defs/basicSummary" }
         }
       }
@@ -383,6 +392,66 @@
         "page_id": { "type": "string" },
         "error": { "type": "string" },
         "code": { "$ref": "#/$defs/code" }
+      }
+    },
+    "userInfoResult": {
+      "description": "One account: who the configured credentials belong to (self true) or who an account id names (self false). user-info reports exactly one of these; an operational failure is an errorObject on stderr instead, since there is no page id to name in a result.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ok", "self", "account_id", "display_name", "public_name", "email",
+        "account_type", "account_status", "external_collaborator", "guest",
+        "personal_space", "spaces"
+      ],
+      "properties": {
+        "ok": { "const": true },
+        "self": {
+          "description": "true when this describes the account the credentials belong to (user-info with no argument), false when an account id was given.",
+          "type": "boolean"
+        },
+        "account_id": { "type": "string" },
+        "display_name": { "type": "string" },
+        "public_name": { "type": "string" },
+        "email": { "type": "string" },
+        "account_type": {
+          "description": "\"atlassian\" for a person, \"app\" for a service account. The distinction explains most permission surprises, since an app account is not in the groups a person is.",
+          "type": "string"
+        },
+        "account_status": { "type": "string" },
+        "external_collaborator": { "type": "boolean" },
+        "guest": { "type": "boolean" },
+        "personal_space": {
+          "description": "The account's personal space, null when it has none -- a real answer rather than a failure, since a service account has none. The key cannot be constructed from the account id: personal spaces keyed by email and by account id are both live on one instance.",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "key", "name"],
+              "properties": {
+                "id": { "type": "string" },
+                "key": { "type": "string" },
+                "name": { "type": "string" }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "spaces": {
+          "description": "The --spaces survey, null when it was not asked for and also when it failed. write lists the spaces the account may CREATE PAGES in -- a space grant. Permission to edit an existing page is not in it and Confluence decides that per page, so an account listed here may still be refused on a particular page. visible is every space the account can see, which is what makes \"97 of 525\" meaningful. [] means none, which is distinct from the null above.",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["visible", "write", "admin"],
+              "properties": {
+                "visible": { "type": "integer" },
+                "write": { "type": "array", "items": { "type": "string" } },
+                "admin": { "type": "array", "items": { "type": "string" } }
+              }
+            },
+            { "type": "null" }
+          ]
+        }
       }
     },
     "spaceInfoResult": {
