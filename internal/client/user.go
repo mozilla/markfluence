@@ -17,10 +17,15 @@ import (
 
 // SpaceRef is a space named from somewhere else -- an account's personal space,
 // or one row of the operations survey.
+//
+// URL is absolute and empty when the response carried no link. It is built
+// from **SiteURL**, never BaseURL: a reader must never be shown the gateway
+// host, which is the rule printed page URLs already follow.
 type SpaceRef struct {
 	ID   string
 	Key  string
 	Name string
+	URL  string
 }
 
 // User is an account as the v1 user routes describe it.
@@ -51,13 +56,16 @@ type userResponse struct {
 	IsExternalCollaborator bool   `json:"isExternalCollaborator"`
 	IsGuest                bool   `json:"isGuest"`
 	PersonalSpace          *struct {
-		ID   json.Number `json:"id"`
-		Key  string      `json:"key"`
-		Name string      `json:"name"`
+		ID    json.Number `json:"id"`
+		Key   string      `json:"key"`
+		Name  string      `json:"name"`
+		Links struct {
+			WebUI string `json:"webui"`
+		} `json:"_links"`
 	} `json:"personalSpace"`
 }
 
-func (u userResponse) user() *User {
+func (u userResponse) user(siteURL string) *User {
 	out := &User{
 		AccountID:              u.AccountID,
 		DisplayName:            u.DisplayName,
@@ -70,10 +78,27 @@ func (u userResponse) user() *User {
 	}
 	if u.PersonalSpace != nil {
 		out.PersonalSpace = &SpaceRef{
-			ID: u.PersonalSpace.ID.String(), Key: u.PersonalSpace.Key, Name: u.PersonalSpace.Name,
+			ID:   u.PersonalSpace.ID.String(),
+			Key:  u.PersonalSpace.Key,
+			Name: u.PersonalSpace.Name,
+			URL:  spaceURL(siteURL, u.PersonalSpace.Links.WebUI),
 		}
 	}
 	return out
+}
+
+// spaceURL makes a space's webui link absolute.
+//
+// Taken from the response rather than built from the key, which would mean
+// guessing at escaping: an email-keyed personal space's link is
+// /spaces/~someone@example.com, with the @ unescaped, and inventing that rule
+// here would be a second place for it to be wrong. The link is
+// context-relative (no /wiki prefix), like the rest of v1.
+func spaceURL(siteURL, webui string) string {
+	if webui == "" {
+		return ""
+	}
+	return siteURL + "/wiki" + webui
 }
 
 // personalSpaceExpand is the expansion that carries an account's personal
@@ -95,7 +120,7 @@ func (c *ConfluenceClient) CurrentUser() (*User, error) {
 	if err != nil {
 		return nil, err
 	}
-	return out.user(), nil
+	return out.user(c.SiteURL()), nil
 }
 
 // UserInfo reports an account by id, or nil when there is no such account.
@@ -115,7 +140,7 @@ func (c *ConfluenceClient) UserInfo(accountID string) (*User, error) {
 		nil, &out, timeoutRead)
 	switch {
 	case err == nil:
-		return out.user(), nil
+		return out.user(c.SiteURL()), nil
 	case notFound(err):
 		return nil, nil
 	default:
@@ -155,6 +180,9 @@ func (c *ConfluenceClient) WalkSpaceOperations(visit func(SpaceRef, []SpaceOpera
 				Key        string           `json:"key"`
 				Name       string           `json:"name"`
 				Operations []SpaceOperation `json:"operations"`
+				Links      struct {
+					WebUI string `json:"webui"`
+				} `json:"_links"`
 			} `json:"results"`
 		}
 		q := url.Values{
@@ -170,7 +198,10 @@ func (c *ConfluenceClient) WalkSpaceOperations(visit func(SpaceRef, []SpaceOpera
 			return nil
 		}
 		for _, row := range out.Results {
-			ref := SpaceRef{ID: row.ID.String(), Key: row.Key, Name: row.Name}
+			ref := SpaceRef{
+				ID: row.ID.String(), Key: row.Key, Name: row.Name,
+				URL: spaceURL(c.SiteURL(), row.Links.WebUI),
+			}
 			if err := visit(ref, row.Operations); err != nil {
 				return err
 			}

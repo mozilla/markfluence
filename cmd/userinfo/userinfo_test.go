@@ -176,8 +176,18 @@ func TestNoPersonalSpaceSaysNone(t *testing.T) {
 // id-form personal space keys are both live on one instance.
 func TestPersonalSpaceKeyIsNotDerived(t *testing.T) {
 	s := stub{user: `{"accountId":"60c36d07","displayName":"A Person",
-		"personalSpace":{"id":766,"key":"~a@example.com","name":"A Person"}}`}
-	res := s.build(t, "60c36d07", false).jsonResult()
+		"personalSpace":{"id":766,"key":"~a@example.com","name":"A Person",
+		"_links":{"webui":"/spaces/~a@example.com"}}}`}
+	r := s.build(t, "60c36d07", false)
+	res := r.jsonResult()
+	// The URL is what a reader wants to click, and the human row shows it
+	// rather than the name, which is the display name already a line above.
+	if !strings.Contains(r.human(), "/wiki/spaces/~a@example.com") {
+		t.Errorf("output = %q, want the personal space URL", r.human())
+	}
+	if res.PersonalSpace.URL == "" {
+		t.Error("personal_space.url is empty though the response carried a link")
+	}
 	if res.PersonalSpace == nil || res.PersonalSpace.Key != "~a@example.com" {
 		t.Fatalf("personal_space = %+v, want the key as the API gave it", res.PersonalSpace)
 	}
@@ -345,7 +355,8 @@ func TestSchemaConformance(t *testing.T) {
 		}.build(t, "", false),
 		"another account, surveyed": stub{
 			user: `{"accountId":"60c36d07","displayName":"A Person",
-				"personalSpace":{"id":766,"key":"~a@example.com","name":"A Person"}}`,
+				"personalSpace":{"id":766,"key":"~a@example.com","name":"A Person",
+				"_links":{"webui":"/spaces/~a@example.com"}}}`,
 			spacePages: map[int]string{0: "[" + spaceRow("A", "read:space", "create:page") + "]"},
 		}.build(t, "60c36d07", true),
 	}
