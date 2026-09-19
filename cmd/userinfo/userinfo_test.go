@@ -255,7 +255,7 @@ func TestNoWriteAccessIsAnEmptyListNotNull(t *testing.T) {
 	if res.Spaces == nil || res.Spaces.Write == nil || len(res.Spaces.Write) != 0 {
 		t.Errorf("write = %+v, want an empty list", res.Spaces)
 	}
-	if !strings.Contains(r.human(), "none of 1 spaces") {
+	if !strings.Contains(r.human(), "write access:   none") {
 		t.Errorf("output = %q, want it to say none explicitly", r.human())
 	}
 }
@@ -285,8 +285,13 @@ func TestALongListIsSummarised(t *testing.T) {
 	s := stub{spacePages: map[int]string{0: "[" + strings.Join(rows, ",") + "]"}}
 	r := s.build(t, "", true)
 	out := r.human()
-	if !strings.Contains(out, "20 of 20 spaces") || !strings.Contains(out, "--json") {
+	if !strings.Contains(out, "write access:   20 (--json lists them)") {
 		t.Errorf("output = %q, want a count and a pointer to --json", out)
+	}
+	// The total belongs to the "visible spaces" row alone: repeating it on
+	// this line and the admin one put the same number on screen three times.
+	if strings.Count(out, "20 of 20") > 0 {
+		t.Errorf("output = %q, must not repeat the visible total", out)
 	}
 	// The keys are still all there in --json.
 	if res := r.jsonResult(); len(res.Spaces.Write) != 20 {

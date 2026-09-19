@@ -164,34 +164,35 @@ func (r report) visible() string {
 	return fmt.Sprint(r.spaces.Visible)
 }
 
-// writeAccess says "create pages" in its value for the same reason space-info
-// does: editing an existing page is not a space grant.
 func (r report) writeAccess() string {
 	if r.spaces == nil {
 		return ""
 	}
-	return countAndKeys(r.spaces.Write, r.spaces.Visible, "can create pages")
+	return countAndKeys(r.spaces.Write)
 }
 
 func (r report) adminAccess() string {
 	if r.spaces == nil {
 		return ""
 	}
-	return countAndKeys(r.spaces.Admin, r.spaces.Visible, "administers")
+	return countAndKeys(r.spaces.Admin)
 }
 
-// countAndKeys renders "N of M spaces -- KEY, KEY", naming the spaces while the
-// list is short enough to read and falling back to the count when it is not.
-// An operator asking where they can publish wants the keys; one with 97 of them
+// countAndKeys renders "N -- KEY, KEY", naming the spaces while the list is
+// short enough to read and falling back to the count when it is not. An
+// operator asking where they can publish wants the keys; one with 102 of them
 // wants the number and a --json call.
-func countAndKeys(keys []string, visible int, verb string) string {
+//
+// The total is **not** repeated here. It is on its own "visible spaces" row
+// above, and printing "N of M spaces" on both this line and the admin one put
+// the same number on screen three times.
+func countAndKeys(keys []string) string {
 	if len(keys) == 0 {
-		return fmt.Sprintf("none of %d spaces", visible)
+		return "none"
 	}
-	out := fmt.Sprintf("%d of %d spaces", len(keys), visible)
 	const nameLimit = 12
 	if len(keys) <= nameLimit {
-		return out + " -- " + strings.Join(keys, ", ")
+		return fmt.Sprintf("%d -- %s", len(keys), strings.Join(keys, ", "))
 	}
-	return out + fmt.Sprintf(" (%s; --json lists them)", verb)
+	return fmt.Sprintf("%d (--json lists them)", len(keys))
 }
