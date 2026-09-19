@@ -22,10 +22,12 @@ restricted account directly.
 --spaces additionally surveys every space **the credentials you are
 running as** can see, and reports where they may create pages and which
 they administer. It describes the authenticated account and nothing
-else, so it cannot be combined with an ACCOUNT_ID: Confluence has no
-route that answers "where may this other person publish". That is a
-walk of the space directory rather than one request, which is why it is
-opt-in.
+else, so it cannot be combined with an ACCOUNT_ID. Asking where somebody
+else may publish would mean reading every space's permission grants and
+resolving them against that person's group memberships -- over a
+thousand requests here, and a local reimplementation of Confluence's
+permission rules. That is a walk of the space directory rather than one
+request, which is why even the caller's own survey is opt-in.
 
 'write access' means creating pages in a space: permission to edit an
 existing page is not a space grant at all, so a space listed here may
