@@ -86,3 +86,28 @@ func TestCommandIsInTheSchemaEnum(t *testing.T) {
 		t.Error("space-info is not in the schema's command enum")
 	}
 }
+
+// Exit codes follow docs/json-output.md's contract, which page-info draws the
+// same way: 2 for "you invoked it wrong", 1 for "the request was fine and the
+// answer was no". A CI job branching on the two gets nothing useful if an
+// unknown space key and a bad flag are both 2.
+func TestOperationalFailuresExitOne(t *testing.T) {
+	if got := ui.ExitCode(operationalFail("space \"NOPE\" not found", jsonout.CodeNotFound)); got != 1 {
+		t.Errorf("operational failure exit = %d, want 1", got)
+	}
+	if got := ui.ExitCode(fatalFail("bad flag", jsonout.CodeValidation)); got != 2 {
+		t.Errorf("usage failure exit = %d, want 2", got)
+	}
+}
+
+// A blank key is refused before credentials are resolved, so a local defect
+// does not report itself as a missing token.
+func TestBlankKeyIsRefusedBeforeCredentials(t *testing.T) {
+	t.Setenv("CONFLUENCE_URL", "")
+	t.Setenv("CONFLUENCE_USERNAME", "")
+	t.Setenv("CONFLUENCE_TOKEN", "")
+	err := run(Cmd, []string{"   "})
+	if !ui.IsSilent(err) || ui.ExitCode(err) != 2 {
+		t.Fatalf("run = %v, want a silent exit-2 error", err)
+	}
+}

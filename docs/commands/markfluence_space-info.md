@@ -25,6 +25,9 @@ THEY may set on the space homepage, which is not the same thing:
 Confluence decides the list per page and per account, so another page may
 allow more or fewer. When neither can be read the field says so.
 
+--since counts from midnight UTC that many days ago, so 0 is today only
+and 7 is the last week plus today.
+
 The page counts are exact, which is why they cost a walk of the space --
 one request per 250 pages. They count pages, not edits: a page revised
 nine times in the window is one touched page. A page created inside the
@@ -54,7 +57,7 @@ markfluence space-info KEY [flags]
 
 ```
   -h, --help        help for space-info
-      --since int   Window in days for the created/touched page counts (0 means today only). (default 7)
+      --since int   Days back from midnight UTC for the created/touched page counts (0 is today only). (default 7)
 ```
 
 ### Options inherited from parent commands

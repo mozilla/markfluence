@@ -33,8 +33,13 @@ type stub struct {
 	walkFails bool
 }
 
+// iso renders a timestamp the way Confluence does: **milliseconds**, as in
+// 2026-09-15T10:04:00.000Z. That precision is not decoration -- a stub serving
+// second-precision stamps hid a real bug, because comparing them against a
+// formatted cutoff lexicographically puts a row inside the cutoff's own second
+// below it ('.' sorts under 'Z'). The suite serves what the API serves.
 func iso(daysAgo int) string {
-	return time.Now().UTC().AddDate(0, 0, -daysAgo).Format(time.RFC3339)
+	return time.Now().UTC().AddDate(0, 0, -daysAgo).Format("2006-01-02T15:04:05.000Z07:00")
 }
 
 // row builds a page row for the stub: created and lastEdited are days ago.
@@ -300,19 +305,61 @@ func TestCreatedAndTouchedOverlapIsReported(t *testing.T) {
 	}
 }
 
-// --since 0 is today only, and valid: unlike children --depth and
-// search --limit there is no "all" here, so 0 is a meaningful window.
-func TestSinceZeroIsTodayOnly(t *testing.T) {
+// --since 0 is today only, and it has to actually count today.
+//
+// The regression for a real bug: the cutoff was "now minus N days", so at N=0
+// it was *this instant* and nothing could be after it -- against a live
+// instance the counts were always zero while the help promised "today only".
+// The window now opens at midnight UTC, so a page touched earlier today counts
+// and one from three days ago does not.
+func TestSinceZeroCountsToday(t *testing.T) {
 	s := stub{pages: [][]string{{
 		row("1", "current", "", 0, 0),
 		row("2", "current", "", 3, 3),
 	}}}
 	r := s.build(t, 0)
-	if r.counts.Touched != 1 {
-		t.Errorf("touched = %d, want 1 for a zero-day window", r.counts.Touched)
+	if r.counts.Touched != 1 || r.counts.Created != 1 {
+		t.Errorf("counts = %+v, want 1 created / 1 touched for a zero-day window", r.counts)
 	}
-	if !strings.Contains(r.human(), "in the last day") {
-		t.Errorf("human output = %q, want a singular window", r.human())
+	// And the wording must not read like a 24-hour window, or a zero for today
+	// is indistinguishable from a zero for yesterday-and-today.
+	out := r.human()
+	if !strings.Contains(out, "1 today") {
+		t.Errorf("human output = %q, want it to say today", out)
+	}
+	if strings.Contains(out, "in the last day") {
+		t.Errorf("human output = %q, must not read as a 24-hour window", out)
+	}
+}
+
+// The window opens at midnight, so it is a calendar boundary rather than a
+// rolling one: a page touched late yesterday is outside --since 0 and inside
+// --since 1, whatever time of day the command runs.
+func TestWindowOpensAtMidnight(t *testing.T) {
+	now := time.Date(2026, 9, 18, 14, 30, 0, 0, time.UTC)
+	if got := windowStart(now, 0); !got.Equal(time.Date(2026, 9, 18, 0, 0, 0, 0, time.UTC)) {
+		t.Errorf("windowStart(0) = %v, want midnight today", got)
+	}
+	if got := windowStart(now, 7); !got.Equal(time.Date(2026, 9, 11, 0, 0, 0, 0, time.UTC)) {
+		t.Errorf("windowStart(7) = %v, want midnight seven days back", got)
+	}
+}
+
+// A timestamp at the cutoff's own second is inside the window. Compared as
+// strings it was not: Confluence sends milliseconds and a formatted cutoff has
+// none, so "...T00:00:00.000Z" sorts below "...T00:00:00Z".
+func TestACutoffSecondStampIsInsideTheWindow(t *testing.T) {
+	cutoff := time.Date(2026, 9, 11, 0, 0, 0, 0, time.UTC)
+	if !inWindow("2026-09-11T00:00:00.000Z", cutoff) {
+		t.Error("a stamp at the cutoff instant read as outside the window")
+	}
+	if inWindow("2026-09-10T23:59:59.999Z", cutoff) {
+		t.Error("a stamp a millisecond before the cutoff read as inside")
+	}
+	// A stamp that will not parse cannot be placed, so it is not counted
+	// rather than counted wrongly.
+	if inWindow("not a timestamp", cutoff) {
+		t.Error("an unparseable stamp was counted")
 	}
 }
 

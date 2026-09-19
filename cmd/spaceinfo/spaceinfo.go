@@ -39,6 +39,8 @@ var Cmd = &cobra.Command{
 		"THEY may set on the space homepage, which is not the same thing:\n" +
 		"Confluence decides the list per page and per account, so another page may\n" +
 		"allow more or fewer. When neither can be read the field says so.\n\n" +
+		"--since counts from midnight UTC that many days ago, so 0 is today only\n" +
+		"and 7 is the last week plus today.\n\n" +
 		"The page counts are exact, which is why they cost a walk of the space --\n" +
 		"one request per 250 pages. They count pages, not edits: a page revised\n" +
 		"nine times in the window is one touched page. A page created inside the\n" +
@@ -58,13 +60,20 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().IntVar(&sinceDays, "since", 7,
-		"Window in days for the created/touched page counts (0 means today only).")
+		"Days back from midnight UTC for the created/touched page counts (0 is today only).")
 }
 
 func run(cmd *cobra.Command, args []string) error {
 	if sinceDays < 0 {
 		return fatalFail("--since cannot be negative; it is a number of days, and 0 means today only",
 			jsonout.CodeValidation)
+	}
+	spaceKey := strings.TrimSpace(args[0])
+	if spaceKey == "" {
+		// Before the credentials, like --since above: a local defect should not
+		// cost a request or a token, and reporting a missing CONFLUENCE_TOKEN
+		// for a blank argument names the wrong problem.
+		return fatalFail("no space key given", jsonout.CodeValidation)
 	}
 	url, _ := cmd.Flags().GetString("url")
 	username, _ := cmd.Flags().GetString("username")
@@ -77,16 +86,12 @@ func run(cmd *cobra.Command, args []string) error {
 		return fatalFail(err.Error(), jsonout.CodeConfig)
 	}
 
-	spaceKey := strings.TrimSpace(args[0])
-	if spaceKey == "" {
-		return fatalFail("no space key given", jsonout.CodeValidation)
-	}
 	space, err := c.GetSpace(spaceKey)
 	if err != nil {
-		return fatalFail(err.Error(), jsonout.CodeFor(err))
+		return operationalFail(err.Error(), jsonout.CodeFor(err))
 	}
 	if space == nil {
-		return fatalFail(fmt.Sprintf("space %q not found", spaceKey), jsonout.CodeNotFound)
+		return operationalFail(fmt.Sprintf("space %q not found", spaceKey), jsonout.CodeNotFound)
 	}
 
 	rep := buildReport(c, space, sinceDays)
@@ -99,20 +104,35 @@ func run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// fatalFail reports the failure on stderr -- a JSON error object under --json,
-// a human line otherwise -- and exits 2.
+// fatalFail reports a usage or credential failure and exits **2**;
+// operationalFail reports a failure the server gave and exits **1**.
 //
-// Every failure this command has is fatal, unlike page-info's, and that is not
-// an omission: there is no page id to name in a results[0] entry, which is the
-// rule find/search/children --space already follow. Everything that can fail
-// *partially* here degrades to a null field instead (see report).
+// The split is docs/json-output.md's contract, and page-info -- the closest
+// sibling -- draws it the same way: 2 means "you invoked it wrong", 1 means
+// "the request was fine and the answer was no". A CI job branching on the two
+// gets a useful signal only if an unknown space key is not the same code as a
+// bad flag. (diff is the one command that departs from this, deliberately, for
+// diff(1)'s codes.)
+//
+// Both write to stderr rather than to a results[0] entry, unlike page-info:
+// there is no page id to name, which is find/search/children --space's rule.
+// Everything that can fail *partially* here degrades to a null field instead
+// (see report).
 func fatalFail(msg string, code jsonout.Code) error {
+	return emitFailure(msg, code, 2)
+}
+
+func operationalFail(msg string, code jsonout.Code) error {
+	return emitFailure(msg, code, 1)
+}
+
+func emitFailure(msg string, code jsonout.Code, exit int) error {
 	if ui.IsJSON() {
 		_ = jsonout.EmitError(os.Stderr, "space-info", msg, code)
 	} else {
 		ui.Error(msg)
 	}
-	return ui.SilentExit(2)
+	return ui.SilentExit(exit)
 }
 
 // statusSource says where the page-status list came from, because the two
@@ -198,12 +218,27 @@ func (r *report) resolveStatuses(c *client.ConfluenceClient, space *client.Space
 	}
 }
 
+// windowStart is the instant the --since window opens: **midnight UTC, days
+// days ago**, not "now minus days".
+//
+// The difference is the whole meaning of `--since 0`. Subtracting zero days
+// from now puts the cutoff at this instant, so nothing can be after it and the
+// counts are always zero -- which is what this did, while the help promised
+// "today only". Counting from midnight makes 0 mean today, 1 mean since
+// yesterday morning, and 7 mean the last week, which is what a person asking
+// for "the last N days" means.
+func windowStart(now time.Time, days int) time.Time {
+	midnight := now.UTC().Truncate(24 * time.Hour)
+	return midnight.AddDate(0, 0, -days)
+}
+
 // walkCounts walks every page in the space once and counts. Exact by
 // construction: nothing here reads totalSize, which docs/confluence/search.md
 // measures drifting and forbids reporting as a count.
 func walkCounts(c *client.ConfluenceClient, spaceID string, days int) (*pageCounts, error) {
-	cutoff := time.Now().UTC().AddDate(0, 0, -days).Format(time.RFC3339)
+	cutoff := windowStart(time.Now(), days)
 	var counts pageCounts
+	var latest time.Time
 	err := c.WalkSpacePages(spaceID, func(p client.Page) error {
 		// The route's default includes archived pages, so the split comes from
 		// the row rather than from the request.
@@ -215,10 +250,15 @@ func walkCounts(c *client.ConfluenceClient, spaceID string, days int) (*pageCoun
 		if p.ParentID == "" {
 			counts.Roots++
 		}
-		created := p.CreatedAt >= cutoff
+
+		// Parsed, never compared as strings. Confluence sends milliseconds
+		// (2026-09-15T10:04:00.000Z) and a formatted cutoff has none, so a
+		// lexicographic test puts a row inside the same second *below* the
+		// cutoff -- '.' sorts under 'Z' -- and quietly misses it.
+		created := inWindow(p.CreatedAt, cutoff)
 		// The *latest* version's timestamp, which is why this counts pages
 		// rather than edits.
-		touched := p.Version.CreatedAt >= cutoff
+		touched := inWindow(p.Version.CreatedAt, cutoff)
 		if created {
 			counts.Created++
 		}
@@ -228,7 +268,8 @@ func walkCounts(c *client.ConfluenceClient, spaceID string, days int) (*pageCoun
 		if created && touched {
 			counts.CreatedTouched++
 		}
-		if p.Version.CreatedAt > counts.LastActivity {
+		if when, err := time.Parse(time.RFC3339, p.Version.CreatedAt); err == nil && when.After(latest) {
+			latest = when
 			counts.LastActivity = p.Version.CreatedAt
 		}
 		return nil
@@ -237,4 +278,15 @@ func walkCounts(c *client.ConfluenceClient, spaceID string, days int) (*pageCoun
 		return nil, err
 	}
 	return &counts, nil
+}
+
+// inWindow reports whether an API timestamp falls at or after cutoff. A stamp
+// that will not parse is treated as outside: it cannot be placed, and counting
+// it would put a number in the output that no row supports.
+func inWindow(stamp string, cutoff time.Time) bool {
+	when, err := time.Parse(time.RFC3339, stamp)
+	if err != nil {
+		return false
+	}
+	return !when.Before(cutoff)
 }

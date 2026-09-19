@@ -456,7 +456,7 @@
           ]
         },
         "recent": {
-          "description": "Activity in the --since window, null when the page walk failed. These count PAGES, not edits: a page revised nine times inside the window contributes 1, because only its latest version's timestamp is available without a request per page. pages_created and pages_touched overlap -- a page created inside the window has its first version inside it too -- so pages_created_and_touched reports the intersection and the two must not be added.",
+          "description": "Activity in the --since window, null when the page walk failed. days is counted from midnight UTC that many days ago, so 0 is today only. These count PAGES, not edits: a page revised nine times inside the window contributes 1, because only its latest version's timestamp is available without a request per page. pages_created and pages_touched overlap -- a page created inside the window has its first version inside it too -- so pages_created_and_touched reports the intersection and the two must not be added.",
           "oneOf": [
             {
               "type": "object",

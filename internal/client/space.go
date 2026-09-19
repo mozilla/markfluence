@@ -171,8 +171,13 @@ func (c *ConfluenceClient) SpaceStateSettings(spaceKey string) ([]ContentState, 
 	}
 	path := c.baseURL + "/wiki/rest/api/space/" + url.PathEscape(spaceKey) + "/state/settings"
 	if err := c.doJSON(http.MethodGet, path, nil, nil, &out, timeoutRead); err != nil {
+		// A 403 means "not a space admin" -- except when it is a rejected
+		// credential wearing a 403, which HTTPError.RejectedCredential
+		// recognises from the response body. Swallowing that one would report
+		// an auth problem as a permission level, which is the conflation
+		// notFound guards against on the other status.
 		var he *HTTPError
-		if errors.As(err, &he) && he.StatusCode == http.StatusForbidden {
+		if errors.As(err, &he) && he.StatusCode == http.StatusForbidden && !he.RejectedCredential() {
 			return nil, nil
 		}
 		if notFound(err) {
