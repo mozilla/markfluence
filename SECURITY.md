@@ -26,9 +26,10 @@ coordinated through a GitHub Security Advisory.
 
 ## Supported versions
 
-markfluence has not had a release yet. Fixes land on `main`, which is the only
-supported version until 1.0.0. This section will get a version table when there's
-something to put in it.
+Only the latest release is supported, and fixes land on `main`. Before 1.0.0
+there are no backported fixes and no patch releases for older lines: if you
+are on an older version, the answer is to upgrade. This section will get a
+version table when there is more than one line to put in it.
 
 ## What's in scope
 
