@@ -54,6 +54,14 @@ release:
   # becomes the release that `latest` resolves to, and anything pinned there
   # 404s on the archive. #29's action defaults to `latest`.
   draft: true
+  # Required, and not the default (which is `false`). Without it an RC tag
+  # produces a NON-prerelease draft, and release.yml publishes every draft
+  # unconditionally -- so `v0.1.0-rc.1`, which docs/releasing.md blesses as
+  # the way to rehearse, would become /releases/latest. That is the precise
+  # outcome `draft` exists to prevent, arrived at from the other direction.
+  # The cask is skipped for an RC either way (skip_upload: "auto" reads the
+  # parsed semver rather than this), which is what made the gap easy to miss.
+  prerelease: auto
 
 snapshot:
   version_template: "{{ .Tag }}-{{ .ShortCommit }}-SNAPSHOT"
