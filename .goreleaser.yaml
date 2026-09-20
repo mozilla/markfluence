@@ -50,17 +50,49 @@ changelog:
   use: github
   sort: asc
 
-# Homebrew cask, published to a tap on release.
-# NOTE: `repository` must point at a real Homebrew tap the release can push to
-# (create it and adjust owner/name/token before the first `goreleaser release`).
+# Homebrew cask. **This repository is its own tap** (#1): the generated cask
+# lands in ./Casks here rather than in a separate mozilla/homebrew-markfluence,
+# which is how mozilla/mozcloud does it and is what makes the token work.
+# GitHub Actions' automatic GITHUB_TOKEN is scoped to the repository the
+# workflow runs in, so a *separate* tap repo would need a fine-grained PAT
+# someone has to own and rotate; a same-repo write needs nothing but
+# `contents: write` and `pull-requests: write` on the release job.
+#
+# The cost is the tap incantation, since the repo is not named
+# `homebrew-markfluence`: `brew tap` takes an explicit URL in that case.
+#
+#     brew tap mozilla/markfluence https://github.com/mozilla/markfluence
+#     brew install markfluence
+#
+# A cask rather than a formula because goreleaser removed `brews:` in v2.16 —
+# the formulas it used to generate for pre-built binaries were, in its own
+# words, "hackyish". A cask is the supported way to ship a compiled binary.
+#
+# UNVERIFIED: whether this works under Homebrew on **Linux**. `brew` there has
+# refused casks outright ("Casks are not supported on Linux"), but the artifact
+# this one installs is a `binary` stanza, which Homebrew documents as portable
+# across both. goreleaser emits the on_linux blocks either way. Treat the cask
+# as the macOS path until somebody runs it on a Linux box; Linux users have
+# `go install` and the release tarball regardless.
 homebrew_casks:
   - name: markfluence
     homepage: "https://github.com/mozilla/markfluence"
     description: "CLI for publishing and manipulating Confluence pages from markdown"
+    directory: Casks
     repository:
       owner: mozilla
-      name: homebrew-markfluence
+      name: markfluence
       token: "{{ .Env.GITHUB_TOKEN }}"
+      # A PR rather than a push to main, so the release cannot write to the
+      # default branch and the cask bump is reviewable like anything else.
+      branch: "goreleaser/cask-{{ .Tag }}"
+      pull_request:
+        enabled: true
+        draft: false
+        base:
+          owner: mozilla
+          name: markfluence
+          branch: main
     commit_author:
       name: "github-actions[bot]"
       email: "41898282+github-actions[bot]@users.noreply.github.com"
@@ -71,3 +103,14 @@ homebrew_casks:
       bash: completions/markfluence.bash
       zsh: completions/markfluence.zsh
       fish: completions/markfluence.fish
+    # The binary is not signed or notarized, so macOS quarantines it on
+    # download and the first run dies with "cannot be opened because the
+    # developer cannot be verified". Stripping the attribute at install time is
+    # goreleaser's own documented answer for an unsigned cask.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr",
+                           args: ["-dr", "com.apple.quarantine", "#{staged_path}/markfluence"]
+          end
