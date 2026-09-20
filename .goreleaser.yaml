@@ -55,8 +55,32 @@ changelog:
 # which is how mozilla/mozcloud does it and is what makes the token work.
 # GitHub Actions' automatic GITHUB_TOKEN is scoped to the repository the
 # workflow runs in, so a *separate* tap repo would need a fine-grained PAT
-# someone has to own and rotate; a same-repo write needs nothing but
-# `contents: write` and `pull-requests: write` on the release job.
+# someone has to own and rotate; a same-repo write needs only `contents:
+# write` on the release job.
+#
+# **The release pushes a branch and stops. A human opens the PR.** This is the
+# one non-obvious thing here and it is not a style preference -- a release
+# cannot merge the cask itself:
+#
+#   - main's ruleset requires the `ci` status check, with an empty
+#     bypass_actors and current_user_can_bypass = never. Nobody can force it.
+#   - GitHub does not start workflow runs for events triggered by the
+#     automatic GITHUB_TOKEN, so a PR goreleaser opens never runs `ci` and
+#     therefore can never satisfy the check. Measured, not deduced:
+#     mozilla/mozcloud does open its formula PRs this way and they merge with
+#     an empty check list, because *its* ruleset requires no status check.
+#     This repo's does.
+#
+# The ruleset only protects the **default branch**, though, so pushing
+# `goreleaser/cask-<tag>` is fine. So goreleaser commits the cask to that
+# branch and nothing else; a person then runs
+#
+#     gh pr create --head goreleaser/cask-v0.1.0
+#
+# which, being a human-triggered event, does run `ci` and can merge normally.
+# One command per release, no credential to own, and main's ruleset unchanged.
+# Do not add `pull_request: {enabled: true}` back without also solving the
+# check problem -- it produces a PR that looks right and can never land.
 #
 # The cost is the tap incantation, since the repo is not named
 # `homebrew-markfluence`: `brew tap` takes an explicit URL in that case.
@@ -79,20 +103,17 @@ homebrew_casks:
     homepage: "https://github.com/mozilla/markfluence"
     description: "CLI for publishing and manipulating Confluence pages from markdown"
     directory: Casks
+    # "auto" skips the cask for a prerelease tag. Without it a v0.1.0-rc.1 --
+    # which docs/releasing.md blesses as the way to rehearse a release --
+    # bumps the cask, and `brew install markfluence` hands users a release
+    # candidate.
+    skip_upload: "auto"
     repository:
       owner: mozilla
       name: markfluence
       token: "{{ .Env.GITHUB_TOKEN }}"
-      # A PR rather than a push to main, so the release cannot write to the
-      # default branch and the cask bump is reviewable like anything else.
+      # Never main: the branch is the deliverable, the PR is a human's job.
       branch: "goreleaser/cask-{{ .Tag }}"
-      pull_request:
-        enabled: true
-        draft: false
-        base:
-          owner: mozilla
-          name: markfluence
-          branch: main
     commit_author:
       name: "github-actions[bot]"
       email: "41898282+github-actions[bot]@users.noreply.github.com"
