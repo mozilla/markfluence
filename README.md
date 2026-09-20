@@ -79,6 +79,12 @@ Ways to run Confluence and markfluence support for it:
 
 ## Install
 
+> [!NOTE]
+> **No release has been cut yet**, so the Homebrew and release-archive
+> instructions below do not work yet — there is nothing for them to fetch.
+> Build from source until then. Tracking:
+> [#175](https://github.com/mozilla/markfluence/issues/175).
+
 ### macOS — Homebrew
 
 This repository is its own [tap](https://docs.brew.sh/Taps), so the tap takes
@@ -106,18 +112,23 @@ verify it, and put the binary on your `PATH`:
 VERSION=0.1.0                                   # no leading "v"
 ARCH=amd64                                      # or: arm64
 BASE="https://github.com/mozilla/markfluence/releases/download/v${VERSION}"
+ARCHIVE="markfluence_${VERSION}_linux_${ARCH}.tar.gz"
 
-curl -fsSLO "${BASE}/markfluence_${VERSION}_linux_${ARCH}.tar.gz"
-curl -fsSLO "${BASE}/checksums.txt"
-sha256sum --check --ignore-missing checksums.txt
-
-tar -xzf "markfluence_${VERSION}_linux_${ARCH}.tar.gz"
-install -m 0755 markfluence ~/.local/bin/       # or /usr/local/bin, with sudo
+curl -fsSLO "${BASE}/${ARCHIVE}" &&
+curl -fsSLO "${BASE}/checksums.txt" &&
+sha256sum --check --ignore-missing checksums.txt &&
+tar -xzf "${ARCHIVE}" markfluence &&
+install -D -m 0755 markfluence ~/.local/bin/markfluence
 ```
 
-The archive also carries `completions/` — see [Shell
-completions](#shell-completions) for where your shell wants them — along with
-the README and the licence.
+Chained with `&&` on purpose: a checksum mismatch has to stop the install
+rather than print `FAILED` and carry on.
+
+`tar` is told to extract **only** `markfluence` for the same kind of reason —
+the archive is flat and also contains a `README.md` and a `LICENSE`, which an
+unqualified `tar -xzf` would write over yours. It carries `completions/` too;
+pull those out with `tar -xzf "${ARCHIVE}" completions` if you want them, and
+see [Shell completions](#shell-completions) for where each shell looks.
 
 There is no Homebrew instruction here on purpose. Homebrew runs on Linux, but
 it distributes this binary as a *cask*, and casks are a macOS feature; the
@@ -130,6 +141,11 @@ Requires Go 1.25+.
 ```sh
 go install github.com/mozilla/markfluence@latest
 ```
+
+A binary installed this way reports its version as `dev`: the version stamp is
+applied by the release build's linker flags, which `go install` does not use.
+Prefer a release archive if you might need to report a bug against a specific
+version.
 
 Or from a clone, which is also the development setup:
 
