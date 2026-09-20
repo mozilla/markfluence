@@ -90,17 +90,27 @@ say which each time:
    Merge it once `ci` is green. Until it merges, `brew install markfluence`
    still serves the previous version.
 
-6. (Laptop) **Verify what shipped.** Download one archive and check the stamp matches
-   the tag:
+6. (Laptop) **Verify what shipped.** Download a real archive and run the
+   binary out of it. Run this somewhere disposable — the archive is flat and
+   carries a `README.md` and a `LICENSE`:
 
    ```sh
-   markfluence --version
+   cd "$(mktemp -d)"
+   gh release download v1.2.3 -p 'markfluence_*_darwin_arm64.tar.gz' -p checksums.txt
+   shasum -a 256 --check --ignore-missing checksums.txt &&
+   tar -xzf markfluence_*_darwin_arm64.tar.gz markfluence &&
+   ./markfluence --version
    ```
+
+   It must print the tag. **Not `markfluence --version`** — that runs whatever
+   is on your `PATH`, which for a maintainer is the `make install` build
+   stamped `dev`, so it would pass no matter what shipped.
 
    Then, after the cask PR merges:
 
    ```sh
    brew update && brew upgrade markfluence
+   markfluence --version
    ```
 
 7. (Laptop) **Read the published release notes, and fix them if they're bad.**
@@ -159,9 +169,15 @@ not re-run:
 
 ```sh
 gh release delete v1.2.3 --yes
+git push --delete origin goreleaser/cask-v1.2.3   # if the run got that far
 git push --delete origin v1.2.3
 git tag -d v1.2.3
 ```
+
+The cask branch matters: goreleaser pushes it *after* creating the release, so
+a run that died at the publish step has already left one. Re-tagging the same
+version commits a second cask on top of the stale one, and the PR you
+eventually open carries both.
 
 Pre-1.0 this is cheap. Once anything depends on a tag, prefer cutting
 `v1.2.4` over reusing a tag someone may already have fetched.
