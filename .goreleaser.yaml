@@ -104,12 +104,12 @@ changelog:
 # the formulas it used to generate for pre-built binaries were, in its own
 # words, "hackyish". A cask is the supported way to ship a compiled binary.
 #
-# UNVERIFIED: whether this works under Homebrew on **Linux**. `brew` there has
-# refused casks outright ("Casks are not supported on Linux"), but the artifact
-# this one installs is a `binary` stanza, which Homebrew documents as portable
-# across both. goreleaser emits the on_linux blocks either way. Treat the cask
-# as the macOS path until somebody runs it on a Linux box; Linux users have
-# `go install` and the release tarball regardless.
+# The cask is the **macOS** path and the README documents it as nothing else.
+# Homebrew runs on Linux, but Cask is a macOS feature -- `brew` there has
+# refused casks outright -- and while the artifact here is a `binary` stanza,
+# which Homebrew documents as portable, nobody has tested it and no
+# instruction depends on it. goreleaser emits the on_linux blocks regardless;
+# they are harmless and unused. Linux users get the release archive.
 homebrew_casks:
   - name: markfluence
     homepage: "https://github.com/mozilla/markfluence"

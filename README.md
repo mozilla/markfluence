@@ -79,9 +79,59 @@ Ways to run Confluence and markfluence support for it:
 
 ## Install
 
-### From source
+### macOS — Homebrew
+
+This repository is its own [tap](https://docs.brew.sh/Taps), so the tap takes
+an explicit URL: it isn't named `homebrew-markfluence`, which is the name
+`brew tap` would otherwise go looking for.
+
+```sh
+brew tap mozilla/markfluence https://github.com/mozilla/markfluence
+brew install markfluence
+```
+
+Upgrades come with `brew update && brew upgrade markfluence`. Shell
+completions are installed where each shell looks for them, so there's nothing
+further to do.
+
+Both Apple Silicon and Intel are supported.
+
+### Linux — download a release archive
+
+Grab the archive for your architecture from the
+[latest release](https://github.com/mozilla/markfluence/releases/latest),
+verify it, and put the binary on your `PATH`:
+
+```sh
+VERSION=0.1.0                                   # no leading "v"
+ARCH=amd64                                      # or: arm64
+BASE="https://github.com/mozilla/markfluence/releases/download/v${VERSION}"
+
+curl -fsSLO "${BASE}/markfluence_${VERSION}_linux_${ARCH}.tar.gz"
+curl -fsSLO "${BASE}/checksums.txt"
+sha256sum --check --ignore-missing checksums.txt
+
+tar -xzf "markfluence_${VERSION}_linux_${ARCH}.tar.gz"
+install -m 0755 markfluence ~/.local/bin/       # or /usr/local/bin, with sudo
+```
+
+The archive also carries `completions/` — see [Shell
+completions](#shell-completions) for where your shell wants them — along with
+the README and the licence.
+
+There is no Homebrew instruction here on purpose. Homebrew runs on Linux, but
+it distributes this binary as a *cask*, and casks are a macOS feature; the
+archive is the supported route.
+
+### Any platform — from source
 
 Requires Go 1.25+.
+
+```sh
+go install github.com/mozilla/markfluence@latest
+```
+
+Or from a clone, which is also the development setup:
 
 ```sh
 git clone https://github.com/mozilla/markfluence
@@ -90,10 +140,6 @@ make install          # installs `markfluence` into your Go bin
 # ...or, to build into ./bin without installing:
 make build            # produces ./bin/markfluence
 ```
-
-### Homebrew
-
-TBD — published to a tap on the first release.
 
 ### Shell completions
 
