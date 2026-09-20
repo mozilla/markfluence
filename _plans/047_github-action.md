@@ -127,11 +127,20 @@ needs no Release at all. The Release requirement is one *this design* creates
 by downloading a binary rather than building one. The consequence to hold on
 to: **a tag whose release failed is a broken action.** `uses:
 mozilla/markfluence@v1.2.3` would run an installer that 404s. Two things keep
-that from happening: `version` defaults to `latest`, which resolves to the
-last release that actually *succeeded* rather than to whatever tag exists, and
-the moving `v1` tag (phase 4) moves only after assets upload. The second is a
-step this plan adds to #175's `release.yml`, so #175 should leave room for it
-rather than be surprised by it.
+that from happening, and **only one of them is free**. The moving `v1` tag
+(phase 4) moves only after assets upload — a step this plan adds to #175's
+`release.yml`, so #175 should leave room for it rather than be surprised by it.
+
+The other one does **not** work the way it first appears. `version: latest`
+looks like it resolves to the last release that *succeeded*, which would make
+a half-failed release harmless. It does not: goreleaser creates the GitHub
+Release and *then* uploads assets, and `/releases/latest` is the most recent
+published non-prerelease whether or not its assets are complete. So a run that
+dies mid-upload becomes `latest`, and every consumer pinned to it gets a 404
+on the archive. Getting the property this plan wants needs `release.draft:
+true` plus a publish step after the upload — which `.goreleaser.yaml` does not
+set today. Either #175 adds it, or the action's docs must stop implying that
+`latest` is self-healing and tell consumers to pin a version.
 
 ### The tag has to be `vX.Y.Z`
 
