@@ -3,13 +3,12 @@
 For maintainers. Releases are driven by a git tag: you push the tag, a workflow
 does the rest, and one step at the end is deliberately manual.
 
-> [!IMPORTANT]
-> **Not usable yet.** `.github/workflows/release.yml` does not exist —
-> `.goreleaser.yaml` is fully configured and has never been invoked. Building
-> that workflow and cutting `v0.1.0` is
-> [#175](https://github.com/mozilla/markfluence/issues/175). Until it lands,
-> everything below describes the intended process rather than a path you can
-> follow.
+> [!NOTE]
+> **Untested.** `.github/workflows/release.yml` exists but no release has been
+> cut yet, so nothing below has run end to end. Expect to find something
+> wrong on the first attempt, and see
+> [#175](https://github.com/mozilla/markfluence/issues/175). Deleting this
+> note is part of cutting `v0.1.0`.
 
 ## Versioning
 
@@ -63,14 +62,20 @@ say which each time:
    moving `v1` tag doesn't re-enter it.
 
 4. (GHA) **Watch the run.** This is where the real goreleaser invocation happens,
-   in GitHub Actions, from a clean checkout of the tag. It cross-compiles,
-   archives, writes `checksums.txt`, creates the GitHub Release with its
-   assets, and pushes the generated Homebrew cask to a
-   `goreleaser/cask-v1.2.3` branch.
+   in GitHub Actions, from a clean checkout of the tag. It runs `make check`
+   against the tagged commit, cross-compiles, archives, writes
+   `checksums.txt`, creates the GitHub Release **as a draft** and uploads the
+   assets into it, pushes the generated Homebrew cask to a
+   `goreleaser/cask-v1.2.3` branch, and only then publishes the draft.
 
    ```sh
    gh run watch
    ```
+
+   The draft is the point: goreleaser creates a release before it uploads
+   anything, and `/releases/latest` is the most recent *published*
+   non-prerelease whether or not its assets are complete. Publishing last
+   means a run that dies partway is never the release `latest` resolves to.
 
 5. (Laptop) **Create the cask PR by hand.**
 
@@ -144,12 +149,13 @@ land.
 
 ## If a release fails partway
 
-The order matters: goreleaser creates the GitHub Release **before** uploading
-assets. So a run that dies mid-upload leaves a published release whose archives
-404 — and `/releases/latest` will happily point at it, since that endpoint
-doesn't care whether assets are complete.
+You get a **draft** release, not a broken published one — that is what
+`release.draft` plus the publish-last step in the workflow buy. Nobody
+downstream sees it, and `latest` still points at the previous release.
 
-Recovery is to delete the release *and* the tag, fix the problem, and re-tag:
+Recovery is to delete the draft *and* the tag, fix the problem, and re-tag.
+The tag has to go too, or re-pushing it does nothing and the workflow will
+not re-run:
 
 ```sh
 gh release delete v1.2.3 --yes
