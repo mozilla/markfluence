@@ -22,9 +22,12 @@ builds:
     goarch:
       - arm64
       - amd64
-    ignore:
-      - goos: darwin
-        goarch: amd64
+    # All four, deliberately: darwin/amd64 used to be ignored, which made the
+    # generated Homebrew cask carry no on_intel block at all, so `brew install
+    # markfluence` failed outright on an Intel Mac. Since this repo is its own
+    # tap (#1), the build matrix *is* the install matrix -- a platform missing
+    # here is a platform brew cannot serve. It also covers the macos-13 runner
+    # for #29's action.
     ldflags:
       - -s -w
       - -X github.com/mozilla/markfluence/internal/buildinfo.Version={{.Version}}
