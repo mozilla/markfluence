@@ -1,0 +1,81 @@
+name: Release
+
+# Cutting a release is docs/releasing.md. This is the half that runs in CI.
+on:
+  push:
+    # Three components, deliberately: `v*` would also match the moving major
+    # tag a future GitHub Action (#29) needs, so every release would re-enter
+    # this workflow and the second run would fail on a tag goreleaser refuses
+    # as non-semver. Actions tag filters are globs, not regex, so this is the
+    # available way to say "three components".
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      # Creating the release, uploading its assets, and pushing the
+      # goreleaser/cask-<tag> branch. Deliberately NOT pull-requests: write --
+      # goreleaser does not open the cask PR, a human does. The reason is in
+      # docs/releasing.md and it is not caution: a PR opened with this token
+      # would never trigger `ci`, and main's ruleset requires that check with
+      # nobody able to bypass it, so it could never be merged.
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # goreleaser derives the changelog from the commits since the
+          # previous tag, so it needs the whole history, not a shallow clone.
+          fetch-depth: 0
+          # Nothing here pushes over git: goreleaser authenticates to the API
+          # with GITHUB_TOKEN below, including for the cask branch. Leaving a
+          # credential in .git/config would be handing every later step in the
+          # job push access it does not need.
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          # No module cache on the release path. A cache is writable from
+          # less-trusted contexts and this job produces the artifacts people
+          # install, so a poisoned entry would reach a signed-for release
+          # (zizmor's cache-poisoning audit). Costs a module download per
+          # release, which is nothing against how rarely this runs.
+          # Must be explicit: setup-go caches by default.
+          cache: false
+
+      # The same gate `main` is held to, against the tagged commit rather than
+      # against a branch. A tag can be pushed at anything; this is what says
+      # the thing being released actually builds and passes.
+      - name: Check
+        run: make check
+
+      - name: Release
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # goreleaser creates the release as a DRAFT (release.draft in
+      # .goreleaser.yaml) and uploads into it, so an upload that dies partway
+      # leaves a draft rather than a published release with missing archives.
+      # That matters beyond tidiness: /releases/latest is the most recent
+      # *published* non-prerelease and does not care whether its assets are
+      # complete, so without the draft a half-finished run becomes the release
+      # that `latest` resolves to -- and #29's action defaults to `latest`.
+      #
+      # Publishing is therefore the last thing that happens, and only when
+      # everything before it succeeded.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: gh release edit "$TAG" --draft=false

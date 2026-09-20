@@ -46,6 +46,15 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+release:
+  # Created as a draft and published by release.yml only after every asset has
+  # uploaded. goreleaser creates the release *before* uploading, and
+  # /releases/latest is the most recent published non-prerelease whether or
+  # not its assets are complete -- so without this, a run that dies mid-upload
+  # becomes the release that `latest` resolves to, and anything pinned there
+  # 404s on the archive. #29's action defaults to `latest`.
+  draft: true
+
 snapshot:
   version_template: "{{ .Tag }}-{{ .ShortCommit }}-SNAPSHOT"
 
