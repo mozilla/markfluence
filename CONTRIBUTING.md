@@ -110,36 +110,35 @@ does the rest, and one step at the end is deliberately manual.
 > everything below describes the intended process rather than a path you can
 > follow.
 
-### The tag must be `vX.Y.Z`
+### Versioning
 
-Not a convention — two things enforce it:
-
-- **Go modules.** The proxy only recognises semver tags carrying the `v`
-  prefix. A `1.2.3` or `release-1` tag is invisible to it, so
-  `go install github.com/mozilla/markfluence@v1.2.3` won't resolve and
-  `@latest` silently degrades to a `v0.0.0-<date>-<sha>` pseudo-version.
-- **goreleaser**, which parses the tag and fails outright on anything that
-  isn't semver.
+The tag must be `vX.Y.Z` — required by both **Go modules** and
+**goreleaser**.
 
 A prerelease suffix is fine for both, and is how you rehearse: `v1.2.3-rc.1`
 is valid semver, goreleaser marks the release a prerelease on its own, and the
 Homebrew cask is skipped for it (`skip_upload: "auto"`), so an RC can't reach
 `brew install` users.
 
-One consequence worth knowing before you read a URL: **goreleaser strips the
-`v`** for artifact names. Tag `v1.2.3` produces
+**goreleaser strips the `v`** for artifact names. Tag `v1.2.3` produces
 `markfluence_1.2.3_darwin_arm64.tar.gz`.
+
+### Where this runs
+
+goreleaser runs in **two places, for two different jobs**, and the steps below
+say which each time:
+
+| | machine | what it does |
+|---|---|---|
+| the rehearsal | **your laptop** | builds everything, publishes nothing |
+| the real release | **GitHub Actions** | builds, publishes, pushes the cask branch |
 
 ### Steps
 
-1. **Land everything you want in the release.** `main` should be green.
+1. (Laptop) **Land everything you want in the release.** `main` should be green.
 
-2. **Check the release notes will read well.** They're generated from commit
-   subjects (`changelog: {use: github}` — there is no `CHANGELOG.md`), so the
-   Conventional Commits discipline in [Commit messages](#commit-messages) is
-   what makes them legible. Skim `git log --oneline <last-tag>..main`.
-
-3. **Rehearse locally.** This builds everything and publishes nothing:
+2. (Laptop) **Rehearse.** On your laptop. This builds everything and publishes
+   nothing, so it is safe to run at any time:
 
    ```sh
    goreleaser release --snapshot --clean --skip=publish
@@ -150,7 +149,9 @@ One consequence worth knowing before you read a URL: **goreleaser strips the
    `goreleaser check` validates the config but proves nothing about what it
    produces, so do this rather than that.
 
-4. **Tag and push.**
+   Then `rm -rf dist` — it's gitignored, but a stale `dist/` is confusing.
+
+3. (Laptop) **Tag and push.**
 
    ```sh
    git tag -a v1.2.3 -m 'v1.2.3'
@@ -160,23 +161,30 @@ One consequence worth knowing before you read a URL: **goreleaser strips the
    The workflow triggers on `v*.*.*` — three components, deliberately, so the
    moving `v1` tag doesn't re-enter it.
 
-5. **Watch the run.** It cross-compiles, archives, writes `checksums.txt`,
-   creates the GitHub Release with its assets, and pushes the generated
-   Homebrew cask to a `goreleaser/cask-v1.2.3` branch.
+4. (GHA) **Watch the run.** This is where the real goreleaser invocation happens,
+   in GitHub Actions, from a clean checkout of the tag. It cross-compiles,
+   archives, writes `checksums.txt`, creates the GitHub Release with its
+   assets, and pushes the generated Homebrew cask to a
+   `goreleaser/cask-v1.2.3` branch.
 
-6. **Open the cask PR by hand.**
+   ```sh
+   gh run watch
+   ```
+
+5. (Laptop) **Create the cask PR by hand.**
 
    ```sh
    gh pr create --head goreleaser/cask-v1.2.3 \
      --title 'chore: bump markfluence cask to v1.2.3'
    ```
 
-   This step is manual for a reason, and the reason is not caution — see
-   [Why the cask PR is manual](#why-the-cask-pr-is-manual) below. Merge it
-   once `ci` is green. Until it merges, `brew install markfluence` still
-   serves the previous version.
+   This step is manual for a reason — see
+   [Why the cask PR is manual](#why-the-cask-pr-is-manual) below.
 
-7. **Verify what shipped.** Download one archive and check the stamp matches
+   Merge it once `ci` is green. Until it merges, `brew install markfluence`
+   still serves the previous version.
+
+6. (Laptop) **Verify what shipped.** Download one archive and check the stamp matches
    the tag:
 
    ```sh
@@ -189,13 +197,26 @@ One consequence worth knowing before you read a URL: **goreleaser strips the
    brew update && brew upgrade markfluence
    ```
 
+7. (Laptop) **Read the published release notes, and fix them if they're bad.**
+
+   ```sh
+   gh release view v1.2.3
+   # if it reads badly:
+   gh release view v1.2.3 --json body --jq .body > notes.md
+   # ...edit notes.md...
+   gh release edit v1.2.3 --notes-file notes.md
+   ```
+
+   There are no consequences to changing the release notes text - only
+   humans read it.
+
 ### Why the cask PR is manual
 
 This repository is its own Homebrew tap
 ([#1](https://github.com/mozilla/markfluence/issues/1)): the cask lives in
-`Casks/` here rather than in a separate `mozilla/homebrew-markfluence`. That's what lets the release job use its own
-`GITHUB_TOKEN`, since GitHub's automatic token can't write to another
-repository.
+`Casks/` here rather than in a separate `mozilla/homebrew-markfluence`. That's
+what lets the release job use its own `GITHUB_TOKEN`, since GitHub's automatic
+token can't write to another repository.
 
 It also means the release can't finish the job, because two things collide:
 
