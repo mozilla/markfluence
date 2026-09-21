@@ -164,10 +164,11 @@ jobs:
         with:
           go-version: '1.25'
 
-      # No release binaries are published yet, so install from source. Pin a tag
-      # (…@v1.2.3) once releases exist, rather than @latest, for reproducibility.
+      # Pin a tag rather than @latest, so a run is reproducible. `go install`
+      # applies no version stamp, so the binary reports its version as `dev`;
+      # download a release archive instead if you need that in your logs.
       - name: Install markfluence
-        run: go install github.com/mozilla/markfluence@latest
+        run: go install github.com/mozilla/markfluence@v0.1.0
 
       - name: Publish
         env:
@@ -215,5 +216,10 @@ Notes:
   commit the new `page_id` back to the repository. Create locally, commit the
   entry, and let CI update from then on.
 
-A reusable composite/Docker action wrapping this is tracked in
-[#29](https://github.com/mozilla/markfluence/issues/29).
+## A reusable action is coming
+
+The recipe above is what [mozilla/markfluence-action](https://github.com/mozilla/markfluence-action)
+will encapsulate, so that a workflow writes one step rather than three. It is
+not finished — [#29](https://github.com/mozilla/markfluence/issues/29) tracks
+it — so until then the recipe above is the supported way, and this page stays
+the canonical copy of it.
