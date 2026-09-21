@@ -1,14 +1,9 @@
 # Releasing markfluence
 
-For maintainers. Releases are driven by a git tag: you push the tag, a workflow
-does the rest, and one step at the end is deliberately manual.
+**For maintainers.**
 
-> [!NOTE]
-> **Untested.** `.github/workflows/release.yml` exists but no release has been
-> cut yet, so nothing below has run end to end. Expect to find something
-> wrong on the first attempt, and see
-> [#175](https://github.com/mozilla/markfluence/issues/175). Deleting this
-> note is part of cutting `v0.1.0`.
+Summary: Releases are driven by a git tag: you push the tag, a workflow does
+the rest, and one step at the end is deliberately manual.
 
 ## Versioning
 
@@ -20,8 +15,9 @@ is valid semver, goreleaser marks the release a prerelease on its own, and the
 Homebrew cask is skipped for it (`skip_upload: "auto"`), so an RC can't reach
 `brew install` users.
 
-**goreleaser strips the `v`** for artifact names. Tag `v1.2.3` produces
-`markfluence_1.2.3_darwin_arm64.tar.gz`.
+> [!NOTE]
+> **goreleaser strips the `v`** for artifact names. Tag `v1.2.3` produces
+> `markfluence_1.2.3_darwin_arm64.tar.gz`.
 
 ## Where this runs
 
@@ -61,21 +57,23 @@ say which each time:
    The workflow triggers on `v*.*.*` — three components, deliberately, so the
    moving `v1` tag doesn't re-enter it.
 
-4. (GHA) **Watch the run.** This is where the real goreleaser invocation happens,
-   in GitHub Actions, from a clean checkout of the tag. It runs `make check`
-   against the tagged commit, cross-compiles, archives, writes
-   `checksums.txt`, creates the GitHub Release **as a draft** and uploads the
-   assets into it, pushes the generated Homebrew cask to a
-   `goreleaser/cask-v1.2.3` branch, and only then publishes the draft.
+4. (GHA) **Watch the run.** GitHub Actions runs goreleaser from a clean
+   checkout of the tag. It runs `make check` against the tagged commit,
+   cross-compiles, archives, writes `checksums.txt`, creates the GitHub Release
+   **as a draft** and uploads the assets into it, pushes the generated Homebrew
+   cask to a `goreleaser/cask-v1.2.3` branch, and only then publishes the
+   draft.
 
    ```sh
    gh run watch
    ```
 
-   The draft is the point: goreleaser creates a release before it uploads
-   anything, and `/releases/latest` is the most recent *published*
-   non-prerelease whether or not its assets are complete. Publishing last
-   means a run that dies partway is never the release `latest` resolves to.
+   > [!NOTE]
+   > goreleaser creates a release before it uploads anything, and
+   > `/releases/latest` is the most recent *published* non-prerelease whether or
+   > not its assets are complete. Creating a draft and then publishing it as the
+   > last step means a run that dies partway is never the release `latest`
+   > resolves to.
 
 5. (Laptop) **Create the cask PR by hand.**
 
@@ -84,22 +82,29 @@ say which each time:
      --title 'chore: bump markfluence cask to v1.2.3'
    ```
 
-   This step is manual for a reason — see
-   [Why the cask PR is manual](#why-the-cask-pr-is-manual) below.
+   See [Why the cask PR is manual](#why-the-cask-pr-is-manual) below.
 
-   Merge it once `ci` is green. Until it merges, `brew install markfluence`
+   Merge the PR once `ci` is green. Until it merges, `brew install markfluence`
    still serves the previous version.
 
-6. (Laptop) **Verify what shipped.** Download a real archive and run the
-   binary out of it. Run this somewhere disposable — the archive is flat and
-   carries a `README.md` and a `LICENSE`:
+6. (Laptop) **Verify what shipped.** Download a real archive and run the binary
+   out of it. Run this from the root of the markfluence git repository
+   (macOS-centric):
 
    ```sh
-   cd "$(mktemp -d)"
-   gh release download v1.2.3 -p 'markfluence_*_darwin_arm64.tar.gz' -p checksums.txt
+   # create a temp dir, download the release, untar it, check the version
+   mkdir tmp
+   pushd tmp
+   gh release download v1.2.3 -p 'markfluence_*_darwin_arm64.tar.gz' -p checksums.txt &&
    shasum -a 256 --check --ignore-missing checksums.txt &&
    tar -xzf markfluence_*_darwin_arm64.tar.gz markfluence &&
    ./markfluence --version
+
+   # --- verify the version ---
+
+   # clean up
+   popd
+   rm -rf tmp
    ```
 
    It must print the tag. **Not `markfluence --version`** — that runs whatever
@@ -122,6 +127,9 @@ say which each time:
    # ...edit notes.md...
    gh release edit v1.2.3 --notes-file notes.md
    ```
+
+   GitHub Releases supports full GFM, but newlines are line breaks. Don't
+   wrap paragraphs.
 
    There are no consequences to changing the release notes text - only
    humans read it.
