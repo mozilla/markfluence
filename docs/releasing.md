@@ -10,10 +10,14 @@ the rest, and one step at the end is deliberately manual.
 The tag must be `vX.Y.Z` — required by both **Go modules** and
 **goreleaser**.
 
-A prerelease suffix is fine for both, and is how you rehearse: `v1.2.3-rc.1`
-is valid semver, goreleaser marks the release a prerelease on its own, and the
-Homebrew cask is skipped for it (`skip_upload: "auto"`), so an RC can't reach
-`brew install` users.
+**This project does not cut prereleases.** Step 2 below is the rehearsal, and
+it is a local build that publishes nothing, which is a better test than a real
+tag anybody can see.
+
+The config handles an RC correctly anyway, as insurance rather than as a
+practice: `v1.2.3-rc.1` is valid semver, `release.prerelease: auto` keeps it
+out of `/releases/latest`, and `skip_upload: "auto"` keeps the Homebrew cask
+from bumping. Neither path has ever run.
 
 > [!NOTE]
 > **goreleaser strips the `v`** for artifact names. Tag `v1.2.3` produces
@@ -40,8 +44,9 @@ say which each time:
    goreleaser release --snapshot --clean --skip=publish
    ```
 
-   Check `dist/`: four archives (`darwin_arm64`, `darwin_amd64`, `linux_arm64`,
-   `linux_amd64`), a `checksums.txt`, and `dist/homebrew/Casks/markfluence.rb`.
+   Check `dist/`: three archives (`darwin_arm64`, `linux_arm64`,
+   `linux_amd64` — there is no Intel macOS build), a `checksums.txt`, and
+   `dist/homebrew/Casks/markfluence.rb`.
    `goreleaser check` validates the config but proves nothing about what it
    produces, so do this rather than that.
 
