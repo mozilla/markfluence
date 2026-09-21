@@ -59,8 +59,9 @@ say which each time:
    git push origin v1.2.3
    ```
 
-   The workflow triggers on `v*.*.*` — three components, deliberately, so the
-   moving `v1` tag doesn't re-enter it.
+   The workflow triggers on `v*.*.*` — three components, deliberately, since
+   goreleaser refuses anything that is not semver and `v1`/`v1.2` are not.
+   A bare `v*` would start a run that could only fail.
 
 4. (GHA) **Watch the run.** GitHub Actions runs goreleaser from a clean
    checkout of the tag. It runs `make check` against the tagged commit,

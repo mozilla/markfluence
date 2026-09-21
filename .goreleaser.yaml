@@ -23,6 +23,10 @@ builds:
       - arm64
       - amd64
     ignore:
+      # ALSO READ BY mozilla/markfluence-action (#29): a platform absent here
+      # is one the action refuses *by name*, so adding or removing one needs a
+      # companion change over there. Nothing here will catch the mismatch.
+      #
       # No Intel macOS. macOS 26 Tahoe is the last release Apple ships for
       # Intel at all -- 27 requires Apple Silicon, and Intel Macs get security
       # updates only, for about three years. Building for a platform on that
@@ -41,6 +45,10 @@ builds:
       - -X github.com/mozilla/markfluence/internal/buildinfo.Version={{.Version}}
 
 archives:
+  # `formats` and `name_template` are BOTH READ BY mozilla/markfluence-action
+  # (#29): it builds this exact filename to download and untars it. Renaming
+  # the template or switching to [zip] breaks every consumer of the action at
+  # install time, and nothing in `make check` will notice.
   - id: markfluence
     formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
@@ -52,9 +60,18 @@ archives:
       - completions/*
 
 checksum:
+  # ALSO READ BY mozilla/markfluence-action (#29), which fetches this by exact
+  # name to verify the archive before installing it. Renaming it makes the
+  # action's integrity check fail, which is the half of it worth keeping.
   name_template: "checksums.txt"
 
 release:
+  # `draft` and `prerelease` are BOTH DEPENDED ON by
+  # mozilla/markfluence-action (#29): together they are what make
+  # /releases/latest name only a complete, non-prerelease release, which is
+  # what its `version: latest` default resolves against. Dropping either
+  # makes that default unsafe.
+  #
   # Created as a draft and published by release.yml only after every asset has
   # uploaded. goreleaser creates the release *before* uploading, and
   # /releases/latest is the most recent published non-prerelease whether or

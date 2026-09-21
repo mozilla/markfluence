@@ -3,11 +3,16 @@ name: Release
 # Cutting a release is docs/releasing.md. This is the half that runs in CI.
 on:
   push:
-    # Three components, deliberately: `v*` would also match the moving major
-    # tag a future GitHub Action (#29) needs, so every release would re-enter
-    # this workflow and the second run would fail on a tag goreleaser refuses
-    # as non-semver. Actions tag filters are globs, not regex, so this is the
+    # Three components, deliberately. goreleaser refuses a tag that is not
+    # semver, and `v1` and `v1.2` are not, so a bare `v*` would start a run
+    # that could only fail -- noisily, after `make check` had already passed.
+    # Actions tag filters are globs rather than regex, so this is the
     # available way to say "three components".
+    #
+    # Originally written against a different hazard: a moving major tag for
+    # the GitHub Action. That action lives in its own repository now (#29), so
+    # no such tag will ever exist here -- but the glob still earns its place
+    # for the reason above. Do not relax it to `v*`.
     tags: ['v*.*.*']
 
 permissions:
