@@ -2,6 +2,36 @@
 
 Closes #29.
 
+> [!IMPORTANT]
+> **The action lives in [mozilla/markfluence-action](https://github.com/mozilla/markfluence-action), not here.**
+> Decided after this plan was written, and it changes where the code goes but
+> almost nothing about the design below — the findings, the phases and the
+> constraints all transferred intact.
+>
+> The reason is release cadence. In this repository the action's releases are
+> welded to the CLI's: a one-line fix to the installer could not reach anyone
+> until a whole markfluence release was cut, which is backwards, since the
+> action changes most in its first months and the CLI is the stable half. A
+> separate repository also lets the action be `v1` immediately instead of
+> waiting for markfluence 1.0.0 to make `uses: …@v1` meaningful. The
+> alternative — a second tag prefix like `action-v1.0.0` in this repository —
+> is two tag namespaces in one repo, which is worse than two repositories.
+>
+> Split at zero consumers, which is the cheapest moment it will ever be;
+> splitting later means everyone rewrites their `uses:` line.
+>
+> The cost, knowingly: coordinated changes are now two pull requests with
+> nothing linking them. Dropping Intel macOS (#180) is the live example —
+> in one repo, `.goreleaser.yaml` and the installer's named errors changed
+> together in one commit and one CI run. **The action depends on this
+> repository's archive naming, its platform matrix, and `release.draft` plus
+> `prerelease: auto` keeping `/releases/latest` trustworthy.** Changing any of
+> those means a companion change over there.
+>
+> This plan stays here as the record of how the design was arrived at, since
+> that is what `_plans/` is for. Implementation notes belong in the new
+> repository.
+
 [docs/github-actions.md](../docs/github-actions.md) already documents the whole
 CI arrangement — credentials, why `--force` is the correct configuration, the
 `git diff` recipe that narrows a glob to the files that changed, and the
