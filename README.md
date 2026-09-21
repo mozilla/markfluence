@@ -95,7 +95,9 @@ Upgrades come with `brew update && brew upgrade markfluence`. Shell
 completions are installed where each shell looks for them, so there's nothing
 further to do.
 
-Both Apple Silicon and Intel are supported.
+**Apple Silicon only.** macOS 26 Tahoe is the last release Apple ships for
+Intel Macs — macOS 27 requires Apple Silicon — so there is no Intel build and
+`brew install` will not find one. On an Intel Mac, build from source (below).
 
 ### Linux — download a release archive
 

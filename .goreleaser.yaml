@@ -22,12 +22,20 @@ builds:
     goarch:
       - arm64
       - amd64
-    # All four, deliberately: darwin/amd64 used to be ignored, which made the
-    # generated Homebrew cask carry no on_intel block at all, so `brew install
-    # markfluence` failed outright on an Intel Mac. Since this repo is its own
-    # tap (#1), the build matrix *is* the install matrix -- a platform missing
-    # here is a platform brew cannot serve. It also covers the macos-13 runner
-    # for #29's action.
+    ignore:
+      # No Intel macOS. macOS 26 Tahoe is the last release Apple ships for
+      # Intel at all -- 27 requires Apple Silicon, and Intel Macs get security
+      # updates only, for about three years. Building for a platform on that
+      # trajectory, that nobody here can test on, is a binary shipped on faith.
+      #
+      # The consequence is deliberate and load-bearing to remember: because
+      # this repo is its own tap (#1), the build matrix *is* the install
+      # matrix, so the generated cask carries no on_intel block and
+      # `brew install markfluence` fails outright on an Intel Mac. The README
+      # sends them to `go install` or a source build instead. Re-adding this
+      # platform means re-adding the build; there is no partial support.
+      - goos: darwin
+        goarch: amd64
     ldflags:
       - -s -w
       - -X github.com/mozilla/markfluence/internal/buildinfo.Version={{.Version}}
@@ -54,13 +62,16 @@ release:
   # becomes the release that `latest` resolves to, and anything pinned there
   # 404s on the archive. #29's action defaults to `latest`.
   draft: true
-  # Required, and not the default (which is `false`). Without it an RC tag
-  # produces a NON-prerelease draft, and release.yml publishes every draft
-  # unconditionally -- so `v0.1.0-rc.1`, which docs/releasing.md blesses as
-  # the way to rehearse, would become /releases/latest. That is the precise
-  # outcome `draft` exists to prevent, arrived at from the other direction.
-  # The cask is skipped for an RC either way (skip_upload: "auto" reads the
-  # parsed semver rather than this), which is what made the gap easy to miss.
+  # Insurance rather than workflow: this project does not cut prereleases and
+  # has no plan to. Kept because the failure mode without it is silent and
+  # expensive -- the default is `false`, so an RC tag would produce a
+  # NON-prerelease draft, which release.yml publishes unconditionally, and
+  # `v1.2.3-rc.1` would become /releases/latest. That is exactly what `draft`
+  # exists to prevent, reached from the other direction. One line against a
+  # mistake nobody would notice until a user reported it.
+  #
+  # UNEXERCISED: no prerelease tag has ever been pushed, so this path has
+  # never run.
   prerelease: auto
 
 snapshot:
@@ -123,10 +134,9 @@ homebrew_casks:
     homepage: "https://github.com/mozilla/markfluence"
     description: "CLI for publishing and manipulating Confluence pages from markdown"
     directory: Casks
-    # "auto" skips the cask for a prerelease tag. Without it a v0.1.0-rc.1 --
-    # which docs/releasing.md blesses as the way to rehearse a release --
-    # bumps the cask, and `brew install markfluence` hands users a release
-    # candidate.
+    # "auto" skips the cask for a prerelease tag, so an RC can never reach
+    # `brew install` users. Same standing as release.prerelease above:
+    # insurance against a tag nobody intends to push, and never exercised.
     skip_upload: "auto"
     repository:
       owner: mozilla

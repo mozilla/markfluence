@@ -181,21 +181,23 @@ Against GitHub-hosted runners:
 | `ubuntu-latest` | linux/amd64 | ✅ |
 | `ubuntu-24.04-arm` | linux/arm64 | ✅ |
 | `macos-latest` (14/15) | darwin/arm64 | ✅ |
-| `macos-13` | darwin/amd64 | ✅ |
+| `macos-13` | darwin/amd64 | ❌ not built |
 | `windows-latest` | windows/amd64 | ❌ not built |
 
-**Decision: everything but Windows.** `darwin/amd64` was in goreleaser's
-`ignore` list when this plan was written, and it came back for a reason that
-had nothing to do with runners: since the repo is its own Homebrew tap (#1),
-the build matrix *is* the install matrix, and the generated cask carried no
-`on_intel` block at all — `brew install markfluence` failed outright on an
-Intel Mac. Adding the fourth build closes that and covers `macos-13` for free.
+**Decision: Linux plus Apple Silicon.** `darwin/amd64` was briefly added — the
+repo is its own Homebrew tap (#1), so the build matrix is the install matrix,
+and without it the cask carried no `on_intel` block and `brew install` failed
+on an Intel Mac. It was then removed again on the sharper question of whether
+Intel macOS should be supported at all: macOS 26 Tahoe is Apple's last Intel
+release, 27 requires Apple Silicon, and nobody here has a machine to test on.
+So `macos-13` has no asset, and neither does Windows (`.zip` archives, a
+`.exe` suffix, and a shell that is not bash unless every composite step says
+`shell: bash`).
 
-Windows stays out: `.zip` archives, a `.exe` suffix, and a shell that is not
-bash unless every composite step says `shell: bash`. Added if anyone needs it.
+Both are added only if someone needs them.
 
-What that requires of *this* plan is that the Windows gap is a **named error**
-in `install.sh`, not a 404. An action that does not support Windows is a scope
+What that requires of *this* plan is that both gaps are **named errors** in
+`install.sh`, not 404s. An action that does not support Windows is a scope
 decision; one that fails on it confusingly is a bug report. The message names
 the platforms that exist and points at this issue, so "we can add it later"
 has somewhere to be asked for.
@@ -213,8 +215,9 @@ Inputs: `version` (default `latest`).
    explicit `version` skips this entirely, which is what a consumer should pin.
 2. Map `$RUNNER_OS`/`$RUNNER_ARCH` to goreleaser's `name_template` — `Linux`→
    `linux`, `macOS`→`darwin`, `X64`→`amd64` — and **strip the leading `v`**
-   from the tag, since `.Version` does. **The one uncovered platform must fail
-   by name rather than on a 404**: Windows, per the matrix table above.
+   from the tag, since `.Version` does. **The two uncovered platforms must
+   fail by name rather than on a 404**: Windows and Intel macOS, per the
+   matrix table above.
 3. Download the archive **and `checksums.txt`**, verify with `sha256sum -c`,
    and fail on mismatch. This is the "verifies it" checkbox in #29 and it is
    the only integrity check there is until the release emits provenance.
@@ -346,8 +349,8 @@ things a reviewer can check by reading:
   invoking `update` with no arguments.
 - A checksum mismatch fails the setup step — forced by pointing the script at a
   doctored `checksums.txt` in a test fixture.
-- A Windows runner fails with the named message, not a 404.
-- The four supported runners are each exercised by the integration matrix,
+- Windows and Intel-macOS runners fail with the named message, not a 404.
+- The three supported runners are each exercised by the integration matrix,
   since a mapping bug is per-platform and `ubuntu-latest` alone would not
   catch `macOS`→`darwin` or `ARM64`→`arm64`.
 - `v1.2.3` finds `markfluence_1.2.3_…` — the `v`-stripping, which is the kind
@@ -374,8 +377,8 @@ things a reviewer can check by reading:
 - **Release provenance/attestation.** Worth having, and a separate change to
   the release pipeline rather than to the action. `checksums.txt` is the
   integrity check until then.
-- **Windows runners.** Decided above: added later if anyone needs it, a named
-  error until then.
+- **Windows and Intel-macOS runners.** Decided above: added later if anyone
+  needs them, named errors until then.
 - **The release pipeline itself.** #175: `release.yml`, `docs/releasing.md`,
   the `README.md`/`SECURITY.md` staleness, and `v0.1.0`. This plan states what
   it needs from that and builds on top.
