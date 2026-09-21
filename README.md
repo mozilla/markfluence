@@ -79,12 +79,6 @@ Ways to run Confluence and markfluence support for it:
 
 ## Install
 
-> [!NOTE]
-> **No release has been cut yet**, so the Homebrew and release-archive
-> instructions below do not work yet — there is nothing for them to fetch.
-> Build from source until then. Tracking:
-> [#175](https://github.com/mozilla/markfluence/issues/175).
-
 ### macOS — Homebrew
 
 This repository is its own [tap](https://docs.brew.sh/Taps), so the tap takes
@@ -93,6 +87,7 @@ an explicit URL: it isn't named `homebrew-markfluence`, which is the name
 
 ```sh
 brew tap mozilla/markfluence https://github.com/mozilla/markfluence
+brew trust mozilla/markfluence
 brew install markfluence
 ```
 
