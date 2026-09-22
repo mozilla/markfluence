@@ -14,12 +14,12 @@ GitHub Actions, works with you.
   files stay correct in GitHub and in Markdown preview programs.
 - **Content round trip.** `export` downloads a Confluence page, a page tree, or
   a whole space to your machine. Those files publish back to Confluence. You
-  can also write new files on your machine and publish them. The result is not
-  byte-for-byte the same, but the content keeps its meaning.
+  can also write new files on your machine and publish them. The result
+  semantically equivalent, though not byte-for-byte exactly the same.
 - **Batch publish.** Publish one page, or a whole tree at the same time. A page
   with no changes needs no network request.
-- **Confluence storage format.** You can write Confluence-specific markup when
-  Markdown has no way to show it.
+- **Confluence storage format.** You can write Confluence-specific markup 
+  with no Markdown equivalent.
 - **Offline validation of Markdown files.** markfluence finds dead links,
   broken images, and bad frontmatter with no network and no credentials.
 - **Confluence search.** `find` resolves an exact title to page ids, and it
@@ -50,9 +50,8 @@ GitHub Actions, works with you.
 
 ## Location of documentation
 
-This file tells you how to install markfluence, how to configure it, and how to
-run each command. The other documents are near this file. They are reference
-material, and you do not read them from start to end:
+This file tells you how to install markfluence, how to configure it, and where
+to find additional documentation.
 
 | | |
 |---|---|
@@ -325,6 +324,7 @@ tells you which command to use.
 | [`export`](docs/commands/markfluence_export.md) | Write a page, a page tree, or a whole space to files, with the attachments |
 | [`page-info`](docs/commands/markfluence_page-info.md) | Show the metadata of one page: the space, the parent, the version, the width, the labels, and the authors |
 | [`space-info`](docs/commands/markfluence_space-info.md) | Show the metadata of one space: what you can do in it, the page statuses that it gives you, and exact page counts |
+| [`user-info`](docs/commands/markfluence_user-info.md) | Show who these credentials are and where they can publish. It also shows who an account id names |
 
 **To find pages:**
 
@@ -334,7 +334,6 @@ tells you which command to use.
 | [`search`](docs/commands/markfluence_search.md) | Do a full-text search, for when you do not know the title. It takes raw CQL with `--cql` |
 | [`children`](docs/commands/markfluence_children.md) | List what is below a page, a folder, or a space |
 | [`user-find`](docs/commands/markfluence_user-find.md) | Resolve the name of a person to the account id, and to the Markdown line that mentions them |
-| [`user-info`](docs/commands/markfluence_user-info.md) | Show who these credentials are and where they can publish. It also shows who an account id names |
 
 **Attachments.** The `create` and `update` commands do the work for the images
 of a page. These commands are for all the other attachments:
