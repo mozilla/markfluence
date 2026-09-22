@@ -24,8 +24,8 @@ Frontmatter is a **YAML** block between two `---` lines. It can hold only flat
 can write a list inline (`labels: [a, b]`) or as `- ` lines.
 
 markfluence reads some fields as single values: `title`, `space`, `parent`,
-`page_id`, and `page_width`. If you write one of them as a list, that is an
-error. markfluence does not read it as unset.
+`page_id`, `page_width`, and `page_status`. If you write one of them as a list,
+that is an error. markfluence does not read it as unset.
 
 You cannot use nesting or multi-line values, and markfluence enforces this.
 Each of these is an error that names the key: a nested value, a `|` block, a
@@ -52,24 +52,28 @@ For a page with the real title `null`, write `title: "null"`.
 
 | Field | Value domain | Notes |
 | --- | --- | --- |
-| `space` | a space key (e.g. `ENG`, or a personal space like `~1234abcd`) | The target space for `create`. You can also give `--space`, or set a `space:` default for the whole project (see below). `create` writes it back. It is always a key, and never a numeric space id. |
+| `space` | a space key (e.g. `ENG`, or a personal space like `~1234abcd`) | The target space for `create`. You can also give `--space`, or set a `space:` default for the whole project (see below). If `--space` and this field disagree, `create` refuses the file. `create` writes it back. It is always a key, and never a numeric space id. |
 | `parent` | `null`, a numeric page **or folder** id, or a relative `.md` path | See [`parent`](#parent). `create` uses it, or `--parent`. |
 | `page_id` | a numeric page id, or `null` | The target page. `update` needs one, in the frontmatter or in the entry for the file in `markfluence.yaml`. Without one, `update` fails, and it does not search by title. `create` writes it back after it creates the page. `null` or absent means "no page yet". |
-| `title` | text (**necessary**) | The Confluence page title. |
+| `title` | text | The Confluence page title. `create` needs it, or `--title`, and writes it back. For `update`, an absent title keeps the live title of the page. An empty `title:` is an error in both. |
 | `labels` | a list of label names, e.g. `[ci/cd, howto]` | The labels of the page. See [`labels`](#labels). |
 | `page_width` | `narrow`, `wide`, or `max` | The published page width. See [`page_width`](#page_width). |
 | `page_status` | the display name of a status **that page** can be given, e.g. `Ready for review` | The colored lozenge that Confluence shows next to the page title. See [`page_status`](#page_status). |
 
-To create a page, you need only the `title` in the frontmatter.
+To create a page, you need only the `title` in the frontmatter, or `--title`.
 
 ### `parent`
 
 - `null` means a top-level page.
 - An id names a parent that exists. The parent can be a page or a Cloud folder.
   The value is only an id in both cases, and nothing records which type it is.
-- A `.md` path names a parent that you create in the same run. `create`
-  resolves it in dependency order. Then it changes the value to
+- A `.md` path names a parent by its file. The file can be in the same run,
+  and then `create` resolves it in dependency order. The file can also be a
+  page that you published earlier, and then `create` uses its `page_id` or its
+  `pages:` entry. In both cases, `create` then changes the value to
   `<page_id>  # <original.md>`.
+- A `.md` path must be inside the documentation root, and it cannot be a
+  symlink. Otherwise `create` refuses the file.
 
 ### `labels`
 
@@ -105,6 +109,11 @@ The two verbs do different things when the field is *absent*. `create` uses
 `max`. `update` leaves the live width alone and makes no width request at all.
 `--page-width` and a `page_width:` default for the whole project both count as
 declared (see below).
+
+`create` writes the width that it used back to the file. Thus after `create`,
+the field is not absent. A later `update` asserts that width, and it overwrites
+a width that a person set in the UI. To let the UI decide the width, remove the
+`page_width:` line after `create`.
 
 ### `page_status`
 
@@ -153,10 +162,15 @@ space: ENG
 page_width: max
 ```
 
-The sequence is **the flag first, then the frontmatter, then the project
-file**. The answer that is nearest to the content wins. markfluence reads the
-project file only when the two levels above it say nothing. Thus the project
-file never disagrees with either of them.
+For `page_width`, the sequence is **the flag first, then the frontmatter, then
+the project file**. The answer that is nearest to the content wins.
+
+`space` is different at the top. If `--space` and a frontmatter `space:`
+disagree, `create` refuses the file, and neither wins.
+
+For both settings, markfluence reads the project file only when the two levels
+above it say nothing. Thus the project file never disagrees with either of
+them.
 
 `page_status` is **not** one of these defaults, on purpose. A width is house
 style, and a whole tree can share it. A status is a claim about the maturity of
@@ -270,16 +284,17 @@ use a real newline, because a GFM table row must stay on one physical line.
 | Key   | Type: string<br>JQL: "Key" |
 ```
 
-The editor of Confluence shows a multi-line cell as separate paragraphs, and
-not with `<br>`. `read` and `export` change that back to the `<br>` form above.
+In storage format, the editor of Confluence records a multi-line cell as
+separate paragraphs, and not with `<br>`. `read` and `export` change that back
+to the `<br>` form above.
 That form publishes back to the same paragraphs.
 
 #### Lists in cells
 
 For a list in a table cell, use HTML list tags directly in the cell: `<ul>`,
-`<ol>`, and `<li>`. This is the same as `<br>` for a plain line break. The list
-syntax of Markdown needs each item on its own line, and a table row cannot do
-that. Thus you cannot use it here.
+`<ol>`, and `<li>`. You write them as inline HTML in the cell, as you write
+`<br>` for a line break. The list syntax of Markdown needs each item on its own
+line, and a table row cannot do that. Thus you cannot use it here.
 
 ```markdown
 | Field  | Values                                |
@@ -396,8 +411,10 @@ Examples:
 
 ### Links to other pages
 
-markfluence changes a link to a sibling `.md` file to the Confluence URL of the
-target page. It changes **heading anchors** to the anchor scheme of
+markfluence changes a link to a `.md` file to the Confluence URL of the target
+page. The path is relative to the file that has the link, as on GitHub. The
+target can be any `.md` file under the documentation root, such as
+`../other/page.md`. It changes **heading anchors** to the anchor scheme of
 Confluence.
 
 A link destination is a URL, as an image path is. For a sibling whose filename
@@ -407,8 +424,8 @@ fragment, so a non-ASCII heading anchor can be `#caf%C3%A9-section`.
 markfluence decodes both before it compares them with files and headings on
 disk. Thus either spelling resolves.
 
-markfluence reports an unresolved link, and how serious it is depends on the
-reason:
+For a link to a `.md` file, whether markfluence reports an unresolved link, and
+how serious it is, depends on the reason:
 
 * A target that **does not exist at all**, or that **resolves outside the
   documentation root**, is Broken. markfluence replaces the whole link element
@@ -472,10 +489,13 @@ export would write `Unlicensed user` over every real name in a tree.
 
 - `<!-- confluence-toc -->`: markfluence replaces it with the Confluence
   table-of-contents macro.
+- `<!-- bg:COLOR -->` at the start of a table cell: markfluence removes it and
+  gives the cell a background color. See
+  [Cell background colors](#cell-background-colors).
 
-That is the only directive. **Any other HTML comment that you write is
-lost**, and markfluence does not remove it. Confluence removes every comment
-on write, so the comment never gets to the stored page (measured; see
+There are no other directives. **Any other HTML comment that you write is
+lost**, but markfluence is not what removes it. Confluence removes every
+comment on write, so the comment never gets to the stored page (measured; see
 [storage-format.md](confluence/storage-format.md#confluence-strips-html-comments-on-write)).
 
 Thus a comment is not a way to leave a note on a published page. To say where
@@ -493,7 +513,8 @@ markfluence writes it with no change. There are two conventions:
 - **Put a blank line** between an `ac:` or `ri:` tag and the Markdown that you
   want markfluence to convert. An example is the body of a macro or a layout
   cell. With a blank line, markfluence parses the content as Markdown. Without a
-  blank line, the content passes through as literal text.
+  blank line, markfluence does not convert the content, and passes it through
+  as it is.
 - **Put the opening tag on its own line**, or close it in the same tag. Then
   markfluence does not put it in a paragraph.
 
