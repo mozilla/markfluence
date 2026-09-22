@@ -1,90 +1,91 @@
 # markfluence
 
-Markdown-centric Confluence cli tool. Works with Claude, works with GitHub
-actions, works with you.
+A command line tool for Markdown and Confluence: works with agents, works with
+GitHub Actions, works with you.
 
 ## Features
 
-- **Manage Confluence content outside of Confluence.** Supports one-file
-  editing, multi-file projects, page hierarchies, images, attachments, labels,
-  etc.
-- **Supports GitHub-Flavored Markdown with Confluence enhancements.**
-  Base Markdown plus tables, callouts, table cell background color,
-  table-of-contents macro, links, anchors, Confluence user mentions, etc.
-  Markdown files work in GitHub and preview apps.
-- **Supports content round trip.** `export` downloads a Confluence page, tree,
-  or entire Confluence space down to your machine. Those files publish back to
-  Confluence. Create files on your local machine and publish them to Confluence
-  fresh. Equivalence is semantic rather than byte-for-byte, but content
-  survives round trip.
-- **Supports batch publishing.** Publish single pages or entire trees at once.
-  Pages that don't have changes are a network no-op.
-- **Supports Confluence storage-format.** Allows you to express
-  Confluence-specific things even if they don't have a Markdown equivalent.
-- **Supports offline validation of Markdown files.** Finds dead links, broken
-  images, and invalid frontmatter without network access or credentials.
-- **Supports Confluence search.** `find` resolves an exact title to ids
-  including archived pages and folders. `search` searches Confluence and
-  returns results with excerpts, with raw CQL when you need it. `user-find`
-  resolves a person's name to the account id a mention needs, and prints the
-  markdown line that mentions them.
-- **Supports diff.** Know what's different between your local files and what's
-  in Confluence. Output is convenient for use with `patch -R`. Exit codes match
-  `diff`.
-- **Supports CI publish workflows.** Maintain your documentation in a repository
-  and publish to Confluence on merges, with
-  [markfluence-action](https://github.com/mozilla/markfluence-action) — one
-  step, and it publishes only the files that actually changed.
-- **Careful with other people's edits.** markfluence maintains a local event
-  log and refuses to overwrite a page somebody else has changed since; it skips
-  a publish whose body is unchanged and doesn't delete attachments. Supports
-  a `--force` escape hatch.
-- **Supports personal access tokens and service account scoped API tokens.**
-  Supports both token types correctly.
-- **Supports `--dry-run` on publish and export commands.** Allows you to see
-  what is going to happen before you do it.
-- **Supports `--json`, proper exit codes, shell completions, tty handling,
-  proper stderr/stdout.** JSON output for all commands for scripting and AI
-  agents, proper exit codes, shell completions, colorized output except in
-  non-tty situations, and convenient stderr/stdout handling for shell
-  scripting.
+- **Manage Confluence content outside of Confluence.** markfluence works with
+  one file, or with a project of many files. It supports page trees, images,
+  attachments, and labels.
+- **GitHub-Flavored Markdown with Confluence additions.** markfluence supports
+  base Markdown and more: tables, callouts, table cell background color, the
+  table-of-contents macro, links, anchors, and Confluence user mentions. The
+  files stay correct in GitHub and in Markdown preview programs.
+- **Content round trip.** `export` downloads a Confluence page, a page tree, or
+  a whole space to your machine. Those files publish back to Confluence. You
+  can also write new files on your machine and publish them. The result is not
+  byte-for-byte the same, but the content keeps its meaning.
+- **Batch publish.** Publish one page, or a whole tree at the same time. A page
+  with no changes needs no network request.
+- **Confluence storage format.** You can write Confluence-specific markup when
+  Markdown has no way to show it.
+- **Offline validation of Markdown files.** markfluence finds dead links,
+  broken images, and bad frontmatter with no network and no credentials.
+- **Confluence search.** `find` resolves an exact title to page ids, and it
+  sees archived pages and folders. `search` does a full-text search and shows
+  an excerpt for each hit. It also takes raw Confluence Query Language (CQL).
+  `user-find` resolves a person's name to the account id that a mention needs.
+  It also prints the Markdown line that mentions them.
+- **Diff.** `diff` shows what is different between your file and the page in
+  Confluence. The output works with `patch -R`. The exit codes are the same as
+  the exit codes of `diff`.
+- **CI publish workflows.** Keep your documents in a repository and publish
+  them to Confluence when a change merges. Use
+  [markfluence-action](https://github.com/mozilla/markfluence-action). It is
+  one step, and it publishes the files that changed and no other files.
+- **Care with the edits of other persons.** markfluence keeps a local event
+  log. It refuses to overwrite a page that somebody else changed after you made
+  your copy. It skips a publish when the body did not change. It does not
+  delete attachments. The `--force` flag is the escape hatch.
+- **Personal access tokens and scoped service account tokens.** markfluence
+  supports both token types correctly.
+- **`--dry-run` on the publish and export commands.** You can see what will
+  happen before it happens.
+- **`--json`, correct exit codes, shell completions, terminal detection, and
+  correct use of stdout and stderr.** Every command can write JSON for scripts
+  and for AI agents. markfluence generates its own shell completions. It colors
+  its output, but not when the output is not a terminal. It sends each message
+  to stdout or to stderr as a shell script needs.
 
 ## Location of documentation
 
-This file covers installing, configuring, and running each command. The rest
-lives beside it, because it is reference material rather than a read-through:
+This file tells you how to install markfluence, how to configure it, and how to
+run each command. The other documents are near this file. They are reference
+material, and you do not read them from start to end:
 
 | | |
 |---|---|
-| [README.md](README.md) (this file) | installation, configuration, usage |
-| [docs/commands/](docs/commands/) | every command's `--help`, rendered — the same text `markfluence CMD --help` prints, generated from the binary |
+| [README.md](README.md), this file | installation, configuration, and use |
+| [docs/commands/](docs/commands/) | the `--help` text of every command, as Markdown. It is the same text that `markfluence CMD --help` prints, and it comes from the binary |
 | [docs/markdown_file.md](docs/markdown_file.md) | the page format: every frontmatter field, and what the converter does with each body construct |
 | [docs/root-model.md](docs/root-model.md) | the documentation root: how a tree of files maps to a tree of pages |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | how to contribute: development setup, what to run before opening a pr, commit conventions, how to file an issue, etc |
-| [docs/confluence/](docs/confluence/) | what we established about Confluence by experiment — the API, storage format, scopes, and the traps that produce confident wrong answers |
-| [docs/guarantees.md](docs/guarantees.md) | the properties markfluence holds itself to, each with an honest status |
-| [docs/json-output.md](docs/json-output.md) | `--json` in detail: status verbs, what counts as a result, why the shapes are what they are |
-| [schema/json-output/v1.json](schema/json-output/v1.json) | the `--json` schema itself, also printed by `markfluence schema` |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | how to contribute: the development setup, what to run before you open a pull request, the commit conventions, and how to file an issue |
+| [docs/confluence/](docs/confluence/) | what we found out about Confluence by experiment: the API, the storage format, the scopes, and the traps that give you a confident wrong answer |
+| [docs/guarantees.md](docs/guarantees.md) | the properties that markfluence holds itself to, each one with an honest status |
+| [docs/json-output.md](docs/json-output.md) | `--json` in detail: the status verbs, what counts as a result, and why the shapes are what they are |
+| [schema/json-output/v1.json](schema/json-output/v1.json) | the `--json` schema. The `markfluence schema` command also prints it |
 
 ## Which Confluence
 
-Ways to run Confluence and markfluence support for it:
+These are the ways to run Confluence, and the support that markfluence gives to
+each one:
 
 | Confluence | markfluence support |
 |---|---|
-| Cloud — Standard, Premium, Enterprise | **Supported.** |
+| Cloud: Standard, Premium, Enterprise | **Supported.** |
 | Cloud with a custom site domain | **Supported.** |
-| Atlassian Government / isolated Cloud | **Untested.** Based on Atlassian documentation it has the same APIs and same identity model, so it is expected to work, but it's untested. |
-| Data Center | **Unsupported.** |
-| Server | **Unsupported.** Also end-of-life since February 2024. |
+| Atlassian Government Cloud, or isolated Cloud | **Not tested.** The Atlassian documents show the same APIs and the same identity model. We think it works, but we did not test it. |
+| Data Center | **Not supported.** |
+| Server | **Not supported.** It is also at its end of life since February 2024. |
 
 ## Install
 
-### macOS — Homebrew
+### macOS with Homebrew
 
-This repository is its own [tap](https://docs.brew.sh/Taps), so the tap takes
-an explicit URL: it isn't named `homebrew-markfluence`, which is the name
-`brew tap` would otherwise go looking for.
+This repository is its own [tap](https://docs.brew.sh/Taps), so the tap needs
+an explicit URL. The repository is not named `homebrew-markfluence`, and that
+is the name that `brew tap` looks for.
 
 ```sh
 brew tap mozilla/markfluence https://github.com/mozilla/markfluence
@@ -92,20 +93,21 @@ brew trust mozilla/markfluence
 brew install markfluence
 ```
 
-Upgrades come with `brew update && brew upgrade markfluence`. Shell
-completions are installed where each shell looks for them, so there's nothing
-further to do.
+To upgrade, use `brew update && brew upgrade markfluence`. Homebrew installs
+the shell completions where each shell looks for them, so you do all the work
+with these commands.
 
-**Apple Silicon only.** macOS 26 Tahoe is the last release Apple ships for
-Intel Macs — macOS 27 requires Apple Silicon — so there is no Intel build and
-`brew install` will not find one. On an Intel Mac, build from source (below).
+markfluence has a build for Apple Silicon, and it has no build for Intel. macOS
+26 Tahoe is the last release that Apple ships for Intel Macs, because macOS 27
+needs Apple Silicon. Thus `brew install` finds no build on an Intel Mac. On an
+Intel Mac, build markfluence from source. See below.
 
-### Linux — download a release archive
+### Linux with a release archive
 
-Grab the binary tarball for your architecture from the
-[latest release](https://github.com/mozilla/markfluence/releases/latest),
-verify it, and put the binary on your `PATH` - adjust as necessary
-to work on your machine:
+Get the archive for your architecture from the
+[latest release](https://github.com/mozilla/markfluence/releases/latest). Do a
+check of the archive, then put the binary on your `PATH`. Change these commands
+as necessary for your machine:
 
 ```sh
 VERSION=0.1.0                                   # no leading "v"
@@ -120,42 +122,44 @@ curl -fsSLO "${BASE}/${ARCHIVE}" && \
     install -D -m 0755 markfluence ~/.local/bin/markfluence
 ```
 
-`tar` is told to extract **only** `markfluence` for the same kind of reason —
-the archive is flat and also contains a `README.md` and a `LICENSE`, which an
-unqualified `tar -xzf` would write over yours.
+These commands tell `tar` to extract the `markfluence` file and no other file.
+The archive is flat, and it also holds a `README.md` file and a `LICENSE` file.
+A `tar -xzf` command with no file name writes over your own copies of those two
+files.
 
-### Any platform — from source
+### Any platform, from source
 
-Requires Go 1.25+.
+You need Go 1.25 or a later version.
 
 ```sh
 go install github.com/mozilla/markfluence@latest
 ```
 
-A binary installed this way reports its version as `dev`: the version stamp is
-applied by the release build's linker flags, which `go install` does not use.
-Prefer a release archive if you might need to report a bug against a specific
-version.
+A binary from this command shows its version as `dev`. The release build
+applies the version stamp with linker flags, and `go install` does not use
+those flags. Use a release archive instead, if you must report a bug for a
+specific version.
 
-Or from a clone, which is also the development setup:
+You can also build from a clone. This is also the development setup:
 
 ```sh
 git clone https://github.com/mozilla/markfluence
 cd markfluence
-make install          # installs `markfluence` into your Go bin
-# ...or, to build into ./bin without installing:
-make build            # produces ./bin/markfluence
+make install          # installs `markfluence` into your Go bin directory
+# ...or build into ./bin and do not install:
+make build            # makes ./bin/markfluence
 ```
 
 ### Shell completions
 
 markfluence generates its own completion scripts for bash, zsh, fish, and
-PowerShell. The release archives ship the bash/zsh/fish scripts under
-`completions/`, and a Homebrew install puts them where each shell looks, so a
-`brew install` needs nothing further; PowerShell isn't packaged and is
-generated on demand instead (below).
+PowerShell. The release archives hold the bash, zsh, and fish scripts in the
+`completions/` directory. A Homebrew install puts them where each shell looks
+for them, so a `brew install` needs no more work. The archives do not hold the
+PowerShell script. markfluence generates that script when you ask for it. See
+below.
 
-Otherwise, to load them into the current shell:
+To load the completions into the current shell:
 
 ```sh
 source <(markfluence completion bash)   # bash
@@ -163,85 +167,93 @@ source <(markfluence completion zsh)    # zsh
 markfluence completion fish | source    # fish
 ```
 
-To install them permanently, `markfluence completion <shell> --help` prints the
-path your shell reads on your platform. For example, on Linux with bash:
+To install them permanently, run `markfluence completion <shell> --help`. It
+prints the path that your shell reads on your platform. This is an example for
+Linux with bash:
 
 ```sh
 markfluence completion bash > /etc/bash_completion.d/markfluence
 ```
 
-Completion offers Markdown files wherever a `FILE` or `PAGE` argument goes (the
-page-id and URL forms of `PAGE` you type out), the values of flags like
-`--page-width` and `--format`, and directories for `--dest`. Attachment names
-aren't completed: they live on the server, and completion never makes a network
-call.
+Completion gives you Markdown file names for a `FILE` argument or a `PAGE`
+argument. You type the page id form and the URL form of `PAGE` yourself.
+Completion also gives you the values of flags such as `--page-width` and
+`--format`, and directory names for `--dest`. Completion does not give you
+attachment names. Attachment names are on the server, and completion never
+makes a network request.
 
 ## Configure
 
-markfluence needs a Confluence site URL, a username, and an API token. Each is
-resolved with the precedence **flag > environment variable > `.env` file**:
+markfluence needs a Confluence site URL, a username, and an API token. It
+resolves each one in this sequence: **the flag first, then the environment
+variable, then the `.env` file**.
 
-| Setting | Flag | Environment / `.env` |
+| Setting | Flag | Environment variable or `.env` |
 | --- | --- | --- |
 | Site URL | `--url` | `CONFLUENCE_URL` |
 | Username | `--username` | `CONFLUENCE_USERNAME` |
-| API token | *(none — never a flag)* | `CONFLUENCE_TOKEN` |
-| Cloud ID *(optional)* | `--cloud-id` | `CONFLUENCE_CLOUD_ID` |
+| API token | *none. It is never a flag* | `CONFLUENCE_TOKEN` |
+| Cloud ID, optional | `--cloud-id` | `CONFLUENCE_CLOUD_ID` |
 
-markfluence reads a `.env` file automatically (no need to `source` it) from the
-[documentation root](#the-documentation-root) — the directory holding
-`markfluence.yaml`, found by walking up from the working directory, or the
-working directory itself with no `markfluence.yaml` above it — or from an
-explicit path via `--env-file PATH`. For `create`, `update`, and
-`attachment-upload`, `--root PATH` redirects this too, the same as it does
-the per-file root those commands otherwise resolve independently.
+markfluence reads a `.env` file without help, so you do not need to `source`
+it. It reads the file from the [documentation root](#the-documentation-root).
+The documentation root is the directory that holds `markfluence.yaml`, and
+markfluence finds it when it goes up from the working directory. If no
+`markfluence.yaml` file is above the working directory, the root is the working
+directory itself. You can also give an explicit path with `--env-file PATH`.
+The `--root PATH` flag moves this path for the `create`, `update`, and
+`attachment-upload` commands. For those commands, `--root` also moves the
+per-file root that they find by themselves.
 
-Copy `.env.example` to `.env` and fill in:
+Copy `.env.example` to `.env` and fill it in:
 
 ```
 CONFLUENCE_URL=https://your-org.atlassian.net
 CONFLUENCE_USERNAME=you@example.com
 CONFLUENCE_TOKEN=your-api-token
-# Optional. Set this only when using *scoped* API tokens.
+# Optional. Set this only for a *scoped* API token.
 # CONFLUENCE_CLOUD_ID=
 ```
 
 > [!NOTE]
-> The API token is deliberately not accepted as a command-line flag; it comes
-> only from the environment or `.env`.
+> markfluence does not accept the API token as a command line flag. The token
+> comes from the environment or from the `.env` file.
 
-Then restrict it, since it holds your API token:
+Then restrict the file, because it holds your API token:
 
 ```
 chmod 600 .env
 ```
 
-markfluence warns when the `.env` it read is reachable by anyone but you *and*
-contains `CONFLUENCE_TOKEN`. The warning names the file, what is wrong with its
-mode, and the `chmod` that fixes it. When markfluence is run with `--json`, the
-warning is not printed but carried in the output document's `warnings` array
-(and on the stderr error object), because stderr in that mode is itself a JSON
-document.
+markfluence gives a warning when two conditions are both true. The first
+condition is that a person who is not you can read the `.env` file. The second
+condition is that the file holds `CONFLUENCE_TOKEN`. The warning gives the name
+of the file, the fault in its mode, and the `chmod` command that corrects
+it. If you run markfluence with
+`--json`, markfluence does not print the warning. It puts the warning in the
+`warnings` array of the output document, and in the error object on stderr.
+stderr is a JSON document in that mode.
 
-(Optional): `alias mf=markfluence`
+Optional: `alias mf=markfluence`
 
 ### Scoped tokens and service accounts
 
-For a normal personal API token, leave `CONFLUENCE_CLOUD_ID` unset.
+For a normal personal API token, do not set `CONFLUENCE_CLOUD_ID`.
 
-For a **scoped** API token — the kind an Atlassian [service account][svcacct] gets,
-for publishing from CI — you must set `CONFLUENCE_CLOUD_ID`. Scoped tokens are
-rejected with a **401** against your site domain, so markfluence must use
-Atlassian's `api.atlassian.com` gateway, and the cloud ID is required there.
+You must set `CONFLUENCE_CLOUD_ID` for a **scoped** API token. An Atlassian
+[service account][svcacct] gets a scoped token, and you use it to publish from
+CI. Atlassian refuses a scoped token with a **401** status against your site
+domain. Thus markfluence must use the `api.atlassian.com` gateway of Atlassian,
+and that gateway needs the cloud ID.
 
-To find your cloud ID (it is not a secret):
+To find your cloud ID, use this command. The cloud ID is not a secret:
 
 ```console
 $ curl -s https://your-org.atlassian.net/_edge/tenant_info
 {"cloudId":"d8febd08-5555-5555-5555-db37c2369ce5"}
 ```
 
-The scopes markfluence needs, copy-pasteable:
+markfluence needs these scopes. You can copy this list:
 
 ```
 read:page:confluence
@@ -258,148 +270,158 @@ read:content-details:confluence
 ```
 
 > [!NOTE]
-> Scopes are fixed when a token is issued. A missing scope requires a **new**
-> token to be created.
+> Atlassian fixes the scopes when it issues a token. If a scope is absent, you
+> must create a new token.
 
 > [!NOTE]
-> **The mixture of naming styles is correct, not a copy-paste error.** Atlassian
-> has two scope vocabularies — *classic* (`read:confluence-user`) and *granular*
-> (`read:page:confluence`) — granted independently, so holding one does **not**
-> imply the other. markfluence talks to both API versions and each accepts only
-> one vocabulary.
+> **The mixture of two name styles is correct. It is not a copy-paste error.**
+> Atlassian has two scope vocabularies: the *classic* vocabulary, such as
+> `read:confluence-user`, and the *granular* vocabulary, such as
+> `read:page:confluence`. Atlassian grants them independently, so a token with
+> one vocabulary does **not** hold the other. markfluence uses both API
+> versions, and each version accepts one vocabulary only.
 
-Diagnosing a failure:
+Use this table to diagnose a failure:
 
-| symptom | meaning |
+| Symptom | Meaning |
 |---|---|
-| `401 Unauthorized; scope does not match` | a scope is **missing** — issue a new token |
-| **403** | the token is scoped for the call, but the account lacks Confluence permission on that space or page — grant access; a new token will not help |
+| `401 Unauthorized; scope does not match` | A scope is **absent**. Issue a new token |
+| **403** | The token has the correct scope for the request, but the account does not have Confluence permission for that space or that page. Grant the access. A new token does not help |
 
-**[docs/confluence/api.md](docs/confluence/api.md#scopes) is the reference**: which
-scope each API call needs and how that was established, why the list is mixed,
-the three calls Atlassian no longer documents, and how to probe a token for the
-scopes it actually holds (there is no introspection endpoint, but the scope gate
-runs before routing, so one request per scope answers it).
+**[docs/confluence/api.md](docs/confluence/api.md#scopes) is the reference.** It
+gives these details:
+
+- The scope that each API request needs, and how we found that out.
+- Why the list mixes the two vocabularies.
+- Which 3 requests Atlassian no longer documents.
+- How to find the scopes that a token holds.
+
+Atlassian has no introspection endpoint. But the scope gate runs before
+Confluence routes the request, so one request for each scope gives you the
+answer.
 
 [svcacct]: https://support.atlassian.com/user-management/docs/understand-service-accounts/
 
 ## Usage
 
-Each command explains itself: **`markfluence COMMAND --help`** is the reference
-for what it does, why, and how to invoke it. What follows is which command to
-reach for.
+Each command explains itself. **`markfluence COMMAND --help`** is the reference
+for what the command does, why it does it, and how you run it. This section
+tells you which command to use.
 
-**Publishing markdown to Confluence:**
-
-| | |
-|---|---|
-| [`create`](docs/commands/markfluence_create.md) | make new pages from files that have no `page_id` yet. Checks every file first, and creates nothing if any would fail |
-| [`update`](docs/commands/markfluence_update.md) | republish files that already have a `page_id`. Skips a file that has not changed |
-| [`check`](docs/commands/markfluence_check.md) | validate files with no network and no credentials — dead links, broken images, bad frontmatter |
-| [`diff`](docs/commands/markfluence_diff.md) | what differs between one file and its page. stdout is a patch; exits `1` when they differ |
-
-**Getting things out of Confluence:**
+**To publish Markdown to Confluence:**
 
 | | |
 |---|---|
-| [`read`](docs/commands/markfluence_read.md) | one page as markdown on stdout, or as raw storage |
-| [`export`](docs/commands/markfluence_export.md) | a page, a subtree, or a whole space to files, attachments included |
-| [`page-info`](docs/commands/markfluence_page-info.md) | one page's metadata: space, parent, version, width, labels, authors |
-| [`space-info`](docs/commands/markfluence_space-info.md) | one space's metadata: what you may do in it, the page statuses it offers, exact page counts |
+| [`create`](docs/commands/markfluence_create.md) | Make new pages from files that have no `page_id` yet. It does a check of every file first, and it creates no page if one file would fail |
+| [`update`](docs/commands/markfluence_update.md) | Publish files that already have a `page_id` again. It skips a file that did not change |
+| [`check`](docs/commands/markfluence_check.md) | Do a check of files with no network and no credentials: dead links, broken images, and bad frontmatter |
+| [`diff`](docs/commands/markfluence_diff.md) | Show what is different between one file and its page. stdout is a patch. It exits with `1` when the two are different |
 
-**Finding pages:**
-
-| | |
-|---|---|
-| [`find`](docs/commands/markfluence_find.md) | resolve an exact title to ids. Sees archived pages and folders, which `search` cannot |
-| [`search`](docs/commands/markfluence_search.md) | full text, for when you do not know the title. Takes raw CQL with `--cql` |
-| [`children`](docs/commands/markfluence_children.md) | list what is under a page, a folder, or a space |
-| [`user-find`](docs/commands/markfluence_user-find.md) | resolve a person's name to the account id and the markdown line that mentions them |
-| [`user-info`](docs/commands/markfluence_user-info.md) | who these credentials are and where they may publish, or who an account id names |
-
-**Attachments** — `create`/`update` handle a page's images for you; these are for
-everything else:
+**To get things out of Confluence:**
 
 | | |
 |---|---|
-| [`attachment-list`](docs/commands/markfluence_attachment-list.md) | what is attached to a page |
-| [`attachment-upload`](docs/commands/markfluence_attachment-upload.md) | attach a file, skipping one whose checksum already matches |
-| [`attachment-download`](docs/commands/markfluence_attachment-download.md) | fetch attachments back to the paths they were published from |
+| [`read`](docs/commands/markfluence_read.md) | Print one page to stdout as Markdown, or as raw storage format |
+| [`export`](docs/commands/markfluence_export.md) | Write a page, a page tree, or a whole space to files, with the attachments |
+| [`page-info`](docs/commands/markfluence_page-info.md) | Show the metadata of one page: the space, the parent, the version, the width, the labels, and the authors |
+| [`space-info`](docs/commands/markfluence_space-info.md) | Show the metadata of one space: what you can do in it, the page statuses that it gives you, and exact page counts |
 
-And [`schema`](docs/commands/markfluence_schema.md) prints the `--json` schema.
+**To find pages:**
 
-Every command takes `--json`. `create`, `update`, `export`, `attachment-upload`
-and `attachment-download` take `--dry-run`.
+| | |
+|---|---|
+| [`find`](docs/commands/markfluence_find.md) | Resolve an exact title to page ids. It sees archived pages and folders, and `search` cannot see them |
+| [`search`](docs/commands/markfluence_search.md) | Do a full-text search, for when you do not know the title. It takes raw CQL with `--cql` |
+| [`children`](docs/commands/markfluence_children.md) | List what is below a page, a folder, or a space |
+| [`user-find`](docs/commands/markfluence_user-find.md) | Resolve the name of a person to the account id, and to the Markdown line that mentions them |
+| [`user-info`](docs/commands/markfluence_user-info.md) | Show who these credentials are and where they can publish. It also shows who an account id names |
 
-### Publishing from CI
+**Attachments.** The `create` and `update` commands do the work for the images
+of a page. These commands are for all the other attachments:
+
+| | |
+|---|---|
+| [`attachment-list`](docs/commands/markfluence_attachment-list.md) | Show what is attached to a page |
+| [`attachment-upload`](docs/commands/markfluence_attachment-upload.md) | Attach a file. It skips a file when the checksum already agrees |
+| [`attachment-download`](docs/commands/markfluence_attachment-download.md) | Get attachments back to the paths that they were published from |
+
+The [`schema`](docs/commands/markfluence_schema.md) command prints the `--json`
+schema.
+
+Every command takes `--json`. The `create`, `update`, `export`,
+`attachment-upload`, and `attachment-download` commands take `--dry-run`.
+
+### Publish from CI
 
 Use **[markfluence-action](https://github.com/mozilla/markfluence-action)**.
 
-This action lets you publish files that changed in a GitHub repository to
+This action publishes the files that changed in a GitHub repository to
 Confluence.
 
 ### Common workflows
 
-Edit a page that already exists:
+To edit a page that already exists:
 
 ```sh
 # what is its page id?
 markfluence find --space SRE "Deploy runbook"
-# download it and all attachments
+# download it and all its attachments
 markfluence export 1234567890
 
-# ...edit the file it wrote...
+# ...edit the file that it wrote...
 
-# is this valid markdown?
+# is this Markdown correct?
 markfluence check deploy-runbook.md
-# publish changes to Confluence
+# publish the changes to Confluence
 markfluence update deploy-runbook.md
 ```
 
-Create a new page:
+To create a new page:
 
 ```sh
 vi deploy_runbook.md
 
-# ...create the file...
+# ...write the file...
 
-# verify markdown is correct
+# make sure that the Markdown is correct
 markfluence check deploy-runbook.md
-# create the page in the ENG space at the top level
+# create the page at the top level of the ENG space
 markfluence create --space ENG deploy-runbook.md
 
 # ...make some edits...
 
-# verify markdown is correct
+# make sure that the Markdown is correct
 markfluence check deploy-runbook.md
-# publish edits
+# publish the edits
 markfluence update deploy-runbook.md
 ```
 
-Export an entire tree of pages and edit them:
+To export a whole tree of pages and edit them:
 
 ```sh
-# export an entire tree of pages and referenced attachments
+# export a whole tree of pages, with the attachments that they reference
 markfluence export --depth all --dest docs 1234567890
 
 # ...make edits...
 
-# verify markdown is correct
+# make sure that the Markdown is correct
 markfluence check docs/*.md docs/**/*.md
-# update any pages that changed
+# update each page that changed
 markfluence update docs/*.md docs/**/*.md
 ```
 
-Pick up changes somebody made in Confluence. Every command that writes goes one
-way — your files to the page — so this direction is a read plus an edit: `page-info`
-shows a page's labels and width, `read` prints it as markdown, and `export`
-writes the whole thing to disk, frontmatter included. Nothing rewrites an
-existing file's frontmatter from a page.
+To get changes that somebody made in Confluence, do a read and then an edit.
+Every command that writes goes one way, from your files to the page. The
+`page-info` command shows the labels and the width of a page. The `read`
+command prints the page as Markdown. The `export` command writes the whole page
+to disk, with its frontmatter. No command writes the frontmatter of a file that
+already exists from a page.
 
 ### What the output looks like
 
-Three commands whose shape is worth seeing before you run them. `children`
-indents by depth, keeping `TYPE` and `ID` aligned so the output stays greppable:
+Look at the shape of these 3 commands before you run them. The `children`
+command indents each row by its depth. It keeps the `TYPE` column and the `ID`
+column in line, so you can use `grep` on the output:
 
 ```
 TYPE    ID          TITLE
@@ -408,9 +430,9 @@ page    1675427879  MozCloud planning
 page    1671692338    MozCloud observability focus and issues
 ```
 
-`find` reports current pages, archived pages and folders together, because all
-three can hold the title you asked about but only one is a page you can publish
-to:
+The `find` command reports current pages, archived pages, and folders together.
+All 3 types can hold the title that you asked for, but one type only is a page
+that you can publish to:
 
 ```
 TYPE    ID          SPACE          STATUS    TITLE           URL
@@ -418,9 +440,9 @@ page    1675427879  ENG            current   Deploy runbook  https://…
 page    1293156436  CLOUDSERVICES  archived  Deploy runbook  https://…
 ```
 
-`search` prints a block per hit rather than a row, because the excerpt is what
-tells you *why* it matched — with the terms Confluence marked shown in reverse
-video:
+The `search` command prints a block for each hit, not a row. The excerpt tells
+you *why* the page matched. markfluence shows the terms that Confluence marked
+in reverse video:
 
 ```
 Deployment runbook
@@ -431,20 +453,20 @@ Deployment runbook
     Showing 2 matches; more exist (use --limit all).
 ```
 
-
 ### `--json` output
 
-The persistent `--json` flag makes any command emit a single machine-readable
-JSON document to stdout instead of the human output, for scripting and CI. It
-pipes cleanly to `jq`:
+The persistent `--json` flag makes a command write one machine-readable JSON
+document to stdout. The command does not write its human output. Use this flag
+for scripts and for CI. The output pipes to `jq` without trouble:
 
 ```sh
 markfluence page-info 1234567890 --json | jq '.results[0].page_width'
 markfluence update docs/*.md --json | jq '.summary'
 ```
 
-Output is a stable, versioned **envelope**. `results` always holds one object per
-target (a single element for `page-info`/`read`); `summary` carries batch counts:
+The output is a stable **envelope** with a version. The `results` field always
+holds one object for each target. It holds one element for `page-info` and for
+`read`. The `summary` field holds the counts for the batch:
 
 ```json
 {
@@ -476,38 +498,45 @@ target (a single element for `page-info`/`read`); `summary` carries batch counts
 }
 ```
 
-The full contract is published as a JSON Schema (draft 2020-12) at
-[`schema/json-output/v1.json`](schema/json-output/v1.json) — the `results` item
-and `summary` shapes are selected by `command`, and the stderr error object is
-`#/$defs/errorObject`. A test validates markfluence's actual output against it, so
-the schema cannot drift from the implementation.
+The full contract is a JSON Schema in draft 2020-12 at
+[`schema/json-output/v1.json`](schema/json-output/v1.json). The `command` field
+selects the shape of each `results` item and the shape of `summary`. The error
+object on stderr is `#/$defs/errorObject`. A test does a check of the real
+output of markfluence against the schema, so the schema cannot drift from the
+code.
 
-The binary carries that same schema, so a consumer can fetch the contract
-without knowing anything about this repository (see [`schema`](#schema)).
+The binary holds the same schema. Thus a consumer can get the contract and
+know nothing about this repository. See [`schema`](#schema).
 
-**[docs/json-output.md](docs/json-output.md)** covers the rest: the per-command
-status verbs, what counts as one result for each command, `check`'s `broken`
-status, `create`'s preflight abort, and why `find`/`search` report an
-operational failure on stderr rather than as a result.
+**[docs/json-output.md](docs/json-output.md)** gives these other details:
 
-Exit codes:
+- The status verbs of each command.
+- What counts as one result for each command.
+- The `broken` status of `check`.
+- The preflight abort of `create`.
+- Why `find` and `search` report an operational failure on stderr, and not as a
+  result.
 
-| exit | meaning |
+These are the exit codes:
+
+| Exit code | Meaning |
 |---|---|
-| `0` | success — including "no matches", which is an answer a caller acts on |
-| `1` | a per-file or per-target failure; the envelope is still on stdout, with `ok: false` and an `error`/`code` on the failed results |
-| `2` | a fatal pre-flight failure (bad flags, credential resolution). No envelope; a typed error object goes to **stderr** instead |
+| `0` | Success. This includes "no matches", because that is an answer that a caller acts on |
+| `1` | A failure for one file or one target. The envelope is still on stdout. Each failed result has `ok: false` and an `error` value and a `code` value |
+| `2` | A fatal preflight failure, such as a bad flag or a credential that does not resolve. There is no envelope. A typed error object goes to **stderr** instead |
 
-`diff` is the one exception, and uses `diff(1)`'s codes: `0` identical, `1`
-differs, `2` any trouble — so `if markfluence diff FILE >/dev/null 2>&1` means
-"in sync". Its operational failures are the `2` that is `1` everywhere else.
+The `diff` command is the one exception. It uses the exit codes of `diff(1)`:
+`0` when the two are the same, `1` when they are different, and `2` for any
+trouble. Thus `if markfluence diff FILE >/dev/null 2>&1` means "the file and
+the page agree". The operational failures of `diff` give a `2`, and every other
+command gives a `1` for them.
 
 ```json
 { "schema_version": 1, "command": "update", "error": "…", "code": "CONFIG", "warnings": [] }
 ```
 
-Error `code` values: `CONFIG`, `AUTH`, `NOT_FOUND`, `VALIDATION`, `CONVERT`,
-`IO`, `NETWORK`, `API`.
+These are the error `code` values: `CONFIG`, `AUTH`, `NOT_FOUND`, `VALIDATION`,
+`CONVERT`, `IO`, `NETWORK`, and `API`.
 
 ### `schema`
 
@@ -515,10 +544,11 @@ Error `code` values: `CONFIG`, `AUTH`, `NOT_FOUND`, `VALIDATION`, `CONVERT`,
 Usage: markfluence schema
 ```
 
-Print the JSON Schema for [`--json` output](#--json-output) to stdout. The schema
-is embedded in the binary, so a script, a CI job, or an agent can fetch the
-contract at runtime — validating markfluence's own output, or generating types
-from it — without reading it out of this repository:
+This command prints the JSON Schema for the [`--json`
+output](#--json-output) to stdout. The binary holds the schema, so a script, a
+CI job, or an agent can get the contract while it runs. It can do a check of
+the output of markfluence, or it can generate types from the schema. It does
+not read the schema from this repository:
 
 ```console
 $ markfluence schema | jq -r '.properties.command.enum | join(" ")'
@@ -529,19 +559,20 @@ $ markfluence schema > schema.json
 $ check-jsonschema --schemafile schema.json out.json
 ```
 
-The printed document is byte-identical to
-[`schema/json-output/v1.json`](schema/json-output/v1.json) at the revision the
-binary was built from, and describes the `schema_version` that binary emits.
-Because the tests validate real output against the same embedded copy, the
-schema you get from a binary is the one its output was checked against.
+The document that it prints is byte-for-byte the same as
+[`schema/json-output/v1.json`](schema/json-output/v1.json) at the revision that
+the binary was built from. It describes the `schema_version` that the binary
+writes. The tests do a check of the real output against the same embedded copy.
+Thus the schema that you get from a binary is the schema that its output was
+checked against.
 
-Nothing here talks to Confluence, so no credentials are needed. The output is
-already JSON; `--json` changes nothing.
+This command does not talk to Confluence, so it needs no credentials. The
+output is already JSON, and `--json` changes nothing.
 
 ## Markdown page structure
 
-Each Markdown file is one Confluence page: an optional YAML **frontmatter**
-block followed by the Markdown **body**.
+Each Markdown file is one Confluence page. A file has an optional YAML
+**frontmatter** block, and then the Markdown **body**.
 
 ```
 ---
@@ -557,48 +588,55 @@ page_width: max
 ...
 ```
 
-**[docs/markdown_file.md](docs/markdown_file.md) is the page-format reference**:
-every frontmatter field and what each verb does with it, and every body
-construct — tables and their cell conventions, GitHub alerts, images and how
-their paths resolve, links between pages, mentions, and pasted Confluence
-storage markup.
+**[docs/markdown_file.md](docs/markdown_file.md) is the reference for the page
+format.** It gives every frontmatter field and what each verb does with it. It
+also gives every body construct:
+
+- Tables and the conventions for their cells.
+- GitHub alerts.
+- Images, and how their paths resolve.
+- Links between pages.
+- Mentions.
+- Confluence storage markup that you paste in.
 
 ## The documentation root
 
-**Do you need a `markfluence.yaml`?**
+**Do you need a `markfluence.yaml` file?**
 
-- If you export, edit, and publish files **one at a time**, no. Each file's
-  root defaults to its own directory, and that's already the directory you
-  want.
-- If you're working on a **directory tree** of files — pages that link to
-  each other, or that share an `assets/` directory — put a
-  `markfluence.yaml` at the root of that tree. Without one, each file's root
-  still defaults to its own directory, which means a page can't reach an
-  image or another page sitting *above* itself; a shared-assets layout like
-  the one in [docs/markdown_file.md](docs/markdown_file.md) needs a declared root to work at all.
+- If you export, edit, and publish files **one at a time**, no. The root of
+  each file is its own directory, and that directory is already the directory
+  that you want.
+- If you work on a **tree of directories**, yes. An example is a set of pages
+  that link to each other, or that share an `assets/` directory. Put a
+  `markfluence.yaml` file at the root of that tree. Without one, the root of
+  each file is still its own directory. Then a page cannot reach an image or
+  another page that is *above* itself. A shared-assets layout as in
+  [docs/markdown_file.md](docs/markdown_file.md) does not work at all without a
+  declared root.
 
 ```yaml
 # Marks the root of a markfluence project. Image and link paths are recorded
 # relative to this directory. https://github.com/mozilla/markfluence
 ```
 
-It can also carry **project-wide defaults**, which is what saves a hundred
-files from each repeating `space: ENG`:
+The file can also hold **defaults for the whole project**. With these defaults,
+you write `space: ENG` one time, and not one time in each of 100 files:
 
 ```yaml
 space: ENG
 page_width: max
 ```
 
-Each is a default a file overrides: the chain is **flag > frontmatter >
-project file**, so the answer closest to the content wins. A key markfluence
-does not recognise is an error rather than something ignored — a typo in a
-project-wide default is wrong for every file at once. Credentials are
-deliberately not settings here; see
+Each setting is a default, and a file overrides it. The sequence is **the flag
+first, then the frontmatter, then the project file**. Thus the answer that is
+nearest to the content wins. A key that markfluence does not recognise is an
+error, and markfluence does not ignore it. A typo in a default for the whole
+project is wrong for every file at the same time. Credentials are not settings
+here, and that is deliberate. See
 [docs/root-model.md](docs/root-model.md#what-it-deliberately-does-not-hold).
 
-It can also hold a **`pages:` block**, giving each file its page metadata so the
-markdown itself stays pristine — no frontmatter at all:
+The file can also hold a **`pages:` block**. This block gives the page metadata
+of each file, so the Markdown itself stays clean with no frontmatter at all:
 
 ```yaml
 pages:
@@ -607,56 +645,63 @@ pages:
     page_id: 12346
 ```
 
-That is what makes `markfluence update docs/**/*.md` work from CI with no
-per-file inputs, and it is why `update` has no `--page-id`/`--title` flags:
-those would each have to name one file. Both locations are legal and agreement
-is silent, so you can move metadata in a file at a time; a file neither place
-mentions is skipped rather than failed. Details:
+This block is what makes `markfluence update docs/**/*.md` work from CI with no
+input for each file. It is also why `update` has no `--page-id` flag and no
+`--title` flag. Each of those flags can name one file only. Both locations are
+legal, and markfluence says nothing when the two agree. Thus you can move the
+metadata one file at a time. markfluence skips a file that neither location
+mentions, and it does not fail. For the details, see
 [docs/root-model.md](docs/root-model.md#pages--page-metadata-for-a-pristine-file).
 
-The rest of this section is the precise version of the same idea. Every
-markdown file has a **documentation root**: the directory holding
-`markfluence.yaml`, found by walking up from the file's own directory, or —
-with no `markfluence.yaml` anywhere above it — the file's own directory. It
-bounds which images and `parent:` references a file may read, and it's what
-an image's recorded attachment name and source are relative to. The root
-actually used is reported once per distinct value in a run. `--root PATH`
-overrides discovery for the whole invocation — and, for `create`, `update`,
-and `attachment-upload`, also redirects where `.env` is read from (see
-[Configure](#configure)).
+The other part of this section is the exact version of the same idea. Every
+Markdown file has a **documentation root**. The root is the directory that holds
+`markfluence.yaml`, and markfluence finds it when it goes up from the directory
+of the file. If no `markfluence.yaml` file is above the file, the root is the
+directory of the file itself. The root bounds which images and which `parent:`
+references a file can read. The recorded attachment name and source of an image
+are relative to the root. markfluence reports the root that it used one time for
+each different value in a run. The `--root PATH` flag overrides this search for
+the whole command. For `create`, `update`, and `attachment-upload`, it also
+moves the directory that markfluence reads `.env` from. See
+[Configure](#configure).
 
-For the reasoning behind this model — what it fixes, what it costs, and every
-project-wide setting — see [docs/root-model.md](docs/root-model.md) and
-[_plans/025_file-organization.md](_plans/025_file-organization.md).
+For the reasons behind this model, what it corrects, and what it costs, see
+[docs/root-model.md](docs/root-model.md) and
+[_plans/025_file-organization.md](_plans/025_file-organization.md). Those
+documents also give every setting for the whole project.
 
-### Moving files and assets
+### Move files and assets
 
-**Moving or renaming a markdown file.** Just move it. Links to it resolve by
-where it actually is, via the root-relative link index — nothing elsewhere
-needs editing, and nothing needs republishing except the moved file itself
-(to pick up its own new links, if any changed).
+**To move or rename a Markdown file.** Move it. The links to it resolve by its
+real location, through the link index that is relative to the root. You edit
+nothing in the other files. You publish nothing again, except the file that you
+moved. Publish that file to get its own new links, if any link changed.
 
-**Moving a page's own images along with it.** This churns: an attachment's
-identity is relative to the *root*, not the page, so moving both together
-changes the images' root-relative paths, and the next publish uploads them
-under new names, leaving the originals behind unreferenced (markfluence never
-deletes; [#99](https://github.com/mozilla/markfluence/issues/99) tracks a
-future `attachment-prune`). Moving just the page and leaving its images in a
-shared directory is the free move instead.
+**To move the images of a page with the page.** This makes churn. The identity
+of an attachment is relative to the *root*, and not to the page. Thus a move of
+both together changes the paths of the images relative to the root. The next
+publish uploads them with new names, and it leaves the first attachments
+behind with no reference to them. markfluence never deletes. Issue
+[#99](https://github.com/mozilla/markfluence/issues/99) tracks a future
+`attachment-prune` command. To avoid the churn, move the page and leave its
+images in a shared directory.
 
-**Renaming or moving a shared asset**, independent of any page, churns the
-same way: every page referencing it records a new attachment name on its next
-publish. Identity follows the asset's location, not any particular page's
-(this is L3 in [docs/guarantees.md](docs/guarantees.md) — `identity-from-asset-location`).
+**To rename or move a shared asset**, with no relation to any page, makes the
+same churn. Each page that references the asset records a new attachment name
+at its next publish. The identity comes from the location of the asset, and not
+from any one page. This is L3 in
+[docs/guarantees.md](docs/guarantees.md), and its name is
+`identity-from-asset-location`.
 
 ## Inspirations
 
-[pchuri/confluence-cli](https://github.com/pchuri/confluence-cli) -- command
-line interface. markfluence tries to match subcommands and arguments from
-confluence-cli, but focuses on Markdown document publishing and less on
-providing a CLI access to the full Confluence v1/v2 API.
+[pchuri/confluence-cli](https://github.com/pchuri/confluence-cli) for the
+command line interface. markfluence tries to match the subcommands and the
+arguments of confluence-cli. markfluence gives more attention to the publish of
+Markdown documents, and less attention to a CLI for the full Confluence v1 and
+v2 API.
 
-[kovetskiy/mark](https://github.com/kovetskiy/mark) -- Markdown support for
-Confluence and how things are represented. markfluence tries to match key
-design decisions, but has defaults I like better and works in different
-scenarios better.
+[kovetskiy/mark](https://github.com/kovetskiy/mark) for Markdown support in
+Confluence, and for how it represents things. markfluence tries to match the key
+design decisions. It has defaults that I prefer, and it works better in
+different scenarios.
