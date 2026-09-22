@@ -32,7 +32,9 @@ actions, works with you.
   in Confluence. Output is convenient for use with `patch -R`. Exit codes match
   `diff`.
 - **Supports CI publish workflows.** Maintain your documentation in a repository
-  and publish to Confluence on merges.
+  and publish to Confluence on merges, with
+  [markfluence-action](https://github.com/mozilla/markfluence-action) — one
+  step, and it publishes only the files that actually changed.
 - **Careful with other people's edits.** markfluence maintains a local event
   log and refuses to overwrite a page somebody else has changed since; it skips
   a publish whose body is unchanged and doesn't delete attachments. Supports
@@ -57,7 +59,6 @@ lives beside it, because it is reference material rather than a read-through:
 | [README.md](README.md) (this file) | installation, configuration, usage |
 | [docs/commands/](docs/commands/) | every command's `--help`, rendered — the same text `markfluence CMD --help` prints, generated from the binary |
 | [docs/markdown_file.md](docs/markdown_file.md) | the page format: every frontmatter field, and what the converter does with each body construct |
-| [docs/github-actions.md](docs/github-actions.md) | running markfluence in CI: a working workflow, credentials, and why a service account |
 | [docs/root-model.md](docs/root-model.md) | the documentation root: how a tree of files maps to a tree of pages |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | how to contribute: development setup, what to run before opening a pr, commit conventions, how to file an issue, etc |
 | [docs/confluence/](docs/confluence/) | what we established about Confluence by experiment — the API, storage format, scopes, and the traps that produce confident wrong answers |
@@ -329,6 +330,13 @@ And [`schema`](docs/commands/markfluence_schema.md) prints the `--json` schema.
 
 Every command takes `--json`. `create`, `update`, `export`, `attachment-upload`
 and `attachment-download` take `--dry-run`.
+
+### Publishing from CI
+
+Use **[markfluence-action](https://github.com/mozilla/markfluence-action)**.
+
+This action lets you publish files that changed in a GitHub repository to
+Confluence.
 
 ### Common workflows
 
