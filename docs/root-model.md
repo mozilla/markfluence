@@ -22,8 +22,8 @@ that has one is the root. If it gets to the filesystem root with no result, the
 directory of the file is the root.
 
 This is the lookup that is important for correctness. It bounds what a file can
-read, such as an image or a `parent:` reference. The recorded name and source
-of an attachment are relative to it. markfluence builds the link index for the
+read, such as an image or a `parent:` reference. The recorded source path of
+an attachment is relative to it. markfluence builds the link index for the
 tree from it.
 
 When a project file exists and every file in a batch is under it, every file
@@ -45,7 +45,7 @@ they use two different fallbacks when they find nothing. There is no second
 algorithm, only a second starting point.
 
 In the plain case (`project.Discover(cwd)`), that walk does not depend on
-anything else in the invocation. But `create`, `update`, and
+anything else in the invocation. But `create`, `update`, `diff`, and
 `attachment-upload` each already build a `project.Cache` for their own per-file
 root resolution. They give that same cache to the resolver of the client
 configuration (`client.ResolveOptions.Roots`). Thus `.env` does not make its
@@ -130,13 +130,15 @@ destroy:
 | field | on disagreement |
 |---|---|
 | `page_id`, `space`, `parent` | **error**: the file fails. A `page_id` pasted from an old file would publish over a live page |
-| `title`, `page_width`, `labels` | **warning**, and the frontmatter wins. You can see it and recover from it |
+| `title`, `page_width`, `labels`, `page_status` | **warning**, and the frontmatter wins. You can see it and recover from it |
 
 `markfluence create` writes an entry here when the metadata of the file belongs
 here. A project that uses `pages:` never gets frontmatter by accident. A
 project that does not use `pages:` works as it did before. A file that already
 has its own frontmatter keeps it. Thus in a tree that is half migrated, entries
-do not appear behind you. `--no-persist` records nothing in any location.
+do not appear behind you. `--no-persist` records no metadata in either
+location. It still adds a line to the action log (see
+[`.markfluence/`](#markfluence-local-state-not-committed)).
 
 One spelling needs attention. A `parent:` that names a `.md` file is
 **relative to the root in an entry**, as every `pages:` key is. It is
@@ -151,7 +153,7 @@ has this problem.
 
 Every command that takes a page accepts a pristine registered file. All of
 them resolve the argument in one place (`internal/pageref`). Thus
-`markfluence info docs/deploy-runbook.md` works, although that file says
+`markfluence page-info docs/deploy-runbook.md` works, although that file says
 nothing about Confluence. There is no exception. `fix` was one until it was
 removed (#151). It could find such a page, but it could not write to its entry.
 
@@ -183,7 +185,8 @@ treat it as a valid root marker. The search does not continue to an ancestor
 that has a better marker. It also does not use the directory of the Markdown
 file.
 
-The root decides every attachment name and bounds every read. Thus if
+The root decides the recorded path of every attachment and bounds every
+read. Thus if
 markfluence cannot understand the project file, the boundary of the project is
 not known, and a guess is worse than a stop.
 
@@ -191,9 +194,9 @@ not known, and a guess is worse than a stop.
 `markfluence.yaml` written for a newer markfluence holds keys that an older
 binary would ignore. Assume that markfluence ignored a default for the whole
 project. Then it would publish with the wrong space or the wrong width,
-everywhere at the same time, with no message. The refusal also finds `spce:
-ENG`. Thus the file has no schema version, and the error says that an older
-binary is the probable cause.
+everywhere at the same time, with no message. The refusal also finds
+`spce: ENG`. Thus the file has no schema version, and the error says that an
+older binary is the probable cause.
 
 `markfluence check` does a check of a project file offline, with the Markdown
 files that you give it.
@@ -215,8 +218,9 @@ do neither.
 This file is committed and shared. `.env` is different: git ignores it, and it
 is personal. A stray `.env` in an ancestor directory can give a project
 credentials that are not its own. That is exactly why markfluence reports the
-root, and thus where it read `.env` from. The protection is that you can see
-it, and not a permission check.
+root, and thus where it read `.env` from. `create`, `update`, and
+`attachment-upload` print it, and `--json` gives it in `roots`. The protection
+is that you can see it, and not a permission check.
 
 `markfluence` *reads* a project file, but it **executes** nothing because the
 file is present. Nothing in the file can send a credential to a different
@@ -282,9 +286,10 @@ a field that it does not recognise, so the format can grow with no version:
 a batch with more than one root work. The line for each file goes to the log of
 its own root. A key means nothing without the root that it is relative to.
 
-**Nothing depends on the log.** It is advisory bookkeeping. Thus a log that is
-missing, unreadable, corrupt, or half-written makes the check that reads it
-weaker, but it never stops the run. markfluence skips a line that does not
+**No run depends on the log.** Two checks in `update` use it: the refusal to
+overwrite a page that moved, and the skip of a body that did not change. But a
+log that is missing, unreadable, corrupt, or half-written only makes those
+checks weaker. It never stops the run. markfluence skips a line that does not
 parse. If markfluence cannot read a log, no file has a base, and markfluence
 publishes.
 
@@ -306,9 +311,10 @@ checkout that you do not control or a generated snapshot.
 Since `_plans/026` commit 6, it also reads no file outside the root. There are
 3 reads:
 
-- An **image leaf**. It resolves relative to the root. Thus
-  `../assets/logo.png` from a page one directory below the root is correct, and
-  the same reference from a page at the root is not. A path that resolves
+- An **image leaf**. It resolves relative to the directory of the page, and
+  the root bounds it. Thus `../assets/logo.png` from a page one directory below
+  the root is in bounds, and the same reference from a page at the root is
+  not. A path that resolves
   outside the root is `IMAGE BROKEN`. markfluence refuses a symlink, also when
   it resolves inside the root (`os.Lstat`, not `os.Stat`).
 - A frontmatter **`parent:` path**. markfluence reads it through the same root,
@@ -334,9 +340,10 @@ attachment *name* is the base name of the file, and it has none of this path
 Two pages at different depths that reference the same file now record the same
 source and get the same attachment. Before, each page recorded the reference as
 it was written, and the same file had two identities in Confluence. This is L3
-(`identity-from-asset-location`, `docs/guarantees.md`). It is also why a move
-of the images of a page with the page now causes churn, where before it cost
-nothing. See the recipes in the README for what that means in practice.
+(`identity-from-asset-location`, `docs/guarantees.md`). Because the name is
+only the base name, a move of an image keeps the same attachment, and the next
+publish records the new path. A rename of the file creates a new attachment.
+See the recipes in the README for what that means in practice.
 
 ## Link resolution
 
@@ -352,21 +359,20 @@ file that it converts under that root in the same command. This is also about
 conversion was an O(n²) cost that nobody intended (the measurement of
 `_plans/025`).
 
-markfluence does not refuse a link that would resolve outside the root, such as
-`../../../../etc/passwd.md`. The link is never in the index. Thus it resolves
-in the same way as any other unresolved link: markfluence leaves it exactly as
-written and, since `_plans/026` commit 5, reports it.
-
-That is the minimum form of **R1** (`report-unresolved-references`). An
-unresolved image already used a warnings list. A same-tree link to a `.md` file
-that does not resolve goes into the same list. It is not the
-dedicated diagnostic that `_plans/025` describes. That diagnostic audits a
-whole tree with no publish, and tells you *why* a reference failed. That is
-still open work, loosely tracked against a future `check` command.
+A link that would resolve outside the root, such as
+`../../../../etc/passwd.md`, is never in the index. markfluence reports it as
+Broken: it replaces the whole link with the text
+`LINK BROKEN: … (outside the documentation root)`. It does the same for a
+target that does not exist (`not found`). A target that exists but has no
+`page_id` yet gives a warning. This is **R1** (`report-unresolved-references`),
+and `markfluence check` gives the same diagnostics for a whole tree with no
+publish (#42).
 
 The reserve phase of `create` (`_plans/026` commit 8) is the other half of link
-resolution. markfluence reserves a Confluence id for every file in a batch
-before it converts any of them. Each reservation is a stub with no content.
+resolution. Preflight first converts every file to find defects, and discards
+the result (#127). Then markfluence reserves a Confluence id for every file in
+the batch before it publishes any of them. Each reservation is a stub with no
+content.
 markfluence puts each id into the shared index immediately (`Index.SetPage`),
 also under `--no-persist`. Thus a link between two files in the same batch
 resolves, in either direction, and also when the two files link to each other.
