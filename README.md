@@ -14,15 +14,17 @@ GitHub Actions, works with you.
   files stay correct in GitHub and in Markdown preview programs.
 - **Content round trip.** `export` downloads a Confluence page, a page tree, or
   a whole space to your machine. Those files publish back to Confluence. You
-  can also write new files on your machine and publish them. The result
-  semantically equivalent, though not byte-for-byte exactly the same.
+  can also write new files on your machine and publish them. The result is
+  semantically equivalent, but not byte-for-byte the same. The content survives
+  the round trip.
 - **Batch publish.** Publish one page, or a whole tree at the same time. A page
-  with no changes needs no network request.
-- **Confluence storage format.** You can write Confluence-specific markup 
+  with no changes gets no new version: markfluence does not send its body
+  again.
+- **Confluence storage format.** You can write Confluence-specific markup
   with no Markdown equivalent.
 - **Offline validation of Markdown files.** markfluence finds dead links,
   broken images, and bad frontmatter with no network and no credentials.
-- **Confluence search.** `find` resolves an exact title to page ids, and it
+- **Confluence search.** `find` resolves an exact title to page ids and folder ids, and it
   sees archived pages and folders. `search` does a full-text search and shows
   an excerpt for each hit. It also takes raw Confluence Query Language (CQL).
   `user-find` resolves a person's name to the account id that a mention needs.
@@ -76,7 +78,7 @@ each one:
 | Cloud with a custom site domain | **Supported.** |
 | Atlassian Government Cloud, or isolated Cloud | **Not tested.** The Atlassian documents show the same APIs and the same identity model. We think it works, but we did not test it. |
 | Data Center | **Not supported.** |
-| Server | **Not supported.** It is also at its end of life since February 2024. |
+| Server | **Not supported.** Its end of life was in February 2024. |
 
 ## Install
 
@@ -93,8 +95,8 @@ brew install markfluence
 ```
 
 To upgrade, use `brew update && brew upgrade markfluence`. Homebrew installs
-the shell completions where each shell looks for them, so you do all the work
-with these commands.
+the shell completions where each shell looks for them, so you have no more
+work to do.
 
 markfluence has a build for Apple Silicon, and it has no build for Intel. macOS
 26 Tahoe is the last release that Apple ships for Intel Macs, because macOS 27
@@ -104,8 +106,8 @@ Intel Mac, build markfluence from source. See below.
 ### Linux with a release archive
 
 Get the archive for your architecture from the
-[latest release](https://github.com/mozilla/markfluence/releases/latest). Do a
-check of the archive, then put the binary on your `PATH`. Change these commands
+[latest release](https://github.com/mozilla/markfluence/releases/latest). Make
+sure that its checksum is correct, then put the binary on your `PATH`. Change these commands
 as necessary for your machine:
 
 ```sh
@@ -136,8 +138,8 @@ go install github.com/mozilla/markfluence@latest
 
 A binary from this command shows its version as `dev`. The release build
 applies the version stamp with linker flags, and `go install` does not use
-those flags. Use a release archive instead, if you must report a bug for a
-specific version.
+those flags. If you think that you will report a bug for a specific version,
+use a release archive instead.
 
 You can also build from a clone. This is also the development setup:
 
@@ -200,9 +202,9 @@ The documentation root is the directory that holds `markfluence.yaml`, and
 markfluence finds it when it goes up from the working directory. If no
 `markfluence.yaml` file is above the working directory, the root is the working
 directory itself. You can also give an explicit path with `--env-file PATH`.
-The `--root PATH` flag moves this path for the `create`, `update`, and
-`attachment-upload` commands. For those commands, `--root` also moves the
-per-file root that they find by themselves.
+The `--root PATH` flag moves this path for the `create`, `update`, `diff`,
+and `attachment-upload` commands. For those commands, and for `check`, `--root`
+also moves the per-file root that they find by themselves.
 
 Copy `.env.example` to `.env` and fill it in:
 
@@ -330,7 +332,7 @@ tells you which command to use.
 
 | | |
 |---|---|
-| [`find`](docs/commands/markfluence_find.md) | Resolve an exact title to page ids. It sees archived pages and folders, and `search` cannot see them |
+| [`find`](docs/commands/markfluence_find.md) | Resolve an exact title to page ids and folder ids. It sees archived pages and folders, and `search` cannot see them. A folder id is correct only as a `parent` |
 | [`search`](docs/commands/markfluence_search.md) | Do a full-text search, for when you do not know the title. It takes raw CQL with `--cql` |
 | [`children`](docs/commands/markfluence_children.md) | List what is below a page, a folder, or a space |
 | [`user-find`](docs/commands/markfluence_user-find.md) | Resolve the name of a person to the account id, and to the Markdown line that mentions them |
@@ -378,7 +380,7 @@ markfluence update deploy-runbook.md
 To create a new page:
 
 ```sh
-vi deploy_runbook.md
+vi deploy-runbook.md
 
 # ...write the file...
 
@@ -535,7 +537,9 @@ command gives a `1` for them.
 ```
 
 These are the error `code` values: `CONFIG`, `AUTH`, `NOT_FOUND`, `VALIDATION`,
-`CONVERT`, `IO`, `NETWORK`, and `API`.
+`CONVERT`, `IO`, `NETWORK`, `API`, and `CONFLICT`. `update` gives `CONFLICT`
+when it refuses to overwrite a page that somebody changed after you made your
+copy.
 
 ### `schema`
 
@@ -551,7 +555,7 @@ not read the schema from this repository:
 
 ```console
 $ markfluence schema | jq -r '.properties.command.enum | join(" ")'
-page-info read update create check diff children find search user-find attachment-list attachment-upload attachment-download export
+page-info space-info user-info read update create check diff children find search user-find attachment-list attachment-upload attachment-download export
 
 $ markfluence update docs/*.md --json > out.json
 $ markfluence schema > schema.json
@@ -657,11 +661,11 @@ Markdown file has a **documentation root**. The root is the directory that holds
 `markfluence.yaml`, and markfluence finds it when it goes up from the directory
 of the file. If no `markfluence.yaml` file is above the file, the root is the
 directory of the file itself. The root bounds which images and which `parent:`
-references a file can read. The recorded attachment name and source of an image
-are relative to the root. markfluence reports the root that it used one time for
-each different value in a run. The `--root PATH` flag overrides this search for
-the whole command. For `create`, `update`, and `attachment-upload`, it also
-moves the directory that markfluence reads `.env` from. See
+references a file can read. The recorded source path of an image is relative to
+the root. markfluence reports the root that it used one time for each different
+value in a run. The `--root PATH` flag overrides this search for the whole
+command. For `create`, `update`, `diff`, and `attachment-upload`, it also moves
+the directory that markfluence reads `.env` from. See
 [Configure](#configure).
 
 For the reasons behind this model, what it corrects, and what it costs, see
@@ -676,21 +680,22 @@ real location, through the link index that is relative to the root. You edit
 nothing in the other files. You publish nothing again, except the file that you
 moved. Publish that file to get its own new links, if any link changed.
 
-**To move the images of a page with the page.** This makes churn. The identity
-of an attachment is relative to the *root*, and not to the page. Thus a move of
-both together changes the paths of the images relative to the root. The next
-publish uploads them with new names, and it leaves the first attachments
-behind with no reference to them. markfluence never deletes. Issue
-[#99](https://github.com/mozilla/markfluence/issues/99) tracks a future
-`attachment-prune` command. To avoid the churn, move the page and leave its
-images in a shared directory.
+**To move an image or another asset.** Move it, with its page or without its
+page. The name of an attachment is the file name of the asset, and not its
+path. Thus a move keeps the same attachment. At the next publish, markfluence
+records the new path on the attachment it already has. This is L3 in
+[docs/guarantees.md](docs/guarantees.md), `identity-from-asset-location`.
 
-**To rename or move a shared asset**, with no relation to any page, makes the
-same churn. Each page that references the asset records a new attachment name
-at its next publish. The identity comes from the location of the asset, and not
-from any one page. This is L3 in
-[docs/guarantees.md](docs/guarantees.md), and its name is
-`identity-from-asset-location`.
+**To rename an asset.** A new file name is a new attachment. The next publish
+uploads the asset with the new name. The attachment with the old name stays on
+the page with no reference to it, because markfluence never deletes. Issue
+[#99](https://github.com/mozilla/markfluence/issues/99) tracks a future
+`attachment-prune` command.
+
+**Two assets with the same file name.** One page cannot reference two assets
+with the same file name, such as `arch/diagram.png` and `deploy/diagram.png`.
+markfluence refuses to publish that page, because the two assets would get
+the same attachment name. Rename one of them.
 
 ## Inspirations
 
