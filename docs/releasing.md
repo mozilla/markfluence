@@ -1,32 +1,33 @@
-# Releasing markfluence
+# Release markfluence
 
 **For maintainers.**
 
-Summary: Releases are driven by a git tag: you push the tag, a workflow does
-the rest, and one step at the end is deliberately manual.
+Summary: a git tag starts a release. You push the tag, and a workflow does the
+other work. One step at the end is manual, on purpose.
 
 ## Versioning
 
-The tag must be `vX.Y.Z` — required by both **Go modules** and
-**goreleaser**.
+The tag must be `vX.Y.Z`. **Go modules** and **goreleaser** both need this
+form.
 
-**This project does not cut prereleases.** Step 2 below is the rehearsal, and
-it is a local build that publishes nothing, which is a better test than a real
-tag anybody can see.
+**This project does not make prereleases.** Step 2 below is the rehearsal. It
+is a local build that publishes nothing. That is a better test than a real tag
+that anybody can see.
 
-The config handles an RC correctly anyway, as insurance rather than as a
-practice: `v1.2.3-rc.1` is valid semver, `release.prerelease: auto` keeps it
-out of `/releases/latest`, and `skip_upload: "auto"` keeps the Homebrew cask
-from bumping. Neither path has ever run.
+The configuration handles a release candidate (RC) correctly anyway, as
+insurance and not as a practice. `v1.2.3-rc.1` is valid semver.
+`release.prerelease: auto` keeps it out of `/releases/latest`, and
+`skip_upload: "auto"` stops a change to the Homebrew cask. Neither path has
+ever run.
 
 > [!NOTE]
-> **goreleaser strips the `v`** for artifact names. Tag `v1.2.3` produces
+> **goreleaser removes the `v`** from artifact names. The tag `v1.2.3` makes
 > `markfluence_1.2.3_darwin_arm64.tar.gz`.
 
 ## Where this runs
 
-goreleaser runs in **two places, for two different jobs**, and the steps below
-say which each time:
+goreleaser runs in **two places, for two different jobs**. Each step below
+tells you which place:
 
 | | machine | what it does |
 |---|---|---|
@@ -35,51 +36,59 @@ say which each time:
 
 ## Steps
 
-1. (Laptop) **Land everything you want in the release.** `main` should be green.
+1. (Laptop) **Merge everything that you want in the release.** `main` must be
+   green.
 
-2. (Laptop) **Rehearse.** On your laptop. This builds everything and publishes
-   nothing, so it is safe to run at any time:
+2. (Laptop) **Do the rehearsal** on your laptop. It builds everything and
+   publishes nothing, so you can safely run it at any time:
 
    ```sh
    goreleaser release --snapshot --clean --skip=publish
    ```
 
-   Check `dist/`: three archives (`darwin_arm64`, `linux_arm64`,
-   `linux_amd64` — there is no Intel macOS build), a `checksums.txt`, and
-   `dist/homebrew/Casks/markfluence.rb`.
-   `goreleaser check` validates the config but proves nothing about what it
-   produces, so do this rather than that.
+   Look in `dist/`. It must have 3 archives (`darwin_arm64`, `linux_arm64`, and
+   `linux_amd64`), a `checksums.txt`, and `dist/homebrew/Casks/markfluence.rb`.
+   There is no Intel macOS build.
 
-   Then `rm -rf dist` — it's gitignored, but a stale `dist/` is confusing.
+   `goreleaser check` does a check of the configuration, but it proves nothing
+   about what the configuration makes. Thus do the rehearsal, and not that
+   check.
 
-3. (Laptop) **Tag and push.**
+   Then run `rm -rf dist`. git ignores `dist/`, but a stale `dist/` is
+   confusing.
+
+3. (Laptop) **Make the tag and push it.**
 
    ```sh
    git tag -a v1.2.3 -m 'v1.2.3'
    git push origin v1.2.3
    ```
 
-   The workflow triggers on `v*.*.*` — three components, deliberately, since
-   goreleaser refuses anything that is not semver and `v1`/`v1.2` are not.
-   A bare `v*` would start a run that could only fail.
+   The workflow starts on `v*.*.*`. The 3 components are deliberate, because
+   goreleaser refuses anything that is not semver, and `v1` and `v1.2` are not
+   semver. A bare `v*` would start a run that could only fail.
 
 4. (GHA) **Watch the run.** GitHub Actions runs goreleaser from a clean
-   checkout of the tag. It runs `make check` against the tagged commit,
-   cross-compiles, archives, writes `checksums.txt`, creates the GitHub Release
-   **as a draft** and uploads the assets into it, pushes the generated Homebrew
-   cask to a `goreleaser/cask-v1.2.3` branch, and only then publishes the
-   draft.
+   checkout of the tag. The run does these steps, in this sequence:
+
+   1. It runs `make check` on the tagged commit.
+   2. It cross-compiles, makes the archives, and writes `checksums.txt`.
+   3. It creates the GitHub Release **as a draft** and uploads the assets into
+      it.
+   4. It pushes the generated Homebrew cask to a `goreleaser/cask-v1.2.3`
+      branch.
+   5. It publishes the draft, and only at this point.
 
    ```sh
    gh run watch
    ```
 
    > [!NOTE]
-   > goreleaser creates a release before it uploads anything, and
-   > `/releases/latest` is the most recent *published* non-prerelease whether or
-   > not its assets are complete. Creating a draft and then publishing it as the
-   > last step means a run that dies partway is never the release `latest`
-   > resolves to.
+   > goreleaser creates a release before it uploads anything.
+   > `/releases/latest` is the most recent *published* release that is not a
+   > prerelease, and it does not look at whether the assets are complete. The
+   > workflow creates a draft and publishes it as the last step. Thus a run
+   > that stops partway is never the release that `latest` points to.
 
 5. (Laptop) **Create the cask PR by hand.**
 
@@ -90,12 +99,12 @@ say which each time:
 
    See [Why the cask PR is manual](#why-the-cask-pr-is-manual) below.
 
-   Merge the PR once `ci` is green. Until it merges, `brew install markfluence`
-   still serves the previous version.
+   Merge the PR when `ci` is green. Until it merges, `brew install markfluence`
+   still gives the earlier version.
 
-6. (Laptop) **Verify what shipped.** Download a real archive and run the binary
-   out of it. Run this from the root of the markfluence git repository
-   (macOS-centric):
+6. (Laptop) **Make sure that the correct thing shipped.** Download a real
+   archive and run the binary from it. Run this from the root of the
+   markfluence git repository. These commands are for macOS:
 
    ```sh
    # create a temp dir, download the release, untar it, check the version
@@ -113,9 +122,9 @@ say which each time:
    rm -rf tmp
    ```
 
-   It must print the tag. **Not `markfluence --version`** — that runs whatever
-   is on your `PATH`, which for a maintainer is the `make install` build
-   stamped `dev`, so it would pass no matter what shipped.
+   It must print the tag. **Do not run `markfluence --version`.** That runs the
+   binary on your `PATH`. For a maintainer, that is the `make install` build
+   with the stamp `dev`. Thus it would pass for any release.
 
    Then, after the cask PR merges:
 
@@ -124,7 +133,8 @@ say which each time:
    markfluence --version
    ```
 
-7. (Laptop) **Read the published release notes, and fix them if they're bad.**
+7. (Laptop) **Read the published release notes, and correct them if they are
+   bad.**
 
    ```sh
    gh release view v1.2.3
@@ -134,52 +144,55 @@ say which each time:
    gh release edit v1.2.3 --notes-file notes.md
    ```
 
-   GitHub Releases supports full GFM, but newlines are line breaks. Don't
+   GitHub Releases supports full GFM, but a newline is a line break. Do not
    wrap paragraphs.
 
-   There are no consequences to changing the release notes text - only
-   humans read it.
+   A change to the text of the release notes has no effect on anything. Only
+   persons read it.
 
 ## Why the cask PR is manual
 
 This repository is its own Homebrew tap
-([#1](https://github.com/mozilla/markfluence/issues/1)): the cask lives in
-`Casks/` here rather than in a separate `mozilla/homebrew-markfluence`. That's
-what lets the release job use its own `GITHUB_TOKEN`, since GitHub's automatic
-token can't write to another repository.
+([#1](https://github.com/mozilla/markfluence/issues/1)). The cask is in
+`Casks/` in this repository, and not in a separate
+`mozilla/homebrew-markfluence`. Thus the release job can use its own
+`GITHUB_TOKEN`. The automatic token of GitHub cannot write to a different
+repository.
 
-It also means the release can't finish the job, because two things collide:
+But the release cannot complete the job, because of two rules:
 
-- `main`'s ruleset requires the **`ci`** status check, with no bypass actors
-  and `current_user_can_bypass: never`. Nobody can force a merge, repo admins
-  included.
-- GitHub **doesn't start workflow runs for events triggered by the automatic
-  `GITHUB_TOKEN`**. A PR goreleaser opened would never run `ci`, so it could
-  never satisfy the check.
+- The ruleset of `main` needs the **`ci`** status check. It has no bypass
+  actors and `current_user_can_bypass: never`. Nobody can force a merge, also
+  repository admins.
+- GitHub **does not start workflow runs for events from the automatic
+  `GITHUB_TOKEN`**. A PR that goreleaser opened would never run `ci`. Thus it
+  could never pass the check.
 
-A cask PR opened by the release would therefore sit at "waiting for status to
-be reported" forever, and a direct push to `main` is refused by the same
-ruleset. (This is measured, not assumed: `mozilla/mozcloud` does open its
-formula PRs this way and they *do* merge — because its ruleset requires no
-status check. Ours does.)
+Thus a cask PR that the release opened would wait for "waiting for status to be
+reported" with no end. The same ruleset refuses a direct push to `main`.
 
-The ruleset only protects the default branch, so pushing
-`goreleaser/cask-<tag>` is fine. Hence: the release pushes the branch, you open
-the PR, and `ci` runs because a human triggered it.
+We measured this, and we did not assume it. `mozilla/mozcloud` opens its
+formula PRs in this way, and they *do* merge. But its ruleset needs no status
+check, and ours does.
 
-**Don't "fix" this** by setting `pull_request: {enabled: true}` in
-`.goreleaser.yaml`. It produces a pull request that looks correct and can never
-land.
+The ruleset protects only the default branch, so you can push to
+`goreleaser/cask-<tag>`. Thus the release pushes the branch, you
+open the PR, and `ci` runs because a person started it.
+
+**Do not "fix" this** with `pull_request: {enabled: true}` in
+`.goreleaser.yaml`. That makes a pull request that looks correct and can never
+merge.
 
 ## If a release fails partway
 
-You get a **draft** release, not a broken published one — that is what
-`release.draft` plus the publish-last step in the workflow buy. Nobody
-downstream sees it, and `latest` still points at the previous release.
+You get a **draft** release, and not a broken published release. That is the
+result of `release.draft` and the publish step at the end of the workflow.
+Nobody downstream sees the draft, and `latest` still points to the earlier
+release.
 
-Recovery is to delete the draft *and* the tag, fix the problem, and re-tag.
-The tag has to go too, or re-pushing it does nothing and the workflow will
-not re-run:
+To recover, delete the draft *and* the tag, correct the problem, and make the
+tag again. You must also delete the tag. If you do not, a new push of the tag
+does nothing, and the workflow does not run again:
 
 ```sh
 gh release delete v1.2.3 --yes
@@ -188,10 +201,10 @@ git push --delete origin v1.2.3
 git tag -d v1.2.3
 ```
 
-The cask branch matters: goreleaser pushes it *after* creating the release, so
-a run that died at the publish step has already left one. Re-tagging the same
-version commits a second cask on top of the stale one, and the PR you
-eventually open carries both.
+The cask branch is important. goreleaser pushes it *after* it creates the
+release. Thus a run that stopped at the publish step already left one. If you
+make the same tag again, goreleaser commits a second cask on top of the stale
+one. The PR that you open later has both.
 
-Pre-1.0 this is cheap. Once anything depends on a tag, prefer cutting
-`v1.2.4` over reusing a tag someone may already have fetched.
+Before 1.0, this costs little. After anything depends on a tag, make `v1.2.4`,
+and do not use a tag again that somebody possibly already fetched.
