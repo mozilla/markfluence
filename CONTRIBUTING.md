@@ -43,11 +43,11 @@ Run:
 make check
 ```
 
-This target runs vet, fmt-check, test, build, and lint, in the same sequence as
-CI. CI runs this target and nothing else, so the two cannot become different.
-Do not run the individual parts instead. Persons often forget `fmt-check`.
-Also, `golangci-lint` does not enable `gofmt`. Thus `make lint` can pass on a
-file that CI refuses.
+This target runs vet, fmt-check, docs-check, test, build, and lint, in the same
+sequence as CI. CI runs this target and nothing else, so the two cannot become
+different. Do not run the individual parts instead. Persons often forget
+`fmt-check`. Also, `golangci-lint` does not enable `gofmt`. Thus `make lint`
+can pass on a file that CI refuses.
 
 A regression suite of golden files pins the behavior of the converter. The
 suite is in `internal/convert/testdata/regression/`, with one directory for
