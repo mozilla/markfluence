@@ -23,7 +23,7 @@ builds:
       - arm64
       - amd64
     ignore:
-      # ALSO READ BY mozilla/markfluence-action (#29): a platform absent here
+      # ALSO READ BY mozilla/markfluence-action (#29, shipped as v1.0.0): a platform absent here
       # is one the action refuses *by name*, so adding or removing one needs a
       # companion change over there. Nothing here will catch the mismatch.
       #
@@ -77,7 +77,7 @@ release:
   # /releases/latest is the most recent published non-prerelease whether or
   # not its assets are complete -- so without this, a run that dies mid-upload
   # becomes the release that `latest` resolves to, and anything pinned there
-  # 404s on the archive. #29's action defaults to `latest`.
+  # 404s on the archive. mozilla/markfluence-action defaults `version:` to `latest`.
   draft: true
   # Insurance rather than workflow: this project does not cut prereleases and
   # has no plan to. Kept because the failure mode without it is silent and

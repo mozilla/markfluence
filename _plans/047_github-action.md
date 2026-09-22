@@ -2,6 +2,13 @@
 
 Closes #29.
 
+> [!NOTE]
+> **Done.** Shipped as
+> [markfluence-action v1.0.0](https://github.com/mozilla/markfluence-action/releases/tag/v1.0.0),
+> with [mozilla/markfluence-demo](https://github.com/mozilla/markfluence-demo)
+> publishing through it. This plan is kept as the record of how the design was
+> arrived at; the implementation notes are in that repository.
+
 > [!IMPORTANT]
 > **The action lives in [mozilla/markfluence-action](https://github.com/mozilla/markfluence-action), not here.**
 > Decided after this plan was written, and it changes where the code goes but
