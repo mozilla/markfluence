@@ -143,9 +143,10 @@ not tested. We wrote them anyway, for two reasons. Without them, a guarantee
 would stop being true one day with no warning. Also, we can already see two
 places where a removal will be necessary:
 
-- **Orphaned attachments.** The identity of an attachment comes from its path,
-  so a rename of an asset leaves the old attachment behind. The README already
-  tells persons to remove those attachments by hand.
+- **Orphaned attachments.** The identity of an attachment comes from the file
+  name of its asset (L3). Thus a rename of an asset leaves the old attachment
+  behind on the page. #99 tracks a future `attachment-prune` command to remove
+  those attachments.
 - **`export --clean`.** Subtree export will need it. Then a new export does not
   leave stale files for pages that somebody deleted in Confluence.
 
@@ -224,7 +225,7 @@ We state each law so that a property test can generate trees and assert it.
 |---|---|---|---|
 | **L1** | `resolve-what-was-named` | A reference resolves to the file that it names, or to nothing. | Holds |
 | **L2** | `invocation-independent` | How a reference resolves, and the name of an attachment, depend only on the files on disk. They do not depend on the working directory, or on the other files in the same command. | Holds |
-| **L3** | `identity-from-asset-location` | The identity of an attachment depends only on the location of the asset. | Holds |
+| **L3** | `identity-from-asset-location` | The identity of an attachment depends only on the file name of the asset. A move of the asset keeps the same attachment. | Holds |
 | **L4** | `publish-is-idempotent` | A publish of a file that did not change makes no change in Confluence. | Holds |
 | **L5** | `roundtrip-from-confluence` | If you export a page and then publish it again with no edits, the page does not change. | Partial |
 | **L6** | `roundtrip-from-disk` | If you publish a file and then export it, the result is Markdown that publishes to the same page. | Partial |
@@ -284,21 +285,31 @@ one arrangement that does not need it. The published result does not change:
 with the same files and the same page, a run that publishes sends the same
 bytes.
 
-**L3** is why a page move costs nothing. `images.go` records the `Source` of an
-attachment relative to the root, and not relative to the page that references
-it. Thus the identity comes from the asset only (`_plans/026` commit 4).
+**L3** is why a move of a page or of an asset costs nothing. Two places in the
+code enforce it:
 
-The two parts of the sentence that came next in an earlier version are now
-wrong, and it is useful to say how. That sentence said that a move of an
-*asset* still changes its identity. It also said that a fix would need names
-from the content of the file. Such names would make export unable to build the
-tree again.
+- `convert.AttachmentFilename` (`internal/convert/attachname.go`) gives an
+  attachment the base name of its file, and nothing else.
+- `planAttachments` (`internal/client/client.go`) matches each local file to
+  an attachment on the page by that name. When the name agrees but the recorded
+  `Source` path does not, it updates the attachment to record the new path. It
+  does not create a second attachment.
 
-Neither part is true after `_plans/029`. An attachment gets the base name of
-its file. Thus a move of an asset in the tree keeps its identity, and
-markfluence records the new path. The name never had to build the tree again,
-because the comment holds the path. The identity still comes from the *file
-name* of the asset, so a rename of the file creates a new attachment.
+Thus a move keeps the attachment, and a rename of the file creates a new
+attachment. The old attachment stays on the page, because markfluence never
+deletes an attachment (see S4 to S6).
+
+The statement of L3 was corrected. It said that the identity depends on the
+*location* of the asset. That was true when the name was the whole path,
+encoded (`_plans/026` commit 4). It became false when the name became the base
+name (`_plans/029`). The label is permanent (see *Rules for changes to this
+document*), so `identity-from-asset-location` does not change, although the
+guarantee is now about the file name. The status does not change.
+
+A history note: an earlier version of this entry said that a move of an asset
+changes its identity, and that a fix would need names from the content of the
+file. Neither is true now. The name never had to build the tree again on
+export, because the attachment comment holds the path.
 
 **L4** had the status Holds when it was not true. It is better to record the
 correction than to change it with no statement. The skip in `update` used the
@@ -667,10 +678,21 @@ that gives the same result directly. Also, git symlinks do not work on Windows
 without `core.symlinks` and developer mode. Thus a repository that uses them
 cannot be cloned everywhere.
 
-This is how **S2** stops being lexical. `convert.withinRoot` compares the
-output of `filepath.Abs` with `filepath.Rel`, and it never resolves anything.
-Thus now, a symlinked directory inside the tree passes the clamp, but its bytes
-come from outside the tree.
+This is how **S2** stopped being lexical. The converter does a check of each
+image with `root.FS.Lstat` (`internal/convert/images.go`). `root.FS` is an
+`os.Root` bounded to the documentation root (`internal/project/project.go`).
+It refuses an escape through a symlinked directory, and the `Lstat` refuses a
+symlinked leaf. The lexical `convert.withinRoot` clamp, which could not see a
+symlinked directory, no longer exists.
+
+One limit remains. The check goes through `os.Root`, but the upload does not.
+The converter gives the upload an ordinary path, `filepath.Join(root.Dir,
+rootRel)`, and `fileChecksum` and the upload call `os.Open` on it
+(`internal/client/client.go`). If somebody replaces a directory with a symlink
+between the check and the upload, the uploaded bytes can come from outside the
+root. That is a race, and a static layout of files cannot cause it. The S7
+note already accepts a file that somebody replaces between the two steps, for
+a different reason.
 
 ## When markfluence cannot hold a guarantee
 
