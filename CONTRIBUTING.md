@@ -1,39 +1,38 @@
 # Contributing to markfluence
 
-Thanks for your interest in markfluence. Bug reports, feature requests, and
+Thank you for your interest in markfluence. Bug reports, feature requests, and
 pull requests are all welcome.
 
 ## Code of conduct
 
-This project is governed by Mozilla's
-[Community Participation Guidelines](CODE_OF_CONDUCT.md). By participating, you
-agree to abide by them.
+Mozilla's [Community Participation Guidelines](CODE_OF_CONDUCT.md) apply to
+this project. When you participate, you agree to obey them.
 
-## Reporting bugs and requesting features
+## Report a bug or request a feature
 
 File an issue at
 [github.com/mozilla/markfluence/issues](https://github.com/mozilla/markfluence/issues).
-For a bug, include the command you ran, what you expected, what happened, and
-the output of `markfluence --version`. Re-running with `--debug` often shows the
-request that failed. Redact your site URL, username, and token if you'd rather
-not share them.
+For a bug, give the command that you ran, what you expected, and what occurred.
+Also give the output of `markfluence --version`. If you run the command again
+with `--debug`, the output often shows the request that failed. Remove your
+site URL, username, and token from the output if you do not want to share them.
 
 ## Development setup
 
-Requires Go 1.25+.
+You need Go 1.25 or a later version.
 
 ```sh
 git clone https://github.com/mozilla/markfluence
 cd markfluence
-make build     # produces ./bin/markfluence
+make build     # makes ./bin/markfluence
 make test
 ```
 
-Run `make` with no target for the annotated list of rules. `make check` is the
-one to remember — see below.
+Run `make` with no target to see the list of rules and their descriptions.
+Remember `make check`. See the next section.
 
-To exercise the binary against a real Confluence site, put a `.env` in the
-working directory — see [`.env.example`](.env.example) and the
+To use the binary with a real Confluence site, put a `.env` file in the working
+directory. See [`.env.example`](.env.example) and the
 [Configure](README.md#configure) section of the README.
 
 ## Before you open a pull request
@@ -44,24 +43,26 @@ Run:
 make check
 ```
 
-That's vet, fmt-check, test, build, and lint, in CI's order. CI runs this exact
-target and nothing else, so the two can't drift. Don't substitute the individual
-pieces: `fmt-check` is the one that gets forgotten, and `golangci-lint` doesn't
-enable `gofmt`, so `make lint` passes on a file CI rejects.
+This target runs vet, fmt-check, test, build, and lint, in the same sequence as
+CI. CI runs this target and nothing else, so the two cannot become different.
+Do not run the individual parts instead. Persons often forget `fmt-check`.
+Also, `golangci-lint` does not enable `gofmt`. Thus `make lint` can pass on a
+file that CI refuses.
 
-The converter's behavior is pinned by a golden-file regression suite under
-`internal/convert/testdata/regression/`, one directory per case. If a change
-intentionally alters converter output, regenerate the goldens with
-`make regen-regressions` and review the diff — it's the record of what your
-change actually did.
+A regression suite of golden files pins the behavior of the converter. The
+suite is in `internal/convert/testdata/regression/`, with one directory for
+each case. If you change the output of the converter on purpose, run
+`make regen-regressions` to make the golden files again. Then do a check of
+the diff. The diff shows what your change did.
 
-`--json` output is locked to the schema in
-[`schema/json-output/v1.json`](schema/json-output/v1.json). Changing a command's
-result fields means updating the schema too, or the conformance tests fail.
+The schema in [`schema/json-output/v1.json`](schema/json-output/v1.json)
+controls the `--json` output. If you change the result fields of a command,
+change the schema too. If you do not, the conformance tests fail.
 
 ## Commit messages
 
-Commits follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/):
+Commit messages obey
+[Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/):
 `type(optional-scope): description`. For example:
 
 ```
@@ -70,33 +71,33 @@ fix(client): handle 404 on missing page
 docs(confluence): record what <ac:link> looks like
 ```
 
-Common types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `build`. The
-scope is usually the package. Fine-grained commits that each do one thing are
-preferred over one large squashed change.
+The usual types are `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, and
+`build`. The scope is usually the package. We prefer small commits that each do
+one thing. We do not prefer one large squashed commit.
 
-## Changing anything that talks to Confluence
+## Before you change code that talks to Confluence
 
-Read [docs/confluence/](docs/confluence/) first. Atlassian documents little of
-the storage format and describes parts of the REST API loosely enough that
-markfluence's behavior rests on things established by experiment; that directory
-is where those findings live. It also lists the traps that have already produced
+Read [docs/confluence/](docs/confluence/) first. Atlassian gives little
+documentation for the storage format. Some parts of its REST API documentation
+are not exact. Thus markfluence uses facts that we found by experiment, and
+that directory records them. It also lists the traps that already gave persons
 confident, wrong conclusions.
 
-If you establish something new about Confluence's behavior, write it down there
-with how you verified it. A claim the next person can't reproduce from the note
-is a claim they have to establish from scratch.
+If you find a new fact about the behavior of Confluence, write it in that
+directory. Also write how you found it. A claim the next person cannot
+reproduce from the note is a claim they have to establish from scratch.
 
 ## Architecture
 
-[CLAUDE.md](CLAUDE.md) is the working map of the codebase: what each package
-owns and why it's shaped that way. It's written for coding agents, but it's the
-most complete orientation available for humans too.
+[CLAUDE.md](CLAUDE.md) is the working map of the codebase. It tells what each
+package owns and why it has that shape. We wrote it for coding agents. But it
+is also the most complete guide for persons.
 
 ## License
 
-markfluence is licensed under the [Mozilla Public License 2.0](LICENSE).
-Contributions are accepted under the same license.
+markfluence uses the [Mozilla Public License 2.0](LICENSE). We accept
+contributions under the same license.
 
-## Cutting a release
+## Make a release
 
 For maintainers: [docs/releasing.md](docs/releasing.md).
