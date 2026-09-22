@@ -17,18 +17,18 @@ GitHub Actions, works with you.
   can also write new files on your machine and publish them. The result is
   semantically equivalent, but not byte-for-byte the same. The content survives
   the round trip.
-- **Batch publish.** Publish one page, or a whole tree at the same time. A page
-  with no changes gets no new version: markfluence does not send its body
-  again.
+- **Batch publish.** Publish one page, or a whole tree at the same time. Under
+  a `markfluence.yaml`, a page with no changes gets no new version:
+  markfluence does not send its body again.
 - **Confluence storage format.** You can write Confluence-specific markup
   with no Markdown equivalent.
 - **Offline validation of Markdown files.** markfluence finds dead links,
   broken images, and bad frontmatter with no network and no credentials.
-- **Confluence search.** `find` resolves an exact title to page ids and folder ids, and it
-  sees archived pages and folders. `search` does a full-text search and shows
-  an excerpt for each hit. It also takes raw Confluence Query Language (CQL).
-  `user-find` resolves a person's name to the account id that a mention needs.
-  It also prints the Markdown line that mentions them.
+- **Confluence search.** `find` resolves an exact title to page ids and folder
+  ids, and it sees archived pages and folders. `search` does a full-text search
+  and shows an excerpt for each hit. It also takes raw Confluence Query Language
+  (CQL). `user-find` resolves a person's name to the account id that a mention
+  needs. It also prints the Markdown line that mentions them.
 - **Diff.** `diff` shows what is different between your file and the page in
   Confluence. The output works with `patch -R`. The exit codes are the same as
   the exit codes of `diff`.
@@ -36,9 +36,10 @@ GitHub Actions, works with you.
   them to Confluence when a change merges. Use
   [markfluence-action](https://github.com/mozilla/markfluence-action). It is
   one step, and it publishes the files that changed and no other files.
-- **Care with the edits of other persons.** markfluence keeps a local event
-  log. It refuses to overwrite a page that somebody else changed after you made
-  your copy. It skips a publish when the body did not change. It does not
+- **Care with the edits of other persons.** Under a `markfluence.yaml`,
+  markfluence keeps a local event log. With that log, it refuses to overwrite a
+  page that somebody else changed after you made your copy. It also skips a
+  publish when the body did not change. It does not
   delete attachments. The `--force` flag is the escape hatch.
 - **Personal access tokens and scoped service account tokens.** markfluence
   supports both token types correctly.
@@ -52,8 +53,8 @@ GitHub Actions, works with you.
 
 ## Location of documentation
 
-This file tells you how to install markfluence, how to configure it, and where
-to find additional documentation.
+This file tells you how to install markfluence, how to configure it, and how
+to use it. It also tells you where to find more documentation.
 
 | | |
 |---|---|
@@ -107,8 +108,8 @@ Intel Mac, build markfluence from source. See below.
 
 Get the archive for your architecture from the
 [latest release](https://github.com/mozilla/markfluence/releases/latest). Make
-sure that its checksum is correct, then put the binary on your `PATH`. Change these commands
-as necessary for your machine:
+sure that its checksum is correct, then put the binary on your `PATH`. Change
+these commands as necessary for your machine:
 
 ```sh
 VERSION=0.1.0                                   # no leading "v"
@@ -124,9 +125,10 @@ curl -fsSLO "${BASE}/${ARCHIVE}" && \
 ```
 
 These commands tell `tar` to extract the `markfluence` file and no other file.
-The archive is flat, and it also holds a `README.md` file and a `LICENSE` file.
-A `tar -xzf` command with no file name writes over your own copies of those two
-files.
+The archive is flat. It also holds a `README.md` file, a `LICENSE` file, and
+a `completions/` directory. A `tar -xzf` command with no file name writes over
+your own copies of `README.md` and `LICENSE`. To get the completion scripts,
+see [Shell completions](#shell-completions).
 
 ### Any platform, from source
 
@@ -227,10 +229,10 @@ chmod 600 .env
 ```
 
 markfluence gives a warning when two conditions are both true. The first
-condition is that a person who is not you can read the `.env` file. The second
-condition is that the file holds `CONFLUENCE_TOKEN`. The warning gives the name
-of the file, the fault in its mode, and the `chmod` command that corrects
-it. If you run markfluence with
+condition is that the mode of the `.env` file gives a permission to a person who
+is not you: read, write, or execute. The second condition is that the file holds
+`CONFLUENCE_TOKEN`. The warning gives the name of the file, the fault in its
+mode, and the `chmod` command that corrects it. If you run markfluence with
 `--json`, markfluence does not print the warning. It puts the warning in the
 `warnings` array of the output document, and in the error object on stderr.
 stderr is a JSON document in that mode.
@@ -314,7 +316,7 @@ tells you which command to use.
 | | |
 |---|---|
 | [`create`](docs/commands/markfluence_create.md) | Make new pages from files that have no `page_id` yet. It does a check of every file first, and it creates no page if one file would fail |
-| [`update`](docs/commands/markfluence_update.md) | Publish files that already have a `page_id` again. It skips a file that did not change |
+| [`update`](docs/commands/markfluence_update.md) | Publish files that already have a `page_id` again. Under a `markfluence.yaml`, it skips a file that did not change |
 | [`check`](docs/commands/markfluence_check.md) | Do a check of files with no network and no credentials: dead links, broken images, and bad frontmatter |
 | [`diff`](docs/commands/markfluence_diff.md) | Show what is different between one file and its page. stdout is a patch. It exits with `1` when the two are different |
 
@@ -332,7 +334,7 @@ tells you which command to use.
 
 | | |
 |---|---|
-| [`find`](docs/commands/markfluence_find.md) | Resolve an exact title to page ids and folder ids. It sees archived pages and folders, and `search` cannot see them. A folder id is correct only as a `parent` |
+| [`find`](docs/commands/markfluence_find.md) | Resolve an exact title to page ids and folder ids. It sees archived pages and folders, and `search` cannot see them. A folder id is correct as a `parent`, and as the target of `children` and `export` |
 | [`search`](docs/commands/markfluence_search.md) | Do a full-text search, for when you do not know the title. It takes raw CQL with `--cql` |
 | [`children`](docs/commands/markfluence_children.md) | List what is below a page, a folder, or a space |
 | [`user-find`](docs/commands/markfluence_user-find.md) | Resolve the name of a person to the account id, and to the Markdown line that mentions them |
@@ -539,7 +541,7 @@ command gives a `1` for them.
 These are the error `code` values: `CONFIG`, `AUTH`, `NOT_FOUND`, `VALIDATION`,
 `CONVERT`, `IO`, `NETWORK`, `API`, and `CONFLICT`. `update` gives `CONFLICT`
 when it refuses to overwrite a page that somebody changed after you made your
-copy.
+copy. That check needs a `markfluence.yaml`.
 
 ### `schema`
 
@@ -606,9 +608,14 @@ also gives every body construct:
 
 **Do you need a `markfluence.yaml` file?**
 
-- If you export, edit, and publish files **one at a time**, no. The root of
-  each file is its own directory, and that directory is already the directory
-  that you want.
+- If you export, edit, and publish files **one at a time**, you do not need
+  it to publish. The root of each file is its own directory, and that
+  directory is already the directory that you want. But without a
+  `markfluence.yaml`, markfluence keeps no event log. Thus `update` cannot
+  find a page that somebody changed after your export, and it overwrites
+  their change. `update` also sends the body again when nothing changed, and
+  each publish makes a new page version. To get these protections, put an
+  empty `markfluence.yaml` file in the directory before you export.
 - If you work on a **tree of directories**, yes. An example is a set of pages
   that link to each other, or that share an `assets/` directory. Put a
   `markfluence.yaml` file at the root of that tree. Without one, the root of
@@ -683,8 +690,7 @@ moved. Publish that file to get its own new links, if any link changed.
 **To move an image or another asset.** Move it, with its page or without its
 page. The name of an attachment is the file name of the asset, and not its
 path. Thus a move keeps the same attachment. At the next publish, markfluence
-records the new path on the attachment it already has. This is L3 in
-[docs/guarantees.md](docs/guarantees.md), `identity-from-asset-location`.
+records the new path on the attachment it already has.
 
 **To rename an asset.** A new file name is a new attachment. The next publish
 uploads the asset with the new name. The attachment with the old name stays on
