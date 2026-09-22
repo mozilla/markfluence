@@ -36,17 +36,25 @@ and then must look up.
   - `check`: `clean`, `warnings`, `broken`
   - `attachment-upload`: `created`, `updated`, `skipped`
   - `attachment-download`: `downloaded`, `skipped`
-  - all of them: `failed`
+  - `export`: `wrote`, `skipped`, or `""` for a page that failed. Each
+    attachment in its `attachments` array has `downloaded`, `skipped`,
+    `skipped_unreferenced`, or `failed`.
 
-  The results of `page-info`, `read`, and `attachment-list` hold data only. They
-  have no status verb.
+  Every command in the list, except `export`, also has `failed`.
+
+  The results of the other commands hold data only, and they have no status
+  verb. `children` has a `status` field, but that is the content status of
+  Confluence (`current`, `archived`), and not a status verb.
 - **There is one result for each target**, and the target is different for each
   command:
-  - `page-info`, `read`, `export`: the page. There is always one.
+  - `page-info`, `read`: the page. There is always one.
+  - `export`: the page. There is one result for each page that it exported,
+    so `--depth` and `--space` give more than one.
   - `update`, `create`, `check`: the file.
   - the three `attachment-*` commands: the attachment. Thus
     `.results[] | .filename` works, and `summary.total` is the count of
-    attachments.
+    attachments. If markfluence cannot find the page, the result is a single
+    failure that has a `page_id` and no `filename`.
 
   `export` puts the files that it wrote in an `attachments` array on its page
   result, as `update` and `create` do.
@@ -80,8 +88,9 @@ and then must look up.
   `body_changed: false` means that the page already held what the file renders
   to. Thus markfluence skipped the body `PUT`, and `version.previous` is equal
   to `version.new`. The attachment, width, and label passes still ran. Thus the
-  result can be `published` with no new version. `body_changed` is `null` under
-  `--force`, which always publishes and uses neither check.
+  result can be `published` with no new version. `body_changed` is `null` when
+  the check did not run: there was no base, the base had no sha, or you gave
+  `--force`. `--force` always publishes and uses neither check.
 - **`code: "CONFLICT"`** is the refusal to overwrite a page that has a newer
   version than your copy. It is not `VALIDATION`, because nothing in the file
   is wrong. To correct it, export the page again or give `--force`. The run
@@ -125,8 +134,10 @@ and then must look up.
     nothing added no version.
   - `page-info` and `read` report only the name.
 
-  `page_status` is `null` when the file declares no status, the page has no
-  status, or the read failed.
+  On `update` and `create`, `page_status` is `null` when the file declares no
+  status, or when markfluence could not assert it. The second case is a
+  warning to act on. On `page-info` and `read`, it is `null` when the page has
+  no status, or when the read failed.
 
   `page-info` also has `page_status_available`. This is the list of statuses
   that the account that ran the command can give to **that page**. It is `[]`
@@ -189,7 +200,7 @@ and then must look up.
   The summary of `user-find` has `truncated` for the same reason, and for a
   stronger one. The `totalSize` of the user route gives the count of rows on
   the page that it just fetched. It does not give the size of the result set.
-  Thus there are no other matches to count, even in principle.
+  Thus markfluence cannot count the other matches, even in principle.
 - **`user-find` gives the Markdown for a mention as a field.** A consumer does
   not have to build it from `account_id`. It is the same string that the
   converter writes when it renders a mention *out* of storage format. Thus if
@@ -207,8 +218,9 @@ Errors and exit codes:
 - **An operational failure for one file** is in `results` as
   `{ "ok": false, "error": "…", "code": "…" }`. The command exits with `1` if
   any file failed.
-- **`find`, `search`, and `user-find` have no failed result.** They name no
-  page, so there is no id to attach a failure to. For an operational failure,
+- **`find`, `search`, `user-find`, `space-info`, `user-info`, and
+  `children --space` have no failed result.** They name no page, so there is
+  no id to attach a failure to. For an operational failure,
   they print the same typed error object to **stderr** and exit with `1`. There
   is no envelope on stdout. An empty `results` array would be worse than no
   output, because "no matches" is a real answer that a caller acts on.
@@ -222,11 +234,12 @@ Errors and exit codes:
   object on stderr. Only the code is different.
 - **A fatal or preflight failure** prints a typed error object to **stderr**
   and exits with `2`. Examples are a bad flag, or a credential that does not
-  resolve:
+  resolve. For a bad flag, markfluence has not parsed the command yet, so
+  `command` can be `""`:
 
   ```json
   { "schema_version": 1, "command": "update", "error": "…", "code": "CONFIG", "warnings": [] }
   ```
 
 - These are the error `code` values: `CONFIG`, `AUTH`, `NOT_FOUND`,
-  `VALIDATION`, `CONVERT`, `IO`, `NETWORK`, `API`.
+  `VALIDATION`, `CONVERT`, `IO`, `NETWORK`, `API`, `CONFLICT`.
