@@ -106,8 +106,8 @@ func TestCredentialsPath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("XDG_CONFIG_HOME", tt.xdg)
 			t.Setenv("HOME", tt.home)
-			if got := credentialsPath(); got != tt.want {
-				t.Errorf("credentialsPath() = %q, want %q", got, tt.want)
+			if got := CredentialsPath(); got != tt.want {
+				t.Errorf("CredentialsPath() = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -309,7 +309,8 @@ func TestResolveMissingNamesEverySource(t *testing.T) {
 		t.Fatal("want a missing-settings error")
 	}
 	for _, want := range []string{"missing Confluence URL (CONFLUENCE_URL)", "token (CONFLUENCE_TOKEN)",
-		"set them in one place", "the environment", filepath.Join(cfg, "markfluence", "credentials"),
+		"run markfluence credentials-init, or set them in one place", "the environment",
+		filepath.Join(cfg, "markfluence", "credentials"),
 		"--env-file", credentialsDoc} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q missing %q", err, want)
@@ -364,7 +365,7 @@ func TestResolveMissingHalfOfThePair(t *testing.T) {
 	_, err := Resolve("")
 	if err == nil || !strings.Contains(err.Error(), "set it in ") ||
 		!strings.Contains(err.Error(), "markfluence/credentials, where CONFLUENCE_TOKEN is.") ||
-		strings.Contains(err.Error(), "the environment") {
+		strings.Contains(err.Error(), "the environment") || strings.Contains(err.Error(), "credentials-init") {
 		t.Errorf("token in the credentials file: err = %v, want only its place offered for the URL", err)
 	}
 
@@ -375,8 +376,9 @@ func TestResolveMissingHalfOfThePair(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = Resolve("")
-	if want := "set it in the environment, where CONFLUENCE_URL is."; err == nil || !strings.Contains(err.Error(), want) {
-		t.Errorf("URL in the environment: err = %v, want %q", err, want)
+	if want := "set it in the environment, where CONFLUENCE_URL is."; err == nil || !strings.Contains(err.Error(), want) ||
+		strings.Contains(err.Error(), "credentials-init") {
+		t.Errorf("URL in the environment: err = %v, want %q and no credentials-init", err, want)
 	}
 }
 

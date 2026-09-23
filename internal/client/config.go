@@ -1,14 +1,10 @@
 package client
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
-	"syscall"
 )
 
 const (
@@ -45,7 +41,7 @@ func lookup(sources []source, key string) (string, int) {
 // Resolve builds a client from the site URL, username, token, and optional
 // cloud ID. Each resolves key by key from three sources, highest first: the
 // file named by --env-file (envFile; it must be readable), the CONFLUENCE_*
-// environment variables, and the user's credentials file (credentialsPath).
+// environment variables, and the user's credentials file (CredentialsPath).
 // Credentials come only from sources the user chose: nothing is discovered
 // from the working directory, so a checkout cannot supply them (#188).
 //
@@ -68,8 +64,8 @@ func lookup(sources []source, key string) (string, int) {
 // unset, so a broken or loose file cannot fail or warn on a run that never
 // uses it.
 //
-// Without a cloud ID, requests go to the site domain, which is what an
-// unscoped personal token needs.
+// Without a cloud ID, requests go to the site domain. An unscoped personal
+// token works either way; a scoped one needs the cloud ID.
 func Resolve(envFile string) (*ConfluenceClient, error) {
 	var sources []source
 	if envFile != "" {
@@ -81,9 +77,9 @@ func Resolve(envFile string) (*ConfluenceClient, error) {
 	}
 	sources = append(sources, environment())
 
-	credPath := credentialsPath()
+	credPath := CredentialsPath()
 	if !complete(sources) && credPath != "" {
-		creds, err := loadCredentials(credPath)
+		creds, err := loadCredentials(credPath, loadDotenv)
 		if err != nil {
 			return nil, err
 		}
@@ -119,6 +115,11 @@ func Resolve(envFile string) (*ConfluenceClient, error) {
 			places = sources[tokenFrom].label + ", where " + tokenEnv + " is"
 		case token == "" && siteURL != "":
 			places = sources[urlFrom].label + ", where " + urlEnv + " is"
+		case credPath != "":
+			// The command writes the credentials file, so it is only worth
+			// naming when there is one to write -- and not in the two cases
+			// above, where a new file would fail the same-source rule.
+			setThem = "run markfluence credentials-init, or " + setThem
 		}
 		return nil, fmt.Errorf("missing Confluence %s: %s%s. See %s",
 			strings.Join(missing, ", "), setThem, places, credentialsDoc)
@@ -179,71 +180,6 @@ func complete(sources []source) bool {
 		}
 	}
 	return true
-}
-
-// credentialsPath is where the user's credentials file lives:
-// $XDG_CONFIG_HOME/markfluence/credentials, else
-// $HOME/.config/markfluence/credentials, on every platform. os.UserConfigDir is
-// not used because on macOS it answers ~/Library/Application Support, which
-// command-line users do not look in.
-//
-// A relative XDG_CONFIG_HOME is ignored, as the XDG spec says, and a relative
-// or empty HOME means there is no credentials file ("" here). Either would
-// make the file depend on the working directory, which is exactly what #188
-// removed.
-func credentialsPath() string {
-	if x := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(x) {
-		return filepath.Join(x, "markfluence", "credentials")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil || !filepath.IsAbs(home) {
-		return ""
-	}
-	return filepath.Join(home, ".config", "markfluence", "credentials")
-}
-
-// loadCredentials reads the credentials file, returning nil when there is
-// none. A missing file, or a path that runs through something that is not a
-// directory, means the user has not made one; a dangling symbolic link does
-// not. Any other failure means they
-// made one that cannot be used, and is an error: falling through silently
-// would make a token rotation look like it had no effect.
-func loadCredentials(path string) (map[string]string, error) {
-	env, err := loadDotenv(path)
-	switch {
-	case err == nil:
-		return env, nil
-	case errors.Is(err, fs.ErrNotExist) && isSymlink(path):
-		return nil, fmt.Errorf("reading credentials file %s: it is a symbolic link to a file that "+
-			"does not exist", displayPath(path))
-	case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
-		return nil, nil
-	default:
-		return nil, fmt.Errorf("reading credentials file %s: %w", displayPath(path), err)
-	}
-}
-
-// isSymlink reports whether path itself is a symbolic link. A dangling link
-// at the credentials path reads as "no such file", but it is a file the user
-// made -- into a dotfiles repository that moved, or a volume not mounted -- so
-// it must not read as "you have no credentials file".
-func isSymlink(path string) bool {
-	fi, err := os.Lstat(path)
-	return err == nil && fi.Mode()&fs.ModeSymlink != 0
-}
-
-// displayPath shows a path under the home directory as ~/..., the form the
-// docs use, so an error names the file the way a reader knows it.
-func displayPath(path string) string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return path
-	}
-	if rel, err := filepath.Rel(home, path); err == nil && rel != ".." &&
-		!strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "~" + string(filepath.Separator) + rel
-	}
-	return path
 }
 
 // placesToSet lists where credentials can go, for the "missing" error.
@@ -347,6 +283,20 @@ func shellArg(path string) string {
 // surrounding single or double quotes stripped. Values are taken verbatim (no
 // shell expansion). It errors if the file can't be read.
 func loadDotenv(path string) (map[string]string, error) {
+	out, err := readDotenv(path)
+	if err != nil {
+		return nil, err
+	}
+	// Here rather than in Resolve: this is the one function both the
+	// credentials file and an explicit --env-file go through, and the check
+	// needs the parsed contents to know whether a token is in there.
+	warnLoosePermissions(path, out)
+	return out, nil
+}
+
+// readDotenv is loadDotenv without the permission warning, for a reader that
+// is about to rewrite the file 0600 or has just written it.
+func readDotenv(path string) (map[string]string, error) {
 	out := map[string]string{}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -364,10 +314,6 @@ func loadDotenv(path string) (map[string]string, error) {
 		}
 		out[strings.TrimSpace(key)] = unquote(strings.TrimSpace(value))
 	}
-	// Here rather than in Resolve: this is the one function both the
-	// credentials file and an explicit --env-file go through, and the check
-	// needs the parsed contents to know whether a token is in there.
-	warnLoosePermissions(path, out)
 	return out, nil
 }
 
