@@ -94,6 +94,15 @@ all returns exactly the same body. A genuine permission denial is a different
 403, which is why the hint fires only on the two measured phrasings and stays
 silent otherwise.
 
+**The v1 credential failure is the same through the gateway. Verified
+2026-09-23** with a made-up username and token against
+`GET /wiki/rest/api/user/current`, once through
+`api.atlassian.com/ex/confluence/{cloudId}` and once through the site domain:
+both answer **403** with `Request rejected because caller cannot access
+Confluence`, byte for byte. So `RejectedCredential` holds on either base, which
+is what `credentials-init` relies on to refuse a wrong token it checks through
+the gateway.
+
 Scopes are fixed when a token is issued, so a missing one needs a *new* token,
 not an edited one.
 

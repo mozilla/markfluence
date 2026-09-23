@@ -192,20 +192,13 @@ markfluence needs a Confluence site URL, a username, and an API token. Put them
 in your credentials file one time on each computer:
 
 ```
-mkdir -p ~/.config/markfluence
-$EDITOR ~/.config/markfluence/credentials
-chmod 600 ~/.config/markfluence/credentials
+markfluence credentials-init
 ```
 
-The file holds these lines:
-
-```
-CONFLUENCE_URL=https://your-org.atlassian.net
-CONFLUENCE_USERNAME=you@example.com
-CONFLUENCE_TOKEN=your-api-token
-# Optional. Set this only for a *scoped* API token.
-# CONFLUENCE_CLOUD_ID=
-```
+This command asks for the three settings, checks them with Confluence, and
+writes `~/.config/markfluence/credentials` with mode 0600. For a site at
+atlassian.net, it also saves the cloud ID of the site. You can also write the
+file yourself: [docs/credentials.md](docs/credentials.md) shows how.
 
 The environment variables of the same names override the file, and a file that
 you name with `--env-file PATH` overrides both. There is no command-line flag
@@ -222,17 +215,16 @@ Optional: `alias mf=markfluence`
 
 ### Scoped tokens and service accounts
 
-For a normal personal API token, do not set `CONFLUENCE_CLOUD_ID`.
-
 You must set `CONFLUENCE_CLOUD_ID` for a **scoped** API token, in the same place
-as `CONFLUENCE_URL`. markfluence reads the cloud ID only from the place that
+as `CONFLUENCE_URL`. `markfluence credentials-init` does this for you. A normal
+personal API token works with or without a cloud ID. markfluence reads the cloud ID only from the place that
 gives the URL, and warns about a cloud ID that it ignores. An Atlassian
 [service account][svcacct] gets a scoped token, and you use it to publish from
 CI. Atlassian refuses a scoped token with a **401** status against your site
 domain. Thus markfluence must use the `api.atlassian.com` gateway of Atlassian,
 and that gateway needs the cloud ID.
 
-To find your cloud ID, use this command. The cloud ID is not a secret:
+To find your cloud ID yourself, use this command. The cloud ID is not a secret:
 
 ```console
 $ curl -s https://your-org.atlassian.net/_edge/tenant_info
@@ -332,9 +324,11 @@ of a page. These commands are for all the other attachments:
 | [`attachment-download`](docs/commands/markfluence_attachment-download.md) | Get attachments back to the paths that they were published from |
 
 The [`schema`](docs/commands/markfluence_schema.md) command prints the `--json`
-schema.
+schema. The
+[`credentials-init`](docs/commands/markfluence_credentials-init.md) command
+writes your credentials file.
 
-Every command takes `--json`. The `create`, `update`, `export`,
+Every command except `credentials-init` takes `--json`. The `create`, `update`, `export`,
 `attachment-upload`, and `attachment-download` commands take `--dry-run`.
 
 ### Publish from CI
