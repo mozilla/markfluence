@@ -48,65 +48,66 @@ var reverseFlag bool
 // Cmd is the diff command.
 var Cmd = &cobra.Command{
 	Use:   "diff FILE",
-	Short: "Show what differs between a page and its local markdown file",
-	Long: "Show what differs between a Confluence page and the local markdown\n" +
-		"file that publishes to it. Nothing is written, to disk or to Confluence.\n\n" +
-		"FILE is one markdown file, and its page comes from its own page_id or\n" +
-		"from its entry in markfluence.yaml's pages: block. One file, not a glob:\n" +
-		"a diff over a whole tree is output nobody reads.\n\n" +
-		"THE OUTPUT IS TWO THINGS, ON TWO STREAMS\n\n" +
-		"stdout carries the body as a unified diff and nothing else, so it is a\n" +
-		"patch other tools can use:\n\n" +
+	Short: "Show what is different between a page and its local Markdown file",
+	Long: "Show what is different between a Confluence page and the local Markdown file\n" +
+		"that publishes to it. diff writes nothing, to disk or to Confluence.\n\n" +
+		"FILE is one Markdown file. Its page_id comes from its frontmatter or from its\n" +
+		"pages: entry in markfluence.yaml. diff takes one file, and not a glob, because\n" +
+		"a diff of a whole tree is too long to read.\n\n" +
+		"OUTPUT\n\n" +
+		"diff writes two things, to two streams.\n\n" +
+		"stdout holds the diff of the body in unified format, and nothing else. Thus it\n" +
+		"is a patch that other tools can use:\n\n" +
 		"  markfluence diff FILE > my.diff && patch -R -p1 < my.diff\n\n" +
-		"It applies to the real file because the frontmatter block is shared\n" +
-		"between the two sides rather than diffed, which also keeps hunk line\n" +
-		"numbers the ones you would count to in an editor and means no patch can\n" +
-		"rewrite a page_id.\n\n" +
-		"The labels name the file relative to the documentation root, however the\n" +
-		"command was invoked, so run patch from the root -- not from the\n" +
-		"directory the file happens to be in.\n\n" +
-		"stderr carries the frontmatter half as a per-field report, naming for\n" +
-		"each field whether the local value came from the file's frontmatter or\n" +
-		"from markfluence.yaml. Redirect it away with 2>/dev/null, or keep only\n" +
-		"it with >/dev/null.\n\n" +
-		"EXIT CODES ARE diff(1)'s, NOT markfluence's\n\n" +
-		"  0  identical\n" +
-		"  1  differs (either half)\n" +
-		"  2  trouble -- a bad flag, a file naming no page, a page that is gone,\n" +
-		"     a rejected credential, a failed fetch\n\n" +
-		"So `if markfluence diff FILE >/dev/null; then ...` means \"in sync\".\n" +
-		"Every other command reports an operational failure as 1; this one is 2,\n" +
-		"because 1 is spoken for.\n\n" +
-		"WHICH FIELDS ARE COMPARED\n\n" +
-		"Only the ones the file declares, because those are the ones publishing\n" +
-		"would assert: an absent labels or page_width leaves the page's alone, an\n" +
-		"absent title keeps the live title. So a file carrying only page_id and\n" +
-		"title reports on its title and its body, and nothing else.\n\n" +
-		"Two fields are compared but not reconciled by any verb today: update\n" +
-		"moves a page neither between spaces nor to a new parent, so a space or\n" +
-		"parent difference is a disagreement to fix by hand.\n\n" +
-		"DIFFERENCES YOU DID NOT MAKE\n\n" +
-		"The Confluence side is the page rendered back to markdown, and that\n" +
-		"round trip is lossy in documented ways (guarantees L5 and L6 are both\n" +
-		"Partial). Expect these, none of which are defects:\n\n" +
-		"  - a table's :--- alignment publishes bare and reads back as ---, and\n" +
-		"    a column takes its most common declared alignment\n" +
-		"  - a bold span containing a link comes back respelled, once the\n" +
-		"    Confluence editor has re-serialized the page\n" +
-		"  - a soft line break inside a paragraph becomes a space\n" +
-		"  - a table cell colour outside the 21 named swatches comes back as a\n" +
-		"    literal hex\n" +
-		"  - a macro markfluence does not map comes back as raw storage tags\n\n" +
-		"This is why the patch is worth reading before it is worth applying.",
-	Example: "  # What would publishing this file change on the page?\n" +
+		"The patch applies to the real file, because diff does not compare the\n" +
+		"frontmatter block. Both sides share it. Thus the line numbers in each hunk are\n" +
+		"the line numbers in your editor, and no patch can change a page_id.\n\n" +
+		"The patch names the file relative to the documentation root, so run patch from\n" +
+		"the root. If there is no markfluence.yaml, the patch names the file as you\n" +
+		"typed it.\n\n" +
+		"stderr holds a report on the frontmatter, one field at a time. For each field,\n" +
+		"it tells you whether the local value came from the frontmatter or from\n" +
+		"markfluence.yaml. To discard the report, add 2>/dev/null. To see only the\n" +
+		"report, add >/dev/null.\n\n" +
+		"EXIT CODES\n\n" +
+		"diff uses the exit codes of diff(1), and not the exit codes of markfluence:\n\n" +
+		"  0  the same\n" +
+		"  1  different, in the body or in the frontmatter\n" +
+		"  2  trouble: a bad flag, a file that names no page, a page that is gone,\n" +
+		"     a refused credential, or a failed request\n\n" +
+		"Thus `if markfluence diff FILE >/dev/null; then ...` means \"in sync\". Every\n" +
+		"other command reports an operational failure as 1. diff reports it as 2,\n" +
+		"because 1 has a different meaning here.\n\n" +
+		"WHICH FIELDS DIFF COMPARES\n\n" +
+		"diff compares only the fields that the file declares, because a publish asserts\n" +
+		"only those. An absent labels or page_width leaves the value on the page alone,\n" +
+		"and an absent title keeps the live title. Thus for a file with only page_id and\n" +
+		"title, diff reports the title and the body, and nothing else.\n\n" +
+		"diff compares space and parent, but no command changes them now. update does\n" +
+		"not move a page to a different space or parent. Thus a difference in either\n" +
+		"one is a disagreement that you must correct by hand.\n\n" +
+		"DIFFERENCES THAT YOU DID NOT MAKE\n\n" +
+		"The Confluence side is the page, rendered back to Markdown. That round trip\n" +
+		"loses some details, in documented ways. Expect these differences. None of them\n" +
+		"is a defect:\n\n" +
+		"  - the alignment :--- of a table column publishes as plain --- and comes\n" +
+		"    back as ---, and a column gets its most frequent alignment\n" +
+		"  - a bold span that holds a link comes back with a different spelling, after\n" +
+		"    the Confluence editor saves the page\n" +
+		"  - a soft line break in a paragraph becomes a space\n" +
+		"  - a cell color that is not one of the 21 named swatches comes back as a\n" +
+		"    literal hex value\n" +
+		"  - a macro that markfluence does not map comes back as raw storage tags\n\n" +
+		"Thus read the patch before you apply it.",
+	Example: "  # What would a publish of this file change on the page?\n" +
 		"  markfluence diff docs/runbook.md\n\n" +
-		"  # Just the body patch, as a file\n" +
+		"  # Write only the patch of the body to a file\n" +
 		"  markfluence diff docs/runbook.md 2>/dev/null > my.diff\n\n" +
-		"  # Pull the page's edits into the file, conflicts and all\n" +
+		"  # Put the edits from the page into the file, conflicts included\n" +
 		"  markfluence diff --reverse docs/runbook.md | patch -p1\n\n" +
 		"  # Is this file in sync?\n" +
 		"  if markfluence diff docs/runbook.md >/dev/null 2>&1; then echo yes; fi\n\n" +
-		"  # Side by side in an external tool\n" +
+		"  # Compare the two in an external tool\n" +
 		"  markfluence read docs/runbook.md > /tmp/page.md && meld /tmp/page.md docs/runbook.md",
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
@@ -115,7 +116,7 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().BoolVar(&reverseFlag, "reverse", false,
-		"Swap the sides, so the patch applies the page's changes to the file")
+		"Swap the two sides. Then the patch applies the changes on the page to the file")
 }
 
 func run(cmd *cobra.Command, args []string) error {

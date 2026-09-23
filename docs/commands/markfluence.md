@@ -49,7 +49,7 @@ markfluence [flags]
 * [markfluence check](markfluence_check.md)	 - Check Markdown files for problems, with no network access
 * [markfluence children](markfluence_children.md)	 - List the pages and folders under a Confluence page, folder, or space
 * [markfluence create](markfluence_create.md)	 - Create new Confluence pages from Markdown files
-* [markfluence diff](markfluence_diff.md)	 - Show what differs between a page and its local markdown file
+* [markfluence diff](markfluence_diff.md)	 - Show what is different between a page and its local Markdown file
 * [markfluence export](markfluence_export.md)	 - Write a Confluence page and its attachments to a directory
 * [markfluence find](markfluence_find.md)	 - Find Confluence pages and folders by exact title
 * [markfluence page-info](markfluence_page-info.md)	 - Print metadata about a Confluence page
