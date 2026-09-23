@@ -22,20 +22,19 @@ const command = "attachment-list"
 // Cmd is the attachment-list command.
 var Cmd = &cobra.Command{
 	Use:   command + " PAGE",
-	Short: "List a Confluence page's attachments",
-	Long: "List a Confluence page's attachments.\n\n" +
-		"PAGE is a numeric page id, a Confluence page URL, or a markdown file\n" +
-		"whose frontmatter has a page_id.\n\n" +
-		"The NAME column is the name Confluence stores, which is what\n" +
-		"attachment-download takes. For an image markfluence published that is\n" +
-		"the encoded source path, and the SOURCE column shows the markdown\n" +
-		"image path it came from.\n\n" +
-		"SOURCE is a dash when no source path is recorded: the attachment was\n" +
-		"uploaded by hand, or it was published before markfluence recorded one.\n" +
-		"Use --json, whose managed field tells those two apart.",
-	Example: "  # Every attachment on a page\n" +
+	Short: "List the attachments of a Confluence page",
+	Long: "List the attachments of a Confluence page.\n\n" +
+		"PAGE is a page id, a Confluence page URL, or a Markdown file that names a\n" +
+		"page_id in its frontmatter or in its pages: entry.\n\n" +
+		"The NAME column is the name that Confluence stores. attachment-download takes\n" +
+		"this name. For an image that markfluence published, it is the base name of the\n" +
+		"file. The SOURCE column shows the path that the Markdown image used.\n\n" +
+		"SOURCE is a dash when no path is recorded. Either a person uploaded the\n" +
+		"attachment by hand, or markfluence published it before it recorded paths. The\n" +
+		"managed field of --json tells you which.",
+	Example: "  # List every attachment on a page\n" +
 		"  markfluence attachment-list 1234567890\n\n" +
-		"  # By the file that publishes to it\n" +
+		"  # List the attachments of the page that a file publishes to\n" +
 		"  markfluence attachment-list docs/foo.md\n",
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
