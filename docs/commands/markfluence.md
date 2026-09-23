@@ -54,7 +54,7 @@ markfluence [flags]
 * [markfluence find](markfluence_find.md)	 - Find Confluence pages and folders by their exact title
 * [markfluence page-info](markfluence_page-info.md)	 - Show the metadata of a Confluence page
 * [markfluence read](markfluence_read.md)	 - Get a Confluence page and print its body
-* [markfluence schema](markfluence_schema.md)	 - Print the JSON Schema for --json output
+* [markfluence schema](markfluence_schema.md)	 - Print the JSON Schema of the --json output
 * [markfluence search](markfluence_search.md)	 - Find Confluence pages by full-text search
 * [markfluence space-info](markfluence_space-info.md)	 - Print metadata about a Confluence space
 * [markfluence update](markfluence_update.md)	 - Publish one or more markdown files to Confluence pages
