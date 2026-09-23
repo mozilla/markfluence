@@ -45,28 +45,15 @@ var rootCmd = &cobra.Command{
 	Short: "Publish Markdown to Confluence",
 	Long: "markfluence publishes and manipulates Confluence pages from Markdown files.\n\n" +
 		"It needs a site URL, a username, and an API token, and for a scoped token a\n" +
-		"cloud ID:\n\n" +
-		"  CONFLUENCE_URL        the site, such as https://YOUR-SITE.atlassian.net\n" +
-		"  CONFLUENCE_USERNAME   your email address\n" +
-		"  CONFLUENCE_TOKEN      your API token\n" +
-		"  CONFLUENCE_CLOUD_ID   optional; only for a scoped API token\n\n" +
-		"markfluence reads each one from these places, and uses the first it finds:\n\n" +
+		"cloud ID: CONFLUENCE_URL, CONFLUENCE_USERNAME, CONFLUENCE_TOKEN, and\n" +
+		"CONFLUENCE_CLOUD_ID. markfluence reads each one from the first of these places\n" +
+		"that has it:\n\n" +
 		"  1. the file that --env-file names\n" +
 		"  2. the environment variable\n" +
-		"  3. your credentials file, ~/.config/markfluence/credentials\n" +
-		"     ($XDG_CONFIG_HOME/markfluence/credentials if XDG_CONFIG_HOME is an\n" +
-		"     absolute path)\n\n" +
-		"The two files hold KEY=value lines. Put the URL and the token in the same\n" +
-		"place: markfluence refuses to send a token to a URL from a different place.\n" +
-		"It reads the cloud ID only from the place that gives the URL.\n\n" +
-		"There is no flag for any of these, so the token cannot get into your shell\n" +
-		"history. To use a different site for one command, name a file with\n" +
-		"--env-file.\n\n" +
-		"Set the cloud ID only for a scoped API token, such as the token of a service\n" +
-		"account. Confluence refuses a scoped token at your site URL, so markfluence\n" +
-		"sends it through the api.atlassian.com gateway, which needs the cloud ID. To\n" +
-		"find your cloud ID, open https://YOUR-SITE.atlassian.net/_edge/tenant_info .\n" +
-		"The cloud ID is not a secret.",
+		"  3. your credentials file, ~/.config/markfluence/credentials\n\n" +
+		"The URL and the token must come from the same place, and there is no flag for\n" +
+		"any of these. To set up the credentials file, see\n" +
+		"https://github.com/mozilla/markfluence/blob/main/docs/credentials.md",
 	// --version prints the build stamp ("markfluence VERSION (SHA, DATE)"). The
 	// only use of it: nothing published carries a build stamp, and the converter
 	// takes no build state at all.

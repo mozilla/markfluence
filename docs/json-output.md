@@ -24,7 +24,7 @@ also prints it.
   no `roots` key.
 - **`warnings`** holds warnings about the *invocation*, and not about a page or
   a file. Now, the only such warning is the permission warning for a file that
-  holds your API token (see [Configure](../README.md#configure)).
+  holds your API token (see [credentials.md](credentials.md#the-permission-warning)).
   The warnings of a result are on that result. This field is for a warning that
   belongs to no result. It is `[]` when there is nothing to report. It is also
   on the error object on stderr. A fatal failure writes no envelope, and a

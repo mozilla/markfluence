@@ -7,34 +7,17 @@ Publish Markdown to Confluence
 markfluence publishes and manipulates Confluence pages from Markdown files.
 
 It needs a site URL, a username, and an API token, and for a scoped token a
-cloud ID:
-
-  CONFLUENCE_URL        the site, such as https://YOUR-SITE.atlassian.net
-  CONFLUENCE_USERNAME   your email address
-  CONFLUENCE_TOKEN      your API token
-  CONFLUENCE_CLOUD_ID   optional; only for a scoped API token
-
-markfluence reads each one from these places, and uses the first it finds:
+cloud ID: CONFLUENCE_URL, CONFLUENCE_USERNAME, CONFLUENCE_TOKEN, and
+CONFLUENCE_CLOUD_ID. markfluence reads each one from the first of these places
+that has it:
 
   1. the file that --env-file names
   2. the environment variable
   3. your credentials file, ~/.config/markfluence/credentials
-     ($XDG_CONFIG_HOME/markfluence/credentials if XDG_CONFIG_HOME is an
-     absolute path)
 
-The two files hold KEY=value lines. Put the URL and the token in the same
-place: markfluence refuses to send a token to a URL from a different place.
-It reads the cloud ID only from the place that gives the URL.
-
-There is no flag for any of these, so the token cannot get into your shell
-history. To use a different site for one command, name a file with
---env-file.
-
-Set the cloud ID only for a scoped API token, such as the token of a service
-account. Confluence refuses a scoped token at your site URL, so markfluence
-sends it through the api.atlassian.com gateway, which needs the cloud ID. To
-find your cloud ID, open https://YOUR-SITE.atlassian.net/_edge/tenant_info .
-The cloud ID is not a secret.
+The URL and the token must come from the same place, and there is no flag for
+any of these. To set up the credentials file, see
+https://github.com/mozilla/markfluence/blob/main/docs/credentials.md
 
 ```
 markfluence [flags]

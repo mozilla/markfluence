@@ -33,8 +33,8 @@ Remember `make check`. See the next section.
 
 To use the binary with a real Confluence site, create your credentials file at
 `~/.config/markfluence/credentials`, or name a file with `--env-file`. See
-[`.env.example`](.env.example) and the [Configure](README.md#configure)
-section of the README.
+[docs/credentials.md](docs/credentials.md) and
+[`.env.example`](.env.example).
 
 ## Before you open a pull request
 

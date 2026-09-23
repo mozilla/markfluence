@@ -18,6 +18,11 @@ const (
 	cloudIDEnv  = "CONFLUENCE_CLOUD_ID"
 )
 
+// credentialsDoc is where the credential errors send a reader. It points at
+// GitHub rather than at a help topic so the errors and the README share one
+// reference; it describes main, which a released binary may trail.
+const credentialsDoc = "https://github.com/mozilla/markfluence/blob/main/docs/credentials.md"
+
 var spaceKeyRE = regexp.MustCompile(`^/spaces/([^/]+)/`)
 
 // source is one place credentials come from, and the name an error uses for it.
@@ -106,12 +111,12 @@ func Resolve(envFile string) (*ConfluenceClient, error) {
 		if len(missing) > 1 {
 			setThem = "set them in one place: "
 		}
-		return nil, fmt.Errorf("missing Confluence %s: %s%s",
-			strings.Join(missing, ", "), setThem, placesToSet(credPath))
+		return nil, fmt.Errorf("missing Confluence %s: %s%s. See %s",
+			strings.Join(missing, ", "), setThem, placesToSet(credPath), credentialsDoc)
 	}
 	if urlFrom != tokenFrom {
-		return nil, fmt.Errorf("%s comes from %s, but %s comes from %s. Set both in the same place",
-			urlEnv, sources[urlFrom].label, tokenEnv, sources[tokenFrom].label)
+		return nil, fmt.Errorf("%s comes from %s, but %s comes from %s. Set both in the same place. See %s",
+			urlEnv, sources[urlFrom].label, tokenEnv, sources[tokenFrom].label, credentialsDoc)
 	}
 	cloudID := sources[urlFrom].values[cloudIDEnv]
 	if err := validateCloudID(cloudID, sources[urlFrom].label); err != nil {
