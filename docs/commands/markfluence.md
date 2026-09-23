@@ -4,8 +4,7 @@ Publish Markdown to Confluence
 
 ### Synopsis
 
-markfluence publishes Markdown files to Confluence pages, and gets pages back as
-Markdown.
+markfluence publishes and manipulates Confluence pages from Markdown files.
 
 It needs a site URL, a username, and an API token. It reads each one from a flag
 first, then from an environment variable, then from a .env file:
@@ -19,9 +18,9 @@ The API token is never a flag, so it cannot get into your shell history.
 
 Set the cloud ID only for a scoped API token, such as the token of a service
 account. Confluence refuses a scoped token at your site URL, so markfluence
-sends it through the api.atlassian.com gateway, which needs the cloud ID. Do
-not set it for a personal token. To find your cloud ID, open
-https://YOUR-SITE.atlassian.net/_edge/tenant_info. The cloud ID is not a secret.
+sends it through the api.atlassian.com gateway, which needs the cloud ID. To
+find your cloud ID, open https://YOUR-SITE.atlassian.net/_edge/tenant_info .
+The cloud ID is not a secret.
 
 ```
 markfluence [flags]

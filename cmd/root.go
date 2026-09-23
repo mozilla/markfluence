@@ -46,8 +46,7 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "markfluence",
 	Short: "Publish Markdown to Confluence",
-	Long: "markfluence publishes Markdown files to Confluence pages, and gets pages back as\n" +
-		"Markdown.\n\n" +
+	Long: "markfluence publishes and manipulates Confluence pages from Markdown files.\n\n" +
 		"It needs a site URL, a username, and an API token. It reads each one from a flag\n" +
 		"first, then from an environment variable, then from a .env file:\n\n" +
 		"  site URL   --url        CONFLUENCE_URL\n" +
@@ -57,9 +56,9 @@ var rootCmd = &cobra.Command{
 		"The API token is never a flag, so it cannot get into your shell history.\n\n" +
 		"Set the cloud ID only for a scoped API token, such as the token of a service\n" +
 		"account. Confluence refuses a scoped token at your site URL, so markfluence\n" +
-		"sends it through the api.atlassian.com gateway, which needs the cloud ID. Do\n" +
-		"not set it for a personal token. To find your cloud ID, open\n" +
-		"https://YOUR-SITE.atlassian.net/_edge/tenant_info. The cloud ID is not a secret.",
+		"sends it through the api.atlassian.com gateway, which needs the cloud ID. To\n" +
+		"find your cloud ID, open https://YOUR-SITE.atlassian.net/_edge/tenant_info .\n" +
+		"The cloud ID is not a secret.",
 	// --version prints the build stamp ("markfluence VERSION (SHA, DATE)"). The
 	// only use of it: nothing published carries a build stamp, and the converter
 	// takes no build state at all.
