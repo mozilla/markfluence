@@ -21,37 +21,38 @@ var sinceDays int
 // Cmd is the space-info command.
 var Cmd = &cobra.Command{
 	Use:   "space-info KEY",
-	Short: "Print metadata about a Confluence space",
-	Long: "Print what a Confluence space is, what the account you are running as\n" +
-		"may do in it, which page statuses it offers, and how big it is.\n\n" +
-		"KEY is a space key -- ENG, or a personal space like ~1234abcd -- never a\n" +
-		"page or a markdown file. An unknown key is an error rather than an empty\n" +
-		"result, since a typo and a space you cannot see should not look alike.\n\n" +
-		"'your access' reports what the space grants: whether you can read it and\n" +
-		"whether you can create pages in it. It deliberately does not say\n" +
-		"\"write\", because permission to edit an existing page is not a space\n" +
-		"grant at all -- Confluence decides that per page -- so an account that\n" +
-		"can create pages here may still be refused on a particular one.\n" +
-		"markfluence page-info PAGE is where you ask about a page.\n\n" +
-		"'page statuses' is what a page_status: line in a markdown file may say,\n" +
-		"and it comes from one of two places, which the label tells you apart. A\n" +
-		"space admin gets the space's own configured list. Everyone else gets what\n" +
-		"THEY may set on the space homepage, which is not the same thing:\n" +
-		"Confluence decides the list per page and per account, so another page may\n" +
-		"allow more or fewer. When neither can be read the field says so.\n\n" +
-		"--since counts from midnight UTC that many days ago, so 0 is today only\n" +
-		"and 7 is the last week plus today.\n\n" +
-		"The page counts are exact, which is why they cost a walk of the space --\n" +
-		"one request per 250 pages. They count pages, not edits: a page revised\n" +
-		"nine times in the window is one touched page. A page created inside the\n" +
-		"window is counted as created AND touched, and the overlap is reported so\n" +
-		"the two cannot be added up wrongly.\n\n" +
-		"Read-only. Nothing is written to Confluence or to disk.",
+	Short: "Show the metadata of a Confluence space",
+	Long: "Show what a Confluence space is, what your account can do in it, which page\n" +
+		"statuses it has, and how big it is.\n\n" +
+		"KEY is a space key, such as ENG, or a personal space such as ~1234abcd. It is\n" +
+		"never a page or a Markdown file. An unknown key is an error, and not an empty\n" +
+		"result. Thus a typo does not look the same as a space that you cannot see.\n\n" +
+		"\"your access\" shows what the space grants: whether you can read it, and whether\n" +
+		"you can create pages in it. It does not say \"write\", on purpose. Permission to\n" +
+		"edit a page that exists is not a space grant at all, because Confluence decides\n" +
+		"it for each page. Thus an account that can create pages here can still be\n" +
+		"refused on one page. To ask about a page, use markfluence page-info PAGE.\n\n" +
+		"\"page statuses\" shows what a page_status: line in a Markdown file can say. It\n" +
+		"comes from one of two places, and its label tells you which:\n\n" +
+		"  - A space admin gets the list that the space has configured.\n" +
+		"  - Any other account gets the statuses that it can set on the homepage of the\n" +
+		"    space. That is not the same list, because Confluence decides the list for\n" +
+		"    each page and each account. A different page can have more statuses or\n" +
+		"    fewer.\n\n" +
+		"If markfluence can read neither list, the field says so.\n\n" +
+		"--since counts from midnight UTC that many days ago. Thus 0 is today only, and\n" +
+		"7 is the last week and today.\n\n" +
+		"The page counts are exact, so space-info must walk the space, with one request\n" +
+		"for each 250 pages. They count pages, not edits: a page that changed 9 times in\n" +
+		"the period is one touched page. A page created in the period counts as created\n" +
+		"AND touched, and space-info reports the overlap, so that nobody adds the two\n" +
+		"counts together.\n\n" +
+		"space-info only reads. It writes nothing to Confluence or to disk.",
 	Example: "  # What is this space, and can I publish to it?\n" +
 		"  markfluence space-info ENG\n\n" +
-		"  # Activity over a month rather than a week\n" +
+		"  # Show the activity of a month, and not of a week\n" +
 		"  markfluence space-info ENG --since 30\n\n" +
-		"  # Just the statuses a page_status: line may use\n" +
+		"  # Show only the statuses that a page_status: line can use\n" +
 		"  markfluence space-info ENG --json | jq '.results[0].page_statuses'",
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completion.Values(),
@@ -60,7 +61,8 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().IntVar(&sinceDays, "since", 7,
-		"Days back from midnight UTC for the created/touched page counts (0 is today only).")
+		"How many days back from midnight UTC to count created and touched pages. 0 "+
+			"is today only.")
 }
 
 func run(cmd *cobra.Command, args []string) error {
