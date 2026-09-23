@@ -11,7 +11,7 @@
     "markfluence_version": { "type": "string" },
     "command": { "enum": ["page-info", "space-info", "user-info", "read", "update", "create", "check", "diff", "children", "find", "search", "user-find", "attachment-list", "attachment-upload", "attachment-download", "export"] },
     "roots": { "type": "array", "items": { "type": "string" }, "description": "Every distinct documentation root the command resolved, sorted. Empty for a command with no per-file root concept, and for a pre-flight failure that never reached root resolution." },
-    "warnings": { "type": "array", "items": { "type": "string" }, "description": "Warnings about the invocation itself rather than about any page or file -- currently only the permission warning, raised when a file holding the API token (the credentials file, or one named by --env-file) is reachable by anyone but its owner. Always present, [] when there is nothing to report, the same convention roots and results follow. Not per-result warnings: those live on the result." },
+    "warnings": { "type": "array", "items": { "type": "string" }, "description": "Warnings about the invocation itself rather than about any page or file -- currently the two warnings raised while reading credentials: a file holding the API token (the credentials file, or one named by --env-file) that is reachable by anyone but its owner, and a CONFLUENCE_CLOUD_ID that was ignored because it came from a different place than the URL. Always present, [] when there is nothing to report, the same convention roots and results follow. Not per-result warnings: those live on the result." },
     "results": { "type": "array" },
     "summary": { "type": "object" }
   },

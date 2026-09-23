@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -356,6 +357,72 @@ func TestResolveMissingWithNoHome(t *testing.T) {
 	}
 }
 
+// TestResolveMissingHalfOfThePair: when the URL or the token is set, the
+// other can only go in the same place, so that is the only place offered.
+func TestResolveMissingHalfOfThePair(t *testing.T) {
+	withCredentialsFile(t, "CONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n")
+	_, err := Resolve("")
+	if err == nil || !strings.Contains(err.Error(), "set it in ") ||
+		!strings.Contains(err.Error(), "markfluence/credentials, where CONFLUENCE_TOKEN is.") ||
+		strings.Contains(err.Error(), "the environment") {
+		t.Errorf("token in the credentials file: err = %v, want only its place offered for the URL", err)
+	}
+
+	t.Setenv(urlEnv, "https://wiki")
+	t.Setenv(usernameEnv, "bot")
+	if err := os.WriteFile(filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "markfluence", "credentials"),
+		nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Resolve("")
+	if want := "set it in the environment, where CONFLUENCE_URL is."; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("URL in the environment: err = %v, want %q", err, want)
+	}
+}
+
+// TestResolveWarnsAboutAnIgnoredCloudIDAboveTheURL: a cloud ID set on purpose
+// in a higher place than the URL is reported; one in a lower place is the
+// ordinary case of a credentials file for another instance, and is not.
+func TestResolveWarnsAboutAnIgnoredCloudIDAboveTheURL(t *testing.T) {
+	got := captureSecurityWarnings(t)
+	withCredentialsFile(t, full)
+	t.Setenv(cloudIDEnv, "exported")
+	if _, err := Resolve(""); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if len(*got) != 1 || !strings.Contains((*got)[0], "CONFLUENCE_CLOUD_ID from the environment is ignored") {
+		t.Errorf("warnings = %v, want one about the ignored cloud ID", *got)
+	}
+
+	*got = nil
+	clearConfluenceEnv(t)
+	withCredentialsFile(t, full+"CONFLUENCE_CLOUD_ID=instance-a\n")
+	if _, err := Resolve(writeEnvFile(t, "CONFLUENCE_URL=https://b\nCONFLUENCE_TOKEN=t\n")); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if len(*got) != 0 {
+		t.Errorf("warnings = %v, want none for a cloud ID below the URL's place", *got)
+	}
+}
+
+// TestResolveDanglingCredentialsLinkFails: a symbolic link to nothing is a
+// file the user made, not a missing one.
+func TestResolveDanglingCredentialsLinkFails(t *testing.T) {
+	cfg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfg)
+	path := filepath.Join(cfg, "markfluence", "credentials")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(cfg, "gone"), path); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Resolve("")
+	if err == nil || !strings.Contains(err.Error(), "symbolic link to a file that does not exist") {
+		t.Errorf("err = %v, want the dangling-link error", err)
+	}
+}
+
 // TestResolveReadsNoDotenv: a .env in the working directory, or at the root
 // of the project the working directory is in, is never read (#188). A checkout
 // must not be able to supply credentials.
@@ -579,6 +646,20 @@ func TestWarnLoosePermissionsFollowsASymlink(t *testing.T) {
 	}
 	if len(*got) != 0 {
 		t.Errorf("warnings = %v, want none: the link points at a 0600 file", *got)
+	}
+}
+
+// TestWarnLoosePermissionsIgnoresAPipe: `--env-file <(pass show …)` reads a
+// pipe, whose mode no chmod can fix.
+func TestWarnLoosePermissionsIgnoresAPipe(t *testing.T) {
+	got := captureSecurityWarnings(t)
+	fifo := filepath.Join(t.TempDir(), "fifo")
+	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	warnLoosePermissions(fifo, map[string]string{tokenEnv: "secret"})
+	if len(*got) != 0 {
+		t.Errorf("warnings = %v, want none for a pipe", *got)
 	}
 }
 

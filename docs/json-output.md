@@ -23,8 +23,10 @@ also prints it.
   stopped before root resolution. `schema` writes no envelope at all, so it has
   no `roots` key.
 - **`warnings`** holds warnings about the *invocation*, and not about a page or
-  a file. Now, the only such warning is the permission warning for a file that
-  holds your API token (see [credentials.md](credentials.md#the-permission-warning)).
+  a file. Now, both such warnings come from reading credentials: the
+  permission warning for a file that holds your API token, and the warning
+  about a cloud ID that markfluence ignored (see
+  [credentials.md](credentials.md)).
   The warnings of a result are on that result. This field is for a warning that
   belongs to no result. It is `[]` when there is nothing to report. It is also
   on the error object on stderr. A fatal failure writes no envelope, and a

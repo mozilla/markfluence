@@ -224,7 +224,9 @@ Optional: `alias mf=markfluence`
 
 For a normal personal API token, do not set `CONFLUENCE_CLOUD_ID`.
 
-You must set `CONFLUENCE_CLOUD_ID` for a **scoped** API token. An Atlassian
+You must set `CONFLUENCE_CLOUD_ID` for a **scoped** API token, in the same place
+as `CONFLUENCE_URL`. markfluence reads the cloud ID only from the place that
+gives the URL, and warns about a cloud ID that it ignores. An Atlassian
 [service account][svcacct] gets a scoped token, and you use it to publish from
 CI. Atlassian refuses a scoped token with a **401** status against your site
 domain. Thus markfluence must use the `api.atlassian.com` gateway of Atlassian,

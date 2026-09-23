@@ -55,8 +55,8 @@ type Envelope struct {
 	// report, the same convention Results already follows.
 	Roots []string `json:"roots"`
 	// Warnings is about the invocation rather than about any page or file --
-	// currently only the permission warning for a file holding the API token
-	// (the credentials file, or one named by --env-file). It is filled from the
+	// currently the two credential warnings: a file holding the API token that
+	// others can reach, and a cloud ID Resolve ignored. It is filled from the
 	// package-level collector by NewEnvelope, not by the caller: the warning is
 	// raised deep inside credential resolution, before any command knows
 	// whether it will emit an envelope at all, and fifteen commands would

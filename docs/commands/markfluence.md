@@ -15,8 +15,9 @@ that has it:
   2. the environment variable
   3. your credentials file, ~/.config/markfluence/credentials
 
-The URL and the token must come from the same place, and there is no flag for
-any of these. To set up the credentials file, see
+The URL and the token must come from the same place, the cloud ID is read only
+from the place that gives the URL, and there is no flag for any of these. To
+set up the credentials file, see
 https://github.com/mozilla/markfluence/blob/main/docs/credentials.md
 
 ```
