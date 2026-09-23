@@ -1,70 +1,73 @@
 ## markfluence update
 
-Publish one or more markdown files to Confluence pages
+Publish one or more Markdown files to Confluence pages
 
 ### Synopsis
 
-Publish one or more markdown FILEs to Confluence pages.
+Publish one or more Markdown FILEs to their Confluence pages.
 
-Each file's title and page id come from its own YAML frontmatter, or from
-a 'pages:' entry for it in markfluence.yaml -- a file can stay pristine and
-keep its metadata there instead. Both places are legal and agreement is
-silent; where they disagree about page_id, space or parent the file fails,
-and where they disagree about title, page_width, page_status or labels the
-frontmatter wins with a warning.
+The page id and title of each file come from its YAML frontmatter, or from its
+pages: entry in markfluence.yaml. With an entry, the file can have no
+frontmatter at all. Both locations are legal, and update says nothing when they
+agree. If they disagree about page_id, space, or parent, the file fails. If
+they disagree about title, page_width, page_status, or labels, the frontmatter
+wins, with a warning. With no title, update keeps the live title of the page.
 
-A file that neither place mentions is skipped, not failed: a repository
-legitimately holds markdown that is not published, so a glob over a docs
-tree does not go red because somebody added a draft. A file that IS
-registered but has no page id fails -- something claimed it and the page
-has not been created yet.
+update skips a file that neither location mentions, and does not fail it. A
+repository can correctly hold Markdown that nobody publishes. Thus a glob over
+a docs tree does not fail because somebody added a draft. A file that IS
+registered but has no page id fails. Something claimed it, and nobody created
+the page yet.
 
-There are no per-page flags. Page metadata lives in the file or its entry,
-which is what lets one invocation publish 'docs/**/*.md'; a flag would have
-to name a single file. A project-wide 'page_width:' in markfluence.yaml is
-how a whole tree gets one width.
+There are no flags for the metadata of one page. The metadata is in the file
+or in its entry, and that is what lets one command publish 'docs/**/*.md'. A
+flag would have to name one file. To give a whole tree one width, set
+page_width: in markfluence.yaml.
 
-Page width is asserted only when something declares it -- the file, its
-entry, or the project-wide default -- otherwise the live page's width is
-left untouched. Labels work the same way: a labels: line is asserted
-exactly (anything on the page the file does not list is removed), and no
-labels: line means the page's labels are left alone, not even read.
+update asserts the page width only when something declares it: the file, its
+entry, or the default of the project. Otherwise it does not touch the live
+width. Labels work in the same way. update asserts a labels: line exactly, and
+removes a label on the page that the file does not list. With no labels: line,
+update does not touch the labels, and does not even read them.
 
-A page_status: line asserts the page's status -- the coloured lozenge
-beside its title -- naming one the space offers. Omitted, the page's own
-status is left alone and never even read. The statuses a space offers are
-its own configuration rather than a fixed list, so a name that matches
-none of them fails that file and reports the ones it can have; markfluence
-info shows them too. Writing one bumps the page version, so a status that
-already matches is left alone rather than re-sent.
+A page_status: line asserts the status of the page, which is the colored
+lozenge next to its title. With no page_status: line, update does not touch the
+status, and does not even read it. Confluence decides which statuses a page can
+have, for each page and each account, so update asks the page that it publishes
+to. A name that does not agree fails that file, and the error lists the names
+that would work. page-info shows them too. A status write gives the page a new
+version, so update does not send a status that already agrees.
 
-update never writes back to the file or to markfluence.yaml, so fixing a
-wrong page_id is always safe: nothing is as you left it by accident. A
-page_id that no longer resolves fails that file and says what to do about
-it; one that is not a numeric id at all is reported without asking
-Confluence.
+update never writes to the file or to markfluence.yaml. Thus you can safely
+correct a wrong page_id. A page_id that names no page fails that file, and the
+error tells you what to do. A page_id that is not a number fails with no
+request to Confluence.
 
-Two checks stand between a file and the page, and both compare against
-what a previous create, update or export recorded locally about that
-file. A page that has moved on since your copy was made is refused
-rather than overwritten -- re-export it, or use --force. A file whose
-rendered body already matches the page skips the body publish, while
-attachments, width and labels are applied as usual, so redrawing an
-image publishes it without churning the page's version history.
+Two checks protect the page. Both compare with what an earlier create, update,
+or export recorded locally for that file, in the log next to markfluence.yaml:
 
-A file nothing has recorded yet is published with no check and no
-warning of its own; the run reports how many those were. Protection
-accrues, so publishing once is what starts it.
+  - If the page changed after you made your copy, update refuses the file, and
+    does not overwrite the page. Export the page again, or use --force.
+  - If the rendered body already agrees with the page, update skips the body.
+    It still applies attachments, width, and labels. Thus a new version of an
+    image publishes, and the page gets no new version for the body.
 
---force means always publish: it overrides both checks, which is what a
-CI workflow wants when the repository is the source of truth.
+With no markfluence.yaml, there is no log, so neither check runs. update then
+publishes every file, and each publish makes a new page version.
 
-Each file is processed independently; the command exits non-zero if any
-file failed, a refused page included.
+update publishes a file with no record yet with no check and no warning of its
+own. The run reports how many such files there were. Protection starts with the
+first publish or export of a file.
 
---dry-run previews the version bump, attachment uploads and any width or
-label change without writing to Confluence. It makes the same two checks
-a real run does, so its forecast matches.
+--force means "always publish". It overrides both checks. A CI workflow needs
+this when the repository is the source of truth.
+
+update does each file separately. It exits with a code that is not zero if any
+file failed, also a refused page.
+
+--dry-run shows the new version, the attachment uploads, and any change to the
+width or the labels, and writes nothing to Confluence. It does the same two
+checks as a real run, so its preview agrees with the real run.
 
 ```
 markfluence update FILE... [flags]
@@ -73,33 +76,33 @@ markfluence update FILE... [flags]
 ### Examples
 
 ```
-  # Publish a file, taking the page id from its frontmatter or its entry
+  # Publish a file. The page id comes from its frontmatter or its entry
   markfluence update docs/managing_an_incident.md
 
-  # Publish a whole tree -- the CI shape: metadata comes from the files
-  # and from markfluence.yaml, so nothing has to be passed per file
+  # Publish a whole tree, as CI does. The metadata comes from the files
+  # and from markfluence.yaml, so you give nothing for each file
   markfluence update docs/**/*.md
 
-  # Publish a batch with a version message
+  # Publish a set of files with a version message
   markfluence update docs/*.md --message "Bulk update"
 
-  # Publish regardless of what the page has become since your copy
+  # Publish, also if the page changed after you made your copy
   markfluence update docs/foo.md --force
 
-  # Preview, write nothing
+  # Show what would happen, and write nothing
   markfluence update docs/*.md --dry-run
 
-  # See which location supplied each file's metadata
+  # Show which location gave each file its metadata
   markfluence update docs/*.md --json | jq -r '.results[] | "\(.file) \(.metadata_source)"'
 ```
 
 ### Options
 
 ```
-      --dry-run          Preview what would be published without writing to Confluence.
-      --force            Always publish: override both the moved-page and unchanged-body checks.
+      --dry-run          Show what update would publish, and write nothing to Confluence.
+      --force            Always publish. Overrides the check for a changed page and the check for an unchanged body.
   -h, --help             help for update
-      --message string   Version message. (default "Updated via markfluence")
+      --message string   Message for the new page version. (default "Updated via markfluence")
 ```
 
 ### Options inherited from parent commands

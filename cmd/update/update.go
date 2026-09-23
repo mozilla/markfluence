@@ -37,69 +37,70 @@ var (
 // Cmd is the update command.
 var Cmd = &cobra.Command{
 	Use:   "update FILE...",
-	Short: "Publish one or more markdown files to Confluence pages",
-	Long: "Publish one or more markdown FILEs to Confluence pages.\n\n" +
-		"Each file's title and page id come from its own YAML frontmatter, or from\n" +
-		"a 'pages:' entry for it in markfluence.yaml -- a file can stay pristine and\n" +
-		"keep its metadata there instead. Both places are legal and agreement is\n" +
-		"silent; where they disagree about page_id, space or parent the file fails,\n" +
-		"and where they disagree about title, page_width, page_status or labels the\n" +
-		"frontmatter wins with a warning.\n\n" +
-		"A file that neither place mentions is skipped, not failed: a repository\n" +
-		"legitimately holds markdown that is not published, so a glob over a docs\n" +
-		"tree does not go red because somebody added a draft. A file that IS\n" +
-		"registered but has no page id fails -- something claimed it and the page\n" +
-		"has not been created yet.\n\n" +
-		"There are no per-page flags. Page metadata lives in the file or its entry,\n" +
-		"which is what lets one invocation publish 'docs/**/*.md'; a flag would have\n" +
-		"to name a single file. A project-wide 'page_width:' in markfluence.yaml is\n" +
-		"how a whole tree gets one width.\n\n" +
-		"Page width is asserted only when something declares it -- the file, its\n" +
-		"entry, or the project-wide default -- otherwise the live page's width is\n" +
-		"left untouched. Labels work the same way: a labels: line is asserted\n" +
-		"exactly (anything on the page the file does not list is removed), and no\n" +
-		"labels: line means the page's labels are left alone, not even read.\n\n" +
-		"A page_status: line asserts the page's status -- the coloured lozenge\n" +
-		"beside its title -- naming one the space offers. Omitted, the page's own\n" +
-		"status is left alone and never even read. The statuses a space offers are\n" +
-		"its own configuration rather than a fixed list, so a name that matches\n" +
-		"none of them fails that file and reports the ones it can have; markfluence\n" +
-		"info shows them too. Writing one bumps the page version, so a status that\n" +
-		"already matches is left alone rather than re-sent.\n\n" +
-		"update never writes back to the file or to markfluence.yaml, so fixing a\n" +
-		"wrong page_id is always safe: nothing is as you left it by accident. A\n" +
-		"page_id that no longer resolves fails that file and says what to do about\n" +
-		"it; one that is not a numeric id at all is reported without asking\n" +
-		"Confluence.\n\n" +
-		"Two checks stand between a file and the page, and both compare against\n" +
-		"what a previous create, update or export recorded locally about that\n" +
-		"file. A page that has moved on since your copy was made is refused\n" +
-		"rather than overwritten -- re-export it, or use --force. A file whose\n" +
-		"rendered body already matches the page skips the body publish, while\n" +
-		"attachments, width and labels are applied as usual, so redrawing an\n" +
-		"image publishes it without churning the page's version history.\n\n" +
-		"A file nothing has recorded yet is published with no check and no\n" +
-		"warning of its own; the run reports how many those were. Protection\n" +
-		"accrues, so publishing once is what starts it.\n\n" +
-		"--force means always publish: it overrides both checks, which is what a\n" +
-		"CI workflow wants when the repository is the source of truth.\n\n" +
-		"Each file is processed independently; the command exits non-zero if any\n" +
-		"file failed, a refused page included.\n\n" +
-		"--dry-run previews the version bump, attachment uploads and any width or\n" +
-		"label change without writing to Confluence. It makes the same two checks\n" +
-		"a real run does, so its forecast matches.",
-	Example: "  # Publish a file, taking the page id from its frontmatter or its entry\n" +
+	Short: "Publish one or more Markdown files to Confluence pages",
+	Long: "Publish one or more Markdown FILEs to their Confluence pages.\n\n" +
+		"The page id and title of each file come from its YAML frontmatter, or from its\n" +
+		"pages: entry in markfluence.yaml. With an entry, the file can have no\n" +
+		"frontmatter at all. Both locations are legal, and update says nothing when they\n" +
+		"agree. If they disagree about page_id, space, or parent, the file fails. If\n" +
+		"they disagree about title, page_width, page_status, or labels, the frontmatter\n" +
+		"wins, with a warning. With no title, update keeps the live title of the page.\n\n" +
+		"update skips a file that neither location mentions, and does not fail it. A\n" +
+		"repository can correctly hold Markdown that nobody publishes. Thus a glob over\n" +
+		"a docs tree does not fail because somebody added a draft. A file that IS\n" +
+		"registered but has no page id fails. Something claimed it, and nobody created\n" +
+		"the page yet.\n\n" +
+		"There are no flags for the metadata of one page. The metadata is in the file\n" +
+		"or in its entry, and that is what lets one command publish 'docs/**/*.md'. A\n" +
+		"flag would have to name one file. To give a whole tree one width, set\n" +
+		"page_width: in markfluence.yaml.\n\n" +
+		"update asserts the page width only when something declares it: the file, its\n" +
+		"entry, or the default of the project. Otherwise it does not touch the live\n" +
+		"width. Labels work in the same way. update asserts a labels: line exactly, and\n" +
+		"removes a label on the page that the file does not list. With no labels: line,\n" +
+		"update does not touch the labels, and does not even read them.\n\n" +
+		"A page_status: line asserts the status of the page, which is the colored\n" +
+		"lozenge next to its title. With no page_status: line, update does not touch the\n" +
+		"status, and does not even read it. Confluence decides which statuses a page can\n" +
+		"have, for each page and each account, so update asks the page that it publishes\n" +
+		"to. A name that does not agree fails that file, and the error lists the names\n" +
+		"that would work. page-info shows them too. A status write gives the page a new\n" +
+		"version, so update does not send a status that already agrees.\n\n" +
+		"update never writes to the file or to markfluence.yaml. Thus you can safely\n" +
+		"correct a wrong page_id. A page_id that names no page fails that file, and the\n" +
+		"error tells you what to do. A page_id that is not a number fails with no\n" +
+		"request to Confluence.\n\n" +
+		"Two checks protect the page. Both compare with what an earlier create, update,\n" +
+		"or export recorded locally for that file, in the log next to markfluence.yaml:\n\n" +
+		"  - If the page changed after you made your copy, update refuses the file, and\n" +
+		"    does not overwrite the page. Export the page again, or use --force.\n" +
+		"  - If the rendered body already agrees with the page, update skips the body.\n" +
+		"    It still applies attachments, width, and labels. Thus a new version of an\n" +
+		"    image publishes, and the page gets no new version for the body.\n\n" +
+		"With no markfluence.yaml, there is no log, so neither check runs. update then\n" +
+		"publishes every file, and each publish makes a new page version.\n\n" +
+		"update publishes a file with no record yet with no check and no warning of its\n" +
+		"own. The run reports how many such files there were. Protection starts with the\n" +
+		"first publish or export of a file.\n\n" +
+		"--force means \"always publish\". It overrides both checks. A CI workflow needs\n" +
+		"this when the repository is the source of truth.\n\n" +
+		"update does each file separately. It exits with a code that is not zero if any\n" +
+		"file failed, also a refused page.\n\n" +
+		"--dry-run shows the new version, the attachment uploads, and any change to the\n" +
+		"width or the labels, and writes nothing to Confluence. It does the same two\n" +
+		"checks as a real run, so its preview agrees with the real run.",
+	Example: "  # Publish a file. The page id comes from its frontmatter or its entry\n" +
 		"  markfluence update docs/managing_an_incident.md\n\n" +
-		"  # Publish a whole tree -- the CI shape: metadata comes from the files\n" +
-		"  # and from markfluence.yaml, so nothing has to be passed per file\n" +
+		"  # Publish a whole tree, as CI does. The metadata comes from the files\n" +
+		"  # and from markfluence.yaml, so you give nothing for each file\n" +
 		"  markfluence update docs/**/*.md\n\n" +
-		"  # Publish a batch with a version message\n" +
+		"  # Publish a set of files with a version message\n" +
 		"  markfluence update docs/*.md --message \"Bulk update\"\n\n" +
-		"  # Publish regardless of what the page has become since your copy\n" +
+		"  # Publish, also if the page changed after you made your copy\n" +
 		"  markfluence update docs/foo.md --force\n\n" +
-		"  # Preview, write nothing\n" +
+		"  # Show what would happen, and write nothing\n" +
 		"  markfluence update docs/*.md --dry-run\n\n" +
-		"  # See which location supplied each file's metadata\n" +
+		"  # Show which location gave each file its metadata\n" +
 		"  markfluence update docs/*.md --json | jq -r '.results[] | \"\\(.file) \\(.metadata_source)\"'",
 	Args:              cobra.MinimumNArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
@@ -107,11 +108,12 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
-	Cmd.Flags().StringVar(&message, "message", "Updated via markfluence", "Version message.")
+	Cmd.Flags().StringVar(&message, "message", "Updated via markfluence", "Message for the new page version.")
 	Cmd.Flags().BoolVar(&force, "force", false,
-		"Always publish: override both the moved-page and unchanged-body checks.")
+		"Always publish. Overrides the check for a changed page and the check for an "+
+			"unchanged body.")
 	Cmd.Flags().BoolVar(&dryRun, "dry-run", false,
-		"Preview what would be published without writing to Confluence.")
+		"Show what update would publish, and write nothing to Confluence.")
 }
 
 func run(cmd *cobra.Command, args []string) error {
