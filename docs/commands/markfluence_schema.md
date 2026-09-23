@@ -38,14 +38,14 @@ markfluence schema [flags]
 ### Options inherited from parent commands
 
 ```
-      --cloud-id string   Atlassian cloud ID; set to use a scoped API token via the api.atlassian.com gateway (falls back to $CONFLUENCE_CLOUD_ID, then .env)
-  -d, --debug             Enable verbose debug output
-      --env-file string   Path to an env file to read (default: .env at the discovered project root, or the working directory if none)
-      --json              Emit machine-readable JSON to stdout instead of human output
-      --no-color          Disable colored output
-      --root string       Documentation root, overriding discovery (default: the directory holding markfluence.yaml, found by walking up from each file, or the file's own directory if none)
-      --url string        Confluence base URL (falls back to $CONFLUENCE_URL, then .env)
-      --username string   Confluence username/email (falls back to $CONFLUENCE_USERNAME, then .env)
+      --cloud-id string   Atlassian cloud ID. Set it only for a scoped API token. If not set, markfluence uses $CONFLUENCE_CLOUD_ID, then .env
+  -d, --debug             Print debug output, such as each request and each retry
+      --env-file string   Env file to read credentials from. The default is .env in the documentation root of the working directory, or in the working directory if there is no markfluence.yaml
+      --json              Write one JSON document to stdout, and no human output
+      --no-color          Print output with no color
+      --root string       Documentation root for every file. The default is the nearest directory above each file that has a markfluence.yaml, or the directory of the file if there is none
+      --url string        Confluence site URL. If not set, markfluence uses $CONFLUENCE_URL, then .env
+      --username string   Confluence username (your email address). If not set, markfluence uses $CONFLUENCE_USERNAME, then .env
 ```
 
 ### SEE ALSO

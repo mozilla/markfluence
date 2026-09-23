@@ -46,17 +46,20 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "markfluence",
 	Short: "Publish markdown to Confluence",
-	Long: "markfluence publishes and manipulates Confluence pages from markdown files.\n\n" +
-		"Configuration resolves with the precedence flag > environment variable >\n" +
-		".env file. The site URL (--url / CONFLUENCE_URL), username (--username /\n" +
-		"CONFLUENCE_USERNAME), and cloud ID (--cloud-id / CONFLUENCE_CLOUD_ID) may be\n" +
-		"set any of those ways; the API token (CONFLUENCE_TOKEN) comes only from the\n" +
-		"environment or .env, never a flag.\n\n" +
-		"Set the cloud ID to authenticate with a scoped API token, such as one issued\n" +
-		"to a service account: those tokens are rejected against the site domain and\n" +
-		"must go through Atlassian's api.atlassian.com gateway. Leave it unset for an\n" +
-		"unscoped personal token. Find yours at\n" +
-		"https://YOUR-SITE.atlassian.net/_edge/tenant_info -- it isn't a secret.",
+	Long: "markfluence publishes Markdown files to Confluence pages, and gets pages back as\n" +
+		"Markdown.\n\n" +
+		"It needs a site URL, a username, and an API token. It reads each one from a flag\n" +
+		"first, then from an environment variable, then from a .env file:\n\n" +
+		"  site URL   --url        CONFLUENCE_URL\n" +
+		"  username   --username   CONFLUENCE_USERNAME\n" +
+		"  API token  (no flag)    CONFLUENCE_TOKEN\n" +
+		"  cloud ID   --cloud-id   CONFLUENCE_CLOUD_ID\n\n" +
+		"The API token is never a flag, so it cannot get into your shell history.\n\n" +
+		"Set the cloud ID only for a scoped API token, such as the token of a service\n" +
+		"account. Confluence refuses a scoped token at your site URL, so markfluence\n" +
+		"sends it through the api.atlassian.com gateway, which needs the cloud ID. Do\n" +
+		"not set it for a personal token. To find your cloud ID, open\n" +
+		"https://YOUR-SITE.atlassian.net/_edge/tenant_info. The cloud ID is not a secret.",
 	// --version prints the build stamp ("markfluence VERSION (SHA, DATE)"). The
 	// only use of it: nothing published carries a build stamp, and the converter
 	// takes no build state at all.
@@ -147,25 +150,27 @@ func jsonRequested(args []string) bool {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&urlFlag, "url", "",
-		"Confluence base URL (falls back to $CONFLUENCE_URL, then .env)")
+		"Confluence site URL. If not set, markfluence uses $CONFLUENCE_URL, then .env")
 	rootCmd.PersistentFlags().StringVar(&usernameFlag, "username", "",
-		"Confluence username/email (falls back to $CONFLUENCE_USERNAME, then .env)")
+		"Confluence username (your email address). If not set, markfluence uses "+
+			"$CONFLUENCE_USERNAME, then .env")
 	rootCmd.PersistentFlags().StringVar(&cloudIDFlag, "cloud-id", "",
-		"Atlassian cloud ID; set to use a scoped API token via the api.atlassian.com "+
-			"gateway (falls back to $CONFLUENCE_CLOUD_ID, then .env)")
+		"Atlassian cloud ID. Set it only for a scoped API token. If not set, "+
+			"markfluence uses $CONFLUENCE_CLOUD_ID, then .env")
 	rootCmd.PersistentFlags().StringVar(&envFileFlag, "env-file", "",
-		"Path to an env file to read (default: .env at the discovered project root, "+
-			"or the working directory if none)")
+		"Env file to read credentials from. The default is .env in the documentation "+
+			"root of the working directory, or in the working directory if there is no "+
+			"markfluence.yaml")
 	rootCmd.PersistentFlags().StringVar(&rootFlag, "root", "",
-		"Documentation root, overriding discovery (default: the directory holding "+
-			"markfluence.yaml, found by walking up from each file, or the file's own "+
-			"directory if none)")
+		"Documentation root for every file. The default is the nearest directory "+
+			"above each file that has a markfluence.yaml, or the directory of the file "+
+			"if there is none")
 	rootCmd.PersistentFlags().BoolVarP(&debugFlag, "debug", "d", false,
-		"Enable verbose debug output")
+		"Print debug output, such as each request and each retry")
 	rootCmd.PersistentFlags().BoolVar(&noColorFlag, "no-color", false,
-		"Disable colored output")
+		"Print output with no color")
 	rootCmd.PersistentFlags().BoolVar(&jsonFlag, "json", false,
-		"Emit machine-readable JSON to stdout instead of human output")
+		"Write one JSON document to stdout, and no human output")
 	rootCmd.PersistentFlags().SortFlags = false
 	completion.RegisterFlag(rootCmd, "root", completion.Directories)
 
