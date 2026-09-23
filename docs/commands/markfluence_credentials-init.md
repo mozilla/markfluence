@@ -25,9 +25,12 @@ paste the new token. credentials-init writes the whole file again, so it
 tells you first if your file has comments or other lines that it will not
 keep. The file gets mode 0600.
 
-credentials-init writes only the credentials file. It writes nothing in the
-current directory. It needs a terminal: in CI, set the CONFLUENCE_*
-environment variables from the secrets of the CI system instead.
+credentials-init only writes the credentials file. It writes nothing in the
+current directory.
+
+credentials-init requires a terminal to run. When using markfluence in CI,
+set the CONFLUENCE_* environment variables from the secrets of the CI system
+instead.
 
 ```
 markfluence credentials-init [flags]
