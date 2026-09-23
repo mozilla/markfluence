@@ -652,7 +652,7 @@ func reserveOne(
 // fail here is a server or network condition -- or a local read the converter
 // never made: SyncAttachments opens every asset to checksum and upload it, so
 // an image that Lstat'd fine in preflight can still be unreadable now. Those
-// are the residuals S7 (no-partial-create) stays Partial for.
+// are the residuals S7 (no-partial-create) accepts.
 func publishOne(
 	r record, res *createResult, pageID string, version int,
 	c *client.ConfluenceClient, users *pagedoc.UserCache,

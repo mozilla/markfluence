@@ -150,7 +150,7 @@ func (rec *recorder) recordWalk(res *result) {
 //
 // It is self-consistent in the way that matters. The pass hashes *our own
 // render*, not a comparison against the page, so it does not depend on
-// round-trip fidelity at all -- L5/L6 being Partial is irrelevant here, because
+// round-trip fidelity at all -- L5/L6's storage churn is irrelevant here, because
 // the value recorded is precisely the one a later `update` recomputes from the
 // same file. What it does have to match is update's own inputs, which is why
 // the title comes from the file's frontmatter and the space key from the live

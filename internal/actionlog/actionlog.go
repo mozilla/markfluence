@@ -243,7 +243,7 @@ func (l *Log) Append(e Entry) error {
 // anywhere -- planted by whoever can write the project directory -- would have
 // markfluence append JSON to a file outside the root. Measured, not assumed:
 // the bare call wrote straight through such a link. S1
-// (no-write-outside-root) is stated as Holds, and this is the one write in the
+// (no-write-outside-root) forbids that, and this was the one write in the
 // tree that did not go through the os.Root every other path uses. An os.Root
 // refuses an escape even through a symlinked intermediate directory, which a
 // lexical check cannot see.
