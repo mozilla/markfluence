@@ -102,8 +102,12 @@ func Resolve(envFile string) (*ConfluenceClient, error) {
 		missing = append(missing, "token ("+tokenEnv+")")
 	}
 	if len(missing) > 0 {
-		return nil, fmt.Errorf("missing Confluence %s: set them in one place: %s",
-			strings.Join(missing, ", "), placesToSet(credPath))
+		setThem := "set it in "
+		if len(missing) > 1 {
+			setThem = "set them in one place: "
+		}
+		return nil, fmt.Errorf("missing Confluence %s: %s%s",
+			strings.Join(missing, ", "), setThem, placesToSet(credPath))
 	}
 	if urlFrom != tokenFrom {
 		return nil, fmt.Errorf("%s comes from %s, but %s comes from %s. Set both in the same place",
@@ -176,7 +180,7 @@ func loadCredentials(path string) (map[string]string, error) {
 	case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
 		return nil, nil
 	default:
-		return nil, fmt.Errorf("reading credentials file %s: %w", path, err)
+		return nil, fmt.Errorf("reading credentials file %s: %w", displayPath(path), err)
 	}
 }
 

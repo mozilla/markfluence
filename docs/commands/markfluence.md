@@ -19,7 +19,8 @@ markfluence reads each one from these places, and uses the first it finds:
   1. the file that --env-file names
   2. the environment variable
   3. your credentials file, ~/.config/markfluence/credentials
-     ($XDG_CONFIG_HOME/markfluence/credentials if you set XDG_CONFIG_HOME)
+     ($XDG_CONFIG_HOME/markfluence/credentials if XDG_CONFIG_HOME is an
+     absolute path)
 
 The two files hold KEY=value lines. Put the URL and the token in the same
 place: markfluence refuses to send a token to a URL from a different place.

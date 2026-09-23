@@ -157,19 +157,31 @@ func TestResolveUnreadableCredentialsFileFails(t *testing.T) {
 // TestResolveSkipsTheCredentialsFileWhenComplete: a broken or loose file must
 // not fail or warn on a run that never uses it.
 func TestResolveSkipsTheCredentialsFileWhenComplete(t *testing.T) {
+	t.Setenv(urlEnv, "https://wiki")
+	t.Setenv(usernameEnv, "bot")
+	t.Setenv(tokenEnv, "secret")
+
 	got := captureSecurityWarnings(t)
 	path := withCredentialsFile(t, "CONFLUENCE_TOKEN=secret\n")
 	if err := os.Chmod(path, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(urlEnv, "https://wiki")
-	t.Setenv(usernameEnv, "bot")
-	t.Setenv(tokenEnv, "secret")
 	if _, err := Resolve(""); err != nil {
-		t.Fatalf("Resolve: %v", err)
+		t.Fatalf("loose file: Resolve: %v", err)
 	}
 	if len(*got) != 0 {
 		t.Errorf("warnings = %v, want none: the file was never needed", *got)
+	}
+
+	// A directory where the file goes fails if it is read; it must not be.
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Resolve(""); err != nil {
+		t.Errorf("unreadable file: Resolve: %v, want the file never read", err)
 	}
 }
 
@@ -232,6 +244,20 @@ func TestResolveCloudIDFollowsTheURL(t *testing.T) {
 		t.Errorf("URL from --env-file: BaseURL = %q, want https://b and no cloud ID from the credentials file", c.BaseURL())
 	}
 
+	// URL and token from the environment; the username is left unset so the
+	// credentials file is read, and its cloud ID must still be ignored.
+	t.Setenv(urlEnv, "https://c")
+	t.Setenv(tokenEnv, "t")
+	c, err = Resolve("")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if c.BaseURL() != "https://c" {
+		t.Errorf("URL from the environment: BaseURL = %q, "+
+			"want https://c and no cloud ID from the credentials file", c.BaseURL())
+	}
+	clearConfluenceEnv(t)
+
 	t.Setenv(cloudIDEnv, "from-env")
 	c, err = Resolve("")
 	if err != nil {
@@ -290,6 +316,45 @@ func TestResolveMissingNamesEverySource(t *testing.T) {
 	}
 }
 
+// TestResolveShowsTheCredentialsFileUnderHome: errors name a file under the
+// home directory as ~/..., the form the docs use.
+func TestResolveShowsTheCredentialsFileUnderHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	const shown = "~/.config/markfluence/credentials"
+
+	if _, err := Resolve(""); err == nil || !strings.Contains(err.Error(), "the environment, "+shown+",") {
+		t.Errorf("no file: err = %v, want it to name %s", err, shown)
+	}
+
+	path := filepath.Join(home, ".config", "markfluence", "credentials")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(full), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(urlEnv, "https://elsewhere")
+	if _, err := Resolve(""); err == nil || !strings.Contains(err.Error(), "CONFLUENCE_TOKEN comes from "+shown+".") {
+		t.Errorf("same-source: err = %v, want it to name %s", err, shown)
+	}
+}
+
+// TestResolveMissingWithNoHome: with no credentials file possible, the error
+// offers only the places that exist, and one missing setting is "it".
+func TestResolveMissingWithNoHome(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", "")
+	t.Setenv(urlEnv, "https://wiki")
+	t.Setenv(tokenEnv, "secret")
+	_, err := Resolve("")
+	want := "missing Confluence username (CONFLUENCE_USERNAME): set it in the environment, or a file named by --env-file"
+	if err == nil || err.Error() != want {
+		t.Errorf("err = %v, want %q", err, want)
+	}
+}
+
 // TestResolveReadsNoDotenv: a .env in the working directory, or at the root
 // of the project the working directory is in, is never read (#188). A checkout
 // must not be able to supply credentials.
@@ -325,7 +390,9 @@ func TestResolveIgnoresAMalformedProjectFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(root)
-	if _, err := Resolve(writeEnvFile(t, full)); err != nil {
+	// Not through --env-file: that skipped discovery even before #188.
+	withCredentialsFile(t, full)
+	if _, err := Resolve(""); err != nil {
 		t.Errorf("Resolve: %v", err)
 	}
 }
