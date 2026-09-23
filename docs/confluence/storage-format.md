@@ -34,6 +34,22 @@ would churn ids forever.
 So the guarantee is **semantic**, not byte-for-byte, which is also the
 converter's stated design target.
 
+### A page from the editor does not survive an export and republish byte-for-byte
+
+**Verified 2026-09-05**, exporting a live page the editor had written and
+publishing the Markdown back. The stored storage changed in two ways, neither of
+which changes what renders:
+
+- The editor writes a list item as `<li><p>text</p></li>`; the converter writes
+  `<li>text</li>`.
+- The editor's TOC macro carries `ac:local-id`, `ac:macro-id` and `data-layout`
+  attributes; the converter's canonical form has none of them.
+
+This is why L5 (`roundtrip-from-confluence`, [../guarantees.md](../guarantees.md))
+promises the page keeps its *meaning* rather than its bytes. The Markdown side
+is stricter: after one cycle it stops changing, which
+`TestRoundTripMarkdownIsAFixedPoint` checks over every `storage2md` case.
+
 ### Confluence strips HTML comments on write
 
 **Verified 2026-09-13.** A comment does not survive the write at all — it is not
