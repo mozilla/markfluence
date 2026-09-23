@@ -25,7 +25,32 @@ func TestMain(m *testing.M) {
 	// Backoff assertions want exact durations; TestJitterDelay exercises the
 	// real spreading function directly.
 	jitter = func(d time.Duration) time.Duration { return d }
-	os.Exit(m.Run())
+	os.Exit(runIsolated(m))
+}
+
+// runIsolated is clienttest.RunIsolated, which this package cannot import:
+// clienttest imports client, and these tests are package client. It hides the
+// developer's own credentials from every test here.
+func runIsolated(m *testing.M) int {
+	home, err := os.MkdirTemp("", "markfluence-test-home-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "client tests:", err)
+		return 1
+	}
+	defer func() { _ = os.RemoveAll(home) }()
+	for k, v := range map[string]string{"HOME": home, "XDG_CONFIG_HOME": filepath.Join(home, ".config")} {
+		if err := os.Setenv(k, v); err != nil {
+			fmt.Fprintln(os.Stderr, "client tests:", err)
+			return 1
+		}
+	}
+	for _, k := range []string{urlEnv, usernameEnv, tokenEnv, cloudIDEnv} {
+		if err := os.Unsetenv(k); err != nil {
+			fmt.Fprintln(os.Stderr, "client tests:", err)
+			return 1
+		}
+	}
+	return m.Run()
 }
 
 // scripted is a test server that returns canned responses in order and records
