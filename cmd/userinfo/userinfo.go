@@ -18,39 +18,40 @@ import (
 // Cmd is the user-info command.
 var Cmd = &cobra.Command{
 	Use:   "user-info [ACCOUNT_ID]",
-	Short: "Print who the credentials belong to, or who an account id names",
-	Long: "With no argument, print the account the configured credentials belong\n" +
-		"to. This is the question to ask first when a publish lands somewhere\n" +
-		"unexpected, a token is refused, or a page's history names an account you\n" +
-		"do not recognise: markfluence otherwise cannot tell you who it is.\n\n" +
-		"With an ACCOUNT_ID, print that account instead. An id, never a name --\n" +
-		"resolving a name is markfluence user-find. The two see different things,\n" +
-		"which is why both exist: user-find searches a directory that cannot see\n" +
-		"deactivated accounts at all, while this route resolves one, so an id from\n" +
-		"an old page names its person here and nowhere else.\n\n" +
-		"'type' tells a person (atlassian) from a service account (app), which is\n" +
-		"most of why permissions surprise people, and 'external'/'guest' name a\n" +
-		"restricted account directly.\n\n" +
-		"With no argument it also surveys every space those credentials can see,\n" +
-		"reporting where they may create pages and which they administer. That\n" +
-		"survey is a walk of the space directory rather than one request, so the\n" +
-		"no-argument form takes a few seconds.\n\n" +
-		"It is absent from the ACCOUNT_ID form, and not by omission: the route\n" +
-		"answers for the authenticated account and takes no account id, so\n" +
-		"reporting it beside somebody else's name would attribute your access to\n" +
-		"them. Asking where another person may publish means reading every\n" +
-		"space's permission grants and resolving them against their group\n" +
-		"memberships -- over a thousand requests, and a local reimplementation of\n" +
-		"Confluence's permission rules.\n\n" +
-		"'write access' means creating pages in a space: permission to edit an\n" +
-		"existing page is not a space grant at all, so a space listed here may\n" +
-		"still refuse a particular page.\n\n" +
-		"Read-only. Nothing is written to Confluence or to disk.",
+	Short: "Show who the credentials belong to, or who an account id names",
+	Long: "With no argument, show the account that the configured credentials belong to.\n" +
+		"Ask this first when:\n\n" +
+		"  - a publish goes to an unexpected place\n" +
+		"  - Confluence refuses a token\n" +
+		"  - the history of a page names an account that you do not know\n" +
+		" No other\n" +
+		"markfluence command can tell you who you are.\n\n" +
+		"With an ACCOUNT_ID, show that account. Give an id, and not a name. To find an\n" +
+		"account by name, use markfluence user-find. The two commands see different\n" +
+		"things. user-find searches a directory that cannot see deactivated accounts.\n" +
+		"user-info can resolve a deactivated account. Thus an id from an old page names\n" +
+		"its person here, and nowhere else.\n\n" +
+		"\"type\" tells a person (atlassian) from a service account (app). That\n" +
+		"difference explains most surprises about permissions. \"external\" and \"guest\"\n" +
+		"show a restricted account.\n\n" +
+		"With no argument, user-info also surveys every space that the credentials can\n" +
+		"see. It shows where they can create pages, and which spaces they administer.\n" +
+		"The survey walks the directory of spaces, so this form takes a few seconds.\n\n" +
+		"The ACCOUNT_ID form has no survey, on purpose. Confluence answers the survey\n" +
+		"only for the authenticated account, and takes no account id. If user-info\n" +
+		"showed it next to the name of a different person, it would give them your\n" +
+		"access. To find where a different person can publish, markfluence would have\n" +
+		"to read the grants of every space and resolve their groups. That is more than a\n" +
+		"thousand requests.\n\n" +
+		"\"write access\" means that the account can create pages in a space. Permission\n" +
+		"to edit a page that exists is not a space grant at all. Thus a space in this\n" +
+		"list can still refuse one page.\n\n" +
+		"user-info only reads. It writes nothing to Confluence or to disk.",
 	Example: "  # Who am I, and where can these credentials publish?\n" +
 		"  markfluence user-info\n\n" +
 		"  # Who is this account id on an old page?\n" +
 		"  markfluence user-info 60c36d0718e9f60071326951\n\n" +
-		"  # Just the spaces, as data\n" +
+		"  # Print only the spaces, as data\n" +
 		"  markfluence user-info --json | jq '.results[0].spaces'",
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completion.Values(),

@@ -59,5 +59,5 @@ markfluence [flags]
 * [markfluence space-info](markfluence_space-info.md)	 - Show the metadata of a Confluence space
 * [markfluence update](markfluence_update.md)	 - Publish one or more Markdown files to Confluence pages
 * [markfluence user-find](markfluence_user-find.md)	 - Find the account id of a Confluence user, and the Markdown to mention them
-* [markfluence user-info](markfluence_user-info.md)	 - Print who the credentials belong to, or who an account id names
+* [markfluence user-info](markfluence_user-info.md)	 - Show who the credentials belong to, or who an account id names
 
