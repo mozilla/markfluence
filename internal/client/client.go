@@ -103,9 +103,9 @@ type ConfluenceClient struct {
 type Config struct {
 	// SiteURL is the Confluence site, e.g. https://your-org.atlassian.net.
 	SiteURL string
-	// CloudID, when set, routes requests through the platform API gateway. Leave
-	// it empty for site-domain requests, which is what an unscoped personal token
-	// and any Data Center site need.
+	// CloudID, when set, routes requests through the platform API gateway, which
+	// a scoped token requires and an unscoped personal token also accepts. Leave
+	// it empty for site-domain requests.
 	CloudID string
 	// Username is the account the token belongs to (basic auth).
 	Username string
@@ -205,20 +205,34 @@ func (e *HTTPError) Error() string {
 // would send someone to reissue a credential that is working fine.
 func (e *HTTPError) hint() string {
 	switch {
-	case e.StatusCode == http.StatusUnauthorized && strings.Contains(e.Body, bodyScopeMismatch):
+	case e.ScopeMismatch():
 		return "hint: the API token is valid but carries no scope for this call. Scopes are fixed " +
 			"when a token is issued, so this needs a new token rather than an edit to this one -- " +
 			"the list markfluence needs is in README.md."
-	case e.StatusCode == http.StatusUnauthorized && !e.viaGateway() && !jsonBody(e.Body):
+	case e.SiteRejectedAuth():
 		return "hint: the site domain rejected this before it reached the API. A scoped " +
 			"(service-account) token has to go through the platform gateway -- set " +
-			"CONFLUENCE_CLOUD_ID."
+			"CONFLUENCE_CLOUD_ID, or run markfluence credentials-init, which finds it."
 	case e.RejectedCredential():
 		return "hint: the credentials were rejected. Check CONFLUENCE_USERNAME and " +
 			"CONFLUENCE_TOKEN -- this is what a wrong or revoked token returns, and on a v2 route " +
 			"it arrives as a 404 rather than an auth status."
 	}
 	return ""
+}
+
+// ScopeMismatch reports whether the gateway refused a call the token carries no
+// scope for. The token authenticated -- this is not a bad credential, and a
+// caller deciding whether credentials work must not read it as one.
+func (e *HTTPError) ScopeMismatch() bool {
+	return e.StatusCode == http.StatusUnauthorized && strings.Contains(e.Body, bodyScopeMismatch)
+}
+
+// SiteRejectedAuth reports whether the site domain refused the request before
+// it reached the API: a 401 that is a servlet's HTML page rather than the API's
+// JSON. That is what a scoped token sent without a cloud ID gets.
+func (e *HTTPError) SiteRejectedAuth() bool {
+	return e.StatusCode == http.StatusUnauthorized && !e.viaGateway() && !jsonBody(e.Body)
 }
 
 // RejectedCredential reports whether the response is the API refusing the
