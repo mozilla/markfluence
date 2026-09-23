@@ -334,7 +334,7 @@ func TestReportSettingsSaysNothingForAMarkerWithNoSettings(t *testing.T) {
 }
 
 // Loading must not print. It happens once per root for two unrelated reasons
-// -- a markdown file's root, and the separate walk from the working directory
+// -- a Markdown file's root, and the separate walk from the working directory
 // that only locates .env -- so a line emitted during a load described
 // whichever root came first and fired for commands (info, search) that read no
 // settings at all.

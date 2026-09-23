@@ -511,7 +511,7 @@ func TestRunInvalidProjectPageWidthIsBroken(t *testing.T) {
 	if !strings.Contains(out, "invalid page_width") {
 		t.Errorf("output = %q, want the invalid-width message", out)
 	}
-	// The message has to name the project file, not the markdown file, which
+	// The message has to name the project file, not the Markdown file, which
 	// has no page_width in it at all.
 	if !strings.Contains(out, "markfluence.yaml") {
 		t.Errorf("output = %q, want it to name markfluence.yaml", out)

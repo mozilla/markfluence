@@ -37,7 +37,7 @@ const (
 //
 // It is load-bearing rather than tidy, and for the root it marks rather than
 // for anything it says. Without a project file the documentation
-// root falls back to a markdown file's own directory, so dest/home/child.md
+// root falls back to a Markdown file's own directory, so dest/home/child.md
 // would take dest/home/ as its root -- and a shared asset reconstructed at
 // dest/assets/brand.png then sits above that root and republishes as
 // IMAGE BROKEN. A single-page export needs none: its file is at dest, so the

@@ -45,7 +45,7 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:   "markfluence",
-	Short: "Publish markdown to Confluence",
+	Short: "Publish Markdown to Confluence",
 	Long: "markfluence publishes Markdown files to Confluence pages, and gets pages back as\n" +
 		"Markdown.\n\n" +
 		"It needs a site URL, a username, and an API token. It reads each one from a flag\n" +

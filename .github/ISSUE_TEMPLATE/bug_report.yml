@@ -62,7 +62,7 @@ body:
   - type: textarea
     id: markdown
     attributes:
-      label: The markdown, if it's relevant
+      label: The Markdown, if it's relevant
       description: >
         For a conversion or publishing bug, the smallest file that shows it —
         frontmatter included, since `page_id`, `space`, and `parent` change what

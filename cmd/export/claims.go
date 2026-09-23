@@ -19,7 +19,7 @@ import (
 // two pages disagreeing about what that path holds, which is not.
 type destClaims struct {
 	by map[string]claim
-	// pages is every path this run will write a page's markdown to, reserved
+	// pages is every path this run will write a page's Markdown to, reserved
 	// before anything is written. A recorded attachment path is a server-side
 	// string that can name any file under dest, including one of these, and the
 	// parent's attachments are written before its children are exported -- so
@@ -37,7 +37,7 @@ func newClaims() *destClaims {
 	return &destClaims{by: map[string]claim{}, pages: map[string]string{}}
 }
 
-// reservePage records that pageID's markdown will be written to dest.
+// reservePage records that pageID's Markdown will be written to dest.
 func (d *destClaims) reservePage(dest, pageID string) { d.pages[dest] = pageID }
 
 // claim records that page is about to write dest for attachment a, and reports

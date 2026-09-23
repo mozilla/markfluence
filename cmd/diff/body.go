@@ -99,7 +99,7 @@ const headerLines = 2
 // The split is positional and has to be, which is the bug this replaced: a
 // *removed* line is "-" followed by its content, so a body line beginning "--"
 // arrives as "---..." and a prefix test reads it as a file label -- leaving it
-// out of the counts and colouring it as one. A markdown thematic break and any
+// out of the counts and colouring it as one. A Markdown thematic break and any
 // line starting with a long CLI flag both do it, which is most of this
 // repository's own documentation.
 func bodyLines(text string) []string {

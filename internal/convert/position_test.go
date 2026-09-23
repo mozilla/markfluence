@@ -1,8 +1,8 @@
 package convert_test
 
-// Where an attachment's markdown destination points, given where the page's file
+// Where an attachment's Markdown destination points, given where the page's file
 // sits. The four rows of _plans/029 §Layout, which is the table the L5
-// round-trip rests on: a recorded path is relative to the root while a markdown
+// round-trip rests on: a recorded path is relative to the root while a Markdown
 // destination is relative to the file carrying it, and those coincide only for a
 // page at the top level.
 

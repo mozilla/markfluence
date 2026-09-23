@@ -58,7 +58,7 @@ type Options struct {
 	// It exists because an attachment name is unique per *page* and not per
 	// space, so fifty Confluence-native pages can each carry a diagram.png. Left
 	// flat, they would all resolve to one file. It must match the AttachmentDir
-	// the markdown was rendered with (convert.StorageOptions), or the file lands
+	// the Markdown was rendered with (convert.StorageOptions), or the file lands
 	// somewhere the image does not point.
 	Dir string
 
@@ -80,7 +80,7 @@ type Options struct {
 //
 // An attachment with no recorded source keeps its stored name, placed under
 // Options.Dir -- the directory named after its page -- because a name is unique
-// per page and not per space. convert.sourceFor points the markdown at exactly
+// per page and not per space. convert.sourceFor points the Markdown at exactly
 // that path.
 //
 // This check is *lexical*, and by the time a root-relative model records a
@@ -120,7 +120,7 @@ func Resolve(a client.Attachment, opts Options) (string, error) {
 			rel = src
 		} else {
 			// None recorded: page-scoped, so two pages' same-named native
-			// attachments cannot collide. convert.sourceFor points the markdown
+			// attachments cannot collide. convert.sourceFor points the Markdown
 			// at the same place.
 			rel = path.Join(opts.Dir, a.Title)
 		}

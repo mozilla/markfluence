@@ -149,7 +149,7 @@ changelog:
 homebrew_casks:
   - name: markfluence
     homepage: "https://github.com/mozilla/markfluence"
-    description: "CLI for publishing and manipulating Confluence pages from markdown"
+    description: "CLI for publishing and manipulating Confluence pages from Markdown"
     directory: Casks
     # "auto" skips the cask for a prerelease tag, so an RC can never reach
     # `brew install` users. Same standing as release.prerelease above:

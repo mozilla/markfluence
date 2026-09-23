@@ -1,6 +1,6 @@
 package convert
 
-// attachname.go owns the mapping between a markdown image's source path and the
+// attachname.go owns the mapping between a Markdown image's source path and the
 // Confluence attachment name it is published under: the name is the path's base
 // name.
 //
@@ -36,7 +36,7 @@ import (
 	"strings"
 )
 
-// AttachmentFilename derives the Confluence attachment name for a markdown image
+// AttachmentFilename derives the Confluence attachment name for a Markdown image
 // src: the base name of the file, and nothing else. The src is normalized first
 // so that "a/./x.png" and "a/x.png" agree, and so a name is never derived from a
 // path that was absolute.
@@ -61,11 +61,11 @@ func AttachmentFilename(src string) string {
 // Recording it verbatim lets it disagree with what publishing the same image
 // would record -- and an absolute one is worse than untidy, since Resolve
 // refuses an absolute recorded path outright while sourceFor falls back to the
-// page directory, so the file could never be restored where the markdown says
+// page directory, so the file could never be restored where the Markdown says
 // it is.
 func NormalizeSource(src string) string { return normalizeSrc(src) }
 
-// normalizeSrc reduces a markdown image src to a clean relative path: "./a/x.png"
+// normalizeSrc reduces a Markdown image src to a clean relative path: "./a/x.png"
 // and "a/./x.png" both become "a/x.png". A leading "/" is dropped because image
 // resolution joins src onto the page's directory anyway, so an absolute-looking
 // src was never actually absolute -- and dropping it keeps AttachmentFilename

@@ -2,7 +2,7 @@ package convert
 
 import "github.com/mozilla/markfluence/internal/attachref"
 
-// ConfluencePage is the result of converting a markdown body to Confluence
+// ConfluencePage is the result of converting a Markdown body to Confluence
 // storage format: the storage-format HTML plus the local images the body
 // references. Fields are ordered so the JSON encoding reads with sorted keys.
 type ConfluencePage struct {

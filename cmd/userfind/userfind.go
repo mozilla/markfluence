@@ -1,5 +1,5 @@
 // Package userfind implements the `markfluence user-find` command: resolve a
-// person's name to the account id a mention needs, and to the markdown line
+// person's name to the account id a mention needs, and to the Markdown line
 // that mentions them.
 package userfind
 

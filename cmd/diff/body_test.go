@@ -87,7 +87,7 @@ func TestBodyLinesDropsExactlyTheLabels(t *testing.T) {
 	}
 }
 
-// A body line that begins with two dashes -- a markdown thematic break, a long
+// A body line that begins with two dashes -- a Markdown thematic break, a long
 // CLI flag, both of which this repository's own docs are full of -- was
 // classified as a file label: left out of the counts and coloured as one.
 func TestDashedBodyLinesAreCountedAndColoured(t *testing.T) {

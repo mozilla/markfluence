@@ -200,7 +200,7 @@ func (c Config) declared() []string {
 //
 // It is an explicit call from the command layer rather than a side effect of
 // loading, and that placement is the point. Loading happens once per root for
-// two unrelated reasons -- a markdown file's root, and the separate walk from
+// two unrelated reasons -- a Markdown file's root, and the separate walk from
 // the working directory that only locates .env -- so printing during a load
 // described whichever root came first and fired for commands that read no
 // settings at all (`info`, `search`). A command calls this when it has a cache

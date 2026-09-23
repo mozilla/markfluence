@@ -15,7 +15,7 @@ import (
 // the last path segment is, and the only real validation is asking the server,
 // which is what the caller's warning does.
 
-// mentionAccountID reports the account id a markdown destination mentions, or
+// mentionAccountID reports the account id a Markdown destination mentions, or
 // "" when the destination is not a profile URL.
 //
 // Matching is on the **path**, ignoring host and query, because several

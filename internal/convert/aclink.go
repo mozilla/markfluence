@@ -1,13 +1,13 @@
 package convert
 
 // aclink.go converts <ac:link> -- the Confluence editor's internal link -- back
-// to markdown.
+// to Markdown.
 //
-// One rule decides every form: convert when the markdown republishes to a link
+// One rule decides every form: convert when the Markdown republishes to a link
 // resolving to the same target, pass the storage through when it would not.
 // Passthrough is not a failure mode here. MdToConfluence's ac:/ri: shield
 // republishes raw storage byte-identical, so a mention or an attachment link
-// survives a round trip intact where a markdown link would quietly break. What
+// survives a round trip intact where a Markdown link would quietly break. What
 // each form looks like in the wild, with counts, is in
 // docs/confluence/links-and-anchors.md.
 
@@ -34,7 +34,7 @@ type PageLinkTarget struct {
 // Every field is optional, and each one absent degrades to a worse rendering
 // rather than an error -- a read is worth completing without any of them.
 type StorageOptions struct {
-	// Sources maps an attachment name to the markdown image path it was
+	// Sources maps an attachment name to the Markdown image path it was
 	// published from, as recorded on the attachment when markfluence uploaded
 	// it. A nil map, or a name missing from it, falls back to decoding the
 	// attachment name: exact for names markfluence created, a best-effort guess
@@ -71,11 +71,11 @@ type StorageOptions struct {
 	// nothing from the caller's configuration -- see renderUserMention.
 	UserNames map[string]string
 
-	// PageDir is where the page's markdown file sits, relative to the root of
+	// PageDir is where the page's Markdown file sits, relative to the root of
 	// whatever is being written -- "" for a file at that root, "home" for
 	// dest/home/child.md's parent, and so on, in slash form.
 	//
-	// It exists because a markdown destination is resolved relative to the file
+	// It exists because a Markdown destination is resolved relative to the file
 	// that carries it, while an attachment's recorded path is relative to the
 	// root. Those coincide only for a file at the root, which is the only case
 	// single-page export ever produced. Writing a tree ends the coincidence: a
@@ -188,7 +188,7 @@ func walkNodes(n *snode, fn func(*snode)) {
 }
 
 // headingSlugs maps each heading's Confluence anchor to its GitHub one, which is
-// how a same-page <ac:link ac:anchor="..."> recovers a markdown fragment.
+// how a same-page <ac:link ac:anchor="..."> recovers a Markdown fragment.
 //
 // The slug cannot be inverted -- linkindex.ConfluenceSlug turns both a space and
 // a hyphen into "-", so "DOM-Security-Team" could have come from either -- but
@@ -207,7 +207,7 @@ func headingSlugs(root *snode) map[string]string {
 	return out
 }
 
-// renderACLink renders an <ac:link> as a markdown link where the link would
+// renderACLink renders an <ac:link> as a Markdown link where the link would
 // still resolve after being republished, and as raw storage where it would not.
 func (r *mdRenderer) renderACLink(n *snode) string {
 	anchor := n.attrs["ac:anchor"]
@@ -270,14 +270,14 @@ func (r *mdRenderer) renderSpaceLink(n, target *snode) string {
 }
 
 // mentionHost is where a user profile lives. Atlassian Home, not the Confluence
-// site -- and that is the finding the markdown spelling rests on, not a detail.
+// site -- and that is the finding the Markdown spelling rests on, not a detail.
 // Confluence's own renderer still emits {site}/wiki/people/{accountId}, and
 // that URL no longer resolves usefully in a browser: it bounces through a
 // separate login and lands on a blank page. This one works, with no cloudId
 // parameter needed (docs/confluence/links-and-anchors.md).
 //
 // A consequence worth knowing before changing it: because the URL names no
-// site, a mention in markdown carries no site either. Nothing here depends on
+// site, a mention in Markdown carries no site either. Nothing here depends on
 // SiteURL, on CONFLUENCE_CLOUD_ID, or on which instance the page came from, so
 // the same mention converts identically everywhere -- which is also what lets
 // `check` recognise one with no client at all.
@@ -290,7 +290,7 @@ func MentionURL(accountID string) string {
 	return mentionHost + "/people/" + accountID
 }
 
-// MentionMarkdown is the whole markdown line a mention renders to: the profile
+// MentionMarkdown is the whole Markdown line a mention renders to: the profile
 // link with an "@" on its text.
 //
 // Exported for `user-find` (#143), which prints it as the paste-ready answer to
@@ -326,7 +326,7 @@ func MentionMarkdown(displayName, accountID string) string {
 // hand-edited URL. That is exactly the case Confluence renders as
 // "@Unlicensed user", verified via ADF. Since the only ids that land here are
 // the ones the page will label that way, matching the wording means the
-// markdown and the rendered page agree instead of offering a reader two
+// Markdown and the rendered page agree instead of offering a reader two
 // different words for one thing.
 //
 // The earlier value was "Unknown user", argued on the premise that a
@@ -379,7 +379,7 @@ func (r *mdRenderer) renderAnchorLink(n *snode, anchor string) string {
 // ac:plain-text-link-body holds CDATA -- and both occur on real pages.
 //
 // Only the *raw* sources are escaped, and which is which is the whole point of
-// the split below. An ac:link-body has already been rendered to markdown by
+// the split below. An ac:link-body has already been rendered to Markdown by
 // renderInlineChildren, so escaping it would turn a bold link body into a
 // literal "\*\*bold\*\*". The CDATA body and the fallback are plain text
 // straight off the server -- a page title, a space key, an anchor -- and a "]"
@@ -398,7 +398,7 @@ func (r *mdRenderer) acLinkText(n *snode, fallback string) string {
 	return escapeLinkText(fallback)
 }
 
-// inlineTextForLink renders a node's children as a markdown link's text,
+// inlineTextForLink renders a node's children as a Markdown link's text,
 // escaping the result when it is nothing but plain text.
 //
 // The distinction matters both ways, and an earlier version got it wrong in one
@@ -421,7 +421,7 @@ func (r *mdRenderer) inlineTextForLink(n *snode) string {
 }
 
 // onlyText reports whether every descendant of n is a text node, so rendering
-// it produced no markdown syntax of its own.
+// it produced no Markdown syntax of its own.
 func onlyText(n *snode) bool {
 	for _, k := range n.kids {
 		if k.name != "" || !onlyText(k) {
@@ -431,14 +431,14 @@ func onlyText(n *snode) bool {
 	return true
 }
 
-// escapeLinkText makes plain text safe to use as a markdown link's text.
+// escapeLinkText makes plain text safe to use as a Markdown link's text.
 //
 // The set is deliberately the one that *breaks* a link rather than everything
-// markdown reads specially: an unescaped "]" ends the text early and leaves the
+// Markdown reads specially: an unescaped "]" ends the text early and leaves the
 // rest of the line as literal junk, and a backslash has to go first or it would
 // escape the escapes. A title like "*Foo*" is a different problem -- it renders
 // as emphasis instead of as asterisks, losing fidelity without breaking the
-// link -- and is knowingly not handled here, since escaping every markdown
+// link -- and is knowingly not handled here, since escaping every Markdown
 // indicator in every recovered title is a larger change with its own round-trip
 // consequences.
 //
@@ -451,7 +451,7 @@ func escapeLinkText(s string) string {
 	return strings.ReplaceAll(s, "]", `\]`)
 }
 
-// mdLink renders an inline markdown link, falling back to showing the
+// mdLink renders an inline Markdown link, falling back to showing the
 // destination when there is no text for it.
 func mdLink(text, dest string) string {
 	if text == "" {

@@ -81,7 +81,7 @@ func TestLocalAttachmentsSourceIsRootRelative(t *testing.T) {
 }
 
 // TestLocalAttachmentsNameTakesAPath is the point of --name taking a path: the
-// user writes the path the markdown uses and markfluence produces the
+// user writes the path the Markdown uses and markfluence produces the
 // attachment a publish of ![](assets/x.png) would resolve to -- the base name,
 // with the path itself kept as the recorded source.
 func TestLocalAttachmentsNameTakesAPath(t *testing.T) {
@@ -104,7 +104,7 @@ func TestLocalAttachmentsNameTakesAPath(t *testing.T) {
 // the form the basename scheme gives it: the stored name is exactly the base
 // name of the recorded source. If the two could disagree, a later publish would
 // upload a second attachment while a restoring download put this one where the
-// markdown never references it.
+// Markdown never references it.
 //
 // It replaces an invariant stated the other way round -- that the source is
 // always a decode of the name -- which held only while the name carried the
@@ -227,7 +227,7 @@ func TestForcedRewritesSkips(t *testing.T) {
 // publishing the same image would record. An absolute one is the case that
 // matters: Resolve refuses an absolute recorded path outright while sourceFor
 // falls back to the page directory, so the file could never be restored where
-// the markdown says it is.
+// the Markdown says it is.
 func TestLocalAttachmentsNormalizesTheNamePath(t *testing.T) {
 	root := t.TempDir()
 	f := writeFile(t, root, "f.png")

@@ -64,7 +64,7 @@ type storageRenderer struct {
 	// a mention -- so renderLink's matching leaving call knows no closing
 	// "</a>" is due. Per-node transient state, the same shape as seen above --
 	// safe because goldmark never renders two Link nodes concurrently
-	// (markdown has no nested links).
+	// (Markdown has no nested links).
 	//
 	// One flag rather than one per replacement kind: the leaving call only ever
 	// needs to know whether a tag was opened, and a second flag would be a

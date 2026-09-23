@@ -16,7 +16,7 @@ import (
 const storage2mdDir = "testdata/storage2md"
 
 // TestStorageToMarkdown runs every case under testdata/storage2md: an input.storage
-// fragment converted to markdown and exact-matched against its output.md golden.
+// fragment converted to Markdown and exact-matched against its output.md golden.
 // Regenerate goldens with `go test ./internal/convert -run TestStorageToMarkdown -update`.
 func TestStorageToMarkdown(t *testing.T) {
 	entries, err := os.ReadDir(storage2mdDir)
@@ -87,7 +87,7 @@ func TestStorageToMarkdownAcceptsForwardCorpus(t *testing.T) {
 	}
 }
 
-// TestRoundTripStableCallouts checks that markdown constructs whose forward
+// TestRoundTripStableCallouts checks that Markdown constructs whose forward
 // mapping is lossless survive md -> storage -> md unchanged.
 func TestRoundTripStableCallouts(t *testing.T) {
 	src := strings.Join([]string{
@@ -233,7 +233,7 @@ func TestStorageToMarkdownJoinsMultilineCells(t *testing.T) {
 	}
 
 	// The <br> form must itself be stable: publishing it back and exporting
-	// again should reproduce the same markdown (L6, roundtrip-from-disk).
+	// again should reproduce the same Markdown (L6, roundtrip-from-disk).
 	md, err := frontmatter.Parse("main.md", got)
 	if err != nil {
 		t.Fatal(err)
@@ -255,14 +255,14 @@ func TestStorageToMarkdownJoinsMultilineCells(t *testing.T) {
 // TestStorageToMarkdownPassesThroughListsInCells checks that a <ul>/<ol>
 // found directly in a table cell round-trips as raw HTML rather than being
 // rendered as inline content -- a GFM table row is exactly one physical line,
-// so a real list (one line per item) can't be expressed as markdown list
+// so a real list (one line per item) can't be expressed as Markdown list
 // syntax inside a cell at all, and rendering it the way ordinary inline
 // content is ran every item together with no separator: "<ul><li>one</li>
 // <li>two</li></ul>" became "onetwo".
 func TestStorageToMarkdownPassesThroughListsInCells(t *testing.T) {
 	// The <li><p>...</p></li> form is what Confluence's own editor writes for
 	// a list authored inside a cell in the browser; markfluence's own write
-	// side (a <ul> typed directly into a markdown cell) never adds the <p>,
+	// side (a <ul> typed directly into a Markdown cell) never adds the <p>,
 	// since goldmark's raw HTML passthrough carries it through unchanged.
 	// The third cell's link href carries a literal "|": code review on the
 	// original fix found that reusing cellTexts's blanket "|" -> "\|" escape
@@ -289,7 +289,7 @@ func TestStorageToMarkdownPassesThroughListsInCells(t *testing.T) {
 	}
 
 	// The passthrough form must itself be stable end to end: publishing the
-	// exported markdown must reproduce the exact storage read in above.
+	// exported Markdown must reproduce the exact storage read in above.
 	md, err := frontmatter.Parse("main.md", got)
 	if err != nil {
 		t.Fatal(err)
@@ -370,12 +370,12 @@ func TestStorageToMarkdownCoalescesSplitMarks(t *testing.T) {
 }
 
 // TestRoundTripPassthrough verifies that the raw-storage passthrough cases
-// (column layouts, unknown macros, ADF extensions) survive markdown -> storage
-// -> markdown unchanged -- the whole point of emitting them in a form
+// (column layouts, unknown macros, ADF extensions) survive Markdown -> storage
+// -> Markdown unchanged -- the whole point of emitting them in a form
 // MdToConfluence re-publishes verbatim.
 //
 // The list is hardcoded rather than every storage2md case, because only these
-// are passthrough: a case whose output is ordinary markdown is covered by its
+// are passthrough: a case whose output is ordinary Markdown is covered by its
 // own golden.
 func TestRoundTripPassthrough(t *testing.T) {
 	for _, name := range []string{"layout", "unknown-macros", "excerpt", "aclink", "adf-panel"} {
@@ -465,7 +465,7 @@ func TestRoundTripImageSourcesViaRecordedPath(t *testing.T) {
 	}
 }
 
-// imageDests pulls the destinations out of the markdown image lines, in order.
+// imageDests pulls the destinations out of the Markdown image lines, in order.
 func imageDests(md string) []string {
 	var out []string
 	for _, line := range strings.Split(md, "\n") {
@@ -502,7 +502,7 @@ func TestStorageToMarkdownPrefersRecordedSource(t *testing.T) {
 	// whose name cannot be decoded faithfully (one a human uploaded, or one from
 	// an older markfluence) still resolve to the right path. The space in the
 	// path is encoded on the way out: a destination is a URL, and a bare space
-	// would end it, leaving markdown that is not an image at all.
+	// would end it, leaving Markdown that is not an image at all.
 	sources := map[string]string{"assets%2Fx.png": "images/original name.png"}
 	got, err = convert.StorageToMarkdown(in, convert.StorageOptions{Sources: sources})
 	if err != nil {
@@ -547,7 +547,7 @@ func TestStorageToMarkdownRefusesAbsoluteSource(t *testing.T) {
 // the prefix, so the HTML void element "link" swallowed <ac:link>, and the real
 // </ac:link> then hit an empty stack: "unexpected end element </link>".
 //
-// The assertion is on the error, not the markdown, because the markdown is what
+// The assertion is on the error, not the Markdown, because the Markdown is what
 // the mapping tests cover and only the parse is at stake here.
 func TestStorageToMarkdownParsesNamespacedLink(t *testing.T) {
 	// The real shape, from page 2820571155.

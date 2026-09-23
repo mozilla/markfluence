@@ -10,7 +10,7 @@ import (
 )
 
 // testRoot builds a *project.Root for tests that call MdToConfluence but don't
-// exercise image/root behavior themselves -- their markdown has no local image
+// exercise image/root behavior themselves -- their Markdown has no local image
 // references, so any real, existing directory is a valid root. dir defaults to
 // the current directory when "".
 func testRoot(t *testing.T, dir string) *project.Root {

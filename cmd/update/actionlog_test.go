@@ -15,7 +15,7 @@ import (
 	"github.com/mozilla/markfluence/internal/project"
 )
 
-// inProject writes a markdown file under a directory that is a real project
+// inProject writes a Markdown file under a directory that is a real project
 // root, which is what makes a log exist at all.
 func inProject(t *testing.T, body string) (dir, path string) {
 	t.Helper()

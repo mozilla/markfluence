@@ -43,7 +43,7 @@ in the Confluence UI and reading the property back.
 
 An older `fixed` value also appears in the wild and is surfaced as `narrow`.
 
-Unset or blank `page_width` means `max`: the markdown file is the source of
+Unset or blank `page_width` means `max`: the Markdown file is the source of
 truth for width. Note the asymmetry in `update` — it asserts the width only when
 one was set by flag or frontmatter, and otherwise leaves the live page alone, so
 a page whose width was set by hand in the UI is not silently overwritten.

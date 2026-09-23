@@ -52,7 +52,7 @@ the destination directory. A path that escapes that clamp is an arbitrary file
 write driven by a Confluence page you may not control.
 
 **Reading files outside the documentation root.** When publishing, image paths
-resolve relative to the markdown file and are bounded by the working directory.
+resolve relative to the Markdown file and are bounded by the working directory.
 A path that escapes that bound would publish a local file the author never meant
 to expose.
 
@@ -66,7 +66,7 @@ page.
   user whose token it's given, on purpose. "The tool can edit pages my token can
   edit" is the design.
 - **Raw storage markup passing through to a page.** Pasting `<ac:…>` / `<ri:…>`
-  markup into markdown and having it published verbatim is a documented feature.
+  markup into Markdown and having it published verbatim is a documented feature.
   Publishing your own macro to your own page isn't injection.
 - **Confluence's own permission, sharing, or authentication behavior.** Report
   that to Atlassian.

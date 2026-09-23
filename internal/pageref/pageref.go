@@ -3,7 +3,7 @@
 //
 // Three spellings are accepted, because all three are things a user naturally
 // has to hand: a bare numeric id, a Confluence page or folder URL (pasted from a
-// browser), and a markdown file that carries a page_id. Every command that
+// browser), and a Markdown file that carries a page_id. Every command that
 // takes a page argument accepts all three, so the meaning of that argument does
 // not depend on which command it was given to.
 //
@@ -78,7 +78,7 @@ var pagePathRE = regexp.MustCompile(`/(?:pages|folder)/(\d+)(?:/|$)`)
 
 // Resolve turns a command-line page argument into a page id.
 //
-// An existing file is tried first, so a numerically-named markdown file is read
+// An existing file is tried first, so a numerically-named Markdown file is read
 // as a file rather than mistaken for an id.
 func Resolve(arg string) (string, error) {
 	if arg == "" {
@@ -107,7 +107,7 @@ func Resolve(arg string) (string, error) {
 		return id, nil
 	}
 	return "", fmt.Errorf(
-		"%q is not a numeric id, a Confluence page or folder URL, or a markdown file with a page_id", arg)
+		"%q is not a numeric id, a Confluence page or folder URL, or a Markdown file with a page_id", arg)
 }
 
 // fromURL pulls a content id out of a Confluence URL: the modern

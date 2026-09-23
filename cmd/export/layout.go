@@ -25,7 +25,7 @@ type placement struct {
 	// childDir holds this node's children and its unrecorded attachments: dir
 	// plus its slug. A folder has one of these and nothing else.
 	childDir string
-	// file is the markdown file, relative to dest. Empty for a folder.
+	// file is the Markdown file, relative to dest. Empty for a folder.
 	file string
 	// parentFile is what this node's parent: should say: a path to the parent's
 	// own .md, relative to this node's dir. Empty when the parent is not an
@@ -47,7 +47,7 @@ type rootRef struct {
 	ID string
 	// Title names the root when it has a file.
 	Title string
-	// File is whether the root is written as markdown. A page is; a folder and
+	// File is whether the root is written as Markdown. A page is; a folder and
 	// a space are not, and their children become the top level of the export.
 	File bool
 }

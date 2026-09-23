@@ -1,7 +1,7 @@
 package export
 
 // The invariant that ties the two halves of an export together: an attachment
-// is written where the exported markdown says it is. They are computed in
+// is written where the exported Markdown says it is. They are computed in
 // different places -- the destination by the converter through pagedoc.Options,
 // the path by attachfile -- so nothing but a test that reads both catches them
 // drifting apart.
@@ -58,7 +58,7 @@ func nativePageServer(t *testing.T, comment string, extra ...string) *client.Con
 
 // TestExportWritesAttachmentsWhereTheMarkdownPointsThem is the whole property.
 // It failed when export rendered with an AttachmentDir and wrote without one:
-// the file landed at dest/diagram.png while the markdown said
+// the file landed at dest/diagram.png while the Markdown said
 // runbook/diagram.png, so the export previewed broken and republishing it wrote
 // IMAGE BROKEN over the live image.
 func TestExportWritesAttachmentsWhereTheMarkdownPointsThem(t *testing.T) {
@@ -83,7 +83,7 @@ func TestExportWritesAttachmentsWhereTheMarkdownPointsThem(t *testing.T) {
 			if !strings.Contains(string(md), "]("+c.wantDest+")") {
 				t.Errorf("markdown does not point at %s:\n%s", c.wantDest, md)
 			}
-			// The destination is relative to the markdown file, which sits at
+			// The destination is relative to the Markdown file, which sits at
 			// the top of dest -- so it is also the path under dest.
 			if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(c.wantDest))); err != nil {
 				t.Errorf("no file where the markdown points (%s): %v", c.wantDest, err)

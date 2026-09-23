@@ -102,7 +102,7 @@ func TestACLinkCoalescesSplitBoldMark(t *testing.T) {
 }
 
 // TestACLinkUnresolvedPageIsPassedThrough is the fallback that keeps a failed or
-// skipped lookup from silently deleting a link. A markdown link with no
+// skipped lookup from silently deleting a link. A Markdown link with no
 // destination would be worse than the storage, which still works.
 func TestACLinkUnresolvedPageIsPassedThrough(t *testing.T) {
 	const storage = `<p><ac:link><ri:page ri:content-title="Nowhere" />` +
@@ -245,7 +245,7 @@ func TestLinkTextEscapesBracketsInRawText(t *testing.T) {
 
 // TestLinkTextDoesNotEscapeARenderedBody is the other half, and the reason the
 // escaping sits on the raw sources rather than in mdLink. An ac:link-body has
-// already been rendered to markdown, so escaping it would turn a bold body into
+// already been rendered to Markdown, so escaping it would turn a bold body into
 // literal asterisks.
 func TestLinkTextDoesNotEscapeARenderedBody(t *testing.T) {
 	storage := `<p>See <ac:link><ri:page ri:content-title="Runbook" ri:space-key="ENG" />` +
@@ -301,7 +301,7 @@ func TestMentionRendersAsAProfileLink(t *testing.T) {
 }
 
 // TestMentionURLNamesNoSite pins the property the whole spelling rests on: the
-// profile URL lives on Atlassian Home, so a mention in markdown carries no
+// profile URL lives on Atlassian Home, so a mention in Markdown carries no
 // site, no cloud id, and nothing about which instance it came from. That is
 // what makes the output identical everywhere and what lets check recognise a
 // mention with no client.
@@ -375,7 +375,7 @@ func TestDeactivatedAccountKeepsItsName(t *testing.T) {
 // TestMentionDropsTheLocalID: ri:local-id is a per-instance server id, and a
 // mention published with only the account id resolves to the same person --
 // verified against the live API (docs/confluence/links-and-anchors.md). So it
-// does not survive into the markdown, and nothing is lost.
+// does not survive into the Markdown, and nothing is lost.
 func TestMentionDropsTheLocalID(t *testing.T) {
 	storage := mentionStorage(` ri:local-id="4df0b1cc-1111-2222-3333-444455556666"`)
 	got, err := convert.StorageToMarkdown(storage, convert.StorageOptions{
@@ -464,7 +464,7 @@ func TestPlainAnchorTextIsEscaped(t *testing.T) {
 
 // TestMarkedUpLinkBodyIsStillNotEscaped guards the other direction, which is
 // why the escaping is conditional rather than unconditional: a body carrying
-// real markup has already been rendered to markdown, and escaping it would
+// real markup has already been rendered to Markdown, and escaping it would
 // produce a literal "\*\*bold\*\*".
 func TestMarkedUpLinkBodyIsStillNotEscaped(t *testing.T) {
 	storage := `<p>See <ac:link><ri:page ri:content-title="X" ri:space-key="ENG" />` +

@@ -1,6 +1,6 @@
 ## markfluence
 
-Publish markdown to Confluence
+Publish Markdown to Confluence
 
 ### Synopsis
 

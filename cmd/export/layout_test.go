@@ -299,7 +299,7 @@ func TestWriteProjectFile(t *testing.T) {
 // attachments cannot meet. It failed when the attachment directory was
 // recomputed from the title instead of taken from the layout -- two siblings
 // whose titles slug the same then shared one directory, and the second page's
-// image was skipped as "already there" while its markdown pointed at the first
+// image was skipped as "already there" while its Markdown pointed at the first
 // page's bytes. A native attachment carries no checksum, so nothing else would
 // have caught it.
 func TestAttachmentDirFollowsTheDisambiguatedSlug(t *testing.T) {

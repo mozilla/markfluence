@@ -5,7 +5,7 @@
 // commands need the same answer: `export` writes a tree of them, and `read` and
 // `attachment-download` position an attachment under the page's own directory
 // (_plans/029). Two copies would mean an attachment landing somewhere the
-// markdown does not point.
+// Markdown does not point.
 //
 // The slug is filename-specific rather than either of the converter's
 // heading-anchor sluggers. It has to drop path separators, cap its length, and
@@ -63,5 +63,5 @@ func For(title, id string) string {
 	return id
 }
 
-// Filename is the markdown file a page is written as.
+// Filename is the Markdown file a page is written as.
 func Filename(title, id string) string { return For(title, id) + ".md" }

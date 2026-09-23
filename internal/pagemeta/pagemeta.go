@@ -1,4 +1,4 @@
-// Package pagemeta resolves a markdown file's page metadata from the two places
+// Package pagemeta resolves a Markdown file's page metadata from the two places
 // it may live: the file's own frontmatter, and a pages: entry in the project's
 // markfluence.yaml (#139).
 //
@@ -110,7 +110,7 @@ func (r Resolved) InManifest() bool { return r.Source == FromManifest || r.Sourc
 
 // Managed reports whether this file is claimed: it has a manifest entry, or its
 // frontmatter names a page_id. A file nothing claims is skipped rather than
-// failed -- repositories legitimately hold markdown that is not published,
+// failed -- repositories legitimately hold Markdown that is not published,
 // drafts are a normal state, and a glob-driven CI run must not go red because
 // somebody added a file.
 //

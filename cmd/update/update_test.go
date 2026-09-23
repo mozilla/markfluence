@@ -763,7 +763,7 @@ func propertyServer(t *testing.T, paths *[]string) *client.ConfluenceClient {
 	})
 }
 
-// writeProject writes a markfluence.yaml and a markdown file under one root,
+// writeProject writes a markfluence.yaml and a Markdown file under one root,
 // returning the file's path.
 func writeProject(t *testing.T, projectFile, md string) string {
 	t.Helper()
@@ -868,7 +868,7 @@ func TestProcessFileFrontmatterWidthBeatsProjectWidth(t *testing.T) {
 
 // --- manifest metadata --------------------------------------------------------
 
-// writeManifestProject writes a markfluence.yaml and a markdown file under one
+// writeManifestProject writes a markfluence.yaml and a Markdown file under one
 // root, returning the file's path.
 func writeManifestProject(t *testing.T, projectFile, md string) string {
 	t.Helper()

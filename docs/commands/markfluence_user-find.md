@@ -64,5 +64,5 @@ markfluence user-find NAME [flags]
 
 ### SEE ALSO
 
-* [markfluence](markfluence.md)	 - Publish markdown to Confluence
+* [markfluence](markfluence.md)	 - Publish Markdown to Confluence
 

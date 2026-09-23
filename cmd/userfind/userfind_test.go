@@ -116,7 +116,7 @@ func runFind(t *testing.T, s stub, limit string, args ...string) outcome {
 	return outcome{stdout: string(out), stderr: string(errOut), exit: exit}
 }
 
-// The whole point of the command: the second line is paste-ready markdown.
+// The whole point of the command: the second line is paste-ready Markdown.
 func TestTheMentionLineIsTheAnswer(t *testing.T) {
 	o := runFind(t, stub{rows: func(int) string {
 		return people([2]string{"William Kahn-Greene", "60c36d0718e9f60071326951"})

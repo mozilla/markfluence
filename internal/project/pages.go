@@ -1,7 +1,7 @@
 package project
 
 // The pages: key -- per-file page metadata living in the project file instead
-// of in the markdown, so a .md can be published while staying pristine (#139).
+// of in the Markdown, so a .md can be published while staying pristine (#139).
 
 import (
 	"errors"

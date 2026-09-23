@@ -1,6 +1,6 @@
 package convert
 
-// destination.go owns the mapping between a markdown link destination and the
+// destination.go owns the mapping between a Markdown link destination and the
 // filesystem path it names. It serves both kinds of destination markfluence
 // resolves against the disk: an image's `src`, and a link to a sibling `.md`.
 //
@@ -27,11 +27,11 @@ import (
 	"strings"
 )
 
-// parenEscaper escapes what url.PathEscape leaves alone but markdown cannot
+// parenEscaper escapes what url.PathEscape leaves alone but Markdown cannot
 // hold: an unbalanced parenthesis ends a destination early.
 var parenEscaper = strings.NewReplacer("(", "%28", ")", "%29")
 
-// decodeDestination turns a markdown link destination into a filesystem path.
+// decodeDestination turns a Markdown link destination into a filesystem path.
 //
 // An invalid escape is not an error. "100%.png" is a legal filename that nobody
 // percent-encoded, so a destination that cannot be decoded is one that was never
@@ -43,7 +43,7 @@ func decodeDestination(dest string) string {
 	return dest
 }
 
-// encodeDestination turns a filesystem path into a markdown link destination,
+// encodeDestination turns a filesystem path into a Markdown link destination,
 // the inverse of decodeDestination. Segments are escaped individually so "/"
 // survives as a separator rather than becoming "%2F".
 func encodeDestination(p string) string {

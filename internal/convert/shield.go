@@ -5,7 +5,7 @@ import "strings"
 // shieldStorage renames raw Confluence storage prefixes (ac:/ri:) to colon-free
 // sentinels so goldmark passes the tags through instead of escaping them (a colon
 // isn't valid in an HTML tag name, so <ac:...> would otherwise be treated as
-// literal text). It returns the shielded markdown and an unshield function that
+// literal text). It returns the shielded Markdown and an unshield function that
 // restores the tags in the rendered output.
 //
 // Sentinels are derived from the source so they can't collide with real content:

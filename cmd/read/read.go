@@ -16,7 +16,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Output formats. markdown (the default) is the best-effort inverse of
+// Output formats. Markdown (the default) is the best-effort inverse of
 // MdToConfluence; storage is the raw stored XHTML.
 const (
 	formatMarkdown = "markdown"

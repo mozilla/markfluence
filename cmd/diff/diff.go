@@ -1,5 +1,5 @@
 // Package diff implements the `markfluence diff` command: show what differs
-// between a Confluence page and the local markdown file that publishes to it.
+// between a Confluence page and the local Markdown file that publishes to it.
 //
 // Nothing is written to disk and nothing is written to Confluence.
 //

@@ -171,7 +171,7 @@ func mentionPage(id string, ids ...string) *client.Page {
 // map per page and Options is constructed per page, so a user map written the
 // same way would re-resolve the same people on every page of a walk -- twelve
 // names costing 2400 requests across 200 pages. Asserted on a request count,
-// since the rendered markdown is identical either way.
+// since the rendered Markdown is identical either way.
 func TestUserCacheAsksOncePerIDAcrossPages(t *testing.T) {
 	c, asked := userServer(t, map[string]string{mentionA: "Ada Lovelace", mentionB: "Bo Peep"})
 	users := NewUserCache()

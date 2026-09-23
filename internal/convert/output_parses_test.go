@@ -1,10 +1,10 @@
 package convert_test
 
 // This file tests guarantee L7 (output-is-valid-markdown, docs/guarantees.md):
-// anything markfluence writes to disk is markdown that renders. Every other
+// anything markfluence writes to disk is Markdown that renders. Every other
 // test in this package checks that StorageToMarkdown produces a specific
 // *string*; this one checks that the string it produces is actually
-// recognized as the markdown it looks like, by feeding it back through a real
+// recognized as the Markdown it looks like, by feeding it back through a real
 // parser rather than just eyeballing the golden.
 
 import (
@@ -26,7 +26,7 @@ import (
 
 // gfmForL7 is a plain GFM parser -- deliberately not the storageRenderer
 // instance internal/convert uses to go the other way, since L7 is about
-// whether a generic markdown consumer (a preview pane, GitHub, another tool)
+// whether a generic Markdown consumer (a preview pane, GitHub, another tool)
 // recognizes the output, not whether markfluence's own machinery can read it
 // back.
 var gfmForL7 = goldmark.New(goldmark.WithExtensions(extension.GFM))
@@ -85,7 +85,7 @@ func TestStorageToMarkdownOutputParsesAsMarkdown(t *testing.T) {
 
 // TestForwardCorpusOutputParsesAsMarkdown does the same check against the
 // larger regression corpus: every forward golden's real, markfluence-emitted
-// storage HTML, converted back to markdown fresh and parsed.
+// storage HTML, converted back to Markdown fresh and parsed.
 func TestForwardCorpusOutputParsesAsMarkdown(t *testing.T) {
 	entries, err := os.ReadDir(regressionDir)
 	if err != nil {
@@ -145,7 +145,7 @@ func assertParsesCleanly(t *testing.T, source []byte) {
 
 	// prose excludes fenced code for every check below: example code inside
 	// one is free to contain bracket or table-separator-looking text (e.g. a
-	// snippet documenting markdown syntax) with no bearing on this guarantee,
+	// snippet documenting Markdown syntax) with no bearing on this guarantee,
 	// and counting it would be this test's own false positive, not a bug.
 	prose := fencedCodeRE.ReplaceAll(source, nil)
 

@@ -30,7 +30,7 @@ func TestResolveUsesRecordedSource(t *testing.T) {
 }
 
 // TestResolveScopesAnUnmanagedAttachmentToItsPage is the placement half of the
-// rule convert.sourceFor implements on the markdown side: an attachment with no
+// rule convert.sourceFor implements on the Markdown side: an attachment with no
 // recorded path goes in the directory named after its page. Attachment names
 // are unique per page and not per space, so fifty Confluence-native pages can
 // each carry a diagram.png; left flat they would be one file.
@@ -98,8 +98,8 @@ func TestResolveClampsDespiteDir(t *testing.T) {
 // This used to be a judgement call -- a name that looked encoded might have been
 // one markfluence wrote, and there was no telling. It is not one any more.
 // markfluence names an attachment by its base name, so a name containing "%2F"
-// is a filename, and convert.sourceFor answers the same way on the markdown
-// side. The two agreeing is what keeps a downloaded file where the markdown
+// is a filename, and convert.sourceFor answers the same way on the Markdown
+// side. The two agreeing is what keeps a downloaded file where the Markdown
 // says it is.
 func TestResolveIgnoresNameWhenUnmanaged(t *testing.T) {
 	root := filepath.Clean("/tmp/dest")

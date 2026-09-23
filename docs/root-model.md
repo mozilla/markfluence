@@ -167,13 +167,13 @@ pages:
     labels: [runbook]
 ```
 
-**A `pages:` entry has the same structure and fields as the frontmatter block in a markdown file.**
+**A `pages:` entry has the same structure and fields as the frontmatter block in a Markdown file.**
 You can use either location for metadata, but some field values differ depending
 on which location they're in. Additionally, markfluence has rules for occasions
 where there is metadata in both locations and it disagrees. This allows you to
 migrate from one model to the other one file at a time.
 
-When a markdown page has both frontmatter and a `pages:` entry and the two
+When a Markdown page has both frontmatter and a `pages:` entry and the two
 disagree, the result depends on what the disagreement can destroy:
 
 | field | on disagreement |
