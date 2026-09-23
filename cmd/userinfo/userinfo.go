@@ -23,9 +23,8 @@ var Cmd = &cobra.Command{
 		"Ask this first when:\n\n" +
 		"  - a publish goes to an unexpected place\n" +
 		"  - Confluence refuses a token\n" +
-		"  - the history of a page names an account that you do not know\n" +
-		" No other\n" +
-		"markfluence command can tell you who you are.\n\n" +
+		"  - the history of a page names an account that you do not know\n\n" +
+		"No other markfluence command can tell you who you are.\n\n" +
 		"With an ACCOUNT_ID, show that account. Give an id, and not a name. To find an\n" +
 		"account by name, use markfluence user-find. The two commands see different\n" +
 		"things. user-find searches a directory that cannot see deactivated accounts.\n" +

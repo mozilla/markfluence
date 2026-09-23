@@ -6,8 +6,9 @@ Write a Confluence page and its attachments to a directory
 
 Write a Confluence page, and the attachments that it uses, to a directory.
 
-PAGE is a page id, or a Confluence page URL or folder URL. It can also be a
-Markdown file that names a page_id in its frontmatter or in its pages: entry. A folder has no
+PAGE is a page id or folder id, or a Confluence page URL or folder URL. It can
+also be a Markdown file that names a page_id in its frontmatter or in its
+pages: entry. A folder has no
 content of its own. Thus you can give a folder only with --depth, and its
 content becomes the top level of the export.
 
@@ -78,9 +79,9 @@ markfluence export [PAGE] [flags]
 
 ```
       --cloud-id string   Atlassian cloud ID. Set it only for a scoped API token. If not set, markfluence uses $CONFLUENCE_CLOUD_ID, then .env
-  -d, --debug             Print debug output, such as each request and each retry
+  -d, --debug             Print debug details, such as each retry decision
       --env-file string   Env file to read credentials from. The default is .env in the documentation root of the working directory, or in the working directory if there is no markfluence.yaml
-      --json              Write one JSON document to stdout, and no human output
+      --json              Write JSON, and no human output. A result goes to stdout. A fatal error goes to stderr as a JSON error object
       --no-color          Print output with no color
       --root string       Documentation root for every file. The default is the nearest directory above each file that has a markfluence.yaml, or the directory of the file if there is none
       --url string        Confluence site URL. If not set, markfluence uses $CONFLUENCE_URL, then .env

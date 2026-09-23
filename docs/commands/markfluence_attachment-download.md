@@ -11,12 +11,14 @@ page_id in its frontmatter or in its pages: entry. Each NAME is an attachment
 name, as attachment-list shows it. With no NAME, markfluence downloads every
 attachment.
 
-markfluence records the source path of each image that it publishes. It writes
-such an attachment back to that path under --dest. Thus the downloaded files
-are where the Markdown of the page expects them, and a local preview works.
+markfluence records the source path of each file that it publishes or uploads.
+It writes such an attachment back to that path under --dest. Thus the
+downloaded files are where the Markdown of the page expects them, and a local
+preview works.
 
-An attachment with no recorded path came from Confluence. markfluence writes it
-into a directory named after the page title. An attachment name is unique on a
+An attachment with no recorded path was uploaded by hand, or markfluence
+published it before it recorded paths. markfluence writes it into a directory
+named after the page title. An attachment name is unique on a
 page, but not in a space, so two pages can each have a diagram.png. read and
 export also point to this directory.
 
@@ -50,7 +52,7 @@ markfluence attachment-download PAGE [NAME...] [flags]
 
 ```
       --dest string   Directory to write the attachments into. (default ".")
-      --dry-run       Show what markfluence would write, and write no files.
+      --dry-run       Show what attachment-download would write, and write no files.
       --flat          Write every attachment into --dest with its stored name, and ignore recorded paths.
       --force         Overwrite a file that already exists.
   -h, --help          help for attachment-download
@@ -60,9 +62,9 @@ markfluence attachment-download PAGE [NAME...] [flags]
 
 ```
       --cloud-id string   Atlassian cloud ID. Set it only for a scoped API token. If not set, markfluence uses $CONFLUENCE_CLOUD_ID, then .env
-  -d, --debug             Print debug output, such as each request and each retry
+  -d, --debug             Print debug details, such as each retry decision
       --env-file string   Env file to read credentials from. The default is .env in the documentation root of the working directory, or in the working directory if there is no markfluence.yaml
-      --json              Write one JSON document to stdout, and no human output
+      --json              Write JSON, and no human output. A result goes to stdout. A fatal error goes to stderr as a JSON error object
       --no-color          Print output with no color
       --root string       Documentation root for every file. The default is the nearest directory above each file that has a markfluence.yaml, or the directory of the file if there is none
       --url string        Confluence site URL. If not set, markfluence uses $CONFLUENCE_URL, then .env

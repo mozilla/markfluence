@@ -36,7 +36,7 @@ var limitOpt string
 // Cmd is the user-find command.
 var Cmd = &cobra.Command{
 	Use:   command + " NAME",
-	Short: "Find the account id of a Confluence user, and the Markdown to mention them",
+	Short: "Find a user, and the Markdown that mentions them",
 	Long: "Find the Confluence users whose display name matches NAME.\n\n" +
 		"The second line of each result is the answer. Paste it into a Markdown body,\n" +
 		"and it publishes as a real Confluence mention. It is easy to get two things\n" +

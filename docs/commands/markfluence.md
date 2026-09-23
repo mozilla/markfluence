@@ -31,10 +31,10 @@ markfluence [flags]
 
 ```
       --cloud-id string   Atlassian cloud ID. Set it only for a scoped API token. If not set, markfluence uses $CONFLUENCE_CLOUD_ID, then .env
-  -d, --debug             Print debug output, such as each request and each retry
+  -d, --debug             Print debug details, such as each retry decision
       --env-file string   Env file to read credentials from. The default is .env in the documentation root of the working directory, or in the working directory if there is no markfluence.yaml
   -h, --help              help for markfluence
-      --json              Write one JSON document to stdout, and no human output
+      --json              Write JSON, and no human output. A result goes to stdout. A fatal error goes to stderr as a JSON error object
       --no-color          Print output with no color
       --root string       Documentation root for every file. The default is the nearest directory above each file that has a markfluence.yaml, or the directory of the file if there is none
       --url string        Confluence site URL. If not set, markfluence uses $CONFLUENCE_URL, then .env
@@ -58,6 +58,6 @@ markfluence [flags]
 * [markfluence search](markfluence_search.md)	 - Find Confluence pages by a search of their text
 * [markfluence space-info](markfluence_space-info.md)	 - Show the metadata of a Confluence space
 * [markfluence update](markfluence_update.md)	 - Publish one or more Markdown files to Confluence pages
-* [markfluence user-find](markfluence_user-find.md)	 - Find the account id of a Confluence user, and the Markdown to mention them
+* [markfluence user-find](markfluence_user-find.md)	 - Find a user, and the Markdown that mentions them
 * [markfluence user-info](markfluence_user-info.md)	 - Show who the credentials belong to, or who an account id names
 

@@ -38,8 +38,8 @@ same batch resolves in either direction, also when the two files link to each
 other. create refuses a parent cycle among the files.
 
 If a run stops after the reserve step, it leaves an empty page version, and not
-no page. create already wrote every id back, so a plain update completes the
-job.
+no page. Unless you gave --no-persist, create already wrote every id back, so
+a plain update completes the job.
 
 To create a whole tree in one run, give each child a parent: that names the .md
 file of its parent. create makes the parents first, and fills in the real ids.
@@ -98,9 +98,9 @@ markfluence create FILE... [flags]
 
 ```
       --cloud-id string   Atlassian cloud ID. Set it only for a scoped API token. If not set, markfluence uses $CONFLUENCE_CLOUD_ID, then .env
-  -d, --debug             Print debug output, such as each request and each retry
+  -d, --debug             Print debug details, such as each retry decision
       --env-file string   Env file to read credentials from. The default is .env in the documentation root of the working directory, or in the working directory if there is no markfluence.yaml
-      --json              Write one JSON document to stdout, and no human output
+      --json              Write JSON, and no human output. A result goes to stdout. A fatal error goes to stderr as a JSON error object
       --no-color          Print output with no color
       --root string       Documentation root for every file. The default is the nearest directory above each file that has a markfluence.yaml, or the directory of the file if there is none
       --url string        Confluence site URL. If not set, markfluence uses $CONFLUENCE_URL, then .env

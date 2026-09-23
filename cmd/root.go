@@ -166,11 +166,12 @@ func init() {
 			"above each file that has a markfluence.yaml, or the directory of the file "+
 			"if there is none")
 	rootCmd.PersistentFlags().BoolVarP(&debugFlag, "debug", "d", false,
-		"Print debug output, such as each request and each retry")
+		"Print debug details, such as each retry decision")
 	rootCmd.PersistentFlags().BoolVar(&noColorFlag, "no-color", false,
 		"Print output with no color")
 	rootCmd.PersistentFlags().BoolVar(&jsonFlag, "json", false,
-		"Write one JSON document to stdout, and no human output")
+		"Write JSON, and no human output. A result goes to stdout. A fatal error goes "+
+			"to stderr as a JSON error object")
 	rootCmd.PersistentFlags().SortFlags = false
 	completion.RegisterFlag(rootCmd, "root", completion.Directories)
 

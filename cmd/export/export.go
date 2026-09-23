@@ -51,8 +51,9 @@ var Cmd = &cobra.Command{
 	Use:   command + " [PAGE]",
 	Short: "Write a Confluence page and its attachments to a directory",
 	Long: "Write a Confluence page, and the attachments that it uses, to a directory.\n\n" +
-		"PAGE is a page id, or a Confluence page URL or folder URL. It can also be a\n" +
-		"Markdown file that names a page_id in its frontmatter or in its pages: entry. A folder has no\n" +
+		"PAGE is a page id or folder id, or a Confluence page URL or folder URL. It can\n" +
+		"also be a Markdown file that names a page_id in its frontmatter or in its\n" +
+		"pages: entry. A folder has no\n" +
 		"content of its own. Thus you can give a folder only with --depth, and its\n" +
 		"content becomes the top level of the export.\n\n" +
 		"To export a whole space, give --space KEY and no PAGE. The root pages of the\n" +

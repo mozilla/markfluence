@@ -37,11 +37,13 @@ var Cmd = &cobra.Command{
 		"page_id in its frontmatter or in its pages: entry. Each NAME is an attachment\n" +
 		"name, as attachment-list shows it. With no NAME, markfluence downloads every\n" +
 		"attachment.\n\n" +
-		"markfluence records the source path of each image that it publishes. It writes\n" +
-		"such an attachment back to that path under --dest. Thus the downloaded files\n" +
-		"are where the Markdown of the page expects them, and a local preview works.\n\n" +
-		"An attachment with no recorded path came from Confluence. markfluence writes it\n" +
-		"into a directory named after the page title. An attachment name is unique on a\n" +
+		"markfluence records the source path of each file that it publishes or uploads.\n" +
+		"It writes such an attachment back to that path under --dest. Thus the\n" +
+		"downloaded files are where the Markdown of the page expects them, and a local\n" +
+		"preview works.\n\n" +
+		"An attachment with no recorded path was uploaded by hand, or markfluence\n" +
+		"published it before it recorded paths. markfluence writes it into a directory\n" +
+		"named after the page title. An attachment name is unique on a\n" +
 		"page, but not in a space, so two pages can each have a diagram.png. read and\n" +
 		"export also point to this directory.\n\n" +
 		"--flat writes every attachment directly into --dest, with its stored name.\n\n" +
@@ -66,7 +68,7 @@ func init() {
 		"Write every attachment into --dest with its stored name, and ignore recorded paths.")
 	Cmd.Flags().BoolVar(&force, "force", false, "Overwrite a file that already exists.")
 	Cmd.Flags().BoolVar(&dryRun, "dry-run", false,
-		"Show what markfluence would write, and write no files.")
+		"Show what attachment-download would write, and write no files.")
 
 	completion.RegisterFlag(Cmd, "dest", completion.Directories)
 }
