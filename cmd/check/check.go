@@ -42,34 +42,38 @@ var showHTML bool
 // Cmd is the check command.
 var Cmd = &cobra.Command{
 	Use:   "check FILE...",
-	Short: "Validate markdown files against the converter and frontmatter rules, offline",
-	Long: "Validate one or more markdown FILEs against the converter and frontmatter\n" +
-		"rules, with no network access and no credentials -- fast, safe, and\n" +
-		"CI/agent-friendly. Reports conversion warnings and broken image/link\n" +
-		"references, and metadata sanity (parseable, page_width valid, page_id\n" +
-		"numeric when present, page_status non-empty when present). Each file is\n" +
-		"processed independently; the command exits non-zero if any file is broken\n" +
-		"or failed outright. Warnings alone do not fail.\n\n" +
-		"A file's metadata is checked wherever it lives -- its own frontmatter or a\n" +
-		"'pages:' entry for it in markfluence.yaml -- and an entry is reported only\n" +
-		"when its file is one of the FILEs given, so one bad entry never blocks\n" +
-		"checking the rest of a repository. Two locations naming different pages is\n" +
-		"an error; a file keeping its own keys in a project that uses 'pages:' is a\n" +
-		"warning, since both work.\n\n" +
-		"One thing check cannot decide: whether a page_status: names a status the\n" +
-		"space actually offers. A space's statuses are its own configuration, read\n" +
-		"from Confluence, and check makes no requests -- so an empty page_status is\n" +
-		"reported and a misspelled one is not. update and create check the name.\n\n" +
-		"\"link not resolved: TARGET\" means TARGET is a sibling .md file that exists\n" +
-		"under the documentation root but has no page_id yet -- the normal state of\n" +
-		"a tree that hasn't been published, not a defect. \"same-page anchor not\n" +
-		"resolved: #heading\" is the same situation for a same-page anchor: it\n" +
-		"resolves to a real heading in the current file, but can't be turned into\n" +
-		"an absolute URL until this file itself has a page_id -- resolved by this\n" +
-		"file's own first publish, nothing to fix.",
-	Example: "  # Validate a batch of files\n" +
+	Short: "Check Markdown files for problems, with no network access",
+	Long: "Check one or more Markdown FILEs for problems before you publish them.\n" +
+		"check makes no network request and needs no credentials, so it is fast and\n" +
+		"safe to run in CI or from an agent.\n\n" +
+		"check reports:\n\n" +
+		"  - conversion warnings\n" +
+		"  - broken images and broken links\n" +
+		"  - frontmatter that does not parse\n" +
+		"  - a page_width that is not valid\n" +
+		"  - a page_id that is not a number\n" +
+		"  - a title or page_status that is present but empty\n" +
+		"  - a markfluence.yaml that markfluence cannot load\n\n" +
+		"check does each file separately. It exits with a code that is not zero if any\n" +
+		"file is broken or failed. A warning alone does not fail.\n\n" +
+		"check reads the metadata of a file from its frontmatter and from its pages:\n" +
+		"entry in markfluence.yaml. It reports an entry only when that file is one of\n" +
+		"the FILEs. Thus one bad entry does not stop the check of the other files. Two\n" +
+		"locations that name different pages are an error. A file with its own\n" +
+		"frontmatter in a project that uses pages: gets a warning, because both work.\n\n" +
+		"check cannot tell whether a page can have the status that page_status names.\n" +
+		"Confluence decides that for each page and each account, and check makes no\n" +
+		"request. Thus check reports an empty page_status, but not a misspelled one.\n" +
+		"update and create do a check of the name.\n\n" +
+		"\"link not resolved: TARGET\" means that TARGET is a .md file under the\n" +
+		"documentation root that has no page_id yet. That is the usual state of a tree\n" +
+		"that nobody published yet, and it is not a defect.\n\n" +
+		"\"same-page anchor not resolved: #heading\" is the same for an anchor in the\n" +
+		"current file. The heading exists, but markfluence cannot make its URL until\n" +
+		"this file has a page_id. The first publish of the file resolves it.",
+	Example: "  # Check a set of files\n" +
 		"  markfluence check docs/*.md\n\n" +
-		"  # Show the storage HTML a publish would send\n" +
+		"  # Show the storage HTML that a publish would send\n" +
 		"  markfluence check --show-html docs/one-page.md\n",
 	Args:              cobra.MinimumNArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
@@ -78,7 +82,7 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().BoolVar(&showHTML, "show-html", false,
-		"Also print the converted storage HTML and attachment list, for debugging.")
+		"Also print the converted storage HTML and the list of attachments, for debugging.")
 }
 
 func run(cmd *cobra.Command, args []string) error {
