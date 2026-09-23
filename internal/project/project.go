@@ -49,6 +49,14 @@ type Root struct {
 	// FS scopes every read to Dir: a path cannot escape it, even via a
 	// symlink partway down its traversal, which a lexical containment check
 	// cannot see but os.Root refuses outright. Callers close it when done.
+	//
+	// Measured 2026-08-28 against an os.Root bounded to docs/: a path with
+	// no symlink is allowed, a relative symlink staying inside the root is
+	// allowed, a relative symlink escaping it is refused ("path escapes from
+	// parent"), and an absolute symlink is refused whatever its target. That
+	// last row is why a leaf is also refused by Lstat rather than trusted to
+	// os.Root: markfluence follows no symlink at all (docs/guarantees.md
+	// #symlinks), and os.Root alone would allow the inside-the-root one.
 	FS *os.Root
 }
 

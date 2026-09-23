@@ -144,9 +144,10 @@ func TestMentionMarkerInsideAChildNodeStillCounts(t *testing.T) {
 //
 // The first cycle *does* change the storage, and that is expected and
 // converges: Confluence's editor writes ri:local-id and markfluence does not,
-// so the republished storage is shorter. The same shape as the documented
-// attachment exception in docs/guarantees.md -- a native attachment gets
-// restamped once. What must hold is that cycle two onward changes nothing.
+// so the republished storage is shorter. The same shape as a native
+// attachment, which is unmanaged and so gets a markfluence comment on the
+// first republish and none after. What must hold is that cycle two onward
+// changes nothing.
 func TestMentionRoundTripIsAFixedPoint(t *testing.T) {
 	names := map[string]string{mentionID: "Ada Lovelace"}
 	editor := `<p>Ping <ac:link><ri:user ri:account-id="` + mentionID +

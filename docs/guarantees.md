@@ -42,7 +42,9 @@ If a safety principle fails, the result is damage, and not only a wrong answer.
 
 ### S1 `no-write-outside-root`
 
-markfluence writes no file outside the root.
+markfluence writes no file outside the destination of a command. For `export`
+and `attachment-download`, that is `--dest`. For everything else, it is the
+documentation root.
 
 **Why:** Data from the server decides where some files go. An attachment
 records the path of its source, and `..` is correct in a source path. Thus a
@@ -69,6 +71,12 @@ Markdown file must not publish a file from outside the project.
 ### S3 `no-overwrite-without-force`
 
 markfluence does not overwrite a file that exists, unless you give `--force`.
+
+The scope is the files that markfluence writes from a page: the Markdown files
+and attachments that `export` and `attachment-download` write. The
+metadata that `create` writes back to a file or to `markfluence.yaml` is not an
+overwrite. It changes only the fields that it records. The action log only
+appends.
 
 **Why:** A file on disk can have edits that exist nowhere else.
 
@@ -131,12 +139,20 @@ be undone by hand. A second run refuses, because the id is already in use.
 made a page. Every defect that the converter can find must stop the batch
 before the first page exists.
 
-**Accepts:** `create` reserves every page before it publishes any, so that link
-resolution does not depend on the sequence of creation. Thus some failures
-during publish leave an empty page: a server or network failure, or an asset
-that markfluence cannot read when it uploads. The `page_id` of that page is
-already in the file, so `markfluence update` completes the work. A delete of
-the empty page would be a removal as a side effect, which S4 forbids.
+**Accepts:**
+
+- `create` reserves every page before it publishes any, so that link
+  resolution does not depend on the sequence of creation. Thus some failures
+  during publish leave an empty page: a server or network failure, or an asset
+  that markfluence cannot read when it uploads. The `page_id` of that page is
+  already on disk, in the file or in its `pages:` entry, so
+  `markfluence update` completes the work. A delete of the empty page would be
+  a removal as a side effect, which S4 forbids.
+- With `--no-persist`, nothing on disk records the `page_id`. Then the output
+  of the run is the only record of an empty page.
+- `create` checks a `page_status` only after the page exists. The statuses
+  that a page can have depend on the page, and the page does not exist before.
+  Thus a bad status is a warning on a page that `create` made.
 
 ### S8 `no-overwrite-of-a-moved-page`
 
@@ -201,18 +217,22 @@ the same result.
   Otherwise the same file gets a different name in each batch.
 - A `pages:` key that markfluence resolves through a symlink. Then the meaning
   of a key depends on the layout of a checkout.
-- Page metadata from flags. That is why `update` has no `--title`,
+- Page metadata from flags in `update`. A file that `update` publishes names
+  its page and its metadata on disk. That is why `update` has no `--title`,
   `--page-id`, or `--page-width`.
-- A cache on disk that changes what markfluence writes.
+- A cache on disk that changes the bytes that markfluence publishes.
 
-The law controls resolution and naming only. A flag such as the `--title` flag
-of `create` changes what markfluence publishes, and that is its purpose.
+The law controls resolution and naming only. The flags of `create`, such as
+`--title` and `--parent`, change what markfluence publishes, and that is their
+purpose.
 
 **Accepts:** Two checkouts of the same tree can *behave* differently, because
-the action log is local and not committed. One person has a base and gets a
-refusal for a moved page. The other has no base and publishes. A merge base is
-different for each copy by definition. The published bytes do not differ: with
-the same files and the same page, a run that publishes sends the same bytes.
+the action log is local and not committed. The log decides *whether* `update`
+sends a body: one person has a base and gets a refusal for a moved page, or a
+skip for a body that did not change. The other has no base and publishes. A
+merge base is different for each copy by definition. The bytes do not differ:
+with the same files and the same page, a run that publishes sends the same
+bytes.
 
 ### L3 `identity-from-asset-location`
 
