@@ -1,15 +1,14 @@
 # `--json` output, in detail
 
-The [README](../README.md#--json-output) gives the envelope, an example, and the
-exit codes. The JSON Schema at
-[`schema/json-output/v1.json`](../schema/json-output/v1.json) is the
-authoritative contract for each field. The `markfluence schema` command also
-prints it.
+This file tells you why the JSON shape is the way it is. It also gives
+details for each command that script authors will want to know.
 
-This file gives the other part. It tells you why the shapes are what they are.
-It also gives the details for each command that a script author needs one time
-and then must look up.
+The [README](../README.md#--json-output) shows how to use `--json`,
+shows an example, and documents the exit codes.
 
+The JSON Schema at [`schema/json-output/v1.json`](../schema/json-output/v1.json)
+is the authoritative contract for each field. The `markfluence schema` command
+also prints it.
 
 ## Notes on the schema
 
