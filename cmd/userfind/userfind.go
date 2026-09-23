@@ -36,27 +36,27 @@ var limitOpt string
 // Cmd is the user-find command.
 var Cmd = &cobra.Command{
 	Use:   command + " NAME",
-	Short: "Find a Confluence user's account id and mention markdown",
-	Long: "Find Confluence users whose display name matches NAME.\n\n" +
-		"The second line of each hit is the answer: paste it into a markdown\n" +
-		"body and it publishes as a real Confluence mention. Two things about\n" +
-		"that line are easy to get wrong by hand -- the host is Atlassian Home\n" +
-		"and not your site, and the \"@\" on the link text is what makes it a\n" +
-		"mention rather than an ordinary link to somebody's profile.\n\n" +
-		"NAME matches from the start of a word, in order. \"kahn\" and\n" +
-		"\"william kahn\" both find William Kahn-Greene; \"ahn\" and \"kahn\n" +
-		"william\" find nobody. A fragment that starts mid-word therefore\n" +
-		"reports no matches rather than an error, so try a whole name part.\n\n" +
-		"Deactivated accounts are not reported. Confluence leaves them out of\n" +
-		"the user directory entirely, and no filter brings them back -- so a\n" +
-		"departed colleague cannot be found here, even though a mention of one\n" +
-		"already in a page still resolves to their name.\n\n" +
-		"Finding nobody is a success: the command says so and exits 0.",
-	Example: "  # The account id and the line to paste\n" +
+	Short: "Find the account id of a Confluence user, and the Markdown to mention them",
+	Long: "Find the Confluence users whose display name matches NAME.\n\n" +
+		"The second line of each result is the answer. Paste it into a Markdown body,\n" +
+		"and it publishes as a real Confluence mention. It is easy to get two things\n" +
+		"wrong when you write that line by hand. The host is Atlassian Home, and not\n" +
+		"your site. The \"@\" at the start of the link text is what makes it a mention,\n" +
+		"and not a plain link to the profile of a person.\n\n" +
+		"NAME matches from the start of a word, in sequence. \"kahn\" and \"william kahn\"\n" +
+		"both find William Kahn-Greene. \"ahn\" and \"kahn william\" find nobody. Thus a\n" +
+		"part of a word that starts in the middle gives no matches, and not an error.\n" +
+		"Use a full part of the name.\n\n" +
+		"user-find does not show deactivated accounts. Confluence removes them from the\n" +
+		"user directory, and no filter brings them back. Thus you cannot find a\n" +
+		"colleague who left, although a mention of them on a page still shows their\n" +
+		"name.\n\n" +
+		"If user-find finds nobody, that is a success. It says so, and exits with 0.",
+	Example: "  # Show the account id and the line to paste\n" +
 		"  markfluence user-find kahn\n\n" +
-		"  # A common surname, all of them\n" +
+		"  # Show every person with a common surname\n" +
 		"  markfluence user-find reid --limit all\n\n" +
-		"  # Just the mention, for a script\n" +
+		"  # Print only the mention, for a script\n" +
 		"  markfluence user-find kahn --json | jq -r '.results[0].mention'\n",
 	Args: cobra.ExactArgs(1),
 	// A name is free text, and completion may not ask Confluence for one:

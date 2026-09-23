@@ -1,28 +1,28 @@
 ## markfluence user-find
 
-Find a Confluence user's account id and mention markdown
+Find the account id of a Confluence user, and the Markdown to mention them
 
 ### Synopsis
 
-Find Confluence users whose display name matches NAME.
+Find the Confluence users whose display name matches NAME.
 
-The second line of each hit is the answer: paste it into a markdown
-body and it publishes as a real Confluence mention. Two things about
-that line are easy to get wrong by hand -- the host is Atlassian Home
-and not your site, and the "@" on the link text is what makes it a
-mention rather than an ordinary link to somebody's profile.
+The second line of each result is the answer. Paste it into a Markdown body,
+and it publishes as a real Confluence mention. It is easy to get two things
+wrong when you write that line by hand. The host is Atlassian Home, and not
+your site. The "@" at the start of the link text is what makes it a mention,
+and not a plain link to the profile of a person.
 
-NAME matches from the start of a word, in order. "kahn" and
-"william kahn" both find William Kahn-Greene; "ahn" and "kahn
-william" find nobody. A fragment that starts mid-word therefore
-reports no matches rather than an error, so try a whole name part.
+NAME matches from the start of a word, in sequence. "kahn" and "william kahn"
+both find William Kahn-Greene. "ahn" and "kahn william" find nobody. Thus a
+part of a word that starts in the middle gives no matches, and not an error.
+Use a full part of the name.
 
-Deactivated accounts are not reported. Confluence leaves them out of
-the user directory entirely, and no filter brings them back -- so a
-departed colleague cannot be found here, even though a mention of one
-already in a page still resolves to their name.
+user-find does not show deactivated accounts. Confluence removes them from the
+user directory, and no filter brings them back. Thus you cannot find a
+colleague who left, although a mention of them on a page still shows their
+name.
 
-Finding nobody is a success: the command says so and exits 0.
+If user-find finds nobody, that is a success. It says so, and exits with 0.
 
 ```
 markfluence user-find NAME [flags]
@@ -31,13 +31,13 @@ markfluence user-find NAME [flags]
 ### Examples
 
 ```
-  # The account id and the line to paste
+  # Show the account id and the line to paste
   markfluence user-find kahn
 
-  # A common surname, all of them
+  # Show every person with a common surname
   markfluence user-find reid --limit all
 
-  # Just the mention, for a script
+  # Print only the mention, for a script
   markfluence user-find kahn --json | jq -r '.results[0].mention'
 
 ```
