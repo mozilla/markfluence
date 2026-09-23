@@ -111,14 +111,24 @@ func Resolve(envFile string) (*ConfluenceClient, error) {
 		if len(missing) > 1 {
 			setThem = "set them in one place: "
 		}
+		// When one of the URL and the token is already set, the other can
+		// only go where it is: anywhere else fails the same-source rule.
+		places := placesToSet(credPath)
+		switch {
+		case siteURL == "" && token != "":
+			places = sources[tokenFrom].label + ", where " + tokenEnv + " is"
+		case token == "" && siteURL != "":
+			places = sources[urlFrom].label + ", where " + urlEnv + " is"
+		}
 		return nil, fmt.Errorf("missing Confluence %s: %s%s. See %s",
-			strings.Join(missing, ", "), setThem, placesToSet(credPath), credentialsDoc)
+			strings.Join(missing, ", "), setThem, places, credentialsDoc)
 	}
 	if urlFrom != tokenFrom {
 		return nil, fmt.Errorf("%s comes from %s, but %s comes from %s. Set both in the same place. See %s",
 			urlEnv, sources[urlFrom].label, tokenEnv, sources[tokenFrom].label, credentialsDoc)
 	}
 	cloudID := sources[urlFrom].values[cloudIDEnv]
+	warnIgnoredCloudID(sources, urlFrom)
 	if err := validateCloudID(cloudID, sources[urlFrom].label); err != nil {
 		return nil, err
 	}
@@ -128,6 +138,26 @@ func Resolve(envFile string) (*ConfluenceClient, error) {
 		Username: username,
 		Token:    token,
 	}), nil
+}
+
+// warnIgnoredCloudID reports a cloud ID that a place *above* the URL's set and
+// Resolve ignored. That is someone who set one on purpose -- exported it for a
+// scoped token while the URL lives in the credentials file -- and would
+// otherwise get an unexplained 401 from their site. A cloud ID *below* the
+// URL's place is not reported: the credentials file for one instance, while
+// --env-file names another, is the ordinary case the rule exists for.
+func warnIgnoredCloudID(sources []source, urlFrom int) {
+	if securityWarner == nil {
+		return
+	}
+	for _, s := range sources[:urlFrom] {
+		if s.values[cloudIDEnv] != "" {
+			securityWarner(fmt.Sprintf(
+				"%s from %s is ignored, because %s comes from %s: set the cloud ID in the same place as the URL",
+				cloudIDEnv, s.label, urlEnv, sources[urlFrom].label))
+			return
+		}
+	}
 }
 
 // environment is the CONFLUENCE_* variables as a source.
@@ -174,7 +204,8 @@ func credentialsPath() string {
 
 // loadCredentials reads the credentials file, returning nil when there is
 // none. A missing file, or a path that runs through something that is not a
-// directory, means the user has not made one. Any other failure means they
+// directory, means the user has not made one; a dangling symbolic link does
+// not. Any other failure means they
 // made one that cannot be used, and is an error: falling through silently
 // would make a token rotation look like it had no effect.
 func loadCredentials(path string) (map[string]string, error) {
@@ -182,11 +213,23 @@ func loadCredentials(path string) (map[string]string, error) {
 	switch {
 	case err == nil:
 		return env, nil
+	case errors.Is(err, fs.ErrNotExist) && isSymlink(path):
+		return nil, fmt.Errorf("reading credentials file %s: it is a symbolic link to a file that "+
+			"does not exist", displayPath(path))
 	case errors.Is(err, fs.ErrNotExist), errors.Is(err, syscall.ENOTDIR):
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("reading credentials file %s: %w", displayPath(path), err)
 	}
+}
+
+// isSymlink reports whether path itself is a symbolic link. A dangling link
+// at the credentials path reads as "no such file", but it is a file the user
+// made -- into a dotfiles repository that moved, or a volume not mounted -- so
+// it must not read as "you have no credentials file".
+func isSymlink(path string) bool {
+	fi, err := os.Lstat(path)
+	return err == nil && fi.Mode()&fs.ModeSymlink != 0
 }
 
 // displayPath shows a path under the home directory as ~/..., the form the
@@ -251,6 +294,10 @@ func SetSecurityWarner(fn func(string)) { securityWarner = fn }
 // the link's own 0777 would cry wolf on every run. The user execute bit is
 // ignored for the same reason -- 0700 is odd, but it is not a leak.
 //
+// Only a regular file is judged. `--env-file <(pass show confluence)` reads a
+// pipe, which reports mode 0440 on macOS: warning about it would tell the
+// safest setup to run a chmod that cannot work.
+//
 // A stat failure is silent. The file was just read, so a failure here is
 // exotic, and a warning about the inability to warn is noise.
 func warnLoosePermissions(path string, env map[string]string) {
@@ -258,7 +305,7 @@ func warnLoosePermissions(path string, env map[string]string) {
 		return
 	}
 	fi, err := os.Stat(path)
-	if err != nil {
+	if err != nil || !fi.Mode().IsRegular() {
 		return
 	}
 	perm := fi.Mode().Perm()

@@ -85,7 +85,7 @@ to a site that you did not pair it with. If the two come from different
 places, markfluence stops and tells you where each one came from:
 
 ```
-✗ CONFLUENCE_URL comes from the environment, but CONFLUENCE_TOKEN comes from ~/.config/markfluence/credentials. Set both in the same place
+✗ CONFLUENCE_URL comes from the environment, but CONFLUENCE_TOKEN comes from ~/.config/markfluence/credentials. Set both in the same place. See https://github.com/mozilla/markfluence/blob/main/docs/credentials.md
 ```
 
 To correct it, set the URL and the token together in one place.
@@ -95,6 +95,14 @@ cloud ID names one site, as the URL does. markfluence ignores a cloud ID that
 comes from a different place. It does not stop, because there is no way to
 say "no cloud ID" in a place higher in the list: an empty value counts as not
 set.
+
+If you set a cloud ID in a place higher in the list than the URL, markfluence
+gives a warning that it ignored it. For example, the URL is in your
+credentials file and you export `CONFLUENCE_CLOUD_ID`. Without the cloud ID,
+a scoped token gets a 401 from your site, so put the cloud ID in the same
+place as the URL. A cloud ID lower in the list than the URL gets no warning:
+that is the usual case of a credentials file for one site while `--env-file`
+names another.
 
 The username can come from any place.
 
@@ -137,9 +145,10 @@ markfluence gives a warning when two conditions are both true:
 - The file holds `CONFLUENCE_TOKEN`.
 
 The warning gives the name of the file, the fault in its mode, and the `chmod`
-command that corrects it. markfluence gives the warning only for a file that
-it reads. It does not read the credentials file when the other places give
-every setting.
+command that corrects it. markfluence gives the warning only for a regular file
+that it reads. It gives no warning for a pipe, such as
+`--env-file <(pass show confluence)`. It does not read the credentials file
+when the other places give every setting.
 
 If you run markfluence with `--json`, markfluence does not print the warning.
 It puts the warning in the `warnings` array of the output document, and in the
@@ -149,15 +158,18 @@ error object on stderr. stderr is a JSON document in that mode.
 
 **`missing Confluence …`**: no place gives that setting. The error lists the
 places that markfluence looked in. Set the setting there. If more than one
-setting is missing, set them in one place, because of the rule above.
+setting is missing, set them in one place, because of the rule above. If only
+one of the URL and the token is set, the error names its place, because the
+other must go there too.
 
 **`… comes from …, but … comes from …`**: the URL and the token come from
 different places. See [Two rules that protect your token](#two-rules-that-protect-your-token).
 
 **`reading credentials file …`**: the credentials file exists, but markfluence
-cannot read it. For example, it is a directory, or you do not have permission
-to read it. markfluence stops, and does not ignore the file, because then a
-new token in that file would appear to have no effect.
+cannot read it. For example, it is a directory, it is a symbolic link to a file
+that does not exist, or you do not have permission to read it. markfluence
+stops, and does not ignore the file, because then a new token in that file
+would appear to have no effect.
 
 **`reading env file …`**: markfluence cannot read the file that `--env-file`
 names.

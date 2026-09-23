@@ -1,4 +1,4 @@
-package diff
+package attachmentlist
 
 import (
 	"os"

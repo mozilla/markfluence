@@ -62,8 +62,16 @@ the token together in the environment.
 The cloud ID is part of the credentials: it names one site, as the URL does. It
 is read only from the source that supplied the URL, and a cloud ID in any other
 source is ignored. It is ignored rather than an error because a higher source
-cannot say "no cloud ID": an empty value counts as unset. The username may come
+cannot say "no cloud ID": an empty value counts as unset. A cloud ID ignored
+from a source *above* the URL's earns a warning: that is someone who exported
+it on purpose, with the URL in the credentials file, and would otherwise get an
+unexplained 401. One below the URL's source is the ordinary case of a
+credentials file for another instance, and stays quiet. The username may come
 from any source, since a wrong one fails with a 401.
+
+When one of the URL and the token is set and the other is missing, the
+"missing" error offers only the set one's source, since anywhere else fails
+this rule.
 
 **D5. `Resolve` takes only the env-file path.** The signature becomes
 `client.Resolve(envFile string)`. `ResolveOptions` goes: three of its fields
@@ -117,7 +125,9 @@ hint and no migration.
 
 **D9. The permission warning (#136) covers the credentials file.** It already
 runs inside `loadDotenv`, which every source file goes through, so this needs
-no new code. With D3 it fires only when the file is actually read. Its wording,
+no new code. With D3 it fires only when the file is actually read. It judges
+only a regular file: a pipe from `--env-file <(pass show …)` reports mode 0440
+on macOS, and no chmod can fix it. Its wording,
 and the docs that say "your `.env`", become "the file that holds your API
 token".
 
@@ -128,23 +138,22 @@ test into a D4 error, and a real cloud ID would send a test's requests to the
 gateway instead of its `httptest` server.
 
 Isolating tests one by one is fragile, because the next test added forgets it.
-So each affected package gets a `TestMain` that sets `XDG_CONFIG_HOME` and
+So every package whose code calls `Resolve`, and `internal/client` itself, gets
+a `TestMain` that calls `testenv.RunIsolated`. It sets `XDG_CONFIG_HOME` and
 `HOME` to an empty temp directory and unsets the four `CONFLUENCE_*` variables
-before any test runs. A test then `t.Setenv`s only what it needs. No test in
+before any test runs; a test then `t.Setenv`s only what it needs. No test in
 the repo uses `t.Parallel`, so this is safe.
 
-`internal/clienttest` provides the helper for the `cmd` packages. It cannot
-serve `internal/client`: those tests are `package client`, and `clienttest`
-imports `client`, which would be a cycle. So `internal/client` has its own
-`TestMain` in `config_test.go`.
+`internal/testenv` is its own package, importing nothing from this module,
+because `internal/client`'s tests are `package client` and
+`internal/clienttest` imports `client`: a helper there would be an import
+cycle for them.
 
 ## Work, in commit order
 
 1. **`test: isolate credential resolution from the home directory`.** Add the
-   `clienttest` helper and a `TestMain` to every package whose tests reach
-   `Resolve`: `cmd` (root_test.go), `cmd/pageinfo`, `read`, `diff`, `userinfo`,
-   `find`, `children`, `create`, `userfind`, `spaceinfo`, and
-   `internal/client`. With no `markfluence.yaml`, `.env` is read from the
+   isolation helper and a `TestMain` to every package whose tests reach
+   `Resolve`. With no `markfluence.yaml`, `.env` is read from the
    working directory, which in a test is the package directory, and no package
    directory has a `.env`. So no test reads one today, and this commit changes
    no behaviour. It lands first
@@ -203,7 +212,7 @@ In `internal/client/config_test.go`:
 - `XDG_CONFIG_HOME` absolute is used, relative is ignored, and unset falls back
   to `$HOME/.config`; a relative or empty `HOME` means no file;
 - a missing credentials file is fine; `ENOTDIR` is fine; a directory at the
-  path fails and names the path;
+  path, or a dangling symbolic link, fails and names the path;
 - the credentials file is not read, and does not warn or fail, when higher
   sources set every key;
 - same-source: URL from the environment with the token from the file fails,

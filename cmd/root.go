@@ -51,8 +51,9 @@ var rootCmd = &cobra.Command{
 		"  1. the file that --env-file names\n" +
 		"  2. the environment variable\n" +
 		"  3. your credentials file, ~/.config/markfluence/credentials\n\n" +
-		"The URL and the token must come from the same place, and there is no flag for\n" +
-		"any of these. To set up the credentials file, see\n" +
+		"The URL and the token must come from the same place, the cloud ID is read only\n" +
+		"from the place that gives the URL, and there is no flag for any of these. To\n" +
+		"set up the credentials file, see\n" +
 		"https://github.com/mozilla/markfluence/blob/main/docs/credentials.md",
 	// --version prints the build stamp ("markfluence VERSION (SHA, DATE)"). The
 	// only use of it: nothing published carries a build stamp, and the converter
