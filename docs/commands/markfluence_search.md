@@ -1,25 +1,23 @@
 ## markfluence search
 
-Find Confluence pages by full-text search
+Find Confluence pages by a search of their text
 
 ### Synopsis
 
-Find Confluence pages whose text matches QUERY.
+Find the Confluence pages whose text matches QUERY.
 
-QUERY is matched against the page's full text, not just its title.
-Multiple words are ANDed: every word must appear somewhere in the
-page, in any order. It is not a phrase search, so quoting a phrase
-does not require the words to be adjacent.
+search compares QUERY with all the text of each page, and not only the title.
+Each word must be somewhere in the page, in any sequence. This is not a phrase
+search, so quotes around a phrase do not make the words come next to each other.
 
-Results come back in Confluence's own relevance order, best first,
-and are capped at --limit. When more matches exist than were shown,
-the command says so rather than truncating silently.
+The results come in the relevance order of Confluence, best first. --limit sets
+how many search shows. When there are more matches, search says so.
 
-Archived pages are never returned: the search index cannot see them.
-Neither are folders, which have no text to match -- use `find` for
-both of those.
+search never returns archived pages, because the search index cannot see them.
+It also never returns folders, because a folder has no text to match. Archived
+pages and folders are not in the results, so use find for both.
 
-Finding nothing is a success: the command says so and exits 0.
+If search finds nothing, that is a success. It says so, and exits with 0.
 
 ```
 markfluence search QUERY [flags]
@@ -28,16 +26,16 @@ markfluence search QUERY [flags]
 ### Examples
 
 ```
-  # Full-text search; every word must appear somewhere
+  # Search the text. Each word must be somewhere in the page
   markfluence search "deploy runbook"
 
-  # Scoped, with a bigger page of results
+  # Search only in one space, and show more results
   markfluence search "deploy runbook" --space ENG --limit 25
 
-  # Every match, ids only
+  # Show every match, and print only the ids
   markfluence search deploy --limit all --json | jq -r '.results[].id'
 
-  # Raw CQL, passed through untouched
+  # Give a raw CQL query, which markfluence sends with no change
   markfluence search 'type = page and label = "runbook"' --cql
 
 ```
@@ -45,11 +43,11 @@ markfluence search QUERY [flags]
 ### Options
 
 ```
-      --cql            Treat QUERY as a raw CQL query instead of text to search for; cannot be combined with --space or an explicit --type (put those clauses in the query).
+      --cql            Send QUERY as a raw CQL query, and not as text to search for. Not with --space or --type. Put those clauses in the query.
   -h, --help           help for search
       --limit string   How many matches to show: a positive number, or "all". (default "10")
-      --space string   Restrict the search to a space, by key.
-      --type string    Content type to search: "page", "blogpost", or "all". (default "page")
+      --space string   Search only in this space, by its key.
+      --type string    Type of content to search: "page", "blogpost", or "all". (default "page")
 ```
 
 ### Options inherited from parent commands

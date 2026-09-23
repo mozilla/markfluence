@@ -49,26 +49,24 @@ var (
 // Cmd is the search command.
 var Cmd = &cobra.Command{
 	Use:   command + " QUERY",
-	Short: "Find Confluence pages by full-text search",
-	Long: "Find Confluence pages whose text matches QUERY.\n\n" +
-		"QUERY is matched against the page's full text, not just its title.\n" +
-		"Multiple words are ANDed: every word must appear somewhere in the\n" +
-		"page, in any order. It is not a phrase search, so quoting a phrase\n" +
-		"does not require the words to be adjacent.\n\n" +
-		"Results come back in Confluence's own relevance order, best first,\n" +
-		"and are capped at --limit. When more matches exist than were shown,\n" +
-		"the command says so rather than truncating silently.\n\n" +
-		"Archived pages are never returned: the search index cannot see them.\n" +
-		"Neither are folders, which have no text to match -- use `find` for\n" +
-		"both of those.\n\n" +
-		"Finding nothing is a success: the command says so and exits 0.",
-	Example: "  # Full-text search; every word must appear somewhere\n" +
+	Short: "Find Confluence pages by a search of their text",
+	Long: "Find the Confluence pages whose text matches QUERY.\n\n" +
+		"search compares QUERY with all the text of each page, and not only the title.\n" +
+		"Each word must be somewhere in the page, in any sequence. This is not a phrase\n" +
+		"search, so quotes around a phrase do not make the words come next to each other.\n\n" +
+		"The results come in the relevance order of Confluence, best first. --limit sets\n" +
+		"how many search shows. When there are more matches, search says so.\n\n" +
+		"search never returns archived pages, because the search index cannot see them.\n" +
+		"It also never returns folders, because a folder has no text to match. Archived\n" +
+		"pages and folders are not in the results, so use find for both.\n\n" +
+		"If search finds nothing, that is a success. It says so, and exits with 0.",
+	Example: "  # Search the text. Each word must be somewhere in the page\n" +
 		"  markfluence search \"deploy runbook\"\n\n" +
-		"  # Scoped, with a bigger page of results\n" +
+		"  # Search only in one space, and show more results\n" +
 		"  markfluence search \"deploy runbook\" --space ENG --limit 25\n\n" +
-		"  # Every match, ids only\n" +
+		"  # Show every match, and print only the ids\n" +
 		"  markfluence search deploy --limit all --json | jq -r '.results[].id'\n\n" +
-		"  # Raw CQL, passed through untouched\n" +
+		"  # Give a raw CQL query, which markfluence sends with no change\n" +
 		"  markfluence search 'type = page and label = \"runbook\"' --cql\n",
 	Args: cobra.ExactArgs(1),
 	// A query is free text and a space key lives on the server, which completion
@@ -79,15 +77,15 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().StringVar(&spaceOpt, "space", "",
-		"Restrict the search to a space, by key.")
+		"Search only in this space, by its key.")
 	Cmd.Flags().StringVar(&typeOpt, "type", client.SearchTypePage,
-		fmt.Sprintf("Content type to search: %q, %q, or %q.",
+		fmt.Sprintf("Type of content to search: %q, %q, or %q.",
 			client.SearchTypePage, client.SearchTypeBlogpost, client.SearchTypeAll))
 	Cmd.Flags().StringVar(&limitOpt, "limit", defaultLimit,
 		fmt.Sprintf("How many matches to show: a positive number, or %q.", limitAll))
 	Cmd.Flags().BoolVar(&cqlOpt, "cql", false,
-		"Treat QUERY as a raw CQL query instead of text to search for; "+
-			"cannot be combined with --space or an explicit --type (put those clauses in the query).")
+		"Send QUERY as a raw CQL query, and not as text to search for. Not with --space "+
+			"or --type. Put those clauses in the query.")
 
 	completion.RegisterFlag(Cmd, "space", cobra.NoFileCompletions)
 	completion.RegisterFlag(Cmd, "type", completion.Values(
