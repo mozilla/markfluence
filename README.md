@@ -60,7 +60,7 @@ to use it. It also tells you where to find more documentation.
 |---|---|
 | [README.md](README.md), this file | installation, configuration, and use |
 | [docs/commands/](docs/commands/) | the `--help` text of every command, as Markdown. It is the same text that `markfluence CMD --help` prints, and it comes from the binary |
-| [docs/markdown_file.md](docs/markdown_file.md) | the page format: every frontmatter field, and what the converter does with each body construct |
+| [docs/markdown-file.md](docs/markdown-file.md) | the page format: every frontmatter field, and what the converter does with each body construct |
 | [docs/root-model.md](docs/root-model.md) | the documentation root: how a tree of files maps to a tree of pages |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | how to contribute: the development setup, what to run before you open a pull request, the commit conventions, and how to file an issue |
 | [docs/confluence/](docs/confluence/) | what we found out about Confluence by experiment: the API, the storage format, the scopes, and the traps that give you a confident wrong answer |
@@ -593,7 +593,7 @@ page_width: max
 ...
 ```
 
-**[docs/markdown_file.md](docs/markdown_file.md) is the reference for the page
+**[docs/markdown-file.md](docs/markdown-file.md) is the reference for the page
 format.** It gives every frontmatter field and what each verb does with it. It
 also gives every body construct:
 
@@ -621,7 +621,7 @@ also gives every body construct:
   `markfluence.yaml` file at the root of that tree. Without one, the root of
   each file is still its own directory. Then a page cannot reach an image or
   another page that is *above* itself. A shared-assets layout as in
-  [docs/markdown_file.md](docs/markdown_file.md) does not work at all without a
+  [docs/markdown-file.md](docs/markdown-file.md) does not work at all without a
   declared root.
 
 ```yaml
