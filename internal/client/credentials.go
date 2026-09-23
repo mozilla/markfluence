@@ -15,11 +15,11 @@ import (
 
 // credentialKeys are the settings the credentials file holds, in the order
 // WriteCredentials writes them.
-var credentialKeys = []string{urlEnv, usernameEnv, tokenEnv, cloudIDEnv}
+var credentialKeys = []string{URLVar, UsernameVar, TokenVar, CloudIDVar}
 
 // credentialsHeader opens a file WriteCredentials writes. One line, so
 // UnkeptLines can recognize it and a rewrite of a written file is quiet.
-const credentialsHeader = "# Written by markfluence credentials-init. See " + credentialsDoc + "\n"
+const credentialsHeader = "# Written by markfluence credentials-init. See " + CredentialsDoc + "\n"
 
 // CredentialsPath is where the user's credentials file lives:
 // $XDG_CONFIG_HOME/markfluence/credentials, else
@@ -42,11 +42,47 @@ func CredentialsPath() string {
 	return filepath.Join(home, ".config", "markfluence", "credentials")
 }
 
+// CredentialsFile is an existing credentials file, as credentials-init needs
+// it before rewriting it.
+type CredentialsFile struct {
+	// Values are the settings, parsed as Resolve parses them.
+	Values map[string]string
+	// Comments and Others count the lines a rewrite would not keep: comments
+	// other than WriteCredentials' own header, and keys that are not settings.
+	Comments, Others int
+	// Mode is the file's permission bits.
+	Mode os.FileMode
+}
+
 // ReadCredentials reads the credentials file at path with the rules Resolve
-// uses, returning nil when there is none. It raises no permission warning: its
-// caller is credentials-init, which is about to rewrite the file 0600.
-func ReadCredentials(path string) (map[string]string, error) {
-	return loadCredentials(path, readDotenv)
+// uses, returning nil when there is none. It reads the file once, so the
+// values, the line counts, and the mode all describe the same file. It raises
+// no permission warning: its caller is credentials-init, which is about to
+// rewrite the file 0600.
+func ReadCredentials(path string) (*CredentialsFile, error) {
+	var cf *CredentialsFile
+	_, err := loadCredentials(path, func(p string) (map[string]string, error) {
+		f, err := os.Open(p)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = f.Close() }()
+		fi, err := f.Stat()
+		if err != nil {
+			return nil, err
+		}
+		data, err := io.ReadAll(f)
+		if err != nil {
+			return nil, err
+		}
+		cf = &CredentialsFile{Values: parseDotenv(data), Mode: fi.Mode().Perm()}
+		cf.Comments, cf.Others = unkeptLines(data)
+		return cf.Values, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return cf, nil
 }
 
 // loadCredentials reads the credentials file with read, returning nil when
@@ -159,33 +195,24 @@ func WriteCredentials(path string, values map[string]string) error {
 	return nil
 }
 
-// UnkeptLines counts the lines of the credentials file at path that
-// WriteCredentials would not keep: comments, other than its own header, and
-// keys that are not credentials settings. A missing file has none.
-// credentials-init says so before it rewrites a file somebody wrote by hand.
-func UnkeptLines(path string) (int, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, err
-	}
-	n := 0
+// unkeptLines counts the lines of a credentials file that WriteCredentials
+// would not keep: comments, other than its own header, and keys that are not
+// settings.
+func unkeptLines(data []byte) (comments, others int) {
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		switch {
 		case line == "", line+"\n" == credentialsHeader:
 		case strings.HasPrefix(line, "#"):
-			n++
+			comments++
 		default:
 			key, _, _ := strings.Cut(strings.TrimPrefix(line, "export "), "=")
 			if !isCredentialKey(strings.TrimSpace(key)) {
-				n++
+				others++
 			}
 		}
 	}
-	return n, nil
+	return comments, others
 }
 
 // replaceFile writes content to a temporary file beside target and renames it

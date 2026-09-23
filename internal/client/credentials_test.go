@@ -17,6 +17,16 @@ func credentialsTarget(t *testing.T) string {
 	return filepath.Join(t.TempDir(), "markfluence", "credentials")
 }
 
+// readValues is the settings in the credentials file at path.
+func readValues(t *testing.T, path string) map[string]string {
+	t.Helper()
+	cf, err := ReadCredentials(path)
+	if err != nil || cf == nil {
+		t.Fatalf("ReadCredentials = %v, %v", cf, err)
+	}
+	return cf.Values
+}
+
 func mode(t *testing.T, path string) os.FileMode {
 	t.Helper()
 	fi, err := os.Stat(path)
@@ -42,7 +52,7 @@ func noTempFiles(t *testing.T, dir string) {
 
 func TestWriteCredentialsModes(t *testing.T) {
 	path := credentialsTarget(t)
-	values := map[string]string{urlEnv: "https://wiki", usernameEnv: "bot", tokenEnv: "secret"}
+	values := map[string]string{URLVar: "https://wiki", UsernameVar: "bot", TokenVar: "secret"}
 	if err := WriteCredentials(path, values); err != nil {
 		t.Fatal(err)
 	}
@@ -54,16 +64,13 @@ func TestWriteCredentialsModes(t *testing.T) {
 	}
 	noTempFiles(t, filepath.Dir(path))
 
-	got, err := ReadCredentials(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := readValues(t, path)
 	for k, v := range values {
 		if got[k] != v {
 			t.Errorf("%s = %q, want %q", k, got[k], v)
 		}
 	}
-	if _, ok := got[cloudIDEnv]; ok {
+	if _, ok := got[CloudIDVar]; ok {
 		t.Errorf("an empty cloud ID was written: %v", got)
 	}
 }
@@ -78,7 +85,7 @@ func TestWriteCredentialsLeavesAnExistingDirectoryAlone(t *testing.T) {
 	if err := os.Chmod(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteCredentials(path, map[string]string{tokenEnv: "secret"}); err != nil {
+	if err := WriteCredentials(path, map[string]string{TokenVar: "secret"}); err != nil {
 		t.Fatal(err)
 	}
 	if m := mode(t, filepath.Dir(path)); m != 0o755 {
@@ -103,7 +110,7 @@ func TestWriteCredentialsTightensALooseFile(t *testing.T) {
 	if _, err := ReadCredentials(path); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteCredentials(path, map[string]string{tokenEnv: "new"}); err != nil {
+	if err := WriteCredentials(path, map[string]string{TokenVar: "new"}); err != nil {
 		t.Fatal(err)
 	}
 	if m := mode(t, path); m != 0o600 {
@@ -128,18 +135,15 @@ func TestWriteCredentialsWritesThroughASymlink(t *testing.T) {
 	if err := os.Symlink(real, path); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteCredentials(path, map[string]string{tokenEnv: "rotated"}); err != nil {
+	if err := WriteCredentials(path, map[string]string{TokenVar: "rotated"}); err != nil {
 		t.Fatal(err)
 	}
 	if !isSymlink(path) {
 		t.Fatal("the symbolic link was replaced by a file")
 	}
-	got, err := ReadCredentials(real)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got[tokenEnv] != "rotated" {
-		t.Errorf("link target token = %q, want rotated", got[tokenEnv])
+	got := readValues(t, real)
+	if got[TokenVar] != "rotated" {
+		t.Errorf("link target token = %q, want rotated", got[TokenVar])
 	}
 	noTempFiles(t, filepath.Dir(path))
 	noTempFiles(t, filepath.Dir(real))
@@ -162,16 +166,13 @@ func TestWriteCredentialsRoundTrips(t *testing.T) {
 		`back\slash`,
 	} {
 		path := credentialsTarget(t)
-		if err := WriteCredentials(path, map[string]string{tokenEnv: v}); err != nil {
+		if err := WriteCredentials(path, map[string]string{TokenVar: v}); err != nil {
 			t.Errorf("%q: %v", v, err)
 			continue
 		}
-		got, err := ReadCredentials(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got[tokenEnv] != v {
-			t.Errorf("wrote %q, read back %q", v, got[tokenEnv])
+		got := readValues(t, path)
+		if got[TokenVar] != v {
+			t.Errorf("wrote %q, read back %q", v, got[TokenVar])
 		}
 	}
 }
@@ -187,7 +188,7 @@ func TestWriteCredentialsRefusesALineBreak(t *testing.T) {
 		if err := os.WriteFile(path, []byte(full), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := WriteCredentials(path, map[string]string{tokenEnv: v}); err == nil {
+		if err := WriteCredentials(path, map[string]string{TokenVar: v}); err == nil {
 			t.Errorf("%q: want an error", v)
 		}
 		if b, _ := os.ReadFile(path); string(b) != full {
@@ -313,24 +314,30 @@ func TestHTTPErrorShapePredicates(t *testing.T) {
 	}
 }
 
-// TestUnkeptLines: a hand-written file's comments and stray keys are counted,
-// and a file WriteCredentials wrote has none.
-func TestUnkeptLines(t *testing.T) {
+// TestReadCredentialsCountsWhatARewriteDrops: a hand-written file's comments
+// and stray keys are counted, and a file WriteCredentials wrote has none.
+func TestReadCredentialsCountsWhatARewriteDrops(t *testing.T) {
 	path := credentialsTarget(t)
-	if n, err := UnkeptLines(path); n != 0 || err != nil {
-		t.Errorf("missing file: %d, %v; want 0, nil", n, err)
-	}
-	if err := WriteCredentials(path, map[string]string{urlEnv: "https://wiki", tokenEnv: "s"}); err != nil {
+	if err := WriteCredentials(path, map[string]string{URLVar: "https://wiki", TokenVar: "s"}); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := UnkeptLines(path); n != 0 || err != nil {
-		t.Errorf("written file: %d, %v; want 0, nil", n, err)
+	cf, err := ReadCredentials(path)
+	if err != nil || cf.Comments != 0 || cf.Others != 0 || cf.Mode != 0o600 {
+		t.Errorf("written file: %+v, %v; want no dropped lines and mode 0600", cf, err)
 	}
-	body := "# my token, rotated in May\nexport CONFLUENCE_URL=https://wiki\n\nOTHER=1\nCONFLUENCE_TOKEN=s\n"
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+	body := "# my token, rotated in May\n# old: CONFLUENCE_TOKEN=x\nexport CONFLUENCE_URL=https://wiki\n\n" +
+		"OTHER=1\nCONFLUENCE_TOKEN=s\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := UnkeptLines(path); n != 2 || err != nil {
-		t.Errorf("hand-written file: %d, %v; want 2, nil", n, err)
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cf, err = ReadCredentials(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cf.Comments != 2 || cf.Others != 1 || cf.Mode != 0o644 || cf.Values[TokenVar] != "s" {
+		t.Errorf("hand-written file: %+v; want 2 comments, 1 other, mode 0644, the token", cf)
 	}
 }

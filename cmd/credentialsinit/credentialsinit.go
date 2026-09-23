@@ -18,17 +18,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const credentialsDoc = "https://github.com/mozilla/markfluence/blob/main/docs/credentials.md"
-
-// The CONFLUENCE_* names, repeated here because internal/client keeps its own
-// unexported.
-const (
-	urlKey      = "CONFLUENCE_URL"
-	usernameKey = "CONFLUENCE_USERNAME"
-	tokenKey    = "CONFLUENCE_TOKEN"
-	cloudIDKey  = "CONFLUENCE_CLOUD_ID"
-)
-
 // Cmd is the credentials-init command.
 var Cmd = &cobra.Command{
 	Use:   "credentials-init",
@@ -80,7 +69,7 @@ func run(cmd *cobra.Command, _ []string) error {
 	}
 	if !isTerminal(os.Stdin) || !isTerminal(os.Stderr) {
 		return fmt.Errorf("credentials-init needs a terminal to ask its questions. In CI, set the CONFLUENCE_* "+
-			"environment variables instead. See %s", credentialsDoc)
+			"environment variables instead. See %s", client.CredentialsDoc)
 	}
 
 	err := runInit(newTerminal(os.Stdin, os.Stderr), deps{
@@ -88,9 +77,10 @@ func run(cmd *cobra.Command, _ []string) error {
 		fetchCloudID: client.FetchCloudID,
 		verify:       verify,
 		getenv:       os.Getenv,
-		info:         ui.Info,
-		success:      ui.Success,
-		warn:         ui.Warn,
+		// All of it to stderr, beside the prompts: see ui.InfoStderr.
+		info:    ui.InfoStderr,
+		success: ui.SuccessStderr,
+		warn:    ui.Warn,
 	})
 	if err != nil {
 		ui.Error(err.Error())
@@ -130,40 +120,52 @@ var errAborted = errors.New("input ended; nothing was written")
 
 func runInit(p prompter, d deps) error {
 	shown := client.DisplayPath(d.path)
-	current, err := client.ReadCredentials(d.path)
+	existing, err := client.ReadCredentials(d.path)
 	if err != nil {
 		return err
 	}
-	if current != nil {
-		d.info("Updating " + shown + ". Press Enter to keep a current value.")
-		n, err := client.UnkeptLines(d.path)
-		if err != nil {
-			return err
+	current := map[string]string{}
+	if existing != nil {
+		current = existing.Values
+		d.info(updatingNotice(shown, existing))
+		if client.LooseMode(existing.Mode) {
+			d.info(fmt.Sprintf("%s is mode %#o now; the new file will be 0600.", shown, existing.Mode))
 		}
-		if n > 0 {
-			d.warn(fmt.Sprintf("%s has %d comment or other line(s) that the new file will not keep.",
-				shown, n))
-		}
-		if fi, err := os.Stat(d.path); err == nil && fi.Mode().Perm()&0o077 != 0 {
-			d.info(fmt.Sprintf("%s is mode %#o now; the new file will be 0600.", shown, fi.Mode().Perm()))
-		}
+		d.info("Press Enter to keep a current value.")
 	}
+	// Before any question: an exported variable can make the file pointless,
+	// and finding that out after answering everything is too late.
+	warnEnvironment(d)
 
-	siteURL, err := askURL(p, d, current[urlKey])
+	siteURL, err := askURL(p, d, current[client.URLVar])
 	if err != nil {
 		return err
 	}
-	cloudID := findCloudID(d, siteURL)
-	username, err := askLine(p, d, "Username (your email address)", current[usernameKey])
+	// The current token and cloud ID belong to the current site. Offering
+	// them for a different one would pair one site's token with another's URL,
+	// which is what Resolve's same-source rule exists to stop.
+	sameSite := false
+	if old, _, err := normalizeURL(current[client.URLVar]); err == nil && old == siteURL {
+		sameSite = true
+	} else if current[client.TokenVar] != "" {
+		d.info("The site changed, so the current token is not kept.")
+	}
+	keptCloudID := ""
+	if sameSite {
+		keptCloudID = current[client.CloudIDVar]
+	}
+	cloudID := findCloudID(d, siteURL, keptCloudID)
+	username, err := askLine(p, d, "Username (your email address)", current[client.UsernameVar])
 	if err != nil {
 		return err
 	}
-	token, err := askToken(p, d, current[tokenKey] != "")
+	hasToken := sameSite && current[client.TokenVar] != ""
+	token, err := askToken(p, d, hasToken)
 	if err != nil {
 		return err
 	}
 	if token == "" {
-		token = current[tokenKey]
+		token = current[client.TokenVar]
 	}
 
 	cfg := client.Config{SiteURL: siteURL, CloudID: cloudID, Username: username, Token: token}
@@ -172,7 +174,9 @@ func runInit(p prompter, d deps) error {
 		return err
 	}
 
-	values := map[string]string{urlKey: siteURL, usernameKey: username, tokenKey: token, cloudIDKey: cloudID}
+	values := map[string]string{
+		client.URLVar: siteURL, client.UsernameVar: username, client.TokenVar: token, client.CloudIDVar: cloudID,
+	}
 	if err := client.WriteCredentials(d.path, values); err != nil {
 		return err
 	}
@@ -181,8 +185,23 @@ func runInit(p prompter, d deps) error {
 	} else {
 		d.warn("Wrote " + shown + " without checking the credentials.")
 	}
-	warnEnvironment(d)
 	return nil
+}
+
+// updatingNotice says, before any question, that the file is rewritten and
+// what of it will not survive, while Ctrl-C still costs nothing.
+func updatingNotice(shown string, f *client.CredentialsFile) string {
+	var drop string
+	switch {
+	case f.Comments > 0 && f.Others > 0:
+		drop = " This will drop comments, and lines that are not CONFLUENCE_* settings, from the file. " +
+			"Ctrl-C to exit."
+	case f.Comments > 0:
+		drop = " This will drop comments from the file. Ctrl-C to exit."
+	case f.Others > 0:
+		drop = " This will drop lines that are not CONFLUENCE_* settings from the file. Ctrl-C to exit."
+	}
+	return "Updating " + shown + "." + drop
 }
 
 // askURL asks for the site URL until it gets one it can use.
@@ -251,48 +270,75 @@ func askToken(p prompter, d deps, hasCurrent bool) (string, error) {
 	}
 }
 
-// normalizeURL reduces what was typed to a site URL, scheme and host. Every
-// request appends /wiki/... to the site URL, so a pasted page URL, or a /wiki
-// suffix, would otherwise break every request. Only https is accepted: the
-// token goes out as basic auth.
-func normalizeURL(v string) (site, note string, err error) {
+// normalizeURL reduces what was typed to a site URL, scheme and lowercased
+// host. Every request appends /wiki/... to the site URL, so a pasted page URL,
+// or a /wiki suffix, would otherwise break every request. Only https is
+// accepted: the token goes out as basic auth.
+func normalizeURL(typed string) (site, note string, err error) {
+	v := strings.TrimSpace(typed)
 	if !strings.Contains(v, "://") {
 		v = "https://" + v
 	}
 	u, err := url.Parse(v)
 	if err != nil || u.Host == "" {
-		return "", "", fmt.Errorf("%q is not a URL", v)
+		return "", "", fmt.Errorf("%q is not a URL", typed)
 	}
 	if u.Scheme != "https" {
-		return "", "", fmt.Errorf("the URL must use https, because the token is sent with each request: %s", v)
+		return "", "", fmt.Errorf("the URL must use https, because the token is sent with each request: %s", typed)
 	}
-	site = "https://" + u.Host
-	if p := strings.TrimRight(u.Path, "/"); p != "" || u.RawQuery != "" || u.Fragment != "" {
+	site = "https://" + strings.ToLower(u.Host)
+	switch {
+	case u.User != nil:
+		note = "Using " + site + ". The user name and password in that URL are not saved."
+	case strings.TrimRight(u.Path, "/") != "" || u.RawQuery != "" || u.Fragment != "":
 		note = "Using " + site + ", the site part of that URL."
 	}
 	return site, note, nil
 }
 
-// findCloudID gets the site's cloud ID, or "" with a message saying why there
-// is none. Only for atlassian.net: the gateway markfluence routes a cloud ID
+// findCloudID gets the site's cloud ID, or keeps the current one (kept is ""
+// unless the site is unchanged), or returns "" with a message saying why there
+// is none.
+//
+// It fetches only for atlassian.net: the gateway markfluence routes a cloud ID
 // through is api.atlassian.com, which Government and isolated Cloud sites do
-// not use, so a cloud ID there would send every request to the wrong place.
-func findCloudID(d deps, siteURL string) string {
+// not use. A cloud ID that is already in the file for another host was put
+// there by hand, and is kept rather than second-guessed.
+func findCloudID(d deps, siteURL, kept string) string {
 	u, err := url.Parse(siteURL)
 	if err != nil || !strings.HasSuffix(u.Hostname(), ".atlassian.net") {
-		d.info("Saving no cloud ID: markfluence uses one only for a site at atlassian.net. A scoped " +
-			"API token will not work with this site.")
+		if kept != "" {
+			d.info("Keeping the current cloud ID, " + kept + ".")
+			return kept
+		}
+		d.info("Saving no cloud ID: markfluence gets one only for a site at atlassian.net. A scoped " +
+			"API token needs one; set " + client.CloudIDVar + " in the file by hand.")
 		return ""
 	}
 	id, err := d.fetchCloudID(siteURL)
-	if err != nil {
+	switch {
+	case err == nil:
+		d.info("Cloud ID: " + id)
+		return id
+	case kept != "":
+		d.warn(fmt.Sprintf("Could not get the cloud ID of %s, so the current one, %s, is kept. (%v)",
+			siteURL, kept, err))
+		return kept
+	default:
 		d.warn(fmt.Sprintf("Could not get the cloud ID of %s, so none is saved. A normal API token "+
 			"works without one; for a scoped token, run credentials-init again later. (%v)", siteURL, err))
 		return ""
 	}
-	d.info("Cloud ID: " + id)
-	return id
 }
+
+// verdict is what a failed check means for the file.
+type verdict int
+
+const (
+	refuse verdict = iota // the credentials do not work: write nothing
+	ask                   // cannot tell: ask whether to save
+	accept                // they work, with a caveat worth a warning
+)
 
 // check sends the request user-info makes. It reports whether the
 // credentials were checked, or an error when nothing is to be written: a
@@ -310,9 +356,13 @@ func check(p prompter, d deps, cfg client.Config) (bool, error) {
 		return true, nil
 	}
 
-	refuse, why := classify(err, cfg)
-	if refuse {
+	v, why := classify(err, cfg)
+	switch v {
+	case refuse:
 		return false, fmt.Errorf("%s; nothing was written. (%v)", why, err)
+	case accept:
+		d.warn(why)
+		return true, nil
 	}
 	d.warn(why)
 	answer, perr := p.Line("Save anyway? [y/N]: ")
@@ -325,59 +375,61 @@ func check(p prompter, d deps, cfg client.Config) (bool, error) {
 	return false, errors.New("nothing was written")
 }
 
-// classify decides between refusing to save and asking, by the shape of the
-// response rather than its status alone: the same status arrives for
-// unrelated reasons (docs/confluence/api.md). The shapes are the ones
-// HTTPError's hint matches, so the two cannot disagree.
-func classify(err error, cfg client.Config) (refuse bool, why string) {
+// classify decides what a failed check means, by the shape of the response
+// rather than its status alone: the same status arrives for unrelated reasons
+// (docs/confluence/api.md). The shapes are the ones HTTPError's hint matches,
+// so the two cannot disagree.
+func classify(err error, cfg client.Config) (verdict, string) {
 	var he *client.HTTPError
 	if !errors.As(err, &he) {
-		return false, fmt.Sprintf("Could not check the credentials: %v", err)
+		return ask, fmt.Sprintf("Could not check the credentials: %v", err)
 	}
 	who := cfg.Username + " at " + cfg.SiteURL
 	switch {
 	case he.RejectedCredential():
-		return true, "Confluence refused the credentials for " + who
+		return refuse, "Confluence refused the credentials for " + who
 	case he.ScopeMismatch():
-		return false, "The credentials are good, but the token has no scope for the user-info request " +
-			"(read:confluence-user), so markfluence user-info will not work with it"
+		// The token authenticated: this is a checked answer, not an unknown one.
+		return accept, "The credentials work, but the token has no scope for the user-info request " +
+			"(read:confluence-user), so markfluence user-info will not work with it."
 	case he.SiteRejectedAuth():
-		return true, "The site refused the credentials for " + who + " before they reached the API. " +
+		return refuse, "The site refused the credentials for " + who + " before they reached the API. " +
 			"That is what a scoped token gets without a cloud ID"
 	case he.StatusCode == http.StatusUnauthorized || he.StatusCode == http.StatusForbidden:
-		return true, "Confluence refused the credentials for " + who
+		return refuse, "Confluence refused the credentials for " + who
 	case he.StatusCode == http.StatusNotFound:
-		return true, cfg.SiteURL + " does not look like a Confluence site"
+		return refuse, cfg.SiteURL + " does not look like a Confluence site"
 	default:
-		return false, fmt.Sprintf("Could not check the credentials: %v", err)
+		return ask, fmt.Sprintf("Could not check the credentials: %v", err)
 	}
 }
 
-// warnEnvironment reports what exported CONFLUENCE_* variables do to the file
-// just written, following Resolve's rules rather than a blanket "overrides".
+// warnEnvironment reports what exported CONFLUENCE_* variables will do to the
+// file, following Resolve's rules rather than a blanket "overrides".
 func warnEnvironment(d deps) {
 	set := func(k string) bool { return d.getenv(k) != "" }
-	siteURL, username, token := set(urlKey), set(usernameKey), set(tokenKey)
+	siteURL, username, token := set(client.URLVar), set(client.UsernameVar), set(client.TokenVar)
 	switch {
 	case siteURL && username && token:
 		d.warn("CONFLUENCE_URL, CONFLUENCE_USERNAME, and CONFLUENCE_TOKEN are set in the environment, " +
-			"so markfluence does not read the credentials file at all. Unset them to use it.")
+			"so markfluence will not read the credentials file at all until you unset them.")
 		return
 	case siteURL && token:
-		d.warn("CONFLUENCE_URL and CONFLUENCE_TOKEN are set in the environment, and are used instead of " +
-			"the ones in the file. Unset them to use the file.")
+		d.warn("CONFLUENCE_URL and CONFLUENCE_TOKEN are set in the environment, and will be used instead " +
+			"of the ones in the file until you unset them.")
 		return
 	case siteURL || token:
 		d.warn("CONFLUENCE_URL or CONFLUENCE_TOKEN is set in the environment. The URL and the token " +
-			"must come from the same place, so every command fails until you unset it.")
+			"must come from the same place, so every command will fail until you unset it.")
 	}
 	if username {
-		d.warn("CONFLUENCE_USERNAME is set in the environment, and is used instead of the one in the file.")
+		d.warn("CONFLUENCE_USERNAME is set in the environment, and will be used instead of the one in " +
+			"the file.")
 	}
-	// With the URL exported, the cloud ID follows it, and that case failed
-	// above already.
-	if !siteURL && set(cloudIDKey) {
-		d.warn("CONFLUENCE_CLOUD_ID is set in the environment. markfluence ignores it, and warns on " +
+	// With the URL exported, the cloud ID follows it, and that case is
+	// reported above already.
+	if !siteURL && set(client.CloudIDVar) {
+		d.warn("CONFLUENCE_CLOUD_ID is set in the environment. markfluence will ignore it, and warn on " +
 			"every run, because the URL comes from the file. Unset it.")
 	}
 }
