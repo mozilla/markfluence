@@ -51,7 +51,7 @@ The three results are different on purpose:
   uses the link index to resolve links. Thus a link that expands to a path
   outside the root is never in the index. See
   [Link resolution](#link-resolution), and see
-  [Non-goals](guarantees.md#symlinks) for why a symlinked ancestor also cannot
+  [Non-goals](design-principles.md#symlinks) for why a symlinked ancestor also cannot
   trick the walk.
 - **A parent** is important. A publish under the wrong parent, or under no
   parent with no message, is worse than no publish. Thus a parent that escapes,
@@ -377,7 +377,7 @@ attachment *name* is the base name of the file, and it has none of this path
 Two pages at different depths that reference the same file now record the same
 source and get the same attachment. Before, each page recorded the reference as
 it was written, and the same file had two identities in Confluence. This is L3
-(`identity-from-asset-location`, `docs/guarantees.md`). Because the name is
+(`identity-from-asset-location`, `docs/design-principles.md`). Because the name is
 only the base name, a move of an image keeps the same attachment, and the next
 publish records the new path. A rename of the file creates a new attachment.
 See the recipes in the README for what that means in practice.

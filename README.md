@@ -64,7 +64,7 @@ to use it. It also tells you where to find more documentation.
 | [docs/root-model.md](docs/root-model.md) | the documentation root: how a tree of files maps to a tree of pages |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | how to contribute: the development setup, what to run before you open a pull request, the commit conventions, and how to file an issue |
 | [docs/confluence/](docs/confluence/) | what we found out about Confluence by experiment: the API, the storage format, the scopes, and the traps that give you a confident wrong answer |
-| [docs/guarantees.md](docs/guarantees.md) | the design principles that guide markfluence, and the trade-offs they accept |
+| [docs/design-principles.md](docs/design-principles.md) | the design principles that guide markfluence, and the trade-offs they accept |
 | [docs/json-output.md](docs/json-output.md) | `--json` in detail: the status verbs, what counts as a result, and why the shapes are what they are |
 | [schema/json-output/v1.json](schema/json-output/v1.json) | the `--json` schema. The `markfluence schema` command also prints it |
 

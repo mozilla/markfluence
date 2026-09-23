@@ -4,7 +4,7 @@ package convert_test
 // Markdown back, and exporting again yields the same Markdown. Once a page has
 // been through markfluence, it stops moving.
 //
-// This is L5 as docs/guarantees.md words it: the page keeps its meaning, and a
+// This is L5 as docs/design-principles.md words it: the page keeps its meaning, and a
 // second export gives the same Markdown. It is deliberately not "publishing an
 // export back changes nothing on the page", which does not hold. Measured
 // against a live page (2026-09-05; docs/confluence/storage-format.md): Confluence's editor writes
