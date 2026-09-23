@@ -1,55 +1,60 @@
 ## markfluence create
 
-Create new Confluence pages from markdown files
+Create new Confluence pages from Markdown files
 
 ### Synopsis
 
-Create new Confluence pages from markdown FILEs.
+Create new Confluence pages from Markdown FILEs.
 
-The title comes from frontmatter, or from --title, which overrides it and
-requires a single FILE. The space comes from --space, then frontmatter,
-then a space: in markfluence.yaml -- the answer closest to the content
-wins. The parent comes from --parent or frontmatter and may be a page or
-a Cloud folder -- give a folder's id the same way you would a page's.
-Page width follows the same chain and defaults to max.
+The title comes from the frontmatter, or from --title. --title overrides the
+frontmatter, and it works with one FILE only.
 
-A page_status: line sets the created page's status -- the coloured
-lozenge beside its title. Which statuses a page may be given is decided
-by Confluence per page and per account rather than by a fixed list, and
-the only page that can answer for a new page is the new page, so unlike
-labels the name is checked after the page exists: a name it will not
-take leaves the page created, with no status and a warning naming the
-ones it would take. Omitted, the page is created with no status.
+The space comes from --space or the frontmatter. If they disagree, create
+refuses the file. If neither gives a space, create uses the space: in
+markfluence.yaml.
 
-Every file is checked first -- including converting it -- and if any would
-fail, nothing is created. A page_id that resolves to nothing is a failure
-too, not a fresh page: create will not publish a second copy and overwrite
-an id it cannot explain. Remove the page_id to create a new page, or
-correct it.
+The page width comes from --page-width, then the frontmatter, then
+markfluence.yaml. The first one that gives a value wins, and the default is
+max.
 
-Once every file passes, a content-less stub is reserved for each,
-parents-first, before any of them is converted -- so a link between two
-files in the same batch resolves regardless of which direction it points,
-or whether the two link to each other. A parent cycle among the given
-files is rejected instead. A run interrupted after the reserve phase
-leaves an empty page version behind rather than no page; every id is
-already written back, so a plain update finishes the job.
+The parent comes from --parent or the frontmatter. It can be a page or a Cloud
+folder. Give the id of a folder in the same way as the id of a page.
 
-A whole tree can be created in one pass: give each child a parent: that
-points at its parent's .md file, and creation is ordered parents-first
-with the real ids filled in.
+A page_status: line sets the status of the new page, which is the colored
+lozenge next to its title. Confluence decides which statuses a page can have,
+for each page and each account. Only the new page can answer for a new page.
+Thus create does a check of the name after the page exists. If the page does
+not accept the name, the page stays created, with no status and a warning that
+lists the names that it accepts. With no page_status:, the page has no status.
 
-Unless --no-persist is given, each created page's
-title/space/parent/page_id/page_width are recorded -- in the file's own
-frontmatter, or in a 'pages:' entry in markfluence.yaml when that is
-where the file's metadata lives. A file with no frontmatter in a project
-that uses 'pages:' gets an entry, so the markdown stays untouched; a file
-that already carries frontmatter keeps using it. Recording into
-markfluence.yaml modifies that shared file, once per created page.
+create does a check of every file first, and converts each one. If any file
+would fail, create makes no page. A page_id that names no page is also a
+failure. create does not make a second copy and overwrite an id that it cannot
+explain. To make a new page, remove the page_id or correct it.
 
---dry-run makes the same checks as a real run, so it exits non-zero on the
-same failures and one unpublishable file aborts the preview for the whole
-batch. To lint several files independently, use check instead.
+When every file passes, create reserves an empty page for each file, parents
+first, before it publishes any of them. Thus a link between two files in the
+same batch resolves in either direction, also when the two files link to each
+other. create refuses a parent cycle among the files.
+
+If a run stops after the reserve step, it leaves an empty page version, and not
+no page. create already wrote every id back, so a plain update completes the
+job.
+
+To create a whole tree in one run, give each child a parent: that names the .md
+file of its parent. create makes the parents first, and fills in the real ids.
+
+create records the title, space, parent, page_id, and page_width of each new
+page, unless you give --no-persist. It writes them to the frontmatter of the
+file, or to its pages: entry in markfluence.yaml when the metadata of the file
+is there. In a project that uses pages:, a file with no frontmatter gets an
+entry, so the Markdown does not change. A file that has frontmatter keeps it.
+A write to markfluence.yaml changes that shared file one time for each new
+page.
+
+--dry-run does the same checks as a real run. Thus it fails on the same
+problems, and one file that cannot publish stops the preview of the whole batch.
+To check files separately, use check.
 
 ```
 markfluence create FILE... [flags]
@@ -61,32 +66,32 @@ markfluence create FILE... [flags]
   # Create one page in a space
   markfluence create docs/new_page.md --space ENG
 
-  # Create it under an existing parent page or folder
+  # Create it under a parent page or folder that exists
   markfluence create docs/child.md --space ENG --parent 123456
 
-  # Create a whole tree, hierarchy taken from each file's parent: path
+  # Create a whole tree, with the parent: path of each file
   markfluence create docs/*.md --space ENG
 
-  # Override the title and width for a single file
+  # Override the title and the width for one file
   markfluence create note.md --space ENG --title "Ad-hoc note" --page-width wide
 
-  # Create without writing page_id back into the file
+  # Create the page, and do not write the page_id back into the file
   markfluence create note.md --space ENG --no-persist
 
-  # Preview everything, write nothing
+  # Show what would happen, and write nothing
   markfluence create docs/*.md --space ENG --dry-run
 ```
 
 ### Options
 
 ```
-      --dry-run             Preview what would be created without writing to Confluence or files.
+      --dry-run             Show what create would do, and write nothing to Confluence or to files.
   -h, --help                help for create
-      --no-persist          Do not record anything: leave both the file and markfluence.yaml untouched.
-      --page-width string   Override the page width: narrow, wide, or max.
-      --parent string       Parent page or folder id for the new page(s).
-      --space string        Target space key.
-      --title string        Override the page title (requires a single FILE).
+      --no-persist          Record no metadata. Do not change the file or markfluence.yaml.
+      --page-width string   Page width: narrow, wide, or max. Overrides the frontmatter.
+      --parent string       Id of the parent page or folder for the new pages.
+      --space string        Key of the target space.
+      --title string        Page title. Overrides the frontmatter. Works with one FILE only.
 ```
 
 ### Options inherited from parent commands
