@@ -55,10 +55,11 @@ type Envelope struct {
 	// report, the same convention Results already follows.
 	Roots []string `json:"roots"`
 	// Warnings is about the invocation rather than about any page or file --
-	// currently only the .env permission warning. It is filled from the
+	// currently only the permission warning for a file holding the API token
+	// (the credentials file, or one named by --env-file). It is filled from the
 	// package-level collector by NewEnvelope, not by the caller: the warning is
 	// raised deep inside credential resolution, before any command knows
-	// whether it will emit an envelope at all, and twelve commands would
+	// whether it will emit an envelope at all, and fifteen commands would
 	// otherwise each have to remember to pass it through. Not omitted: every
 	// envelope carries the key, [] when empty, as Roots and Results do.
 	Warnings []string `json:"warnings"`
@@ -76,15 +77,15 @@ type ErrorObject struct {
 	// Warnings is the envelope's Warnings, carried here for the same reason it
 	// exists there -- and it matters more here: a fatal failure emits no
 	// envelope, and a credential-resolution failure is exactly the run where a
-	// warning about the .env holding the token is worth reading.
+	// warning about the file holding the token is worth reading.
 	Warnings []string `json:"warnings"`
 }
 
 // warnings collects invocation-level warnings raised before any document is
 // emitted. Package-level for the same reason client.SetRetryLogger is: the
 // warning comes out of credential resolution, far below the command that will
-// emit the document, and a value threaded through twelve commands is a value
-// the thirteenth forgets.
+// emit the document, and a value threaded through fifteen commands is a value
+// the sixteenth forgets.
 //
 // It is deliberately not an output channel. internal/ui prints the warning for
 // a human; this is how the same text reaches the JSON documents, where stderr

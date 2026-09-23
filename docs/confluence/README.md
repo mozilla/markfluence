@@ -100,7 +100,7 @@ believing it. A status code is evidence about the response, not about the cause.
 
 ## Verifying against a real instance
 
-Point a `.env` at a site you can write to, publish a scratch page, and read it
+Point your credentials at a site you can write to, publish a scratch page, and read it
 back — `body-format=atlas_doc_format` for anything about rendering, a browser for
 anything visual.
 

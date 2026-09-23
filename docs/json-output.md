@@ -23,11 +23,12 @@ also prints it.
   stopped before root resolution. `schema` writes no envelope at all, so it has
   no `roots` key.
 - **`warnings`** holds warnings about the *invocation*, and not about a page or
-  a file. Now, the only such warning is the `.env` permission warning below.
+  a file. Now, the only such warning is the permission warning for a file that
+  holds your API token (see [Configure](../README.md#configure)).
   The warnings of a result are on that result. This field is for a warning that
   belongs to no result. It is `[]` when there is nothing to report. It is also
   on the error object on stderr. A fatal failure writes no envelope, and a
-  credential failure is exactly the run where a warning about your `.env` is
+  credential failure is exactly the run where a warning about that file is
   important.
 - **Status verbs** are different for each command:
   - `update`: `published`, `skipped`

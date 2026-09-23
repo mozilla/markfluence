@@ -37,9 +37,10 @@ markfluence is an authenticated CLI: it holds a Confluence API token, reads loca
 files to publish, and writes local files from what a Confluence site returns.
 That gives it three security boundaries worth attacking.
 
-**Leaking the API token.** The token is read only from `CONFLUENCE_TOKEN` or a
-`.env` file, and is deliberately never accepted as a command-line flag, so it
-can't end up in shell history, `ps` output, or a CI job log. Anything that gets
+**Leaking the API token.** The token is read only from `CONFLUENCE_TOKEN`, the
+user's credentials file, or a file named with `--env-file`, and is deliberately
+never accepted as a command-line flag, so it can't end up in shell history,
+`ps` output, or a CI job log. Anything that gets
 it out anyway is a vulnerability: appearing in `--debug` output or an error
 message, being written into a published page, or being sent to any host that
 isn't your Confluence site or Atlassian's API gateway. A standing example of
@@ -74,5 +75,5 @@ page.
   Dependabot already opens those weekly; a normal issue or PR is the right
   channel. If you can show a way to actually reach it, that's a vulnerability —
   please report it privately.
-- **The permissions on your own `.env` file**, or credentials committed to your
-  own repository.
+- **The permissions on your own credentials file**, or credentials committed to
+  your own repository.

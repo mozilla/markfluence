@@ -14,15 +14,10 @@
 // whatever host the resolved URL names, so a committed, walked-up file naming
 // one would decide where the token is sent.
 //
-// Discover is called from two different starting points for two different
-// reasons, which is why this package returns a Root rather than a bare string:
-// once per invocation from the working directory, to locate .env before any
-// file is touched, and once per Markdown file, from that file's own
-// directory, to bound its reads and name its attachments. The two coincide
-// whenever the file sits under the project the working directory is in, and
-// diverge only when there is no markfluence.yaml at all, or a file belongs to
-// a different project than the working directory does -- both legitimate,
-// neither an error.
+// Discover starts from a Markdown file's own directory, to bound its reads and
+// name its attachments, which is why this package returns a Root rather than a
+// bare string. Nothing discovers a root from the working directory: that walk
+// used to locate .env, and credentials no longer come from a project (#188).
 package project
 
 import (

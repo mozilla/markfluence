@@ -76,25 +76,6 @@ root is different for each file in only two cases. There is no project file at
 all, or a batch covers more than one project (see
 [Multi-root batches](#multi-root-batches-are-allowed)).
 
-## Where markfluence reads `.env`
-
-`.env` is not a reference in a file. markfluence reads it one time for each
-invocation, before it touches any file. It uses the same search as for a root,
-but it starts from the **working directory**, and not from the directory of a
-file. If the search finds no `markfluence.yaml`, markfluence reads `.env` from
-the working directory itself. `--env-file` overrides this fully.
-
-`create`, `update`, `diff`, and `attachment-upload` already build a
-`project.Cache` to find the root of each file. They give the same cache to the
-resolver of the client configuration (`client.ResolveOptions.Roots`). Thus for
-those commands:
-
-- `--root` also moves the directory that markfluence reads `.env` from.
-- markfluence does the search one time, and not two times.
-
-A command that has no per-file root, such as `read` or `search`, builds no
-cache. For it, `--root` has no effect on `.env`.
-
 ## `markfluence.yaml`: the project file
 
 This file marks the root, and it declares settings for the whole project
@@ -125,8 +106,9 @@ file**. The answer that is nearest to the content wins.
 > [!NOTE]
 > This is *not* the sequence for credentials, and the design of the file stops
 > you from using one for the other. Credentials resolve in the sequence **the
-> flag, then the environment, then `.env`**, and they tell *who you are*. A
-> setting here tells *what the content is*.
+> file that `--env-file` names, then the environment, then your credentials
+> file**, and they tell *who you are*. A setting here tells *what the content
+> is*.
 
 markfluence uses a setting from markfluence.yaml only when neither the flag nor
 the frontmatter gives one. Thus a project setting never disagrees with anything.
@@ -278,12 +260,11 @@ wrong `space` publishes to the wrong place in a Confluence instance, and you can
 see that and repair it by hand. A wrong `url` gives away the token, and you can
 do neither.
 
-This file is committed and shared. `.env` is different: git ignores it, and it
-is personal. A stray `.env` in an ancestor directory can give a project
-credentials that are not its own. That is exactly why markfluence reports the
-root, and thus where it read `.env` from. `create`, `update`, and
-`attachment-upload` print it, and `--json` gives it in `roots`. The protection
-is that you can see it, and not a permission check.
+For the same reason, markfluence reads no credentials from a project at all.
+They come from your own credentials file, the environment, or a file that you
+name with `--env-file`, and never from a file that markfluence finds by going
+up from a directory. A repository that you clone cannot give markfluence a URL
+to send your token to.
 
 `markfluence` *reads* a project file, but it *executes* nothing because the
 file is present. Nothing in the file can send a credential to a different
