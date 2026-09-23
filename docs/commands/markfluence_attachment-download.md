@@ -1,34 +1,32 @@
 ## markfluence attachment-download
 
-Download a Confluence page's attachments
+Download the attachments of a Confluence page
 
 ### Synopsis
 
-Download a Confluence page's attachments.
+Download the attachments of a Confluence page to your machine.
 
-PAGE is a numeric page id, a Confluence page URL, or a markdown file
-whose frontmatter has a page_id. Each NAME is an attachment name as
-attachment-list reports it; with no NAME, every attachment is
-downloaded.
+PAGE is a page id, a Confluence page URL, or a Markdown file that names a
+page_id in its frontmatter or in its pages: entry. Each NAME is an attachment
+name, as attachment-list shows it. With no NAME, markfluence downloads every
+attachment.
 
-An attachment markfluence published records the markdown image path it
-came from, and is written back to that path under --dest, so the
-downloaded tree matches what the page's markdown references and
-previews locally.
+markfluence records the source path of each image that it publishes. It writes
+such an attachment back to that path under --dest. Thus the downloaded files
+are where the Markdown of the page expects them, and a local preview works.
 
-An attachment without a recorded path -- one that originated in
-Confluence -- is written under a directory named after the page, since
-an attachment name is unique per page and not per space: two pages'
-diagram.png would otherwise be one file. That is where `read` and
-`export` point at it too.
+An attachment with no recorded path came from Confluence. markfluence writes it
+into a directory named after the page title. An attachment name is unique on a
+page, but not in a space, so two pages can each have a diagram.png. read and
+export also point to this directory.
 
---flat writes everything directly under --dest, under stored names.
+--flat writes every attachment directly into --dest, with its stored name.
 
-A recorded path that would resolve outside --dest is refused for that
-attachment, since the path comes from an attachment comment anyone who
-can edit the page controls.
+markfluence refuses an attachment whose recorded path would go outside --dest.
+The path comes from the attachment comment, and anybody who can edit the page
+can change that comment.
 
-A file that already exists is skipped unless --force.
+markfluence skips a file that already exists, unless you give --force.
 
 ```
 markfluence attachment-download PAGE [NAME...] [flags]
@@ -37,13 +35,13 @@ markfluence attachment-download PAGE [NAME...] [flags]
 ### Examples
 
 ```
-  # Every attachment, to the paths they were published from
+  # Download every attachment to the paths it was published from
   markfluence attachment-download 1234567890 --dest ./out
 
-  # Just one, by its stored name
+  # Download one attachment, by its stored name
   markfluence attachment-download 1234567890 diagram.png --dest ./out
 
-  # Ignore recorded paths and write everything flat
+  # Ignore the recorded paths, and write everything into one directory
   markfluence attachment-download 1234567890 --dest ./out --flat
 
 ```
@@ -51,10 +49,10 @@ markfluence attachment-download PAGE [NAME...] [flags]
 ### Options
 
 ```
-      --dest string   Directory to write attachments into. (default ".")
-      --dry-run       Preview what would be written without creating any files.
-      --flat          Write every attachment under its stored name, ignoring recorded paths.
-      --force         Overwrite files that already exist.
+      --dest string   Directory to write the attachments into. (default ".")
+      --dry-run       Show what markfluence would write, and write no files.
+      --flat          Write every attachment into --dest with its stored name, and ignore recorded paths.
+      --force         Overwrite a file that already exists.
   -h, --help          help for attachment-download
 ```
 
