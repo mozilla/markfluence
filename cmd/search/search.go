@@ -77,15 +77,16 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().StringVar(&spaceOpt, "space", "",
-		"Search only in this space, by its key.")
+		"Search only in this space, by its key. An unknown key is an error, and not an "+
+			"empty result.")
 	Cmd.Flags().StringVar(&typeOpt, "type", client.SearchTypePage,
 		fmt.Sprintf("Type of content to search: %q, %q, or %q.",
 			client.SearchTypePage, client.SearchTypeBlogpost, client.SearchTypeAll))
 	Cmd.Flags().StringVar(&limitOpt, "limit", defaultLimit,
 		fmt.Sprintf("How many matches to show: a positive number, or %q.", limitAll))
 	Cmd.Flags().BoolVar(&cqlOpt, "cql", false,
-		"Send QUERY as a raw CQL query, and not as text to search for. Not with --space "+
-			"or --type. Put those clauses in the query.")
+		"Send QUERY as a raw CQL query, and not as text to search for. Not with --space, "+
+			"or with a --type that you set. Put those clauses in the query.")
 
 	completion.RegisterFlag(Cmd, "space", cobra.NoFileCompletions)
 	completion.RegisterFlag(Cmd, "type", completion.Values(

@@ -59,6 +59,7 @@ var Cmd = &cobra.Command{
 		"stdout holds the diff of the body in unified format, and nothing else. Thus it\n" +
 		"is a patch that other tools can use:\n\n" +
 		"  markfluence diff FILE > my.diff && patch -R -p1 < my.diff\n\n" +
+		"With --json, stdout holds one JSON document with both parts, and not a patch.\n\n" +
 		"The patch applies to the real file, because diff does not compare the\n" +
 		"frontmatter block. Both sides share it. Thus the line numbers in each hunk are\n" +
 		"the line numbers in your editor, and no patch can change a page_id.\n\n" +

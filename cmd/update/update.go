@@ -75,8 +75,9 @@ var Cmd = &cobra.Command{
 		"  - If the page changed after you made your copy, update refuses the file, and\n" +
 		"    does not overwrite the page. Export the page again, or use --force.\n" +
 		"  - If the rendered body already agrees with the page, update skips the body.\n" +
-		"    It still applies attachments, width, and labels. Thus a new version of an\n" +
-		"    image publishes, and the page gets no new version for the body.\n\n" +
+		"    It still applies attachments, width, labels, and page status. Thus a new\n" +
+		"    version of an image publishes, and the page gets no new version for the\n" +
+		"    body. A status change still gives the page a new version.\n\n" +
 		"With no markfluence.yaml, there is no log, so neither check runs. update then\n" +
 		"publishes every file, and each publish makes a new page version.\n\n" +
 		"update publishes a file with no record yet with no check and no warning of its\n" +
@@ -87,8 +88,8 @@ var Cmd = &cobra.Command{
 		"update does each file separately. It exits with a code that is not zero if any\n" +
 		"file failed, also a refused page.\n\n" +
 		"--dry-run shows the new version, the attachment uploads, and any change to the\n" +
-		"width or the labels, and writes nothing to Confluence. It does the same two\n" +
-		"checks as a real run, so its preview agrees with the real run.",
+		"width, the labels, or the page status. It writes nothing to Confluence. It does\n" +
+		"the same two checks as a real run, so its preview agrees with the real run.",
 	Example: "  # Publish a file. The page id comes from its frontmatter or its entry\n" +
 		"  markfluence update docs/managing_an_incident.md\n\n" +
 		"  # Publish a whole tree, as CI does. The metadata comes from the files\n" +

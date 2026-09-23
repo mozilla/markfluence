@@ -83,8 +83,8 @@ var Cmd = &cobra.Command{
 		"same batch resolves in either direction, also when the two files link to each\n" +
 		"other. create refuses a parent cycle among the files.\n\n" +
 		"If a run stops after the reserve step, it leaves an empty page version, and not\n" +
-		"no page. create already wrote every id back, so a plain update completes the\n" +
-		"job.\n\n" +
+		"no page. Unless you gave --no-persist, create already wrote every id back, so\n" +
+		"a plain update completes the job.\n\n" +
 		"To create a whole tree in one run, give each child a parent: that names the .md\n" +
 		"file of its parent. create makes the parents first, and fills in the real ids.\n\n" +
 		"create records the title, space, parent, page_id, and page_width of each new\n" +

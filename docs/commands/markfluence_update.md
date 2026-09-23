@@ -49,8 +49,9 @@ or export recorded locally for that file, in the log next to markfluence.yaml:
   - If the page changed after you made your copy, update refuses the file, and
     does not overwrite the page. Export the page again, or use --force.
   - If the rendered body already agrees with the page, update skips the body.
-    It still applies attachments, width, and labels. Thus a new version of an
-    image publishes, and the page gets no new version for the body.
+    It still applies attachments, width, labels, and page status. Thus a new
+    version of an image publishes, and the page gets no new version for the
+    body. A status change still gives the page a new version.
 
 With no markfluence.yaml, there is no log, so neither check runs. update then
 publishes every file, and each publish makes a new page version.
@@ -66,8 +67,8 @@ update does each file separately. It exits with a code that is not zero if any
 file failed, also a refused page.
 
 --dry-run shows the new version, the attachment uploads, and any change to the
-width or the labels, and writes nothing to Confluence. It does the same two
-checks as a real run, so its preview agrees with the real run.
+width, the labels, or the page status. It writes nothing to Confluence. It does
+the same two checks as a real run, so its preview agrees with the real run.
 
 ```
 markfluence update FILE... [flags]
@@ -109,9 +110,9 @@ markfluence update FILE... [flags]
 
 ```
       --cloud-id string   Atlassian cloud ID. Set it only for a scoped API token. If not set, markfluence uses $CONFLUENCE_CLOUD_ID, then .env
-  -d, --debug             Print debug output, such as each request and each retry
+  -d, --debug             Print debug details, such as each retry decision
       --env-file string   Env file to read credentials from. The default is .env in the documentation root of the working directory, or in the working directory if there is no markfluence.yaml
-      --json              Write one JSON document to stdout, and no human output
+      --json              Write JSON, and no human output. A result goes to stdout. A fatal error goes to stderr as a JSON error object
       --no-color          Print output with no color
       --root string       Documentation root for every file. The default is the nearest directory above each file that has a markfluence.yaml, or the directory of the file if there is none
       --url string        Confluence site URL. If not set, markfluence uses $CONFLUENCE_URL, then .env

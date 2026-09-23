@@ -65,7 +65,7 @@ func init() {
 	Cmd.Flags().BoolVar(&force, "force", false,
 		"Upload the file, also when the checksum shows that the attachment did not change.")
 	Cmd.Flags().BoolVar(&dryRun, "dry-run", false,
-		"Show what markfluence would upload, and write nothing to Confluence.")
+		"Show what attachment-upload would upload, and write nothing to Confluence.")
 }
 
 func run(cmd *cobra.Command, args []string) error {
