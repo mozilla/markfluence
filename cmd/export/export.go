@@ -50,39 +50,40 @@ var (
 var Cmd = &cobra.Command{
 	Use:   command + " [PAGE]",
 	Short: "Write a Confluence page and its attachments to a directory",
-	Long: "Write a Confluence page and the attachments it uses to a directory.\n\n" +
-		"PAGE is a numeric page id, a Confluence page or folder URL, or a\n" +
-		"markdown file whose frontmatter has a page_id. A folder has no content\n" +
-		"of its own, so it is a target only with --depth: what is inside it\n" +
-		"becomes the top level of the export.\n\n" +
-		"Pass --space KEY instead of a PAGE to export a whole space, whose root\n" +
-		"pages become the top level. It needs an explicit --depth, since a space\n" +
-		"walk is one pair of requests per page and folder in it and should be\n" +
-		"asked for rather than typed by accident.\n\n" +
-		"The page is written as markdown with title/space/parent/page_id/\n" +
-		"labels/page_status/page_width frontmatter, so an exported file can be\n" +
-		"edited and published back with update. For a page at the top of the export this\n" +
-		"is exactly what `read` prints; deeper in a tree the paths in it are\n" +
-		"relative to where the file sits, which `read` cannot know.\n\n" +
-		"--depth exports the page's descendants too, mirroring the Confluence\n" +
-		"hierarchy: a page becomes <slug>.md with a <slug>/ beside it for its\n" +
-		"children, a folder becomes a directory, and each child's parent:\n" +
-		"points at its parent's file so the tree can be published into fresh\n" +
-		"pages. It costs a pair of requests per page and folder walked, plus\n" +
-		"the page's own.\n\n" +
-		"Attachments markfluence published are written to the paths their\n" +
-		"images came from; one that originated in Confluence is written under\n" +
-		"the page's own directory, since attachment names are unique per page\n" +
-		"and not per space. Only attachments the page references are exported;\n" +
-		"--all-attachments takes everything on the page.\n\n" +
-		"This is the one-command form of `read` plus `attachment-download`.",
-	Example: "  # One page and the attachments it uses\n" +
+	Long: "Write a Confluence page, and the attachments that it uses, to a directory.\n\n" +
+		"PAGE is a page id, or a Confluence page URL or folder URL. It can also be a\n" +
+		"Markdown file that names a page_id in its frontmatter or in its pages: entry. A folder has no\n" +
+		"content of its own. Thus you can give a folder only with --depth, and its\n" +
+		"content becomes the top level of the export.\n\n" +
+		"To export a whole space, give --space KEY and no PAGE. The root pages of the\n" +
+		"space become the top level. You must give --depth, because a walk of a space\n" +
+		"makes two requests for each page and folder in it. You must ask for that on\n" +
+		"purpose.\n\n" +
+		"export writes each page as Markdown, with title, space, parent, page_id,\n" +
+		"labels, page_status, and page_width in the frontmatter. Thus you can edit an\n" +
+		"exported file and publish it back with update. For a page at the top of the\n" +
+		"export, the file is exactly what read prints. Deeper in a tree, its paths are\n" +
+		"relative to the location of the file, which read cannot know.\n\n" +
+		"--depth also exports the descendants of the page, in the same hierarchy as in\n" +
+		"Confluence. A page becomes <slug>.md, with a <slug>/ directory next to it for\n" +
+		"its children. A folder becomes a directory. The parent: of each child names\n" +
+		"the file of its parent, so you can publish the tree into new pages. If two\n" +
+		"sibling titles make the same slug, export adds -<id> to each of their names.\n\n" +
+		"When export writes more than one page, it also writes a markfluence.yaml into\n" +
+		"--dest. Without it, the pages could not reach the attachments that they share.\n\n" +
+		"export writes an attachment that markfluence published to the path that its\n" +
+		"image came from. It writes an attachment that came from Confluence into the\n" +
+		"directory of its page. An attachment name is unique on a page, but not in a\n" +
+		"space. export writes only the attachments that the page references.\n" +
+		"--all-attachments writes every attachment on the page.\n\n" +
+		"export is read and attachment-download in one command.",
+	Example: "  # Export one page and the attachments that it uses\n" +
 		"  markfluence export 1234567890 --dest ./out\n\n" +
-		"  # The page and its whole subtree, hierarchy mirrored on disk\n" +
+		"  # Export the page and its whole subtree, in the same hierarchy\n" +
 		"  markfluence export 1234567890 --depth all --dest out\n\n" +
-		"  # A whole space; --depth is required for a space walk\n" +
+		"  # Export a whole space. A space needs --depth\n" +
 		"  markfluence export --space ENG --depth all --dest out\n\n" +
-		"  # Re-export a tree whose pages changed upstream\n" +
+		"  # Export a tree again after its pages changed in Confluence\n" +
 		"  markfluence export 1234567890 --depth all --dest out --force\n",
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
@@ -92,18 +93,20 @@ var Cmd = &cobra.Command{
 func init() {
 	Cmd.Flags().StringVar(&dest, "dest", ".", "Directory to write the export into.")
 	Cmd.Flags().StringVar(&depthOpt, "depth", "0",
-		`How deep to export: 0 for the page alone, a positive number, or "all".`)
+		"How many levels to export: 0 for the page only, a positive number, or \"all\".")
 	Cmd.Flags().StringVar(&spaceOpt, "space", "",
-		"Export a whole space, by key, instead of a PAGE.")
+		"Export a whole space, by its key, and not a PAGE.")
 	Cmd.Flags().StringVar(&fileFlag, "file", "",
-		"Name for the page file (default: a slug of the title, or the page id if that slugs to nothing).")
+		"Name of the page file. The default is a slug of the title, or the page id if"+
+			" the title gives an empty slug. Not with --depth.")
 	Cmd.Flags().BoolVar(&allAttachments, "all-attachments", false,
-		"Export every attachment on the page, not just the referenced ones.")
+		"Export every attachment on the page, and not only the attachments that it "+
+			"references.")
 	Cmd.Flags().BoolVar(&skipAttachs, "skip-attachments", false,
-		"Write the page file only.")
-	Cmd.Flags().BoolVar(&force, "force", false, "Overwrite files that already exist.")
+		"Write only the page file, and no attachments.")
+	Cmd.Flags().BoolVar(&force, "force", false, "Overwrite a file that already exists.")
 	Cmd.Flags().BoolVar(&dryRun, "dry-run", false,
-		"Preview what would be written without creating any files.")
+		"Show what export would write, and write no files.")
 
 	completion.RegisterFlag(Cmd, "dest", completion.Directories)
 	completion.RegisterFlag(Cmd, "depth", completion.Values("0", "1", "2", depthAll))

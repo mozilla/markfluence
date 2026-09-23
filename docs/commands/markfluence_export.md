@@ -4,38 +4,40 @@ Write a Confluence page and its attachments to a directory
 
 ### Synopsis
 
-Write a Confluence page and the attachments it uses to a directory.
+Write a Confluence page, and the attachments that it uses, to a directory.
 
-PAGE is a numeric page id, a Confluence page or folder URL, or a
-markdown file whose frontmatter has a page_id. A folder has no content
-of its own, so it is a target only with --depth: what is inside it
-becomes the top level of the export.
+PAGE is a page id, or a Confluence page URL or folder URL. It can also be a
+Markdown file that names a page_id in its frontmatter or in its pages: entry. A folder has no
+content of its own. Thus you can give a folder only with --depth, and its
+content becomes the top level of the export.
 
-Pass --space KEY instead of a PAGE to export a whole space, whose root
-pages become the top level. It needs an explicit --depth, since a space
-walk is one pair of requests per page and folder in it and should be
-asked for rather than typed by accident.
+To export a whole space, give --space KEY and no PAGE. The root pages of the
+space become the top level. You must give --depth, because a walk of a space
+makes two requests for each page and folder in it. You must ask for that on
+purpose.
 
-The page is written as markdown with title/space/parent/page_id/
-labels/page_status/page_width frontmatter, so an exported file can be
-edited and published back with update. For a page at the top of the export this
-is exactly what `read` prints; deeper in a tree the paths in it are
-relative to where the file sits, which `read` cannot know.
+export writes each page as Markdown, with title, space, parent, page_id,
+labels, page_status, and page_width in the frontmatter. Thus you can edit an
+exported file and publish it back with update. For a page at the top of the
+export, the file is exactly what read prints. Deeper in a tree, its paths are
+relative to the location of the file, which read cannot know.
 
---depth exports the page's descendants too, mirroring the Confluence
-hierarchy: a page becomes <slug>.md with a <slug>/ beside it for its
-children, a folder becomes a directory, and each child's parent:
-points at its parent's file so the tree can be published into fresh
-pages. It costs a pair of requests per page and folder walked, plus
-the page's own.
+--depth also exports the descendants of the page, in the same hierarchy as in
+Confluence. A page becomes <slug>.md, with a <slug>/ directory next to it for
+its children. A folder becomes a directory. The parent: of each child names
+the file of its parent, so you can publish the tree into new pages. If two
+sibling titles make the same slug, export adds -<id> to each of their names.
 
-Attachments markfluence published are written to the paths their
-images came from; one that originated in Confluence is written under
-the page's own directory, since attachment names are unique per page
-and not per space. Only attachments the page references are exported;
---all-attachments takes everything on the page.
+When export writes more than one page, it also writes a markfluence.yaml into
+--dest. Without it, the pages could not reach the attachments that they share.
 
-This is the one-command form of `read` plus `attachment-download`.
+export writes an attachment that markfluence published to the path that its
+image came from. It writes an attachment that came from Confluence into the
+directory of its page. An attachment name is unique on a page, but not in a
+space. export writes only the attachments that the page references.
+--all-attachments writes every attachment on the page.
+
+export is read and attachment-download in one command.
 
 ```
 markfluence export [PAGE] [flags]
@@ -44,16 +46,16 @@ markfluence export [PAGE] [flags]
 ### Examples
 
 ```
-  # One page and the attachments it uses
+  # Export one page and the attachments that it uses
   markfluence export 1234567890 --dest ./out
 
-  # The page and its whole subtree, hierarchy mirrored on disk
+  # Export the page and its whole subtree, in the same hierarchy
   markfluence export 1234567890 --depth all --dest out
 
-  # A whole space; --depth is required for a space walk
+  # Export a whole space. A space needs --depth
   markfluence export --space ENG --depth all --dest out
 
-  # Re-export a tree whose pages changed upstream
+  # Export a tree again after its pages changed in Confluence
   markfluence export 1234567890 --depth all --dest out --force
 
 ```
@@ -61,15 +63,15 @@ markfluence export [PAGE] [flags]
 ### Options
 
 ```
-      --all-attachments    Export every attachment on the page, not just the referenced ones.
-      --depth string       How deep to export: 0 for the page alone, a positive number, or "all". (default "0")
+      --all-attachments    Export every attachment on the page, and not only the attachments that it references.
+      --depth string       How many levels to export: 0 for the page only, a positive number, or "all". (default "0")
       --dest string        Directory to write the export into. (default ".")
-      --dry-run            Preview what would be written without creating any files.
-      --file string        Name for the page file (default: a slug of the title, or the page id if that slugs to nothing).
-      --force              Overwrite files that already exist.
+      --dry-run            Show what export would write, and write no files.
+      --file string        Name of the page file. The default is a slug of the title, or the page id if the title gives an empty slug. Not with --depth.
+      --force              Overwrite a file that already exists.
   -h, --help               help for export
-      --skip-attachments   Write the page file only.
-      --space string       Export a whole space, by key, instead of a PAGE.
+      --skip-attachments   Write only the page file, and no attachments.
+      --space string       Export a whole space, by its key, and not a PAGE.
 ```
 
 ### Options inherited from parent commands
