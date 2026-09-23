@@ -1,22 +1,23 @@
 ## markfluence find
 
-Find Confluence pages and folders by exact title
+Find Confluence pages and folders by their exact title
 
 ### Synopsis
 
-Find Confluence pages and folders whose title matches TITLE.
+Find the Confluence pages and folders whose title is TITLE.
 
-The match is exact and case-insensitive -- not a substring search.
+The match is exact, and it ignores case. It is not a search for part of a
+title. To search the text of pages, use search.
 
-Both current and archived pages are reported. An archived page is
-invisible in the page tree but still reserves its title, so it will
-block creating a page with that title in the same space.
+find reports current pages and archived pages. An archived page is not in the
+page tree, but it still reserves its title. Thus you cannot create a page with
+that title in the same space.
 
-Folders are reported too, since a folder id is a legitimate parent.
-A folder does not reserve a title, so a folder hit is never a reason
-a page cannot be created -- it is there to be found, not to warn.
+find also reports folders, because a folder id can be a parent. A folder does
+not reserve a title. Thus a folder never stops you from creating a page. find
+shows it so that you can find it, and not as a warning.
 
-Finding nothing is a success: the command says so and exits 0.
+If find finds nothing, that is a success. It says so, and exits with 0.
 
 ```
 markfluence find TITLE [flags]
@@ -25,13 +26,13 @@ markfluence find TITLE [flags]
 ### Examples
 
 ```
-  # Every page, archived page and folder with this exact title
+  # Find every page, archived page, and folder with this exact title
   markfluence find "Deploy runbook"
 
-  # Scoped to one space
+  # Find only in one space
   markfluence find "Deploy runbook" --space ENG
 
-  # Just the current page ids
+  # Print only the ids of the pages
   markfluence find "Deploy runbook" --json | jq -r '.results[] | select(.type=="page") | .id'
 
 ```
@@ -40,7 +41,7 @@ markfluence find TITLE [flags]
 
 ```
   -h, --help           help for find
-      --space string   Restrict the search to a space, by key (an unknown key is an error, not an empty result).
+      --space string   Find only in this space, by its key. An unknown key is an error, and not an empty result.
 ```
 
 ### Options inherited from parent commands

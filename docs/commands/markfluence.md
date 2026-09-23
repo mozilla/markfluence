@@ -51,7 +51,7 @@ markfluence [flags]
 * [markfluence create](markfluence_create.md)	 - Create new Confluence pages from Markdown files
 * [markfluence diff](markfluence_diff.md)	 - Show what is different between a page and its local Markdown file
 * [markfluence export](markfluence_export.md)	 - Write a Confluence page and its attachments to a directory
-* [markfluence find](markfluence_find.md)	 - Find Confluence pages and folders by exact title
+* [markfluence find](markfluence_find.md)	 - Find Confluence pages and folders by their exact title
 * [markfluence page-info](markfluence_page-info.md)	 - Print metadata about a Confluence page
 * [markfluence read](markfluence_read.md)	 - Fetch a Confluence page and print its body
 * [markfluence schema](markfluence_schema.md)	 - Print the JSON Schema for --json output

@@ -23,21 +23,22 @@ var spaceOpt string
 // Cmd is the find command.
 var Cmd = &cobra.Command{
 	Use:   command + " TITLE",
-	Short: "Find Confluence pages and folders by exact title",
-	Long: "Find Confluence pages and folders whose title matches TITLE.\n\n" +
-		"The match is exact and case-insensitive -- not a substring search.\n\n" +
-		"Both current and archived pages are reported. An archived page is\n" +
-		"invisible in the page tree but still reserves its title, so it will\n" +
-		"block creating a page with that title in the same space.\n\n" +
-		"Folders are reported too, since a folder id is a legitimate parent.\n" +
-		"A folder does not reserve a title, so a folder hit is never a reason\n" +
-		"a page cannot be created -- it is there to be found, not to warn.\n\n" +
-		"Finding nothing is a success: the command says so and exits 0.",
-	Example: "  # Every page, archived page and folder with this exact title\n" +
+	Short: "Find Confluence pages and folders by their exact title",
+	Long: "Find the Confluence pages and folders whose title is TITLE.\n\n" +
+		"The match is exact, and it ignores case. It is not a search for part of a\n" +
+		"title. To search the text of pages, use search.\n\n" +
+		"find reports current pages and archived pages. An archived page is not in the\n" +
+		"page tree, but it still reserves its title. Thus you cannot create a page with\n" +
+		"that title in the same space.\n\n" +
+		"find also reports folders, because a folder id can be a parent. A folder does\n" +
+		"not reserve a title. Thus a folder never stops you from creating a page. find\n" +
+		"shows it so that you can find it, and not as a warning.\n\n" +
+		"If find finds nothing, that is a success. It says so, and exits with 0.",
+	Example: "  # Find every page, archived page, and folder with this exact title\n" +
 		"  markfluence find \"Deploy runbook\"\n\n" +
-		"  # Scoped to one space\n" +
+		"  # Find only in one space\n" +
 		"  markfluence find \"Deploy runbook\" --space ENG\n\n" +
-		"  # Just the current page ids\n" +
+		"  # Print only the ids of the pages\n" +
 		"  markfluence find \"Deploy runbook\" --json | jq -r '.results[] | select(.type==\"page\") | .id'\n",
 	Args: cobra.ExactArgs(1),
 	// Nothing here is completable: a title is free text and a space key lives
@@ -48,7 +49,8 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().StringVar(&spaceOpt, "space", "",
-		"Restrict the search to a space, by key (an unknown key is an error, not an empty result).")
+		"Find only in this space, by its key. An unknown key is an error, and not an "+
+			"empty result.")
 	completion.RegisterFlag(Cmd, "space", cobra.NoFileCompletions)
 }
 
