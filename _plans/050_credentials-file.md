@@ -95,14 +95,25 @@ under it. After this change they report only the roots of the files they were
 given. That is what `roots` claims to mean. `docs/root-model.md` gets
 checked for text that describes the old reporting.
 
-**D8. The "missing" error names every source, and says "one place".** For
-example: `missing Confluence URL (CONFLUENCE_URL), token (CONFLUENCE_TOKEN):
-set them in one place: the environment,
-~/.config/markfluence/credentials, or a file named by --env-file`. Someone
-whose `.env` stopped working learns where to put it from the error itself, and
-the wording does not steer them into D4. There is no special hint for a `.env`
-in the working directory: markfluence is unreleased, so there is nobody to
-migrate.
+**D8. The credential errors name every source and link to
+`docs/credentials.md`.** The "missing" error lists the places markfluence
+looked, says "set them in one place" when more than one setting is missing,
+and ends with a link to `docs/credentials.md` on GitHub. So does the
+same-source error. For example: `missing Confluence URL (CONFLUENCE_URL), token
+(CONFLUENCE_TOKEN): set them in one place: the environment,
+~/.config/markfluence/credentials, or a file named by --env-file. See
+https://github.com/mozilla/markfluence/blob/main/docs/credentials.md`.
+
+`docs/credentials.md` is the reference for credentials: the sources, the file
+and its setup, the two rules, one-off use of another site, the permission
+warning, and what each error means. The README's Configure section keeps the
+setup steps and points to it, and the root `--help` summarises and links to
+it. A link, rather than a `markfluence help credentials` topic, keeps one
+reference that the README and the errors share. It describes `main`, which a
+released binary may trail, so the file must not be renamed.
+
+markfluence does nothing about an existing `.env` in the working directory: no
+hint and no migration.
 
 **D9. The permission warning (#136) covers the credentials file.** It already
 runs inside `loadDotenv`, which every source file goes through, so this needs
@@ -151,6 +162,8 @@ imports `client`, which would be a cycle. So `internal/client` has its own
      `cloud-id` and set `CONFLUENCE_URL` instead.
    - `make docs`.
 3. **`docs: document the credentials file`.**
+   - A new `docs/credentials.md` (D8), and a row for it in the README's
+     documentation table.
    - `README.md` Configure section, and the line near 675 about where `.env`
      is read.
    - `CONTRIBUTING.md`: it tells contributors to put a `.env` in the working
@@ -238,11 +251,12 @@ Outside the repository:
 ## Not in scope
 
 - The OS keychain and named profiles, for the issue's reasons.
-- A hint when a `.env` sits in the working directory (D8).
+- Anything about an existing `.env` in the working directory (D8).
 - A `--debug` line that reports which source supplied each setting. The
   same-source error names sources where it matters, and `user-info` answers
   which account a token belongs to.
 - A command that writes the credentials file (#193). People create it by hand,
-  so the README shows its whole contents inline, since a Homebrew install
-  ships no `.env.example`, and gives the `mkdir` and `chmod 600` steps.
+  so the README and `docs/credentials.md` show its whole contents inline, since
+  a Homebrew install ships no `.env.example`, and give the `mkdir` and
+  `chmod 600` steps.
 - A user settings file (the issue's "separate config file").

@@ -61,6 +61,7 @@ to use it. It also tells you where to find more documentation.
 | [README.md](README.md), this file | installation, configuration, and use |
 | [docs/commands/](docs/commands/) | the `--help` text of every command, as Markdown. It is the same text that `markfluence CMD --help` prints, and it comes from the binary |
 | [docs/markdown-file.md](docs/markdown-file.md) | the page format: every frontmatter field, and what the converter does with each body construct |
+| [docs/credentials.md](docs/credentials.md) | where markfluence reads credentials from, how to set up your credentials file, and what each credentials error means |
 | [docs/root-model.md](docs/root-model.md) | the documentation root: how a tree of files maps to a tree of pages |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | how to contribute: the development setup, what to run before you open a pull request, the commit conventions, and how to file an issue |
 | [docs/confluence/](docs/confluence/) | what we found out about Confluence by experiment: the API, the storage format, the scopes, and the traps that give you a confident wrong answer |
@@ -187,38 +188,16 @@ makes a network request.
 
 ## Configure
 
-markfluence needs a Confluence site URL, a username, and an API token:
-
-| Setting | Name |
-| --- | --- |
-| Site URL | `CONFLUENCE_URL` |
-| Username | `CONFLUENCE_USERNAME` |
-| API token | `CONFLUENCE_TOKEN` |
-| Cloud ID, optional | `CONFLUENCE_CLOUD_ID` |
-
-markfluence reads each setting from these places, and uses the first one that
-has it:
-
-1. the file that you name with `--env-file PATH`
-2. the environment variable
-3. your credentials file, `~/.config/markfluence/credentials`
-
-If you set `XDG_CONFIG_HOME` to an absolute path, the credentials file is
-`$XDG_CONFIG_HOME/markfluence/credentials`. This is the same path on Linux and
-macOS.
-
-markfluence does not look for credentials in the working directory or in a
-project. A repository that you clone cannot give markfluence a URL to send your
-token to.
-
-Create the credentials file one time on each computer:
+markfluence needs a Confluence site URL, a username, and an API token. Put them
+in your credentials file one time on each computer:
 
 ```
 mkdir -p ~/.config/markfluence
 $EDITOR ~/.config/markfluence/credentials
+chmod 600 ~/.config/markfluence/credentials
 ```
 
-Put these lines in it:
+The file holds these lines:
 
 ```
 CONFLUENCE_URL=https://your-org.atlassian.net
@@ -228,51 +207,16 @@ CONFLUENCE_TOKEN=your-api-token
 # CONFLUENCE_CLOUD_ID=
 ```
 
-Then restrict the file, because it holds your API token:
+The environment variables of the same names override the file, and a file that
+you name with `--env-file PATH` overrides both. There is no command-line flag
+for any of these, so your API token cannot get into your shell history.
+markfluence never reads credentials from the working directory or from a
+project.
 
-```
-chmod 600 ~/.config/markfluence/credentials
-```
-
-> [!NOTE]
-> There is no command-line flag for any of these settings, so your API token
-> cannot get into your shell history.
-
-Two rules stop markfluence from sending a token to the wrong site:
-
-- **The URL and the token must come from the same place.** If the URL comes
-  from the environment and the token comes from the credentials file,
-  markfluence stops and tells you where each one came from.
-- **markfluence reads the cloud ID only from the place that gives the URL.** It
-  ignores a cloud ID from another place.
-
-The username can come from any place.
-
-To use a different site for one command, put its settings in a file and name
-the file with `--env-file`. You can also set the URL and the token together in
-the environment:
-
-```
-CONFLUENCE_URL=https://other.atlassian.net CONFLUENCE_TOKEN=... markfluence read 123
-```
-
-If you set only `CONFLUENCE_URL`, markfluence stops, because the token then
-comes from a different place.
-
-A file for `--env-file` has the same format as the credentials file. For
-credentials for each project, you can also use a tool such as
-[direnv](https://direnv.net/), which sets environment variables when you enter
-a directory.
-
-markfluence gives a warning when two conditions are both true. The first
-condition is that the mode of the credentials file, or of the file that
-`--env-file` names, gives a permission to a person who is not you: read,
-write, or execute. The second condition is that the file holds
-`CONFLUENCE_TOKEN`. The warning gives the name of the file, the fault in its
-mode, and the `chmod` command that corrects it. If you run markfluence with
-`--json`, markfluence does not print the warning. It puts the warning in the
-`warnings` array of the output document, and in the error object on stderr.
-stderr is a JSON document in that mode.
+**[docs/credentials.md](docs/credentials.md) is the reference**: the places
+that markfluence looks in, the two rules that stop it from sending a token to
+the wrong site, how to use a different site for one command, the permission
+warning, and what each credentials error means.
 
 Optional: `alias mf=markfluence`
 

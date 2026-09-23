@@ -194,7 +194,7 @@ func TestResolveURLAndTokenMustShareASource(t *testing.T) {
 		t.Fatal("URL from the environment, token from the credentials file: want an error")
 	}
 	for _, want := range []string{"CONFLUENCE_URL comes from the environment",
-		"CONFLUENCE_TOKEN comes from " + displayPath(credPath), "Set both in the same place"} {
+		"CONFLUENCE_TOKEN comes from " + displayPath(credPath), "Set both in the same place", credentialsDoc} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q missing %q", err, want)
 		}
@@ -309,7 +309,7 @@ func TestResolveMissingNamesEverySource(t *testing.T) {
 	}
 	for _, want := range []string{"missing Confluence URL (CONFLUENCE_URL)", "token (CONFLUENCE_TOKEN)",
 		"set them in one place", "the environment", filepath.Join(cfg, "markfluence", "credentials"),
-		"--env-file"} {
+		"--env-file", credentialsDoc} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q missing %q", err, want)
 		}
@@ -349,7 +349,8 @@ func TestResolveMissingWithNoHome(t *testing.T) {
 	t.Setenv(urlEnv, "https://wiki")
 	t.Setenv(tokenEnv, "secret")
 	_, err := Resolve("")
-	want := "missing Confluence username (CONFLUENCE_USERNAME): set it in the environment, or a file named by --env-file"
+	want := "missing Confluence username (CONFLUENCE_USERNAME): " +
+		"set it in the environment, or a file named by --env-file. See " + credentialsDoc
 	if err == nil || err.Error() != want {
 		t.Errorf("err = %v, want %q", err, want)
 	}
