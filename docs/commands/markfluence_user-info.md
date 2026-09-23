@@ -1,42 +1,44 @@
 ## markfluence user-info
 
-Print who the credentials belong to, or who an account id names
+Show who the credentials belong to, or who an account id names
 
 ### Synopsis
 
-With no argument, print the account the configured credentials belong
-to. This is the question to ask first when a publish lands somewhere
-unexpected, a token is refused, or a page's history names an account you
-do not recognise: markfluence otherwise cannot tell you who it is.
+With no argument, show the account that the configured credentials belong to.
+Ask this first when:
 
-With an ACCOUNT_ID, print that account instead. An id, never a name --
-resolving a name is markfluence user-find. The two see different things,
-which is why both exist: user-find searches a directory that cannot see
-deactivated accounts at all, while this route resolves one, so an id from
-an old page names its person here and nowhere else.
+  - a publish goes to an unexpected place
+  - Confluence refuses a token
+  - the history of a page names an account that you do not know
+ No other
+markfluence command can tell you who you are.
 
-'type' tells a person (atlassian) from a service account (app), which is
-most of why permissions surprise people, and 'external'/'guest' name a
-restricted account directly.
+With an ACCOUNT_ID, show that account. Give an id, and not a name. To find an
+account by name, use markfluence user-find. The two commands see different
+things. user-find searches a directory that cannot see deactivated accounts.
+user-info can resolve a deactivated account. Thus an id from an old page names
+its person here, and nowhere else.
 
-With no argument it also surveys every space those credentials can see,
-reporting where they may create pages and which they administer. That
-survey is a walk of the space directory rather than one request, so the
-no-argument form takes a few seconds.
+"type" tells a person (atlassian) from a service account (app). That
+difference explains most surprises about permissions. "external" and "guest"
+show a restricted account.
 
-It is absent from the ACCOUNT_ID form, and not by omission: the route
-answers for the authenticated account and takes no account id, so
-reporting it beside somebody else's name would attribute your access to
-them. Asking where another person may publish means reading every
-space's permission grants and resolving them against their group
-memberships -- over a thousand requests, and a local reimplementation of
-Confluence's permission rules.
+With no argument, user-info also surveys every space that the credentials can
+see. It shows where they can create pages, and which spaces they administer.
+The survey walks the directory of spaces, so this form takes a few seconds.
 
-'write access' means creating pages in a space: permission to edit an
-existing page is not a space grant at all, so a space listed here may
-still refuse a particular page.
+The ACCOUNT_ID form has no survey, on purpose. Confluence answers the survey
+only for the authenticated account, and takes no account id. If user-info
+showed it next to the name of a different person, it would give them your
+access. To find where a different person can publish, markfluence would have
+to read the grants of every space and resolve their groups. That is more than a
+thousand requests.
 
-Read-only. Nothing is written to Confluence or to disk.
+"write access" means that the account can create pages in a space. Permission
+to edit a page that exists is not a space grant at all. Thus a space in this
+list can still refuse one page.
+
+user-info only reads. It writes nothing to Confluence or to disk.
 
 ```
 markfluence user-info [ACCOUNT_ID] [flags]
@@ -51,7 +53,7 @@ markfluence user-info [ACCOUNT_ID] [flags]
   # Who is this account id on an old page?
   markfluence user-info 60c36d0718e9f60071326951
 
-  # Just the spaces, as data
+  # Print only the spaces, as data
   markfluence user-info --json | jq '.results[0].spaces'
 ```
 
