@@ -98,9 +98,10 @@ func TestCompletionScripts(t *testing.T) {
 // adding a command that reports nothing machine-readable is a deliberate entry
 // here rather than a silent omission from the contract.
 var noJSONEnvelope = map[string]string{
-	"help":       "cobra's own; prints help text",
-	"completion": "cobra's own; prints a shell script",
-	"schema":     "prints the schema document itself, not an envelope",
+	"help":             "cobra's own; prints help text",
+	"completion":       "cobra's own; prints a shell script",
+	"schema":           "prints the schema document itself, not an envelope",
+	"credentials-init": "asks questions at a terminal; refuses --json",
 }
 
 // TestCommandEnumMatchesRegisteredCommands ties the CLI's command list to the

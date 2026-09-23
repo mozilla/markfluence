@@ -243,8 +243,16 @@ command refuses without a terminal and says what to do instead.
   `FromRequest` knows.
 - `HTTPError.ScopeMismatch()` and `HTTPError.SiteRejectedAuth()` (D7), with
   `hint` rewritten to use them.
-- A way to silence the warner around a read and restore it (D4, D8): for
-  example `SetSecurityWarner` returning the previous function.
+- The permission warning moves out of the parse: `loadDotenv` is
+  `readDotenv` plus `warnLoosePermissions`. `ReadCredentials` and the
+  verification read in `WriteCredentials` use `readDotenv`, so neither warns
+  (D4, D8), and no caller has to swap the warner out and back.
+  *Amended during implementation:* this plan first suggested silencing the
+  warner around the read; splitting the parse is simpler and cannot leave the
+  warner off by mistake.
+- `UnkeptLines(path) (int, error)`, the count D4 reports, and
+  `DisplayPath`, so the command names the file as `~/…` the way `Resolve`'s
+  errors do. *Added during implementation.*
 
 `cmd/credentialsinit/` exports `Cmd`. `run` is a thin shell over
 `runInit(io prompter, deps)`, where `prompter` is `Line(prompt, def string)`

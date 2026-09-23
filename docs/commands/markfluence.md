@@ -17,7 +17,7 @@ that has it:
 
 The URL and the token must come from the same place, the cloud ID is read only
 from the place that gives the URL, and there is no flag for any of these. To
-set up the credentials file, see
+set up the credentials file, run markfluence credentials-init, or see
 https://github.com/mozilla/markfluence/blob/main/docs/credentials.md
 
 ```
@@ -43,6 +43,7 @@ markfluence [flags]
 * [markfluence check](markfluence_check.md)	 - Check Markdown files for problems, with no network access
 * [markfluence children](markfluence_children.md)	 - List the pages and folders under a Confluence page, folder, or space
 * [markfluence create](markfluence_create.md)	 - Create new Confluence pages from Markdown files
+* [markfluence credentials-init](markfluence_credentials-init.md)	 - Write your credentials file, after checking the credentials
 * [markfluence diff](markfluence_diff.md)	 - Show what is different between a page and its local Markdown file
 * [markfluence export](markfluence_export.md)	 - Write a Confluence page and its attachments to a directory
 * [markfluence find](markfluence_find.md)	 - Find Confluence pages and folders by their exact title
