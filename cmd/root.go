@@ -54,7 +54,8 @@ var rootCmd = &cobra.Command{
 		"  1. the file that --env-file names\n" +
 		"  2. the environment variable\n" +
 		"  3. your credentials file, ~/.config/markfluence/credentials\n" +
-		"     ($XDG_CONFIG_HOME/markfluence/credentials if you set XDG_CONFIG_HOME)\n\n" +
+		"     ($XDG_CONFIG_HOME/markfluence/credentials if XDG_CONFIG_HOME is an\n" +
+		"     absolute path)\n\n" +
 		"The two files hold KEY=value lines. Put the URL and the token in the same\n" +
 		"place: markfluence refuses to send a token to a URL from a different place.\n" +
 		"It reads the cloud ID only from the place that gives the URL.\n\n" +

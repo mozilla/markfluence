@@ -203,7 +203,7 @@ has it:
 2. the environment variable
 3. your credentials file, `~/.config/markfluence/credentials`
 
-If you set `XDG_CONFIG_HOME`, the credentials file is
+If you set `XDG_CONFIG_HOME` to an absolute path, the credentials file is
 `$XDG_CONFIG_HOME/markfluence/credentials`. This is the same path on Linux and
 macOS.
 
