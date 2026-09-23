@@ -13,6 +13,7 @@ import (
 	"github.com/mozilla/markfluence/cmd/check"
 	"github.com/mozilla/markfluence/cmd/children"
 	"github.com/mozilla/markfluence/cmd/create"
+	"github.com/mozilla/markfluence/cmd/credentialsinit"
 	"github.com/mozilla/markfluence/cmd/diff"
 	"github.com/mozilla/markfluence/cmd/export"
 	"github.com/mozilla/markfluence/cmd/find"
@@ -53,7 +54,7 @@ var rootCmd = &cobra.Command{
 		"  3. your credentials file, ~/.config/markfluence/credentials\n\n" +
 		"The URL and the token must come from the same place, the cloud ID is read only\n" +
 		"from the place that gives the URL, and there is no flag for any of these. To\n" +
-		"set up the credentials file, see\n" +
+		"set up the credentials file, run markfluence credentials-init, or see\n" +
 		"https://github.com/mozilla/markfluence/blob/main/docs/credentials.md",
 	// --version prints the build stamp ("markfluence VERSION (SHA, DATE)"). The
 	// only use of it: nothing published carries a build stamp, and the converter
@@ -187,6 +188,7 @@ func init() {
 	rootCmd.AddCommand(attachmentdownload.Cmd)
 	rootCmd.AddCommand(export.Cmd)
 	rootCmd.AddCommand(schema.Cmd)
+	rootCmd.AddCommand(credentialsinit.Cmd)
 }
 
 // logRetry renders a retry decision as a --debug line.
