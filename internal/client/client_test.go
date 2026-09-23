@@ -1051,63 +1051,6 @@ func TestLoadDotenv(t *testing.T) {
 	}
 }
 
-func TestResolveValuePrecedence(t *testing.T) {
-	dotenv := map[string]string{"K": "from-dotenv"}
-	t.Setenv("K", "from-env")
-	if got := resolveValue("from-flag", "K", dotenv); got != "from-flag" {
-		t.Errorf("flag should win, got %q", got)
-	}
-	if got := resolveValue("", "K", dotenv); got != "from-env" {
-		t.Errorf("env should beat .env, got %q", got)
-	}
-	t.Setenv("K", "")
-	if got := resolveValue("", "K", dotenv); got != "from-dotenv" {
-		t.Errorf(".env should be the fallback, got %q", got)
-	}
-}
-
-func TestResolve(t *testing.T) {
-	// Work in a temp dir so Resolve reads our .env, not the repo's.
-	dir := t.TempDir()
-	t.Chdir(dir)
-	if err := os.WriteFile(".env", []byte(
-		"CONFLUENCE_URL=https://file.example.net\n"+
-			"CONFLUENCE_USERNAME=file-user\n"+
-			"CONFLUENCE_TOKEN=file-pass\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// Clear any inherited env for a deterministic baseline. CONFLUENCE_CLOUD_ID
-	// matters here too: a stray one would reroute BaseURL to the gateway.
-	t.Setenv("CONFLUENCE_URL", "")
-	t.Setenv("CONFLUENCE_USERNAME", "")
-	t.Setenv("CONFLUENCE_TOKEN", "")
-	t.Setenv("CONFLUENCE_CLOUD_ID", "")
-
-	// All from .env.
-	c, err := Resolve(ResolveOptions{})
-	if err != nil || c.BaseURL() != "https://file.example.net" {
-		t.Fatalf("Resolve(.env) = %v, %v", c, err)
-	}
-
-	// Flag beats env beats .env for the URL.
-	t.Setenv("CONFLUENCE_URL", "https://env.example.net")
-	if c, _ := Resolve(ResolveOptions{URL: "https://flag.example.net"}); c.BaseURL() != "https://flag.example.net" {
-		t.Errorf("flag should win, got %q", c.BaseURL())
-	}
-	if c, _ := Resolve(ResolveOptions{}); c.BaseURL() != "https://env.example.net" {
-		t.Errorf("env should beat .env, got %q", c.BaseURL())
-	}
-
-	// Missing token (no flag for it) is an error.
-	t.Setenv("CONFLUENCE_TOKEN", "")
-	if err := os.WriteFile(".env", []byte("CONFLUENCE_URL=u\nCONFLUENCE_USERNAME=x\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Resolve(ResolveOptions{URL: "u", Username: "x"}); err == nil {
-		t.Error("Resolve with no token: want error")
-	}
-}
-
 func TestNewGatewayBase(t *testing.T) {
 	tests := []struct {
 		name               string

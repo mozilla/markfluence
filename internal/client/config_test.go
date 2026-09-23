@@ -5,12 +5,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/mozilla/markfluence/internal/project"
 )
 
-// clearConfluenceEnv unsets the CONFLUENCE_* vars for a test so .env / flags are
-// the only sources.
+// full is a complete set of credentials in env-file form.
+const full = "CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n"
+
+// clearConfluenceEnv unsets the CONFLUENCE_* vars for a test. TestMain already
+// does this for the package; a test calls it again only to undo its own Setenv.
 func clearConfluenceEnv(t *testing.T) {
 	t.Helper()
 	for _, k := range []string{urlEnv, usernameEnv, tokenEnv, cloudIDEnv} {
@@ -21,165 +22,227 @@ func clearConfluenceEnv(t *testing.T) {
 func writeEnvFile(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "custom.env")
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// withCredentialsFile points XDG_CONFIG_HOME at a fresh directory and writes
+// body as the credentials file there, returning its path.
+func withCredentialsFile(t *testing.T, body string) string {
+	t.Helper()
+	cfg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfg)
+	path := filepath.Join(cfg, "markfluence", "credentials")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path
 }
 
 func TestResolveUsesExplicitEnvFile(t *testing.T) {
-	clearConfluenceEnv(t)
-	path := writeEnvFile(t, "CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n")
-	c, err := Resolve(ResolveOptions{EnvFile: path})
+	c, err := Resolve(writeEnvFile(t, full))
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 	if c.BaseURL() != "https://wiki" {
 		t.Errorf("baseURL = %q, want https://wiki", c.BaseURL())
-	}
-}
-
-func TestResolveFlagOverridesEnvFile(t *testing.T) {
-	clearConfluenceEnv(t)
-	path := writeEnvFile(t, "CONFLUENCE_URL=https://from-file\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n")
-	c, err := Resolve(ResolveOptions{URL: "https://from-flag", EnvFile: path})
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if c.BaseURL() != "https://from-flag" {
-		t.Errorf("baseURL = %q, want the flag value", c.BaseURL())
 	}
 }
 
 func TestResolveMissingExplicitEnvFileErrors(t *testing.T) {
-	clearConfluenceEnv(t)
 	missing := filepath.Join(t.TempDir(), "nope.env")
-	if _, err := Resolve(ResolveOptions{EnvFile: missing}); err == nil {
+	if _, err := Resolve(missing); err == nil {
 		t.Fatal("Resolve: want error for a missing --env-file path")
 	}
 }
 
-func TestResolveDefaultEnvFileMissingIsFine(t *testing.T) {
-	clearConfluenceEnv(t)
-	// No ./.env in this temp cwd, and no explicit env file: the missing default
-	// is tolerated, so we fail only on missing config values (not a read error).
-	t.Chdir(t.TempDir())
-	_, err := Resolve(ResolveOptions{})
-	if err == nil {
-		t.Fatal("want a missing-config error")
-	}
-	// It should be the missing-values error, not a file-read error.
-	if !strings.Contains(err.Error(), "missing Confluence") {
-		t.Errorf("error = %q, want a missing-Confluence-config error", err)
-	}
-}
-
-func TestResolveDefaultEnvFileFoundInCwdWithNoProjectFile(t *testing.T) {
-	clearConfluenceEnv(t)
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, ".env"),
-		[]byte("CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// No markfluence.yaml anywhere above dir, so discovery falls back to dir
-	// itself -- today's behavior, preserved.
-	t.Chdir(dir)
-
-	c, err := Resolve(ResolveOptions{})
+func TestResolveUsesTheCredentialsFile(t *testing.T) {
+	withCredentialsFile(t, full)
+	c, err := Resolve("")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
-	}
-	if c.BaseURL() != "https://wiki" {
-		t.Errorf("baseURL = %q, want https://wiki", c.BaseURL())
-	}
-}
-
-func TestResolveDefaultEnvFileFoundAtDiscoveredProjectRoot(t *testing.T) {
-	clearConfluenceEnv(t)
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "markfluence.yaml"), []byte("# marker\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, ".env"),
-		[]byte("CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	sub := filepath.Join(root, "docs", "team")
-	if err := os.MkdirAll(sub, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// No .env in the working directory itself -- only at the project root
-	// discovery finds by walking up.
-	t.Chdir(sub)
-
-	c, err := Resolve(ResolveOptions{})
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if c.BaseURL() != "https://wiki" {
-		t.Errorf("baseURL = %q, want https://wiki from the project root's .env", c.BaseURL())
-	}
-}
-
-// TestResolveRootsOverridesEnvDiscovery covers ResolveOptions.Roots: when the caller
-// passes its own --root-backed project.Cache, .env is read from that root, not
-// from a plain upward walk from the working directory -- so a --root pointed
-// at a different project also redirects which .env create/update/
-// attachment-upload read, matching the flag's stated meaning of overriding
-// discovery for the whole invocation.
-func TestResolveRootsOverridesEnvDiscovery(t *testing.T) {
-	clearConfluenceEnv(t)
-	cwd := t.TempDir() // no .env here
-	override := t.TempDir()
-	if err := os.WriteFile(filepath.Join(override, ".env"),
-		[]byte("CONFLUENCE_URL=https://from-root\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(cwd)
-
-	roots := project.NewCache(override)
-	defer roots.Close()
-	c, err := Resolve(ResolveOptions{Roots: roots})
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if c.BaseURL() != "https://from-root" {
-		t.Errorf("baseURL = %q, want https://from-root from --root's .env", c.BaseURL())
-	}
-}
-
-func TestResolveCloudIDPrecedence(t *testing.T) {
-	clearConfluenceEnv(t)
-	path := writeEnvFile(t,
-		"CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n"+
-			"CONFLUENCE_CLOUD_ID=from-file\n")
-
-	// From .env: requests move to the gateway, the site is untouched.
-	c, err := Resolve(ResolveOptions{EnvFile: path})
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if want := gatewayPrefix + "from-file"; c.BaseURL() != want {
-		t.Errorf("BaseURL = %q, want %q", c.BaseURL(), want)
 	}
 	if c.SiteURL() != "https://wiki" {
-		t.Errorf("SiteURL = %q, want https://wiki", c.SiteURL())
+		t.Errorf("SiteURL = %q, want https://wiki from the credentials file", c.SiteURL())
+	}
+}
+
+// TestResolvePrecedence: --env-file beats the environment, and the environment
+// beats the credentials file, one key at a time. The username is the key under
+// test, since it is the one that may legitimately come from anywhere.
+func TestResolvePrecedence(t *testing.T) {
+	withCredentialsFile(t, "CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=from-creds\nCONFLUENCE_TOKEN=secret\n")
+	if c, err := Resolve(""); err != nil || c.username != "from-creds" {
+		t.Fatalf("credentials file alone: username = %v, %v", c, err)
+	}
+	t.Setenv(usernameEnv, "from-env")
+	if c, err := Resolve(""); err != nil || c.username != "from-env" {
+		t.Errorf("environment should beat the credentials file: %v, %v", c, err)
+	}
+	path := writeEnvFile(t, "CONFLUENCE_USERNAME=from-file\n")
+	if c, err := Resolve(path); err != nil || c.username != "from-file" {
+		t.Errorf("--env-file should beat the environment: %v, %v", c, err)
+	}
+}
+
+func TestCredentialsPath(t *testing.T) {
+	home := t.TempDir()
+	tests := []struct {
+		name, xdg, home, want string
+	}{
+		{"absolute XDG_CONFIG_HOME", "/cfg", home, "/cfg/markfluence/credentials"},
+		{"relative XDG_CONFIG_HOME is ignored", "cfg", home, filepath.Join(home, ".config/markfluence/credentials")},
+		{"unset XDG_CONFIG_HOME", "", home, filepath.Join(home, ".config/markfluence/credentials")},
+		{"relative HOME means no file", "", "home", ""},
+		{"empty HOME means no file", "", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("XDG_CONFIG_HOME", tt.xdg)
+			t.Setenv("HOME", tt.home)
+			if got := credentialsPath(); got != tt.want {
+				t.Errorf("credentialsPath() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveWithNoHomeIsNotAnError(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", "")
+	if _, err := Resolve(writeEnvFile(t, full)); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+}
+
+// TestResolveMissingCredentialsFileIsFine: no file, and a path that runs
+// through a regular file, both mean the user has not made one.
+func TestResolveMissingCredentialsFileIsFine(t *testing.T) {
+	// No username anywhere, so the credentials file is consulted.
+	t.Setenv(urlEnv, "https://wiki")
+	t.Setenv(tokenEnv, "secret")
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // empty: no markfluence/ in it
+	if _, err := Resolve(""); err == nil || !strings.Contains(err.Error(), "missing Confluence username") {
+		t.Errorf("no credentials file: err = %v, want only the missing-username error", err)
 	}
 
-	// Env beats .env; flag beats env.
-	t.Setenv(cloudIDEnv, "from-env")
-	if c, _ := Resolve(ResolveOptions{EnvFile: path}); c.BaseURL() != gatewayPrefix+"from-env" {
-		t.Errorf("env should beat .env, got %q", c.BaseURL())
+	notADir := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(notADir, nil, 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if c, _ := Resolve(ResolveOptions{CloudID: "from-flag", EnvFile: path}); c.BaseURL() != gatewayPrefix+"from-flag" {
-		t.Errorf("flag should win, got %q", c.BaseURL())
+	t.Setenv("XDG_CONFIG_HOME", notADir)
+	if _, err := Resolve(""); err == nil || !strings.Contains(err.Error(), "missing Confluence username") {
+		t.Errorf("ENOTDIR: err = %v, want only the missing-username error", err)
+	}
+}
+
+func TestResolveUnreadableCredentialsFileFails(t *testing.T) {
+	cfg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfg)
+	path := filepath.Join(cfg, "markfluence", "credentials")
+	if err := os.MkdirAll(path, 0o700); err != nil { // a directory where the file goes
+		t.Fatal(err)
+	}
+	_, err := Resolve("")
+	if err == nil || !strings.Contains(err.Error(), path) {
+		t.Errorf("err = %v, want an error naming %s", err, path)
+	}
+}
+
+// TestResolveSkipsTheCredentialsFileWhenComplete: a broken or loose file must
+// not fail or warn on a run that never uses it.
+func TestResolveSkipsTheCredentialsFileWhenComplete(t *testing.T) {
+	got := captureSecurityWarnings(t)
+	path := withCredentialsFile(t, "CONFLUENCE_TOKEN=secret\n")
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(urlEnv, "https://wiki")
+	t.Setenv(usernameEnv, "bot")
+	t.Setenv(tokenEnv, "secret")
+	if _, err := Resolve(""); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if len(*got) != 0 {
+		t.Errorf("warnings = %v, want none: the file was never needed", *got)
+	}
+}
+
+func TestResolveURLAndTokenMustShareASource(t *testing.T) {
+	credPath := withCredentialsFile(t, full)
+
+	t.Setenv(urlEnv, "https://elsewhere")
+	_, err := Resolve("")
+	if err == nil {
+		t.Fatal("URL from the environment, token from the credentials file: want an error")
+	}
+	for _, want := range []string{"CONFLUENCE_URL comes from the environment",
+		"CONFLUENCE_TOKEN comes from " + displayPath(credPath), "Set both in the same place"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q missing %q", err, want)
+		}
+	}
+
+	clearConfluenceEnv(t)
+	t.Setenv(tokenEnv, "other")
+	envFile := writeEnvFile(t, "CONFLUENCE_URL=https://b\nCONFLUENCE_USERNAME=bot\n")
+	if _, err := Resolve(envFile); err == nil ||
+		!strings.Contains(err.Error(), "CONFLUENCE_URL comes from --env-file "+envFile) {
+		t.Errorf("URL from --env-file, token from the environment: err = %v", err)
+	}
+
+	// An empty key in a higher source is unset, and is not blamed.
+	envFile = writeEnvFile(t, "CONFLUENCE_URL=https://b\nCONFLUENCE_TOKEN=\n")
+	if _, err := Resolve(envFile); err == nil ||
+		!strings.Contains(err.Error(), "CONFLUENCE_TOKEN comes from the environment") {
+		t.Errorf("empty token in --env-file: err = %v, want the environment named", err)
+	}
+
+	// Both from one place, with the username from another, is fine.
+	clearConfluenceEnv(t)
+	t.Setenv(usernameEnv, "someone")
+	if _, err := Resolve(writeEnvFile(t, "CONFLUENCE_URL=https://b\nCONFLUENCE_TOKEN=t\n")); err != nil {
+		t.Errorf("URL and token from --env-file, username from the environment: %v", err)
+	}
+}
+
+// TestResolveCloudIDFollowsTheURL: the cloud ID names one site, so it is read
+// only from the source that supplied the URL.
+func TestResolveCloudIDFollowsTheURL(t *testing.T) {
+	withCredentialsFile(t, full+"CONFLUENCE_CLOUD_ID=instance-a\n")
+
+	c, err := Resolve("")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if want := gatewayPrefix + "instance-a"; c.BaseURL() != want {
+		t.Errorf("URL and cloud ID from the credentials file: BaseURL = %q, want %q", c.BaseURL(), want)
+	}
+
+	c, err = Resolve(writeEnvFile(t, "CONFLUENCE_URL=https://b\nCONFLUENCE_TOKEN=t\n"))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if c.BaseURL() != "https://b" {
+		t.Errorf("URL from --env-file: BaseURL = %q, want https://b and no cloud ID from the credentials file", c.BaseURL())
+	}
+
+	t.Setenv(cloudIDEnv, "from-env")
+	c, err = Resolve("")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if want := gatewayPrefix + "instance-a"; c.BaseURL() != want {
+		t.Errorf("cloud ID in the environment, URL in the credentials file: BaseURL = %q, want %q", c.BaseURL(), want)
 	}
 }
 
 func TestResolveRejectsURLishCloudID(t *testing.T) {
-	clearConfluenceEnv(t)
-	path := writeEnvFile(t, "CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n")
-
 	// Pasting a whole gateway URL (or any path fragment) is the likely mistake;
 	// it must fail with a usable message rather than a 404 at request time.
 	for _, bad := range []string{
@@ -187,7 +250,7 @@ func TestResolveRejectsURLishCloudID(t *testing.T) {
 		"ex/confluence/abc",
 		"abc/wiki",
 	} {
-		_, err := Resolve(ResolveOptions{CloudID: bad, EnvFile: path})
+		_, err := Resolve(writeEnvFile(t, full+"CONFLUENCE_CLOUD_ID="+bad+"\n"))
 		if err == nil {
 			t.Errorf("Resolve(cloud ID %q): want an error", bad)
 			continue
@@ -199,15 +262,71 @@ func TestResolveRejectsURLishCloudID(t *testing.T) {
 }
 
 func TestResolveWithoutCloudIDKeepsSiteURL(t *testing.T) {
-	clearConfluenceEnv(t)
-	path := writeEnvFile(t, "CONFLUENCE_URL=https://wiki/\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n")
-	c, err := Resolve(ResolveOptions{EnvFile: path})
+	c, err := Resolve(writeEnvFile(t, "CONFLUENCE_URL=https://wiki/\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n"))
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 	// No cloud ID: both bases are the site, exactly as before the gateway existed.
 	if c.BaseURL() != "https://wiki" || c.SiteURL() != "https://wiki" {
 		t.Errorf("BaseURL/SiteURL = %q/%q, want https://wiki for both", c.BaseURL(), c.SiteURL())
+	}
+}
+
+// TestResolveMissingNamesEverySource: someone whose settings are not found
+// learns from the error where to put them, and that they go in one place.
+func TestResolveMissingNamesEverySource(t *testing.T) {
+	cfg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfg)
+	_, err := Resolve("")
+	if err == nil {
+		t.Fatal("want a missing-settings error")
+	}
+	for _, want := range []string{"missing Confluence URL (CONFLUENCE_URL)", "token (CONFLUENCE_TOKEN)",
+		"set them in one place", "the environment", filepath.Join(cfg, "markfluence", "credentials"),
+		"--env-file"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q missing %q", err, want)
+		}
+	}
+}
+
+// TestResolveReadsNoDotenv: a .env in the working directory, or at the root
+// of the project the working directory is in, is never read (#188). A checkout
+// must not be able to supply credentials.
+func TestResolveReadsNoDotenv(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "markfluence.yaml"), []byte("# marker\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte(full), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(root, "docs")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, ".env"), []byte(full), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{root, sub} {
+		t.Chdir(dir)
+		if _, err := Resolve(""); err == nil || !strings.Contains(err.Error(), "missing Confluence") {
+			t.Errorf("in %s: err = %v, want the missing-settings error", dir, err)
+		}
+	}
+}
+
+// TestResolveIgnoresAMalformedProjectFile: credential resolution no longer
+// discovers a root, so a project file it cannot parse is not its business.
+// Commands that read the project file report it themselves.
+func TestResolveIgnoresAMalformedProjectFile(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "markfluence.yaml"), []byte("spce: ENG\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	if _, err := Resolve(writeEnvFile(t, full)); err != nil {
+		t.Errorf("Resolve: %v", err)
 	}
 }
 
@@ -395,76 +514,19 @@ func TestWarnLoosePermissionsFollowsASymlink(t *testing.T) {
 	}
 }
 
-// TestResolveWarnsThroughTheDiscoveredEnvFile exercises the real path a command
+// TestResolveWarnsThroughTheCredentialsFile exercises the real path a command
 // takes -- Resolve, not loadDotenv -- so the check cannot be wired only to the
 // explicit --env-file branch.
-func TestResolveWarnsThroughTheDiscoveredEnvFile(t *testing.T) {
-	clearConfluenceEnv(t)
+func TestResolveWarnsThroughTheCredentialsFile(t *testing.T) {
 	got := captureSecurityWarnings(t)
-	dir := t.TempDir()
-	path := filepath.Join(dir, ".env")
-	body := "CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n"
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	path := withCredentialsFile(t, full)
 	if err := os.Chmod(path, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Chdir(dir)
-
-	if _, err := Resolve(ResolveOptions{}); err != nil {
+	if _, err := Resolve(""); err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 	if len(*got) != 1 {
 		t.Errorf("warnings = %v, want exactly one", *got)
-	}
-}
-
-// A malformed markfluence.yaml used to be swallowed here, silently reading
-// .env from the working directory instead of the project root. It matters most
-// for a command with no per-file root of its own -- read, search, info -- which
-// would otherwise never report the malformed file at all.
-func TestResolveFailsOnAMalformedProjectFile(t *testing.T) {
-	clearConfluenceEnv(t)
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "markfluence.yaml"),
-		[]byte("spce: ENG\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, ".env"),
-		[]byte("CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(root)
-
-	if _, err := Resolve(ResolveOptions{}); err == nil {
-		t.Fatal("Resolve succeeded with a malformed project file, want an error")
-	} else if !strings.Contains(err.Error(), "unknown setting") {
-		t.Errorf("error = %q, want it to name the unknown setting", err)
-	}
-}
-
-// --env-file overrides discovery absolutely, which has to keep holding: an
-// explicit path is how someone works around a project file they cannot fix.
-func TestResolveEnvFileOverridesAMalformedProjectFile(t *testing.T) {
-	clearConfluenceEnv(t)
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "markfluence.yaml"),
-		[]byte("spce: ENG\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	explicit := filepath.Join(root, "creds.env")
-	if err := os.WriteFile(explicit,
-		[]byte("CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_TOKEN=secret\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(root)
-
-	c, err := Resolve(ResolveOptions{EnvFile: explicit})
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if c.SiteURL() != "https://wiki" {
-		t.Errorf("SiteURL = %q, want https://wiki", c.SiteURL())
 	}
 }

@@ -33,27 +33,34 @@ import (
 )
 
 var (
-	urlFlag      string
-	usernameFlag string
-	cloudIDFlag  string
-	envFileFlag  string
-	rootFlag     string
-	debugFlag    bool
-	noColorFlag  bool
-	jsonFlag     bool
+	envFileFlag string
+	rootFlag    string
+	debugFlag   bool
+	noColorFlag bool
+	jsonFlag    bool
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "markfluence",
 	Short: "Publish Markdown to Confluence",
 	Long: "markfluence publishes and manipulates Confluence pages from Markdown files.\n\n" +
-		"It needs a site URL, a username, and an API token. It reads each one from a flag\n" +
-		"first, then from an environment variable, then from a .env file:\n\n" +
-		"  site URL   --url        CONFLUENCE_URL\n" +
-		"  username   --username   CONFLUENCE_USERNAME\n" +
-		"  API token  (no flag)    CONFLUENCE_TOKEN\n" +
-		"  cloud ID   --cloud-id   CONFLUENCE_CLOUD_ID\n\n" +
-		"The API token is never a flag, so it cannot get into your shell history.\n\n" +
+		"It needs a site URL, a username, and an API token, and for a scoped token a\n" +
+		"cloud ID:\n\n" +
+		"  CONFLUENCE_URL        the site, such as https://YOUR-SITE.atlassian.net\n" +
+		"  CONFLUENCE_USERNAME   your email address\n" +
+		"  CONFLUENCE_TOKEN      your API token\n" +
+		"  CONFLUENCE_CLOUD_ID   optional; only for a scoped API token\n\n" +
+		"markfluence reads each one from these places, and uses the first it finds:\n\n" +
+		"  1. the file that --env-file names\n" +
+		"  2. the environment variable\n" +
+		"  3. your credentials file, ~/.config/markfluence/credentials\n" +
+		"     ($XDG_CONFIG_HOME/markfluence/credentials if you set XDG_CONFIG_HOME)\n\n" +
+		"The two files hold KEY=value lines. Put the URL and the token in the same\n" +
+		"place: markfluence refuses to send a token to a URL from a different place.\n" +
+		"It reads the cloud ID only from the place that gives the URL.\n\n" +
+		"There is no flag for any of these, so the token cannot get into your shell\n" +
+		"history. To use a different site for one command, name a file with\n" +
+		"--env-file.\n\n" +
 		"Set the cloud ID only for a scoped API token, such as the token of a service\n" +
 		"account. Confluence refuses a scoped token at your site URL, so markfluence\n" +
 		"sends it through the api.atlassian.com gateway, which needs the cloud ID. To\n" +
@@ -148,18 +155,9 @@ func jsonRequested(args []string) bool {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&urlFlag, "url", "",
-		"Confluence site URL. If not set, markfluence uses $CONFLUENCE_URL, then .env")
-	rootCmd.PersistentFlags().StringVar(&usernameFlag, "username", "",
-		"Confluence username (your email address). If not set, markfluence uses "+
-			"$CONFLUENCE_USERNAME, then .env")
-	rootCmd.PersistentFlags().StringVar(&cloudIDFlag, "cloud-id", "",
-		"Atlassian cloud ID. Set it only for a scoped API token. If not set, "+
-			"markfluence uses $CONFLUENCE_CLOUD_ID, then .env")
 	rootCmd.PersistentFlags().StringVar(&envFileFlag, "env-file", "",
-		"Env file to read credentials from. The default is .env in the documentation "+
-			"root of the working directory, or in the working directory if there is no "+
-			"markfluence.yaml")
+		"File to read credentials from, before the environment and your credentials "+
+			"file")
 	rootCmd.PersistentFlags().StringVar(&rootFlag, "root", "",
 		"Documentation root for every file. The default is the nearest directory "+
 			"above each file that has a markfluence.yaml, or the directory of the file "+

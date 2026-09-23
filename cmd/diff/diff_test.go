@@ -146,17 +146,15 @@ func projectDir(t *testing.T, cfg string, files map[string]string) string {
 	return dir
 }
 
-// testCmd builds a bare *cobra.Command carrying the flags run() reads, pointed
-// at url. It does not go through the real root command tree, and
-// CONFLUENCE_TOKEN (never a flag) comes from the environment as it would in a
-// real invocation.
+// testCmd builds a bare *cobra.Command carrying the flags run() reads, and
+// sets credentials for url in the environment, where a real invocation finds
+// them. It doesn't go through the real root command tree.
 func testCmd(t *testing.T, url string) *cobra.Command {
 	t.Helper()
+	t.Setenv("CONFLUENCE_URL", url)
+	t.Setenv("CONFLUENCE_USERNAME", "u")
 	t.Setenv("CONFLUENCE_TOKEN", "t")
 	c := &cobra.Command{}
-	c.Flags().String("url", url, "")
-	c.Flags().String("username", "u", "")
-	c.Flags().String("cloud-id", "", "")
 	c.Flags().String("env-file", "", "")
 	c.Flags().String("root", "", "")
 	c.Flags().Bool("reverse", false, "")

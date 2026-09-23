@@ -53,11 +53,10 @@ func people(pairs ...[2]string) string {
 
 func testCmd(t *testing.T, url string) *cobra.Command {
 	t.Helper()
+	t.Setenv("CONFLUENCE_URL", url)
+	t.Setenv("CONFLUENCE_USERNAME", "u")
 	t.Setenv("CONFLUENCE_TOKEN", "t")
 	c := &cobra.Command{}
-	c.Flags().String("url", url, "")
-	c.Flags().String("username", "u", "")
-	c.Flags().String("cloud-id", "", "")
 	c.Flags().String("env-file", "", "")
 	return c
 }
@@ -70,8 +69,7 @@ type outcome struct {
 
 // runFind executes the command against a stub, capturing both streams.
 //
-// It runs from an empty directory so the repository's own .env cannot be read
-// as this test's configuration.
+// It runs from an empty directory; TestMain keeps any real credentials out.
 func runFind(t *testing.T, s stub, limit string, args ...string) outcome {
 	t.Helper()
 	c := clienttest.New(t, s.handler(t))
