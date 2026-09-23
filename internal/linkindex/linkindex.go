@@ -49,7 +49,10 @@ type Index struct {
 // root.FS is what keeps the walk from ever descending a symlinked directory:
 // a symlink's directory entry reports its own type (a link, not a
 // directory), so fs.WalkDir calls the visit function for it once and does
-// not recurse -- matching the non-goal in docs/guarantees.md#symlinks. An
+// not recurse -- matching the non-goal in docs/guarantees.md#symlinks.
+// Measured 2026-08-28: walking docs/ over a tree holding docs/escape ->
+// ../outside reported docs/escape once as a symlink and never enumerated
+// outside/out.md. An
 // unreadable file is skipped rather than failing the whole build; a page with
 // no page_id yet is walked (its anchors still work) but has no PageEntry, the
 // same as a draft with no page_id has always had no place in this lookup.
