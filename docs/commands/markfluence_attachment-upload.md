@@ -4,25 +4,26 @@ Upload or replace attachments on a Confluence page
 
 ### Synopsis
 
-Upload or replace attachments on a Confluence page.
+Upload files as attachments to a Confluence page, or replace attachments that
+are already there.
 
-PAGE is a numeric page id, a Confluence page URL, or a markdown file
-whose frontmatter has a page_id.
+PAGE is a page id, a Confluence page URL, or a Markdown file that names a
+page_id in its frontmatter or in its pages: entry.
 
-Each file is attached under its base name, with its path relative to
-the documentation root recorded in the attachment's comment. A file
-whose contents already match the attachment on the page is skipped,
-using the same checksum bookkeeping create/update use, so uploading by
-hand and publishing agree on what is current; --force uploads anyway.
+markfluence attaches each file with its base name. It records the path of the
+file, relative to the documentation root, in the attachment comment.
 
---name takes a path, not a name, for a single file: `--name
-assets/x.png` produces the attachment an image written as
-![](assets/x.png) resolves to -- stored as x.png, recorded as
+markfluence skips a file when its content already agrees with the attachment on
+the page. create and update use the same checksum, so a manual upload and a
+publish agree on which version is current. --force uploads anyway.
+
+--name takes a path, not a name, and it works with one FILE only. For example,
+--name assets/x.png makes the attachment that the image ![](assets/x.png)
+resolves to. Confluence stores it as x.png, and markfluence records the path
 assets/x.png.
 
-Two files whose base names agree cannot both be uploaded to one page,
-since an attachment name is unique per page; that is refused rather
-than silently overwriting.
+An attachment name is unique on a page. Thus markfluence refuses two files that
+have the same base name, and it does not overwrite one with the other.
 
 ```
 markfluence attachment-upload PAGE FILE... [flags]
@@ -31,14 +32,14 @@ markfluence attachment-upload PAGE FILE... [flags]
 ### Examples
 
 ```
-  # Upload one file, or several
+  # Upload one file, or more than one
   markfluence attachment-upload 1234567890 diagram.png
   markfluence attachment-upload 1234567890 report.pdf notes.txt
 
-  # Store it under the path a markdown image would reference
+  # Store the file with the path that a Markdown image would reference
   markfluence attachment-upload 1234567890 img.png --name assets/diagram.png
 
-  # Re-upload even though the checksum matches
+  # Upload again, also when the checksum agrees
   markfluence attachment-upload 1234567890 diagram.png --force
 
 ```
@@ -46,10 +47,10 @@ markfluence attachment-upload PAGE FILE... [flags]
 ### Options
 
 ```
-      --dry-run       Preview what would be uploaded without writing to Confluence.
-      --force         Upload even when the checksum shows the attachment is unchanged.
+      --dry-run       Show what markfluence would upload, and write nothing to Confluence.
+      --force         Upload the file, also when the checksum shows that the attachment did not change.
   -h, --help          help for attachment-upload
-      --name string   Attachment name, given as a path (requires a single FILE).
+      --name string   Attachment path, such as assets/x.png. The name is its base name. Works with one FILE only.
 ```
 
 ### Options inherited from parent commands

@@ -32,27 +32,27 @@ var (
 var Cmd = &cobra.Command{
 	Use:   command + " PAGE FILE...",
 	Short: "Upload or replace attachments on a Confluence page",
-	Long: "Upload or replace attachments on a Confluence page.\n\n" +
-		"PAGE is a numeric page id, a Confluence page URL, or a markdown file\n" +
-		"whose frontmatter has a page_id.\n\n" +
-		"Each file is attached under its base name, with its path relative to\n" +
-		"the documentation root recorded in the attachment's comment. A file\n" +
-		"whose contents already match the attachment on the page is skipped,\n" +
-		"using the same checksum bookkeeping create/update use, so uploading by\n" +
-		"hand and publishing agree on what is current; --force uploads anyway.\n\n" +
-		"--name takes a path, not a name, for a single file: `--name\n" +
-		"assets/x.png` produces the attachment an image written as\n" +
-		"![](assets/x.png) resolves to -- stored as x.png, recorded as\n" +
+	Long: "Upload files as attachments to a Confluence page, or replace attachments that\n" +
+		"are already there.\n\n" +
+		"PAGE is a page id, a Confluence page URL, or a Markdown file that names a\n" +
+		"page_id in its frontmatter or in its pages: entry.\n\n" +
+		"markfluence attaches each file with its base name. It records the path of the\n" +
+		"file, relative to the documentation root, in the attachment comment.\n\n" +
+		"markfluence skips a file when its content already agrees with the attachment on\n" +
+		"the page. create and update use the same checksum, so a manual upload and a\n" +
+		"publish agree on which version is current. --force uploads anyway.\n\n" +
+		"--name takes a path, not a name, and it works with one FILE only. For example,\n" +
+		"--name assets/x.png makes the attachment that the image ![](assets/x.png)\n" +
+		"resolves to. Confluence stores it as x.png, and markfluence records the path\n" +
 		"assets/x.png.\n\n" +
-		"Two files whose base names agree cannot both be uploaded to one page,\n" +
-		"since an attachment name is unique per page; that is refused rather\n" +
-		"than silently overwriting.",
-	Example: "  # Upload one file, or several\n" +
+		"An attachment name is unique on a page. Thus markfluence refuses two files that\n" +
+		"have the same base name, and it does not overwrite one with the other.",
+	Example: "  # Upload one file, or more than one\n" +
 		"  markfluence attachment-upload 1234567890 diagram.png\n" +
 		"  markfluence attachment-upload 1234567890 report.pdf notes.txt\n\n" +
-		"  # Store it under the path a markdown image would reference\n" +
+		"  # Store the file with the path that a Markdown image would reference\n" +
 		"  markfluence attachment-upload 1234567890 img.png --name assets/diagram.png\n\n" +
-		"  # Re-upload even though the checksum matches\n" +
+		"  # Upload again, also when the checksum agrees\n" +
 		"  markfluence attachment-upload 1234567890 diagram.png --force\n",
 	Args:              cobra.MinimumNArgs(2),
 	ValidArgsFunction: completion.PageThenFiles,
@@ -61,11 +61,11 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().StringVar(&nameFlag, "name", "",
-		"Attachment name, given as a path (requires a single FILE).")
+		"Attachment path, such as assets/x.png. The name is its base name. Works with one FILE only.")
 	Cmd.Flags().BoolVar(&force, "force", false,
-		"Upload even when the checksum shows the attachment is unchanged.")
+		"Upload the file, also when the checksum shows that the attachment did not change.")
 	Cmd.Flags().BoolVar(&dryRun, "dry-run", false,
-		"Preview what would be uploaded without writing to Confluence.")
+		"Show what markfluence would upload, and write nothing to Confluence.")
 }
 
 func run(cmd *cobra.Command, args []string) error {
