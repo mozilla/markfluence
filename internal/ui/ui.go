@@ -123,6 +123,25 @@ func Info(msg string) {
 	fmt.Println("    " + msg)
 }
 
+// InfoStderr is Info on stderr, and SuccessStderr is Success on stderr. They
+// are for a command whose whole output is a conversation with the person at
+// the terminal (credentials-init): its prompts go to stderr, so a status line
+// on stdout would vanish into `> log` while the prompts still showed.
+func InfoStderr(msg string) {
+	if jsonMode {
+		return
+	}
+	fmt.Fprintln(os.Stderr, "    "+msg)
+}
+
+// SuccessStderr: see InfoStderr.
+func SuccessStderr(msg string) {
+	if jsonMode {
+		return
+	}
+	fmt.Fprintln(os.Stderr, green.Render("  ✓ ")+msg)
+}
+
 // Hint prints an advisory line to stderr, set off by a blank line. No-op in JSON
 // mode.
 //

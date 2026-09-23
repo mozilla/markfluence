@@ -212,7 +212,7 @@ func (e *HTTPError) hint() string {
 	case e.SiteRejectedAuth():
 		return "hint: the site domain rejected this before it reached the API. A scoped " +
 			"(service-account) token has to go through the platform gateway -- set " +
-			"CONFLUENCE_CLOUD_ID, or run markfluence credentials-init, which finds it."
+			"CONFLUENCE_CLOUD_ID."
 	case e.RejectedCredential():
 		return "hint: the credentials were rejected. Check CONFLUENCE_USERNAME and " +
 			"CONFLUENCE_TOKEN -- this is what a wrong or revoked token returns, and on a v2 route " +

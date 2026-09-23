@@ -250,8 +250,7 @@ command refuses without a terminal and says what to do instead.
   *Amended during implementation:* this plan first suggested silencing the
   warner around the read; splitting the parse is simpler and cannot leave the
   warner off by mistake.
-- `UnkeptLines(path) (int, error)`, the count D4 reports, and
-  `DisplayPath`, so the command names the file as `~/…` the way `Resolve`'s
+- `DisplayPath`, so the command names the file as `~/…` the way `Resolve`'s
   errors do. *Added during implementation.*
 
 `cmd/credentialsinit/` exports `Cmd`. `run` is a thin shell over
@@ -351,3 +350,40 @@ cover `Long`, `Example`, and completion (no arguments, so
 - **Checking that the username matches the account** `CurrentUser` returns:
   Atlassian hides the email address by privacy setting, so the comparison
   would often have nothing to compare. The command shows the account instead.
+
+## Amended after code review
+
+A review of the implementation found these decisions wrong or incomplete.
+
+- **D3: all output goes to stderr**, not results to stdout. The prompts are on
+  stderr, so a status line on stdout ("Press Enter to keep a current value",
+  the account the check found) vanished into `> log` while the prompts still
+  showed. `internal/ui` gains `InfoStderr` and `SuccessStderr`.
+- **D3: the host is lowercased.** `url.Parse` keeps its case, so
+  `Example.Atlassian.net` failed the `atlassian.net` test in D5.
+- **D3: a URL's user name and password are dropped with a note**, and the
+  errors quote what was typed rather than it with `https://` added.
+- **D4: the current token and cloud ID are kept only for the same site.**
+  Offering "Enter keeps the current token" after a different URL paired one
+  site's token with another's URL, which is the thing plan 050's same-source
+  rule exists to stop. The comparison normalizes the old URL, so a trailing
+  slash is still the same site.
+- **D4: the notice that comments will be dropped comes first and says how to
+  back out**: `Updating ~/.config/markfluence/credentials. This will drop
+  comments from the file. Ctrl-C to exit.`, then `Press Enter to keep a current
+  value.` `ReadCredentials` returns a `CredentialsFile` (values, the two line
+  counts, and the mode) from one read, so the notice, the values, and the
+  mode describe the same file; `UnkeptLines` is gone.
+- **D5: a same-site cloud ID is kept** when the fetch fails, and for a host
+  outside `atlassian.net`, where one in the file was set by hand. Without that,
+  a scoped-token user rotating a token lost the cloud ID.
+- **D7: a scope mismatch is a checked answer**, not an unknown one. The token
+  authenticated, so it is saved as checked, with a warning that `user-info`
+  will not work with it, and no question is asked.
+- **D9: the environment is reported before the first question**, not after
+  the write.
+- **Files: the site-rejected hint no longer names `credentials-init`.** It
+  appears in CI too, where the command cannot help.
+- **The key names, `CredentialsDoc`, and the loose-mode rule are exported
+  from `internal/client`** (`URLVar`, `UsernameVar`, `TokenVar`, `CloudIDVar`,
+  `LooseMode`) rather than copied into the command.

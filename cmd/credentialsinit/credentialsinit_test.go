@@ -87,10 +87,10 @@ func (h *harness) said(sub string) bool {
 func (h *harness) file(t *testing.T) map[string]string {
 	t.Helper()
 	got, err := client.ReadCredentials(h.path)
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || got == nil {
+		t.Fatalf("ReadCredentials = %v, %v", got, err)
 	}
-	return got
+	return got.Values
 }
 
 func (h *harness) seed(t *testing.T, body string, mode os.FileMode) {
@@ -186,7 +186,8 @@ func TestPrefillKeepsEveryValue(t *testing.T) {
 	if got["CONFLUENCE_CLOUD_ID"] != "cloud-1" || len(h.fetched) != 1 {
 		t.Errorf("cloud ID = %q (fetched %v), want it fetched again", got["CONFLUENCE_CLOUD_ID"], h.fetched)
 	}
-	if !h.said("1 comment or other line") {
+	if !h.said("This will drop comments from the file. Ctrl-C to exit.") ||
+		!h.said("Press Enter to keep a current value.") {
 		t.Errorf("messages = %q, want the dropped comment reported", h.messages)
 	}
 }
@@ -354,7 +355,6 @@ func TestInconclusiveChecksAsk(t *testing.T) {
 		name string
 		err  error
 	}{
-		{"scope mismatch", httpError(401, gatewayURL, `{"code":401,"message":"Unauthorized; scope does not match"}`)},
 		{"server error", httpError(503, gatewayURL, `busy`)},
 		{"no response", errors.New("dial tcp: no such host")},
 	}
@@ -391,12 +391,12 @@ func TestTheEnvironmentIsReported(t *testing.T) {
 		want string // "" means no warning about the environment
 	}{
 		{"nothing", nil, ""},
-		{"all three", map[string]string{urlKey: "u", usernameKey: "n", tokenKey: "t"}, "does not read"},
-		{"URL and token", map[string]string{urlKey: "u", tokenKey: "t"}, "used instead of the ones"},
-		{"URL alone", map[string]string{urlKey: "u"}, "same place"},
-		{"token alone", map[string]string{tokenKey: "t"}, "same place"},
-		{"username", map[string]string{usernameKey: "n"}, "CONFLUENCE_USERNAME is set"},
-		{"cloud ID", map[string]string{cloudIDKey: "c"}, "ignores it"},
+		{"all three", map[string]string{client.URLVar: "u", client.UsernameVar: "n", client.TokenVar: "t"}, "will not read"},
+		{"URL and token", map[string]string{client.URLVar: "u", client.TokenVar: "t"}, "used instead of the ones"},
+		{"URL alone", map[string]string{client.URLVar: "u"}, "same place"},
+		{"token alone", map[string]string{client.TokenVar: "t"}, "same place"},
+		{"username", map[string]string{client.UsernameVar: "n"}, "CONFLUENCE_USERNAME is set"},
+		{"cloud ID", map[string]string{client.CloudIDVar: "c"}, "will ignore it"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -483,5 +483,99 @@ func TestNotATerminal(t *testing.T) {
 	}
 	if _, serr := os.Stat(client.CredentialsPath()); !errors.Is(serr, os.ErrNotExist) {
 		t.Error("a file was written")
+	}
+}
+
+// TestAScopeMismatchCountsAsChecked: the token authenticated, so it is saved
+// as checked, with a warning, and no question is asked.
+func TestAScopeMismatchCountsAsChecked(t *testing.T) {
+	h := newHarness(t)
+	h.userErr, h.user = httpError(401, gatewayURL, `{"code":401,"message":"Unauthorized; scope does not match"}`), nil
+	if err := h.run("example.atlassian.net", "me", "tok"); err != nil {
+		t.Fatal(err)
+	}
+	if !h.said("read:confluence-user") || !h.said("ok: Wrote") || h.said("without checking") {
+		t.Errorf("messages = %q, want a checked write with the scope warning", h.messages)
+	}
+}
+
+// TestANewSiteDoesNotKeepTheToken: a token belongs to its site, so a changed
+// URL gets no "Enter keeps the current token", and no kept cloud ID.
+func TestANewSiteDoesNotKeepTheToken(t *testing.T) {
+	h := newHarness(t)
+	h.seed(t, seeded, 0o600)
+	h.cloudErr = errors.New("offline")
+	// A blank token answer is asked again rather than keeping old-token.
+	if err := h.run("new.atlassian.net", "", "", "new-token"); err != nil {
+		t.Fatal(err)
+	}
+	got := h.file(t)
+	if got[client.TokenVar] != "new-token" || h.verified[0].Token != "new-token" {
+		t.Errorf("token = %q, checked with %q; want new-token for both", got[client.TokenVar], h.verified[0].Token)
+	}
+	if _, ok := got[client.CloudIDVar]; ok {
+		t.Errorf("cloud ID = %q, want the old site's not kept", got[client.CloudIDVar])
+	}
+	if !h.said("site changed") {
+		t.Errorf("messages = %q", h.messages)
+	}
+}
+
+// TestTheSameSiteKeepsItsCloudID: rotating a token must not lose a cloud ID
+// that cannot be fetched again right now, or that was set by hand for a host
+// markfluence does not fetch one for. A trailing slash in the old URL is
+// still the same site.
+func TestTheSameSiteKeepsItsCloudID(t *testing.T) {
+	h := newHarness(t)
+	h.seed(t, strings.Replace(seeded, "old.atlassian.net", "old.atlassian.net/", 1), 0o600)
+	h.cloudErr = errors.New("offline")
+	if err := h.run("", "", "rotated"); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.file(t); got[client.CloudIDVar] != "old-cloud" || got[client.TokenVar] != "rotated" {
+		t.Errorf("file = %v, want old-cloud kept and the token rotated", got)
+	}
+
+	h = newHarness(t)
+	h.seed(t, strings.Replace(seeded, "old.atlassian.net", "wiki.example.gov", 1), 0o600)
+	if err := h.run("", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.file(t); got[client.CloudIDVar] != "old-cloud" || len(h.fetched) != 0 {
+		t.Errorf("file = %v, fetched %v; want the hand-set cloud ID kept, no fetch", got, h.fetched)
+	}
+}
+
+// TestTheHostIsLowercased: a capitalized atlassian.net host is still one.
+func TestTheHostIsLowercased(t *testing.T) {
+	h := newHarness(t)
+	if err := h.run("Example.Atlassian.NET", "me", "tok"); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.file(t); got[client.URLVar] != "https://example.atlassian.net" || got[client.CloudIDVar] != "cloud-1" {
+		t.Errorf("file = %v", got)
+	}
+}
+
+// TestTheEnvironmentIsReportedFirst: before any question, so nobody answers
+// everything to learn the file will not be read.
+func TestTheEnvironmentIsReportedFirst(t *testing.T) {
+	h := newHarness(t)
+	h.env[client.URLVar] = "u"
+	if err := h.run(); !errors.Is(err, errAborted) {
+		t.Fatalf("err = %v", err)
+	}
+	if !h.said("same place") {
+		t.Errorf("messages = %q, want the environment reported before the first prompt", h.messages)
+	}
+}
+
+func TestNormalizeURLNotes(t *testing.T) {
+	if _, note, _ := normalizeURL("https://me:secret@example.atlassian.net"); !strings.Contains(note, "not saved") {
+		t.Errorf("userinfo note = %q", note)
+	}
+	if _, _, err := normalizeURL("foo bar"); err == nil || !strings.Contains(err.Error(), `"foo bar"`) ||
+		strings.Contains(err.Error(), "https://") {
+		t.Errorf("err = %v, want it to name what was typed", err)
 	}
 }

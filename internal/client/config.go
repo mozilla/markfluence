@@ -7,17 +7,20 @@ import (
 	"strings"
 )
 
+// The names of the four settings, as environment variables and as keys in
+// the credentials file.
 const (
-	urlEnv      = "CONFLUENCE_URL"
-	usernameEnv = "CONFLUENCE_USERNAME"
-	tokenEnv    = "CONFLUENCE_TOKEN" // the API token; never a command-line flag
-	cloudIDEnv  = "CONFLUENCE_CLOUD_ID"
+	URLVar      = "CONFLUENCE_URL"
+	UsernameVar = "CONFLUENCE_USERNAME"
+	TokenVar    = "CONFLUENCE_TOKEN" // the API token; never a command-line flag
+	CloudIDVar  = "CONFLUENCE_CLOUD_ID"
 )
 
-// credentialsDoc is where the credential errors send a reader. It points at
+// CredentialsDoc is where the credential errors send a reader. It points at
 // GitHub rather than at a help topic so the errors and the README share one
-// reference; it describes main, which a released binary may trail.
-const credentialsDoc = "https://github.com/mozilla/markfluence/blob/main/docs/credentials.md"
+// reference; it describes main, which a released binary may trail. Renaming
+// docs/credentials.md breaks the pointer in every released binary.
+const CredentialsDoc = "https://github.com/mozilla/markfluence/blob/main/docs/credentials.md"
 
 var spaceKeyRE = regexp.MustCompile(`^/spaces/([^/]+)/`)
 
@@ -88,19 +91,19 @@ func Resolve(envFile string) (*ConfluenceClient, error) {
 		}
 	}
 
-	siteURL, urlFrom := lookup(sources, urlEnv)
-	username, _ := lookup(sources, usernameEnv)
-	token, tokenFrom := lookup(sources, tokenEnv)
+	siteURL, urlFrom := lookup(sources, URLVar)
+	username, _ := lookup(sources, UsernameVar)
+	token, tokenFrom := lookup(sources, TokenVar)
 
 	var missing []string
 	if siteURL == "" {
-		missing = append(missing, "URL ("+urlEnv+")")
+		missing = append(missing, "URL ("+URLVar+")")
 	}
 	if username == "" {
-		missing = append(missing, "username ("+usernameEnv+")")
+		missing = append(missing, "username ("+UsernameVar+")")
 	}
 	if token == "" {
-		missing = append(missing, "token ("+tokenEnv+")")
+		missing = append(missing, "token ("+TokenVar+")")
 	}
 	if len(missing) > 0 {
 		setThem := "set it in "
@@ -112,9 +115,9 @@ func Resolve(envFile string) (*ConfluenceClient, error) {
 		places := placesToSet(credPath)
 		switch {
 		case siteURL == "" && token != "":
-			places = sources[tokenFrom].label + ", where " + tokenEnv + " is"
+			places = sources[tokenFrom].label + ", where " + TokenVar + " is"
 		case token == "" && siteURL != "":
-			places = sources[urlFrom].label + ", where " + urlEnv + " is"
+			places = sources[urlFrom].label + ", where " + URLVar + " is"
 		case credPath != "":
 			// The command writes the credentials file, so it is only worth
 			// naming when there is one to write -- and not in the two cases
@@ -122,13 +125,13 @@ func Resolve(envFile string) (*ConfluenceClient, error) {
 			setThem = "run markfluence credentials-init, or " + setThem
 		}
 		return nil, fmt.Errorf("missing Confluence %s: %s%s. See %s",
-			strings.Join(missing, ", "), setThem, places, credentialsDoc)
+			strings.Join(missing, ", "), setThem, places, CredentialsDoc)
 	}
 	if urlFrom != tokenFrom {
 		return nil, fmt.Errorf("%s comes from %s, but %s comes from %s. Set both in the same place. See %s",
-			urlEnv, sources[urlFrom].label, tokenEnv, sources[tokenFrom].label, credentialsDoc)
+			URLVar, sources[urlFrom].label, TokenVar, sources[tokenFrom].label, CredentialsDoc)
 	}
-	cloudID := sources[urlFrom].values[cloudIDEnv]
+	cloudID := sources[urlFrom].values[CloudIDVar]
 	warnIgnoredCloudID(sources, urlFrom)
 	if err := validateCloudID(cloudID, sources[urlFrom].label); err != nil {
 		return nil, err
@@ -152,10 +155,10 @@ func warnIgnoredCloudID(sources []source, urlFrom int) {
 		return
 	}
 	for _, s := range sources[:urlFrom] {
-		if s.values[cloudIDEnv] != "" {
+		if s.values[CloudIDVar] != "" {
 			securityWarner(fmt.Sprintf(
 				"%s from %s is ignored, because %s comes from %s: set the cloud ID in the same place as the URL",
-				cloudIDEnv, s.label, urlEnv, sources[urlFrom].label))
+				CloudIDVar, s.label, URLVar, sources[urlFrom].label))
 			return
 		}
 	}
@@ -164,7 +167,7 @@ func warnIgnoredCloudID(sources []source, urlFrom int) {
 // environment is the CONFLUENCE_* variables as a source.
 func environment() source {
 	values := map[string]string{}
-	for _, k := range []string{urlEnv, usernameEnv, tokenEnv, cloudIDEnv} {
+	for _, k := range []string{URLVar, UsernameVar, TokenVar, CloudIDVar} {
 		values[k] = os.Getenv(k)
 	}
 	return source{label: "the environment", values: values}
@@ -174,7 +177,7 @@ func environment() source {
 // token. The cloud ID is not asked about: it comes only from the URL's source,
 // which is already among these when the URL is.
 func complete(sources []source) bool {
-	for _, k := range []string{urlEnv, usernameEnv, tokenEnv} {
+	for _, k := range []string{URLVar, UsernameVar, TokenVar} {
 		if _, i := lookup(sources, k); i < 0 {
 			return false
 		}
@@ -199,7 +202,7 @@ func validateCloudID(cloudID, from string) error {
 	}
 	if strings.ContainsAny(cloudID, "/:") {
 		return fmt.Errorf("invalid Confluence cloud ID %q (%s, from %s): expected just the "+
-			"identifier, not a URL or path", cloudID, cloudIDEnv, from)
+			"identifier, not a URL or path", cloudID, CloudIDVar, from)
 	}
 	return nil
 }
@@ -237,7 +240,7 @@ func SetSecurityWarner(fn func(string)) { securityWarner = fn }
 // A stat failure is silent. The file was just read, so a failure here is
 // exotic, and a warning about the inability to warn is noise.
 func warnLoosePermissions(path string, env map[string]string) {
-	if securityWarner == nil || env[tokenEnv] == "" {
+	if securityWarner == nil || env[TokenVar] == "" {
 		return
 	}
 	fi, err := os.Stat(path)
@@ -245,13 +248,17 @@ func warnLoosePermissions(path string, env map[string]string) {
 		return
 	}
 	perm := fi.Mode().Perm()
-	if perm&0o077 == 0 {
+	if !LooseMode(perm) {
 		return
 	}
 	securityWarner(fmt.Sprintf(
 		"%s is %s (mode %#o) and holds your API token; run: chmod 600 %s",
 		path, accessDescription(perm), perm, shellArg(path)))
 }
+
+// LooseMode reports whether perm lets anyone but the owner reach a file. The
+// owner's own execute bit does not count: 0700 is odd, but it is not a leak.
+func LooseMode(perm os.FileMode) bool { return perm&0o077 != 0 }
 
 // accessDescription names what is actually wrong with a mode, rather than
 // assuming the readable case: 0622 is a real finding but nobody can read it,
@@ -297,11 +304,16 @@ func loadDotenv(path string) (map[string]string, error) {
 // readDotenv is loadDotenv without the permission warning, for a reader that
 // is about to rewrite the file 0600 or has just written it.
 func readDotenv(path string) (map[string]string, error) {
-	out := map[string]string{}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
+	return parseDotenv(data), nil
+}
+
+// parseDotenv is the env-file format itself.
+func parseDotenv(data []byte) map[string]string {
+	out := map[string]string{}
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -314,7 +326,7 @@ func readDotenv(path string) (map[string]string, error) {
 		}
 		out[strings.TrimSpace(key)] = unquote(strings.TrimSpace(value))
 	}
-	return out, nil
+	return out
 }
 
 func unquote(s string) string {

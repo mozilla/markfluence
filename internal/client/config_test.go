@@ -15,7 +15,7 @@ const full = "CONFLUENCE_URL=https://wiki\nCONFLUENCE_USERNAME=bot\nCONFLUENCE_T
 // does this for the package; a test calls it again only to undo its own Setenv.
 func clearConfluenceEnv(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{urlEnv, usernameEnv, tokenEnv, cloudIDEnv} {
+	for _, k := range []string{URLVar, UsernameVar, TokenVar, CloudIDVar} {
 		t.Setenv(k, "")
 	}
 }
@@ -81,7 +81,7 @@ func TestResolvePrecedence(t *testing.T) {
 	if c, err := Resolve(""); err != nil || c.username != "from-creds" {
 		t.Fatalf("credentials file alone: username = %v, %v", c, err)
 	}
-	t.Setenv(usernameEnv, "from-env")
+	t.Setenv(UsernameVar, "from-env")
 	if c, err := Resolve(""); err != nil || c.username != "from-env" {
 		t.Errorf("environment should beat the credentials file: %v, %v", c, err)
 	}
@@ -125,8 +125,8 @@ func TestResolveWithNoHomeIsNotAnError(t *testing.T) {
 // through a regular file, both mean the user has not made one.
 func TestResolveMissingCredentialsFileIsFine(t *testing.T) {
 	// No username anywhere, so the credentials file is consulted.
-	t.Setenv(urlEnv, "https://wiki")
-	t.Setenv(tokenEnv, "secret")
+	t.Setenv(URLVar, "https://wiki")
+	t.Setenv(TokenVar, "secret")
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // empty: no markfluence/ in it
 	if _, err := Resolve(""); err == nil || !strings.Contains(err.Error(), "missing Confluence username") {
 		t.Errorf("no credentials file: err = %v, want only the missing-username error", err)
@@ -158,9 +158,9 @@ func TestResolveUnreadableCredentialsFileFails(t *testing.T) {
 // TestResolveSkipsTheCredentialsFileWhenComplete: a broken or loose file must
 // not fail or warn on a run that never uses it.
 func TestResolveSkipsTheCredentialsFileWhenComplete(t *testing.T) {
-	t.Setenv(urlEnv, "https://wiki")
-	t.Setenv(usernameEnv, "bot")
-	t.Setenv(tokenEnv, "secret")
+	t.Setenv(URLVar, "https://wiki")
+	t.Setenv(UsernameVar, "bot")
+	t.Setenv(TokenVar, "secret")
 
 	got := captureSecurityWarnings(t)
 	path := withCredentialsFile(t, "CONFLUENCE_TOKEN=secret\n")
@@ -189,20 +189,20 @@ func TestResolveSkipsTheCredentialsFileWhenComplete(t *testing.T) {
 func TestResolveURLAndTokenMustShareASource(t *testing.T) {
 	credPath := withCredentialsFile(t, full)
 
-	t.Setenv(urlEnv, "https://elsewhere")
+	t.Setenv(URLVar, "https://elsewhere")
 	_, err := Resolve("")
 	if err == nil {
 		t.Fatal("URL from the environment, token from the credentials file: want an error")
 	}
 	for _, want := range []string{"CONFLUENCE_URL comes from the environment",
-		"CONFLUENCE_TOKEN comes from " + displayPath(credPath), "Set both in the same place", credentialsDoc} {
+		"CONFLUENCE_TOKEN comes from " + displayPath(credPath), "Set both in the same place", CredentialsDoc} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q missing %q", err, want)
 		}
 	}
 
 	clearConfluenceEnv(t)
-	t.Setenv(tokenEnv, "other")
+	t.Setenv(TokenVar, "other")
 	envFile := writeEnvFile(t, "CONFLUENCE_URL=https://b\nCONFLUENCE_USERNAME=bot\n")
 	if _, err := Resolve(envFile); err == nil ||
 		!strings.Contains(err.Error(), "CONFLUENCE_URL comes from --env-file "+envFile) {
@@ -218,7 +218,7 @@ func TestResolveURLAndTokenMustShareASource(t *testing.T) {
 
 	// Both from one place, with the username from another, is fine.
 	clearConfluenceEnv(t)
-	t.Setenv(usernameEnv, "someone")
+	t.Setenv(UsernameVar, "someone")
 	if _, err := Resolve(writeEnvFile(t, "CONFLUENCE_URL=https://b\nCONFLUENCE_TOKEN=t\n")); err != nil {
 		t.Errorf("URL and token from --env-file, username from the environment: %v", err)
 	}
@@ -247,8 +247,8 @@ func TestResolveCloudIDFollowsTheURL(t *testing.T) {
 
 	// URL and token from the environment; the username is left unset so the
 	// credentials file is read, and its cloud ID must still be ignored.
-	t.Setenv(urlEnv, "https://c")
-	t.Setenv(tokenEnv, "t")
+	t.Setenv(URLVar, "https://c")
+	t.Setenv(TokenVar, "t")
 	c, err = Resolve("")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -259,7 +259,7 @@ func TestResolveCloudIDFollowsTheURL(t *testing.T) {
 	}
 	clearConfluenceEnv(t)
 
-	t.Setenv(cloudIDEnv, "from-env")
+	t.Setenv(CloudIDVar, "from-env")
 	c, err = Resolve("")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -311,7 +311,7 @@ func TestResolveMissingNamesEverySource(t *testing.T) {
 	for _, want := range []string{"missing Confluence URL (CONFLUENCE_URL)", "token (CONFLUENCE_TOKEN)",
 		"run markfluence credentials-init, or set them in one place", "the environment",
 		filepath.Join(cfg, "markfluence", "credentials"),
-		"--env-file", credentialsDoc} {
+		"--env-file", CredentialsDoc} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q missing %q", err, want)
 		}
@@ -337,7 +337,7 @@ func TestResolveShowsTheCredentialsFileUnderHome(t *testing.T) {
 	if err := os.WriteFile(path, []byte(full), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv(urlEnv, "https://elsewhere")
+	t.Setenv(URLVar, "https://elsewhere")
 	if _, err := Resolve(""); err == nil || !strings.Contains(err.Error(), "CONFLUENCE_TOKEN comes from "+shown+".") {
 		t.Errorf("same-source: err = %v, want it to name %s", err, shown)
 	}
@@ -348,11 +348,11 @@ func TestResolveShowsTheCredentialsFileUnderHome(t *testing.T) {
 func TestResolveMissingWithNoHome(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("HOME", "")
-	t.Setenv(urlEnv, "https://wiki")
-	t.Setenv(tokenEnv, "secret")
+	t.Setenv(URLVar, "https://wiki")
+	t.Setenv(TokenVar, "secret")
 	_, err := Resolve("")
 	want := "missing Confluence username (CONFLUENCE_USERNAME): " +
-		"set it in the environment, or a file named by --env-file. See " + credentialsDoc
+		"set it in the environment, or a file named by --env-file. See " + CredentialsDoc
 	if err == nil || err.Error() != want {
 		t.Errorf("err = %v, want %q", err, want)
 	}
@@ -369,8 +369,8 @@ func TestResolveMissingHalfOfThePair(t *testing.T) {
 		t.Errorf("token in the credentials file: err = %v, want only its place offered for the URL", err)
 	}
 
-	t.Setenv(urlEnv, "https://wiki")
-	t.Setenv(usernameEnv, "bot")
+	t.Setenv(URLVar, "https://wiki")
+	t.Setenv(UsernameVar, "bot")
 	if err := os.WriteFile(filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "markfluence", "credentials"),
 		nil, 0o600); err != nil {
 		t.Fatal(err)
@@ -388,7 +388,7 @@ func TestResolveMissingHalfOfThePair(t *testing.T) {
 func TestResolveWarnsAboutAnIgnoredCloudIDAboveTheURL(t *testing.T) {
 	got := captureSecurityWarnings(t)
 	withCredentialsFile(t, full)
-	t.Setenv(cloudIDEnv, "exported")
+	t.Setenv(CloudIDVar, "exported")
 	if _, err := Resolve(""); err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -659,7 +659,7 @@ func TestWarnLoosePermissionsIgnoresAPipe(t *testing.T) {
 	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
 		t.Skipf("mkfifo: %v", err)
 	}
-	warnLoosePermissions(fifo, map[string]string{tokenEnv: "secret"})
+	warnLoosePermissions(fifo, map[string]string{TokenVar: "secret"})
 	if len(*got) != 0 {
 		t.Errorf("warnings = %v, want none for a pipe", *got)
 	}
