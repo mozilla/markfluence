@@ -1,7 +1,7 @@
 package convert_test
 
 // The round-trip property behind L5 and L6: exporting a page, publishing that
-// markdown back, and exporting again yields the same markdown. Once a page has
+// Markdown back, and exporting again yields the same Markdown. Once a page has
 // been through markfluence, it stops moving.
 //
 // This is deliberately weaker than "publishing an export back changes nothing
@@ -30,7 +30,7 @@ import (
 	"github.com/mozilla/markfluence/internal/project"
 )
 
-// notAFixedPoint lists cases whose markdown is not stable, with the reason.
+// notAFixedPoint lists cases whose Markdown is not stable, with the reason.
 // Empty is the goal; an entry here is a known gap, not a passing test.
 var notAFixedPoint = map[string]string{}
 
@@ -82,7 +82,7 @@ func TestRoundTripMarkdownIsAFixedPoint(t *testing.T) {
 // IMAGE BROKEN, which would fail the comparison for the wrong reason.
 var imageDestRE = regexp.MustCompile(`!\[[^\]]*\]\(([^) ]+)`)
 
-// publish converts markdown back to storage the way `update` would, with every
+// publish converts Markdown back to storage the way `update` would, with every
 // image it references materialized under a throwaway root.
 func publish(t *testing.T, md string) string {
 	t.Helper()

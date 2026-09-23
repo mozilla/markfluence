@@ -51,7 +51,7 @@ so a comment cannot be treated as a no-op even positionally.
 Two consequences, both about comparing a body markfluence sent against the body
 Confluence stored:
 
-- **`client.updateLanded` can never match for a page whose markdown contains an
+- **`client.updateLanded` can never match for a page whose Markdown contains an
   HTML comment.** It recovers a lost response by re-reading the page and
   accepting the write only when version, title *and* `body.storage` all equal
   what was sent — and the stored body will always differ by the stripped
@@ -59,7 +59,7 @@ Confluence stored:
   failure. Narrow today, because nothing markfluence *generates* is a comment
   (`<!-- bg:COLOR -->` is consumed by the AST transformer and
   `<!-- confluence-toc -->` is substituted), but an author-written comment is
-  legal markdown and passes straight through `html.WithUnsafe()`.
+  legal Markdown and passes straight through `html.WithUnsafe()`.
 - **A content-based idempotence check has to normalize comments away** or it
   reports a difference on every run for the same file — the exact opposite of
   what it is for. See #149, which proposes exactly that comparison.
@@ -67,7 +67,7 @@ Confluence stored:
 ## Table layout
 
 Every table markfluence publishes carries `data-layout="align-start"`, which
-auto-sizes the table to its content and left-aligns it — what a markdown table
+auto-sizes the table to its content and left-aligns it — what a Markdown table
 should look like.
 
 **Verified 2026-08-07.** Each value written to storage and read back as ADF:
@@ -192,7 +192,7 @@ alongside the named swatches resolving to their hexes (`#ffffff`, `#f4f5f7`,
 
 The 21 named swatches in `internal/convert/tables.go` are markfluence's
 vocabulary, not the server's: they are what the Confluence editor's cell
-background picker offers, so a color set from markdown is indistinguishable from
+background picker offers, so a color set from Markdown is indistinguishable from
 one set by hand and shows as the selected swatch. Read off an editor-authored page on
 2026-08-04; the picker is seven hue columns by three shades, with the grey
 column running white / light grey / grey. **Transcribed.**

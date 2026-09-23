@@ -25,7 +25,7 @@ Non-ASCII headings need no special handling. Confluence keeps the `é`.
 
 Two slug functions exist because the *source* anchor is GitHub's and the
 *target* is Confluence's: `githubSlug` lowercases and hyphenates to match what a
-`#fragment` in the markdown refers to, and `confluenceSlug` produces what
+`#fragment` in the Markdown refers to, and `confluenceSlug` produces what
 Confluence will answer to. The map from one to the other is built by scanning
 sibling files' headings.
 
@@ -60,7 +60,7 @@ who checks their links immediately after `create`.
 
 ## `<ac:link>`: the editor's own internal link
 
-Everything above is the *forward* direction, where markdown becomes an
+Everything above is the *forward* direction, where Markdown becomes an
 `<a href>`. The editor never writes one of those for an internal link. It writes
 `<ac:link>`, which `read` and `export` have to read back.
 
@@ -110,7 +110,7 @@ unknown-macro path and never the renderer, which is what keeps them intact.
 
 The question #91 turns on: can a mention be reconstructed from the account id
 alone, or does `ri:local-id` carry something? If the local-id were required,
-nothing markdown can hold would republish as a mention and passthrough would be
+nothing Markdown can hold would republish as a mention and passthrough would be
 the only honest answer.
 
 Three spellings published to a scratch page and read back as **ADF**
@@ -146,7 +146,7 @@ Asked the authoritative way: publish a mention, then read the page back as
 So `{site}/wiki/people/{accountId}` is where Confluence sends a reader who
 clicks a mention, which makes it the right destination by construction rather
 than by inference. The link text is the display name, which is what the
-markdown spelling emits.
+Markdown spelling emits.
 
 `?ref=confluence` is analytics and is **not** emitted: the bare URL answers 200,
 and the legacy `display/~{accountId}` form 302s *to* the `?ref=` variant, so
@@ -225,17 +225,17 @@ signal that an id cannot be resolved.
 Both directions follow from that. Inbound, an id `GetUser` cannot resolve has no
 name to render, so it passes through as storage. Outbound, **Confluence will not
 tell you an id is wrong** — a mangled one publishes as `@Unlicensed user`
-instead of failing — so a markdown mention whose id no longer resolves is worth
+instead of failing — so a Markdown mention whose id no longer resolves is worth
 reporting locally before publishing it, since the server never will.
 
 ### The mapping
 
-One rule: **convert when the markdown republishes to a link resolving to the
+One rule: **convert when the Markdown republishes to a link resolving to the
 same target; pass the storage through when it would not.** Passthrough is not a
 failure — the `ac:`/`ri:` shield republishes it byte-identical — so it is the
-right answer wherever a markdown link would break.
+right answer wherever a Markdown link would break.
 
-| storage | markdown | why |
+| storage | Markdown | why |
 |---|---|---|
 | `ri:page` (+`ri:space-key`, +`ac:anchor`), resolved | `[body](URL#anchor)` | absolute URL, republishes to the same page |
 | `ri:page`, unresolved | passthrough | no URL to write |
@@ -249,7 +249,7 @@ right answer wherever a markdown link would break.
 | no target at all | passthrough | nothing to link to |
 
 `ac:card-appearance` is dropped: an inline card renders as a chip with the page
-icon, and a markdown link republishes as plain text. The target is unchanged and
+icon, and a Markdown link republishes as plain text. The target is unchanged and
 the link still resolves, so by the rule above it converts. The design target has
 always been semantic, not byte-for-byte.
 

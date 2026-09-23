@@ -1,4 +1,4 @@
-// Package convert turns a markdown body into Confluence storage-format HTML.
+// Package convert turns a Markdown body into Confluence storage-format HTML.
 //
 // It parses with goldmark (GFM) and renders through a custom node renderer that
 // emits storage format, overriding the default HTML renderer for the nodes whose
@@ -56,7 +56,7 @@ func newMarkdown(r *storageRenderer) goldmark.Markdown {
 	)
 }
 
-// MdToConfluence converts a markdown file's body to Confluence storage-format
+// MdToConfluence converts a Markdown file's body to Confluence storage-format
 // HTML. baseURL and spaceKey build the Confluence URLs that internal document
 // links point at; md.Filename locates sibling files for link/anchor rewriting
 // and resolves image paths. root bounds which images and parent references may

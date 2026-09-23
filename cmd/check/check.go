@@ -1,5 +1,5 @@
 // Package check implements the `markfluence check` command: validate one or
-// more markdown files against the converter and frontmatter rules with no
+// more Markdown files against the converter and frontmatter rules with no
 // network access and no credentials. It writes nothing -- not to Confluence,
 // not to disk.
 package check

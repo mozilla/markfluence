@@ -153,7 +153,7 @@ func (r *storageRenderer) renderImage(
 	return ast.WalkSkipChildren, nil
 }
 
-// parseImageTitle turns a markdown image title into extra <ac:image> attributes.
+// parseImageTitle turns a Markdown image title into extra <ac:image> attributes.
 // A JSON object supplies title/width/height/align; anything else becomes a plain
 // tooltip (title). Invalid width/height/align values are dropped with a warning,
 // prefixed with linePrefix's line (computed by the caller, which holds the node).
@@ -229,7 +229,7 @@ var riFilenameRE = regexp.MustCompile(`ri:filename="([^"]*)"`)
 //
 // Exported for `export`, which asks the same question of a page it fetched.
 // Safe over raw text there because stored storage has no code fences; asking it
-// of *markdown* needs the parse pastedAttachmentNames does first.
+// of *Markdown* needs the parse pastedAttachmentNames does first.
 func ReferencedAttachmentNames(storage string) map[string]bool {
 	m := riFilenameRE.FindAllStringSubmatch(storage, -1)
 	if len(m) == 0 {
@@ -250,7 +250,7 @@ func ReferencedAttachmentNames(storage string) map[string]bool {
 // never reaches the naming branch.
 //
 // It walks the parsed document and reads only the raw-HTML nodes rather than
-// scanning the source text, which matters for one common document: markdown
+// scanning the source text, which matters for one common document: Markdown
 // that *documents* storage format. A fenced code block holding
 // <ri:attachment ri:filename="diagram.png" /> is an example, not a reference --
 // it publishes as a code block and points at nothing -- and a text scan cannot

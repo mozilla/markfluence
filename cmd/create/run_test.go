@@ -195,7 +195,7 @@ func (f *fakeConfluence) updatePage(w http.ResponseWriter, r *http.Request) {
 		`"_links":{"webui":"/spaces/ENG/pages/%s"}}`, id, p.title, p.version, id)
 }
 
-// write writes a markdown fixture and returns its path.
+// write writes a Markdown fixture and returns its path.
 func write(t *testing.T, dir, name, body string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
@@ -1035,7 +1035,7 @@ func writeManifest(t *testing.T, dir, body string) {
 }
 
 // #139's bootstrap flow: a pristine file, published, with its metadata
-// recorded in the project file rather than written into the markdown.
+// recorded in the project file rather than written into the Markdown.
 func TestCreateAllPersistsToTheManifest(t *testing.T) {
 	resetOpts(t)
 	dir := t.TempDir()

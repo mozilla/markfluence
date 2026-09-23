@@ -1,5 +1,5 @@
 // Command gendocs renders every markfluence command's --help into
-// docs/commands/ as markdown, so the command reference is browsable on GitHub
+// docs/commands/ as Markdown, so the command reference is browsable on GitHub
 // without installing anything.
 //
 // The output is generated and checked in, which is a second copy of the help

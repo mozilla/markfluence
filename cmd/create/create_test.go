@@ -230,7 +230,7 @@ func TestResolveWidth(t *testing.T) {
 	})
 	// internal/project cannot validate its own width, so this is the first
 	// place a bad one is caught -- and the message has to send the reader to
-	// the file that actually holds it, not to a markdown file with no
+	// the file that actually holds it, not to a Markdown file with no
 	// page_width in it at all.
 	t.Run("invalid project width names the project file", func(t *testing.T) {
 		bad := &project.Root{File: "/repo/markfluence.yaml", Config: project.Config{PageWidth: "huge"}}

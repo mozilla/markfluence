@@ -15,7 +15,7 @@ import (
 // tableLayout is the Confluence table layout every table is published with.
 // Without a layout attribute Confluence auto-sizes the table but leaves it
 // unanchored; "align-start" auto-sizes it to its content and left-aligns it on the
-// page, which is what a markdown table should look like. The other values
+// page, which is what a Markdown table should look like. The other values
 // Confluence accepts are "align-end", "center", "wide", and "full-width".
 //
 // Keep this attribute if column widths are ever emitted: a <colgroup> on a table
@@ -50,7 +50,7 @@ var (
 const cellBGAttr = "mfCellBG"
 
 // cellBGSwatches maps a color name to its hex. These are the 21 swatches the
-// Confluence editor's cell background picker offers, so a color set from markdown
+// Confluence editor's cell background picker offers, so a color set from Markdown
 // is indistinguishable from one set by hand in the editor (and shows up as the
 // selected swatch there). Read off an editor-authored page on 2026-08-04; the
 // picker is a grid of seven hue columns by three shades, where the grey column
@@ -112,7 +112,7 @@ var cellBGNames = func() map[string]string {
 //
 //	| auth | <!-- bg:light-red --> down |
 //
-// which is invisible in a plain markdown preview. The marker is stripped from the
+// which is invisible in a plain Markdown preview. The marker is stripped from the
 // cell and the resolved color is stashed on the cell node for renderTableCell to
 // emit as data-highlight-colour. An unresolvable color is dropped with a warning.
 type tableCellBGTransformer struct{ r *storageRenderer }
@@ -130,7 +130,7 @@ func (t tableCellBGTransformer) Transform(doc *ast.Document, reader text.Reader,
 
 // applyCellBG consumes a leading marker on one cell. A marker anywhere else in
 // the cell is left alone and warned about: it would otherwise be a silent no-op,
-// since a comment is invisible in both markdown and Confluence.
+// since a comment is invisible in both Markdown and Confluence.
 func (t tableCellBGTransformer) applyCellBG(cell ast.Node, source []byte) {
 	if first := cell.FirstChild(); first != nil {
 		if value, ok := cellBGMarker(first, source); ok {

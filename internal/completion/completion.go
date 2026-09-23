@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// MarkdownFiles completes an argument that names a markdown file: directories
+// MarkdownFiles completes an argument that names a Markdown file: directories
 // plus *.md, the only extension markfluence reads. It fits a PAGE argument
 // too -- the numeric-id and URL forms are typed out, so filtering to .md just
 // makes the third form completable.
@@ -22,7 +22,7 @@ func MarkdownFiles(_ *cobra.Command, _ []string, _ string) ([]string, cobra.Shel
 	return []string{"md"}, cobra.ShellCompDirectiveFilterFileExt
 }
 
-// PageThenFiles completes a `PAGE FILE...` argument list: markdown for PAGE,
+// PageThenFiles completes a `PAGE FILE...` argument list: Markdown for PAGE,
 // then any file, since the uploads that follow are attachments of any type.
 func PageThenFiles(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	if len(args) == 0 {
@@ -31,7 +31,7 @@ func PageThenFiles(cmd *cobra.Command, args []string, toComplete string) ([]stri
 	return nil, cobra.ShellCompDirectiveDefault
 }
 
-// PageThenNames completes a `PAGE [NAME...]` argument list: markdown for PAGE,
+// PageThenNames completes a `PAGE [NAME...]` argument list: Markdown for PAGE,
 // then nothing. The names are attachments on the server, which completion may
 // not go fetch, and offering local filenames instead would be wrong.
 func PageThenNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {

@@ -1,5 +1,5 @@
 // Package attachref defines the local-attachment reference shared by
-// internal/convert (which discovers these while converting a page's markdown)
+// internal/convert (which discovers these while converting a page's Markdown)
 // and internal/client (which uploads them). internal/convert is deliberately
 // client-free, so this shape -- otherwise identical on both sides -- lives here
 // instead of being owned by either.

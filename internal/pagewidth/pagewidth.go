@@ -11,7 +11,7 @@
 //	wide         full-width
 //	max          max
 //
-// An unset or blank page_width defaults to max: the markdown file is the source
+// An unset or blank page_width defaults to max: the Markdown file is the source
 // of truth for width, so publishing asserts it on both the published and draft
 // appearance properties (so the viewed page and the editor agree).
 //

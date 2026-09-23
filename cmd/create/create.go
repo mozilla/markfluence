@@ -1,5 +1,5 @@
 // Package create implements the `markfluence create` command: create new
-// Confluence pages from markdown files. Creation is three-phase: every file is
+// Confluence pages from Markdown files. Creation is three-phase: every file is
 // validated first (preflight); if all pass, a content-less stub is created
 // for each, parents first, capturing every id (reserve); only then is every
 // page converted and given real content (publish). Reserving every id before
@@ -1304,7 +1304,7 @@ func resolveSpace(cliSpace string, fm map[string]string, root *project.Root) (st
 // internal/project cannot check this itself -- it would have to import
 // internal/pagewidth, which imports internal/client, which holds a
 // *project.Cache -- so this is where a project-wide width is first validated,
-// and "invalid page_width" pointing at a markdown file that never mentions one
+// and "invalid page_width" pointing at a Markdown file that never mentions one
 // is the wrong file to send someone to.
 func resolveWidth(cliPageWidth string, fm map[string]string, root *project.Root) (pagewidth.Width, error) {
 	if cliPageWidth != "" {

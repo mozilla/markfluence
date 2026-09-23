@@ -1,5 +1,5 @@
 // Package frontmatter parses and rewrites the YAML frontmatter block that
-// markfluence markdown files carry, and models a parsed file as a MarkdownFile.
+// markfluence Markdown files carry, and models a parsed file as a MarkdownFile.
 //
 // The block is real YAML, parsed and emitted by goccy/go-yaml. It is still
 // flat -- no nesting -- but a value may be a scalar or a sequence of scalars,
@@ -51,7 +51,7 @@ var frontmatterRE = regexp.MustCompile(`(?s)^---\n(.*?)\n---\n`)
 // goccy error about the block's contents.
 //
 // It is a lexical check, not a parse: a document whose very first line is a
-// bare thematic break (a markdown horizontal rule) is indistinguishable from
+// bare thematic break (a Markdown horizontal rule) is indistinguishable from
 // unterminated frontmatter and is flagged the same way. Accepted deliberately.
 var ErrUnterminatedFrontmatter = errors.New(
 	`unterminated frontmatter block: starts with "---" but has no closing "---" line`)
@@ -535,7 +535,7 @@ func dropBlankLines(s string) string {
 
 // --- MarkdownFile ---------------------------------------------------------------
 
-// MarkdownFile is a markdown source file parsed once: its path, raw text,
+// MarkdownFile is a Markdown source file parsed once: its path, raw text,
 // frontmatter maps, and body (content with the frontmatter block stripped).
 //
 // Frontmatter holds the scalar fields and Lists the sequence-valued ones; a key

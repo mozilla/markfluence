@@ -1,4 +1,4 @@
-// Package update implements the `markfluence update` command: publish markdown
+// Package update implements the `markfluence update` command: publish Markdown
 // files to existing Confluence pages.
 package update
 
@@ -241,7 +241,7 @@ func processFile(
 	r.warnings = append(r.warnings, meta.Warnings...)
 
 	// Nothing anywhere claims this file, so there is nothing to publish and
-	// nothing wrong (#139). Repositories legitimately hold markdown that is not
+	// nothing wrong (#139). Repositories legitimately hold Markdown that is not
 	// published to Confluence, drafts are a normal state, and a glob-driven CI
 	// run must not go red because somebody added a file. A file that *is*
 	// claimed but has no page_id still fails below: somebody registered it and
@@ -402,7 +402,7 @@ func processFile(
 	//
 	// It skips the *body* alone. The width, label and attachment passes below
 	// still run, which is the fix for a live bug: the old mtime skip returned
-	// before all three, so redrawing an image without touching the markdown
+	// before all three, so redrawing an image without touching the Markdown
 	// never uploaded it and the page kept serving the old diagram.
 	// Both halves of the base are required, not just the sha. The sha attests
 	// what markfluence last *published*; only the version agreeing with the
@@ -422,7 +422,7 @@ func processFile(
 	r.broken = append(r.broken, pageContent.Broken...)
 	r.warnings = append(r.warnings, pageContent.Warnings...)
 	// Publishing needs no display names -- the account id is already in the
-	// markdown -- so this lookup exists only to catch an id that names nobody,
+	// Markdown -- so this lookup exists only to catch an id that names nobody,
 	// which Confluence will not: it renders any id as "@Unlicensed user". The
 	// cache makes it one request per distinct person across the whole batch.
 	r.warnings = append(r.warnings, pagedoc.MentionWarnings(c, users, pageContent.Mentions)...)

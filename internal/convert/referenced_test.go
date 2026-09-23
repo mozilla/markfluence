@@ -2,7 +2,7 @@ package convert_test
 
 // The storage-side scan: what attachment names a page refers to. It lives in
 // internal/convert because both directions need it -- `export` asks it of a
-// page it fetched, and the converter asks it of the raw storage a markdown body
+// page it fetched, and the converter asks it of the raw storage a Markdown body
 // pastes through -- and two copies of "what does this page reference" would be
 // two things to keep in step.
 

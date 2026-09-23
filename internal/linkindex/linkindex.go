@@ -28,7 +28,7 @@ import (
 	"github.com/mozilla/markfluence/internal/project"
 )
 
-// PageEntry is a markdown file's Confluence coordinates, keyed in an Index by
+// PageEntry is a Markdown file's Confluence coordinates, keyed in an Index by
 // its path relative to the root.
 type PageEntry struct {
 	PageID string

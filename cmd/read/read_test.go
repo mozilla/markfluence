@@ -78,7 +78,7 @@ func TestRunPrintsMarkdown(t *testing.T) {
 
 // TestRunPositionsAnUnsourcedAttachment covers the placement rule read shares
 // with export and attachment-download: an attachment with no recorded path
-// belongs in the directory named after its page, so the markdown says so.
+// belongs in the directory named after its page, so the Markdown says so.
 //
 // Without this, read prints diagram.png while attachment-download writes
 // runbook/diagram.png and the image does not resolve. The three agree because

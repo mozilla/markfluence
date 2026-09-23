@@ -1,4 +1,4 @@
-# A markfluence markdown file
+# A markfluence Markdown file
 
 Each Markdown file is one Confluence page. A file has an optional YAML
 **frontmatter** block, and then the Markdown **body**.

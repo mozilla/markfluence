@@ -46,7 +46,7 @@ var calloutMacroInverse = map[string]string{
 }
 
 // adfPanelAlert reports the GitHub alert an <ac:adf-extension> carries, or ""
-// when it is not one markdown can spell.
+// when it is not one Markdown can spell.
 //
 // Only the purple panel qualifies, and only because MdToConfluence publishes
 // IMPORTANT as one -- recovering it is what keeps that round trip whole. The
@@ -91,7 +91,7 @@ func StorageToMarkdown(storage string, opts StorageOptions) (string, error) {
 	return out + "\n", nil
 }
 
-// mdRenderer carries the per-conversion context the storage->markdown walk needs.
+// mdRenderer carries the per-conversion context the storage->Markdown walk needs.
 // A fresh one is used per conversion, so nothing leaks between documents.
 type mdRenderer struct {
 	// sources maps attachment name -> the image path it was published from,
@@ -100,7 +100,7 @@ type mdRenderer struct {
 	sources map[string]string
 
 	// pageDir is where the page's file sits relative to that same root, which is
-	// what turns a root-relative path into a destination the markdown can carry.
+	// what turns a root-relative path into a destination the Markdown can carry.
 	// attachmentDir is where an attachment with no recorded path is placed --
 	// the directory named after the page, which is a level below pageDir. See
 	// StorageOptions.
@@ -124,7 +124,7 @@ type mdRenderer struct {
 	headingSlugs map[string]string
 }
 
-// sourceFor resolves an attachment name to the markdown image path to write,
+// sourceFor resolves an attachment name to the Markdown image path to write,
 // positioned relative to the page's own directory.
 //
 // Two provenances, one rule each, and both are positioned:
@@ -143,7 +143,7 @@ type mdRenderer struct {
 // was an encoding of the path -- but the name is the base name now, so there is
 // nothing in it to decode, and a name that happens to contain "%2F" is a
 // filename with a "%2F" in it. The comment is the only place a path is written
-// down, which also means placement (internal/attachfile) and the markdown
+// down, which also means placement (internal/attachfile) and the Markdown
 // written here cannot disagree about where an attachment belongs: both read the
 // same field and position it the same way.
 //
@@ -172,7 +172,7 @@ func (r *mdRenderer) sourceFor(filename string) string {
 // That is a destination pointing at a file attachfile.Resolve refuses to write,
 // since it reads the same string as root-relative and clamps it. Both halves
 // report the problem in their own way rather than one of them inventing a
-// plausible path: R2 covers the unwritten attachment, and the markdown says
+// plausible path: R2 covers the unwritten attachment, and the Markdown says
 // where the page claimed the image was.
 func relativeTo(dir, target string) string {
 	if dir == "" {
@@ -589,7 +589,7 @@ func (r *mdRenderer) renderCellLines(c *snode) string {
 		case "ul", "ol":
 			// A GFM table row is one physical line, so a real bulleted or
 			// numbered list -- which needs one line per item -- can't be
-			// expressed as markdown list syntax inside a cell at all.
+			// expressed as Markdown list syntax inside a cell at all.
 			// Passthrough as the raw tags, which markfluence's own write side
 			// already accepts typed directly into a cell (goldmark's raw HTML
 			// passes through unchanged), keeps it exact instead of running
@@ -622,9 +622,9 @@ func cellBGMarkerComment(c *snode) string {
 }
 
 // renderMacro renders an <ac:structured-macro>: the code/toc/callout macros
-// MdToConfluence emits become their markdown equivalents; any other macro passes
+// MdToConfluence emits become their Markdown equivalents; any other macro passes
 // through as raw storage. A block-context unknown macro uses the round-trip-safe
-// multi-line form (renderRawBlock, markdown body); an inline one stays raw on a
+// multi-line form (renderRawBlock, Markdown body); an inline one stays raw on a
 // single line so it does not break out of its paragraph.
 func (r *mdRenderer) renderMacro(n *snode, block bool) string {
 	switch name := n.attrs["ac:name"]; {
@@ -658,7 +658,7 @@ func renderCodeMacro(n *snode) string {
 // renderCallout renders a callout as a GitHub alert blockquote. n is the macro
 // or the ac:adf-node, whose bodies are spelled ac:rich-text-body and
 // ac:adf-content respectively -- one code path, so the two spellings of the
-// same callout cannot produce different markdown.
+// same callout cannot produce different Markdown.
 func (r *mdRenderer) renderCallout(n *snode, alert string) string {
 	content := "[!" + alert + "]"
 	body := findChild(n, "ac:rich-text-body")
@@ -698,7 +698,7 @@ func (r *mdRenderer) renderInlineChildren(n *snode) string {
 	return strings.TrimSpace(b.String())
 }
 
-// hardBreak is markdown's two-space line break, as renderInline emits it for a
+// hardBreak is Markdown's two-space line break, as renderInline emits it for a
 // <br />.
 const hardBreak = "  \n"
 
@@ -723,16 +723,16 @@ var formatMarks = map[string]bool{
 // identical split with <ac:link> in place of <a> (see isLinkNode). Rendered as
 // two independent nodes that becomes "**text **[**link**](url)": the closing
 // ** is preceded by a space, so CommonMark's flanking rule refuses to treat it
-// as emphasis at all -- the markdown comes back not merely unstyled but
+// as emphasis at all -- the Markdown comes back not merely unstyled but
 // literally reading "**text **". This restores the nested form before
-// rendering, the only shape markdown can actually express, by hoisting the
+// rendering, the only shape Markdown can actually express, by hoisting the
 // mark to wrap the whole run including the link and dropping the now-redundant
 // inner one.
 //
 // Merging two adjacent same-tag mark elements outright (mergeMarkRun's first
 // case, needed nowhere else) is what lets a third run on either side of the
 // link fold into an already-repaired node; it is not itself a repair, since
-// "<strong>a</strong><strong>b</strong>" is valid nested markdown either way.
+// "<strong>a</strong><strong>b</strong>" is valid nested Markdown either way.
 func coalesceSplitMarks(kids []*snode) []*snode {
 	out := make([]*snode, 0, len(kids))
 	for _, k := range kids {
@@ -748,7 +748,7 @@ func coalesceSplitMarks(kids []*snode) []*snode {
 }
 
 // isLinkNode reports whether n is a link element coalesceSplitMarks may hoist
-// a mark across: a markdown link, or the editor's own internal <ac:link> (used
+// a mark across: a Markdown link, or the editor's own internal <ac:link> (used
 // for a page, space, or user link -- see aclink.go).
 func isLinkNode(n *snode) bool {
 	return n.name == "a" || n.name == "ac:link"
@@ -888,7 +888,7 @@ func (r *mdRenderer) renderInline(n *snode) string {
 	}
 }
 
-// renderLink renders an <a> as a markdown link, falling back to the href as text.
+// renderLink renders an <a> as a Markdown link, falling back to the href as text.
 //
 // The text goes through inlineTextForLink, which escapes it when it is plain
 // text. This is the most common link element of all, and without the escaping
@@ -909,7 +909,7 @@ func (r *mdRenderer) renderLink(n *snode) string {
 	return fmt.Sprintf("[%s](%s)", text, href)
 }
 
-// renderImage renders an <ac:image> as a markdown image, reconstructing the
+// renderImage renders an <ac:image> as a Markdown image, reconstructing the
 // title/width/height/align attributes into a plain title or a JSON title.
 func (r *mdRenderer) renderImage(n *snode) string {
 	alt := n.attrs["ac:alt"]
@@ -918,7 +918,7 @@ func (r *mdRenderer) renderImage(n *snode) string {
 		switch k.name {
 		case "ri:attachment":
 			// sourceFor yields a filesystem path; a destination is a URL, so a
-			// space or a "%" in the path has to be encoded or the markdown does
+			// space or a "%" in the path has to be encoded or the Markdown does
 			// not parse as an image at all.
 			src = encodeDestination(r.sourceFor(k.attrs["ri:filename"]))
 		case "ri:url":
@@ -1060,7 +1060,7 @@ func attrString(attrs map[string]string) string {
 
 // renderRawBlock emits a block-level storage element for passthrough in a form
 // that round-trips through MdToConfluence: each wrapper tag on its own line (a
-// CommonMark type-7 HTML block), a content container's body converted to markdown
+// CommonMark type-7 HTML block), a content container's body converted to Markdown
 // and set off by blank lines, and leaf elements (e.g. ac:parameter) serialized
 // raw on a single line. This covers both column layouts and bodied macros
 // (expand, panel, …), keeping their bodies readable while the structure and
@@ -1069,7 +1069,7 @@ func (r *mdRenderer) renderRawBlock(n *snode) string {
 	open := "<" + n.name + attrString(n.attrs) + ">"
 	closeTag := "</" + n.name + ">"
 
-	// Content container: raw tags around a markdown body.
+	// Content container: raw tags around a Markdown body.
 	if isContentContainer(n.name) {
 		if md := strings.Join(r.blockStrings(n.kids, ""), "\n\n"); md != "" {
 			return open + "\n\n" + md + "\n\n" + closeTag
@@ -1097,7 +1097,7 @@ func (r *mdRenderer) renderRawBlock(n *snode) string {
 }
 
 // isContentContainer reports whether an element holds block content that should
-// be converted to markdown rather than serialized raw, so a passed-through
+// be converted to Markdown rather than serialized raw, so a passed-through
 // wrapper keeps an editable body.
 func isContentContainer(name string) bool {
 	switch name {

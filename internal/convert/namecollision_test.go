@@ -121,7 +121,7 @@ func TestWarnsWhenAConvertedImageTakesAPastedName(t *testing.T) {
 }
 
 // TestFencedStorageExampleIsNotAReference is the false positive a text scan
-// produces and a parse does not: markdown that *documents* storage format. The
+// produces and a parse does not: Markdown that *documents* storage format. The
 // fenced block publishes as a code block and references nothing, so an image
 // sharing its name is taking nothing over.
 //

@@ -42,7 +42,7 @@ import (
 
 // An uploaded attachment carries markfluence bookkeeping in its comment: the
 // checksum a later run compares to tell whether the local file changed, and the
-// markdown image path it was published from, so reading the page back recovers
+// Markdown image path it was published from, so reading the page back recovers
 // the image's original location exactly instead of inferring it from the
 // attachment name.
 const (
@@ -402,7 +402,7 @@ type Property struct {
 	Version Version `json:"version"`
 }
 
-// LocalAttachment is a local image to sync to a page. Source is the markdown
+// LocalAttachment is a local image to sync to a page. Source is the Markdown
 // image path it was written as, recorded in the attachment's comment; it may be
 // empty, in which case only a checksum is recorded. It's the same shape
 // internal/convert discovers images as -- see attachref.LocalAttachment.
@@ -977,7 +977,7 @@ func (c *ConfluenceClient) GetUser(accountID string) string {
 // anything that writes a name into a file. GetUser flattens both to "", which
 // is right for a display where a missing author name is merely blank; it is
 // wrong for `read`/`export`, where rendering a placeholder for a transport
-// failure would put a fabricated name over a real one in somebody's markdown
+// failure would put a fabricated name over a real one in somebody's Markdown
 // (#91).
 var ErrNoSuchUser = errors.New("no user with that account id")
 

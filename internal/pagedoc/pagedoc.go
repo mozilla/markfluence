@@ -1,4 +1,4 @@
-// Package pagedoc renders a fetched Confluence page as a markdown document:
+// Package pagedoc renders a fetched Confluence page as a Markdown document:
 // frontmatter plus the converted body.
 //
 // One conversion, parameterized. Every command that renders a page goes through
@@ -64,7 +64,7 @@ type Placement struct {
 	Parent string
 }
 
-// Doc is a page rendered as markdown. Frontmatter and Body are separate because
+// Doc is a page rendered as Markdown. Frontmatter and Body are separate because
 // read prints them together while export writes them to a file, and because a
 // caller may want the body alone.
 type Doc struct {
@@ -75,7 +75,7 @@ type Doc struct {
 // String is the full document: frontmatter, a blank line, then the body.
 func (d Doc) String() string { return d.Frontmatter + "\n" + d.Body }
 
-// Render converts a page's storage body to markdown and builds its frontmatter.
+// Render converts a page's storage body to Markdown and builds its frontmatter.
 //
 // See Placement for what pl carries.
 //
@@ -138,7 +138,7 @@ func NewUserCache() *UserCache { return &UserCache{names: map[string]string{}} }
 //
 // Sharing the cache with the inverse direction is what makes this affordable.
 // Publishing needs no display names at all -- only the id, which is already in
-// the markdown -- so this lookup exists purely for the warning, and without a
+// the Markdown -- so this lookup exists purely for the warning, and without a
 // cross-page cache it would cost one request per distinct mention on every
 // single update.
 func MentionWarnings(c *client.ConfluenceClient, users *UserCache, ids []string) []string {
@@ -179,7 +179,7 @@ func MentionWarnings(c *client.ConfluenceClient, users *UserCache, ids []string)
 //   - id absent: nothing is known, because the lookup could not be made
 //
 // The third case has to stay distinguishable from the second. Flattening them
-// would put a fabricated name over a real one in somebody's markdown the moment
+// would put a fabricated name over a real one in somebody's Markdown the moment
 // a VPN dropped mid-export -- across every page, in a file that then looks
 // authoritative.
 //
@@ -216,10 +216,10 @@ func (u *UserCache) resolve(c *client.ConfluenceClient, ids []string) map[string
 // Every command that renders a page goes through it rather than assembling its
 // own, which is the same reason Render exists: options built in two places are
 // options that can disagree, and here a disagreement means an attachment
-// written to a path the markdown does not point at.
+// written to a path the Markdown does not point at.
 //
 // One conversion, parameterized by where the page sits. read and export produce
-// identical markdown for the same position; read has no tree, so it passes the
+// identical Markdown for the same position; read has no tree, so it passes the
 // empty one.
 func Options(
 	c *client.ConfluenceClient, page *client.Page, pl Placement, users *UserCache,
@@ -235,7 +235,7 @@ func Options(
 		// named after the page, beside the page's own file. Computed here rather
 		// than in the converter, which has no business knowing how a title
 		// becomes a directory name, and computed once so that every command
-		// placing such an attachment agrees with the markdown that points at it.
+		// placing such an attachment agrees with the Markdown that points at it.
 		AttachmentDir: AttachmentDirFor(page, pl),
 		// The site, never the gateway: these URLs are published into a page.
 		SiteURL: c.SiteURL(),
@@ -255,7 +255,7 @@ func (pl Placement) sources(c *client.ConfluenceClient, page *client.Page) map[s
 // path: the directory the placement names, or one derived from the page when it
 // names none.
 //
-// Exported because the write side needs the identical answer -- the markdown
+// Exported because the write side needs the identical answer -- the Markdown
 // destination and attachfile.Options.Dir are the same decision, and computing
 // it twice is how they drift.
 func AttachmentDirFor(page *client.Page, pl Placement) string {
@@ -274,7 +274,7 @@ func (pl Placement) attachmentDir(page *client.Page) string {
 // page's own file at pageDir.
 //
 // Exported because both sides of the same decision need it and must not compute
-// it twice: the markdown that points at the attachment (through Options) and
+// it twice: the Markdown that points at the attachment (through Options) and
 // the write that puts it there (attachfile.Options.Dir). A caller that renders
 // a page and writes its attachments passes this to both.
 func AttachmentDir(page *client.Page, pageDir string) string {
@@ -350,13 +350,13 @@ func pageURLByTitle(c *client.ConfluenceClient, title, spaceID string) string {
 	return url
 }
 
-// Sources maps each attachment name on the page to the markdown image path it
+// Sources maps each attachment name on the page to the Markdown image path it
 // was published from, letting the converter restore an image's original
 // location exactly rather than inferring it from the attachment name.
 //
 // It is an optimization, not a requirement: a page with no attachment
 // references skips the lookup entirely, and a failed lookup returns nil, which
-// leaves every attachment looking unrecorded -- so the markdown points into the
+// leaves every attachment looking unrecorded -- so the Markdown points into the
 // page's own directory, which is where an unrecorded one is placed anyway. A
 // read is worth completing without it, the same way a failed page-width read is
 // tolerated in Frontmatter.

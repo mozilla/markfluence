@@ -129,7 +129,7 @@ func resolveValue(flagVal, envKey string, dotenv map[string]string) string {
 // for a second discovery (and a second os.OpenRoot) of the identical root;
 // roots owns closing the handle, so none happens here. This is its own
 // discovery pass, separate from the per-file root the converter uses: it
-// starts at the working directory rather than a markdown file's directory,
+// starts at the working directory rather than a Markdown file's directory,
 // runs once before any file is touched, and doesn't bound anything -- it
 // only answers "where is .env." A missing .env, wherever it lands, is fine
 // and yields an empty map, matching prior behavior.

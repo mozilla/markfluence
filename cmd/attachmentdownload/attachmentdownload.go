@@ -158,7 +158,7 @@ func selectAttachments(attachments []client.Attachment, names []string) (
 
 // pageDirFor is the directory an attachment with no recorded path is written
 // under: a slug of the page's title, matching what convert.sourceFor points the
-// markdown at (via pagedoc.Options) so that a downloaded file lands where a
+// Markdown at (via pagedoc.Options) so that a downloaded file lands where a
 // read of the same page says it is.
 //
 // A folder id is accepted here exactly as pageref.Resolve accepts one, and has
