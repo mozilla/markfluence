@@ -64,10 +64,10 @@ To create a page, you need only the `title` in the frontmatter, or `--title`.
 
 ### `parent`
 
-- `null` means a top-level page.
-- An id names a parent that exists. The parent can be a page or a Cloud folder.
-  The value is only an id in both cases, and nothing records which type it is.
-- A `.md` path names a parent by its file. The file can be in the same run,
+- `null` means a top-level page in the Confluence space.
+- An id names a parent that exists. The parent can be a page id or a Cloud folder id.
+  Nothing records which kind of thing the id is for.
+- A `.md` path names a parent page by its file. The file can be in the same run,
   and then `create` resolves it in dependency order. The file can also be a
   page that you published earlier, and then `create` uses its `page_id` or its
   `pages:` entry. In both cases, `create` then changes the value to
@@ -95,7 +95,7 @@ markfluence changes names to lowercase and gives a warning, because Confluence
 does that anyway. Any other invalid name is an error before any write.
 
 To adopt a page that a person labeled in the UI, use `page-info` to see its
-labels, and copy them into the file. Nothing writes the file for you.
+labels, and copy them into the file.
 
 ### `page_width`
 
@@ -126,8 +126,8 @@ the list, the file fails, and the error lists the names that would work.
 `page-info PAGE` lists them too (`page_status/available`).
 
 The match ignores case, because markfluence sends only the id of the status to
-Confluence. Thus `ready for review` publishes, and `read` and `export` write
-back the spelling of the space.
+Confluence. Thus `ready for review` publishes, and `read` and `export` output
+the spelling of the space.
 
 markfluence refuses a *custom* status, also when your own Confluence picker
 shows it. A custom status belongs to your account, and not to the space. Thus a
@@ -135,7 +135,7 @@ file that names one would publish for you and fail for all other persons.
 
 A file **cannot clear** a status. `page_status:` with no value is an error, and
 not an instruction. Every empty spelling of a scalar looks the same as an
-unfinished edit. To clear a status, use the UI.
+unfinished edit. To clear a status, use the Confluence UI.
 
 A status write gives the page a new version. Thus markfluence does not write a
 status that already agrees.
@@ -179,9 +179,9 @@ a false claim about most of the tree on every publish.
 
 ### The same block, in a different location
 
-Every field above can be in a `pages:` entry in `markfluence.yaml`, and not in
-the file. With this, a Markdown file stays clean and markfluence still
-publishes it:
+Every field above can be in a `pages:` entry in `markfluence.yaml` instead
+of in the frontmatter of the file. With this, a Markdown file stays clean and
+markfluence still publishes it:
 
 ```yaml
 pages:
@@ -191,21 +191,21 @@ pages:
     labels: [runbook]
 ```
 
-An entry is the same block in a different location. It has the same field
-names, the same value domains, and the same canonical sequence. `create` writes
-an entry for you when the project uses `pages:` and the file has no
-frontmatter of its own.
+An entry in `pages:` in `markfluence.yaml` is the same frontmatter block but in
+a different location. It has the same field names, the same value domains, and
+the same canonical sequence. `create` writes an entry for you when the project
+uses `pages:` and the file has no frontmatter of its own.
 
-One value has a different spelling in the two locations: a `parent:` that
-names a `.md` file. In an entry, it is relative to the root. In frontmatter, it
-is relative to the file (see
+One value has a different spelling in the two locations: a `parent:` that names
+a `.md` file. In a `pages:` entry, it is relative to the root. In frontmatter,
+it is relative to the file (see
 [root-model.md](root-model.md#pages--page-metadata-for-a-pristine-file)).
 
-Both locations are legal, and markfluence says nothing when they agree. An
-entry is *not* a fourth level of precedence. Frontmatter and an entry are two
-spellings of one level. Thus when both give a value, markfluence uses a rule
-for disagreements, and not a rule for precedence. For the details, and the
-rules for path keys, see
+Both locations are legal, and markfluence says nothing when they agree. A
+`pages:` entry is *not* a fourth level of precedence. Frontmatter and a `pages:`
+entry are two spellings of one level. Thus when both give a value, markfluence
+uses a rule for disagreements, and not a rule for precedence. For the details,
+and the rules for path keys, see
 [root-model.md](root-model.md#pages--page-metadata-for-a-pristine-file).
 
 ## Body
@@ -448,10 +448,10 @@ An attachment link or an external URL does not resolve here, and markfluence
 says nothing about it in both cases. A mention is also a link, but a special
 link. See below.
 
-### Mentions
+### User mentions
 
-A Confluence mention round-trips as a usual Markdown link to the profile of the
-person, with an `@` at the start of the link text:
+A Confluence user mention round-trips as a usual Markdown link to the profile of
+the person, with an `@` at the start of the link text:
 
 ```markdown
 Ping [@Ada Lovelace](https://home.atlassian.com/people/712020:0e5f8a21-3c4d-4e5f-a6b7-c8d9e0f1a2b3) about the deploy.
@@ -462,14 +462,17 @@ real mention. Know these 3 things:
 
 - **The `@` is what makes it a mention.** A link to the same URL with text that
   does not start with `@` publishes as a plain link. Thus you can link to the
-  profile of a person and not send them a notification.
-- **The account id is the only part that lasts.** markfluence makes the display
-  name again on every `read` or `export`. Thus when a person changes their
-  name, the old name does no harm. markfluence also makes the host again, so
-  nothing specific to your site gets into the Markdown.
-- **An id that names nobody gives a warning, and not an error.** Confluence
-  accepts any account id and shows it as `@Unlicensed user`, and it does not
-  fail. Thus markfluence looks up the id and tells you. Nothing else will.
+  profile of a person without triggering a user mention.
+- **The account id is the only critical part.** On publish, markfluence
+  generates the user mention using the account id. On `read` and `export`,
+  markfluence will lookup the user display name with the accoun id and
+  re-generate the user mention link. Thus when a person changes their name,
+  markfluence will create the correct user mention on publish and on the next
+  `read` or `export`, generate an updated user mention link.
+- **An id that doesn't tie to a real, live account gives a warning, and not an error.**
+  Confluence accepts any account id and shows it as `@Unlicensed user`, and it
+  does not fail. Thus markfluence looks up the id and tells you. Nothing else
+  will.
 
 **A colleague who left keeps their name.** A deactivated account resolves
 normally, and Confluence adds the suffix itself. Thus a page after a round trip
@@ -494,13 +497,12 @@ export would write `Unlicensed user` over every real name in a tree.
   [Cell background colors](#cell-background-colors).
 
 There are no other directives. **Any other HTML comment that you write is
-lost**, but markfluence is not what removes it. Confluence removes every
-comment on write, so the comment never gets to the stored page (measured; see
+lost** because Confluence removes every comment on write, so the comment never
+gets to the stored page (measured; see
 [storage-format.md](confluence/storage-format.md#confluence-strips-html-comments-on-write)).
 
-Thus a comment is not a way to leave a note on a published page. To say where
-a page comes from, put a callout at the top of the Markdown and link the source
-file. A [GitHub alert](#github-alerts) becomes a Confluence panel.
+Don't use HTML comments to leave notes on published pages that you will `read`
+or `export` in the future.
 
 ### Raw Confluence storage format
 

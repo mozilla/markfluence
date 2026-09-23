@@ -1,62 +1,99 @@
 # The documentation root
 
-This document tells you how markfluence finds the directory that bounds the
-reads of a Markdown file and names its attachments. The model itself is in
-`_plans/025_file-organization.md`. This document explains, for a reader, what
-that plan decided. It does not give all the reasoning again.
+A Markdown file refers to other files with relative paths: an image, a link to
+a different `.md` file, or a `parent:` path. To use a reference, markfluence
+expands its relative path into the path of a file on the filesystem. This
+document tells you how markfluence expands references, and what the
+documentation root has to do with that.
 
-`_plans/026_file-organization-implementation.md` is the log of the
-implementation, one commit at a time, if you want to know when a part landed.
 The [Documentation root](../README.md#the-documentation-root) section of the
 README gives the practical version. It tells you how to move a file, and how to
 share an asset between pages.
 
-## The root, and the other lookup that looks like a root
+## How markfluence expands a file reference
 
-markfluence has two different directory lookups. Most of the confusion that
-this model removes came from the use of one for the other.
+Each file reference is relative to a directory. markfluence joins the reference
+to that directory, and cleans the result by its text: it removes each `.` and
+applies each `..`. The result is the path of a file on the file system.
 
-**markfluence finds the root for each Markdown file.** It goes up from the
-directory of that file and looks for `markfluence.yaml`. The first ancestor
-that has one is the root. If it gets to the filesystem root with no result, the
-directory of the file is the root.
+markfluence does not resolve a symlink to do this.
 
-This is the lookup that is important for correctness. It bounds what a file can
-read, such as an image or a `parent:` reference. The recorded source path of
-an attachment is relative to it. markfluence builds the link index for the
-tree from it.
+The documentation root does two things for every expansion:
+
+- **It bounds the result.** An expanded path must be inside the root. If it is
+  not, markfluence does not read the file. If you `read` or `export` content
+  from Confluence, references could read outside of the root to anywhere on your
+  file system. Preventing read/write file access outside of the directory root
+  prevents unsafe file access.
+- **It is the base of each path that markfluence records.** When markfluence
+  writes a path down, the path is relative to the root. Examples are the
+  recorded source of an attachment, a `pages:` key, and the `file` key of a log
+  line. Thus a recorded path has the same meaning on every machine.
+
+| reference | relative to | if it expands outside the root |
+|---|---|---|
+| an image, `![logo](../assets/logo.png)` | the directory of the Markdown file | `IMAGE BROKEN`, and markfluence publishes the page |
+| a link, `[setup](../setup/overview.md)` | the directory of the Markdown file | `LINK BROKEN`, and markfluence publishes the page |
+| a frontmatter `parent: ../index.md` | the directory of the Markdown file | a hard error: the file fails |
+| a `pages:` key in `markfluence.yaml` | the root | an error when markfluence loads the file |
+| a `parent:` in a `pages:` entry | the root | a hard error: the file fails |
+
+Thus `../assets/logo.png` from a page one directory below the root is in
+bounds, and the same reference from a page at the root is not.
+
+The three results are different on purpose:
+
+- **An image** is a leaf. markfluence also refuses a symlink, also when it
+  resolves inside the root (`os.Lstat`, not `os.Stat`). A broken image is
+  visible on the page, so the page still publishes.
+- **A link** needs no bound check at all. markfluence builds the link index
+  (`internal/linkindex`) when it goes *down* from the root at startup. It
+  uses the link index to resolve links. Thus a link that expands to a path
+  outside the root is never in the index. See
+  [Link resolution](#link-resolution), and see
+  [Non-goals](guarantees.md#symlinks) for why a symlinked ancestor also cannot
+  trick the walk.
+- **A parent** is important. A publish under the wrong parent, or under no
+  parent with no message, is worse than no publish. Thus a parent that escapes,
+  or that is a symlink, stops the file.
+
+markfluence expands a path by its text alone, and never asks the filesystem
+where a symlink points. Thus the same reference expands to the same file on
+every machine.
+
+## How markfluence finds the root
+
+markfluence finds the root separately for each Markdown file. It goes up from
+the directory of that file and looks for `markfluence.yaml`. The first ancestor
+that has one is the root. If it gets to the filesystem root with no result,
+then there is no `markfluence.yaml` file and the directory of the file is the
+root. `--root` overrides this for every file in the command (see
+[`--root`](#--root)).
 
 When a project file exists and every file in a batch is under it, every file
-resolves to the same root. That is the usual case, and it is the intended case.
-The root is different for each file in only two cases. There is no project
-file at all, or a batch covers more than one project (see below).
+gets the same root. That is the usual case, and it is the intended case. The
+root is different for each file in only two cases. There is no project file at
+all, or a batch covers more than one project (see
+[Multi-root batches](#multi-root-batches-are-allowed)).
 
-**The `.env` lookup is a separate, narrower pass.** It starts from the
-**working directory**, and not from the directory of a file. If it finds
-nothing, it uses the working directory itself. Its only purpose is to answer
-"where is `.env`?". It runs one time for each invocation, before markfluence
-touches any file, and it bounds nothing. The code never calls it "root", and
-markfluence does not report it. `--env-file` overrides it fully, and nothing
-here changes that.
+## Where markfluence reads `.env`
 
-Both passes go up with the same primitive: the check for the marker in each
-directory, in `internal/project`. They start from two different points, and
-they use two different fallbacks when they find nothing. There is no second
-algorithm, only a second starting point.
+`.env` is not a reference in a file. markfluence reads it one time for each
+invocation, before it touches any file. It uses the same search as for a root,
+but it starts from the **working directory**, and not from the directory of a
+file. If the search finds no `markfluence.yaml`, markfluence reads `.env` from
+the working directory itself. `--env-file` overrides this fully.
 
-In the plain case (`project.Discover(cwd)`), that walk does not depend on
-anything else in the invocation. But `create`, `update`, `diff`, and
-`attachment-upload` each already build a `project.Cache` for their own per-file
-root resolution. They give that same cache to the resolver of the client
-configuration (`client.ResolveOptions.Roots`). Thus `.env` does not make its
-own separate walk.
+`create`, `update`, `diff`, and `attachment-upload` already build a
+`project.Cache` to find the root of each file. They give the same cache to the
+resolver of the client configuration (`client.ResolveOptions.Roots`). Thus for
+those commands:
 
-This has two results, for exactly those commands. A command with no per-file
-root, such as `read` or `search`, never builds a cache to share.
+- `--root` also moves the directory that markfluence reads `.env` from.
+- markfluence does the search one time, and not two times.
 
-- `--root` otherwise moves only the per-file root that images, links, and
-  `parent:` resolve against. For these commands, it now also moves `.env`.
-- markfluence does the walk one time, and not two times.
+A command that has no per-file root, such as `read` or `search`, builds no
+cache. For it, `--root` has no effect on `.env`.
 
 ## `markfluence.yaml`: the project file
 
@@ -85,20 +122,21 @@ page_width: max
 The sequence is **the flag first, then the frontmatter, then the project
 file**. The answer that is nearest to the content wins.
 
-This is *not* the sequence for credentials, and the design of the file stops
-you from using one for the other. Credentials resolve in the sequence **the
-flag, then the environment, then `.env`**, and they tell *who you are*. A
-setting here tells *what the content is*.
+> [!NOTE]
+> This is *not* the sequence for credentials, and the design of the file stops
+> you from using one for the other. Credentials resolve in the sequence **the
+> flag, then the environment, then `.env`**, and they tell *who you are*. A
+> setting here tells *what the content is*.
 
-markfluence reads a setting for the whole project only when the two levels
-above it say nothing. Thus it never takes part in a disagreement. `create`
-still refuses a `--space` that does not agree with a frontmatter `space:`, and
-a project default cannot become a third party to that.
+markfluence uses a setting from markfluence.yaml only when neither the flag nor
+the frontmatter gives one. Thus a project setting never disagrees with anything.
+`create` still refuses a `--space` that does not agree with a frontmatter
+`space:`, and a project default cannot become a third party to that.
 
-Know one result before you add `page_width:`. `update` asserts a width only
-when something declares one, and a declaration for the whole project counts. If
-a project wants markfluence to leave the live width of each page alone, do not
-add the key.
+> [!NOTE]
+> For `page_width:`, `update` asserts a width only when something declares
+> one, and a declaration for the whole project counts. If a project wants
+> markfluence to leave the live width of each page alone, do not add the key.
 
 Settings are specific to each root. Thus an invocation that covers two
 projects gets the defaults of each project. See
@@ -107,7 +145,17 @@ projects gets the defaults of each project. See
 ### `pages:` — page metadata for a pristine file
 
 A `pages:` block maps a path to the page metadata of that file. Thus
-markfluence can publish a Markdown file that has no markfluence keys at all:
+markfluence can publish a Markdown file that has no frontmatter at all:
+
+`docs/deploy-runbook.md`:
+
+```markdown
+# Runbook: How to deploy LookupService
+
+Summary: Deploying LookupService consists of 23 manual steps ...
+```
+
+`markfluence.yaml`:
 
 ```yaml
 space: ENG
@@ -119,89 +167,104 @@ pages:
     labels: [runbook]
 ```
 
-**An entry is a frontmatter block in a different location.** It has the same
-field names, the same value domains, and the same canonical sequence. Both
-locations are legal, and markfluence says nothing when they agree. Thus you can
-move metadata into the manifest one file at a time.
+**A `pages:` entry has the same structure and fields as the frontmatter block in a markdown file.**
+You can use either location for metadata, but some field values differ depending
+on which location they're in. Additionally, markfluence has rules for occasions
+where there is metadata in both locations and it disagrees. This allows you to
+migrate from one model to the other one file at a time.
 
-When the two disagree, the result depends on what the disagreement can
-destroy:
+When a markdown page has both frontmatter and a `pages:` entry and the two
+disagree, the result depends on what the disagreement can destroy:
 
 | field | on disagreement |
 |---|---|
 | `page_id`, `space`, `parent` | **error**: the file fails. A `page_id` pasted from an old file would publish over a live page |
 | `title`, `page_width`, `labels`, `page_status` | **warning**, and the frontmatter wins. You can see it and recover from it |
 
-`markfluence create` writes an entry here when the metadata of the file belongs
-here. A project that uses `pages:` never gets frontmatter by accident. A
-project that does not use `pages:` works as it did before. A file that already
-has its own frontmatter keeps it. Thus in a tree that is half migrated, entries
-do not appear behind you. `--no-persist` records no metadata in either
-location. It still adds a line to the action log (see
+`markfluence create` writes a `pages:` entry when the metadata of the file
+belongs here. A project that uses `pages:` never gets frontmatter by accident. A
+project that does not use `pages:` uses frontmatter.  A file that already has
+its own frontmatter keeps it. Thus create never adds a pages: entry for a file
+that has frontmatter, and a file's metadata is never in two places without your
+knowledge.  `--no-persist` records no metadata in either location. It still adds
+a line to the action log (see
 [`.markfluence/`](#markfluence-local-state-not-committed)).
 
-One spelling needs attention. A `parent:` that names a `.md` file is
-**relative to the root in an entry**, as every `pages:` key is. It is
-**relative to the file** in frontmatter and in `create --parent`, as a Markdown
-link is. Thus the same parent is `docs/index.md` in an entry and `index.md`
-from a sibling file.
+A `parent:` that names a `.md` file differs in what it's relative to. For example:
 
-markfluence changes one form to the other, so nothing breaks. But if you move a
-`parent:` value from one location to the other by hand, spell it again.
+```
+markfluence.yaml
+docs/
+  index.md           # parent page
+  runbook.md         # child page
+```
+
+- In the frontmatter of `runbook.md`, write parent: `index.md`. The path is
+  relative to the file, as a Markdown link is. `create --parent` uses the same
+  rule.
+- In the `pages:` entry in `markfluence.yaml` for `docs/runbook.md`, write
+  `parent: docs/index.md`.  The path is relative to the root, as the key of the
+  entry is.
+
+If you move a `parent:` line from one location to the other by hand, change the
+path.
+
 `create` records the resolved page id, and not a path, so a round trip never
-has this problem.
+hits this problem.
 
-Every command that takes a page accepts a pristine registered file. All of
-them resolve the argument in one place (`internal/pageref`). Thus
-`markfluence page-info docs/deploy-runbook.md` works, although that file says
-nothing about Confluence. There is no exception. `fix` was one until it was
-removed (#151). It could find such a page, but it could not write to its entry.
+You can give any command that takes a page a Markdown file, also when its
+`page_id` is in a `pages:` entry and not in the file. For example,
+`markfluence page-info docs/deploy-runbook.md` works on a file with no
+frontmatter. All of these commands resolve the file in one place
+(`internal/pageref`), so each one reads both locations.
 
-markfluence **skips a file that neither location mentions**. It does not fail
-it. A repository can correctly hold Markdown that nobody publishes. Thus
-`markfluence update docs/**/*.md` does not fail because somebody added a draft.
-A file that *is* registered but has no `page_id` fails. Something claimed it,
-and nobody created the page yet.
+markfluence **skips a file that has no metadata in frontmatter or `pages:`**.
+A repository can correctly hold Markdown that is not published. Thus
+`markfluence update docs/**/*.md` does not fail because somebody added a draft
+or because some of the files are not meant to be published to Confluence.
+A file that *is* registered but has no `page_id` fails.
 
-**Path keys** are relative to the root, use slashes, and are cleaned by their
-text (`./docs/a.md` and `docs/a.md` are the same key). Two conditions are
-errors when markfluence loads the file: a key that goes outside the root, and
-two keys that normalize to one path. Each one means that the structure of the
-manifest is wrong, and not only one entry.
+**Path keys in `pages:`** are relative to the document root, use slashes, and
+are cleaned by their text (`./docs/a.md` and `docs/a.md` are the same key). There are two
+conditions when markfluence loads the file that raise an error: a key that goes
+outside the root, and two `pages:` keys that normalize to one path. Each one
+means that the structure of the manifest is wrong, and not only one entry.
 
 markfluence compares keys exactly, with no case folding. On a filesystem that
 ignores case, `Docs/a.md` opens the file but matches no `docs/a.md` key. Thus
 the file is unmanaged, and markfluence skips it.
 
-Resolution is lexical, and it never follows symlinks. **L2** needs the same of
-everything else here, for the same reason. If the meaning of a key depended on
-the layout of the checkout, the key would resolve differently on two machines.
+Resolution is lexical, and it never follows symlinks.
 
-### A file that markfluence cannot understand stops the command
+### A `markfluence.yaml` file that markfluence cannot understand stops the command
 
-A file that markfluence cannot parse, or that holds a key that markfluence does
-not recognise, is an error that names the problem. markfluence does **not**
-treat it as a valid root marker. The search does not continue to an ancestor
-that has a better marker. It also does not use the directory of the Markdown
-file.
+A `markfluence.yaml` file that markfluence cannot parse, or that holds a key
+that markfluence does not recognise, is an error that names the problem.
+markfluence does **not** treat it as a valid root marker. The search does not
+continue to an ancestor that has a better marker. It also does not use the
+directory of the Markdown file.
 
-The root decides the recorded path of every attachment and bounds every
-read. Thus if
-markfluence cannot understand the project file, the boundary of the project is
-not known, and a guess is worse than a stop.
+The root decides the recorded path of every attachment and bounds every read.
+Thus if markfluence cannot understand the project file, the boundary of the
+project is not known, and a guess is worse than a stop.
 
-**The refusal of an unrecognised key is the purpose, and not a limit.** A
-`markfluence.yaml` written for a newer markfluence holds keys that an older
-binary would ignore. Assume that markfluence ignored a default for the whole
-project. Then it would publish with the wrong space or the wrong width,
-everywhere at the same time, with no message. The refusal also finds
-`spce: ENG`. Thus the file has no schema version, and the error says that an
-older binary is the probable cause.
+**markfluence refuses a `markfluence.yaml` that has a field it does not know.**
+This catches two problems:
+
+- An older markfluence. A file written for a newer version can have a setting
+  that an older version does not know. If the older version ignored it, it would
+  publish every page in the project wrong, with no message. The refusal makes you
+  upgrade.
+- A typo. markfluence finds `spce: ENG` when it loads the file, and does not
+  ignore it.
+
+Because of this refusal, the file needs no schema version. The error says that
+an older markfluence is the probable cause.
 
 `markfluence check` does a check of a project file offline, with the Markdown
 files that you give it.
 
-### What it deliberately does not hold
+### What `markfluence.yaml` deliberately does not hold
 
 There is no `url`, `username`, or token. The reason is more exact than "those
 are credentials". markfluence sends basic auth to the host that the resolved
@@ -211,7 +274,7 @@ subdirectory. One line in a pull request would send the token of a CI run to a
 host that the author chose.
 
 The difference from the settings that it does hold is the full argument. A
-wrong `space` publishes to the wrong place in your own instance, and you can
+wrong `space` publishes to the wrong place in a Confluence instance, and you can
 see that and repair it by hand. A wrong `url` gives away the token, and you can
 do neither.
 
@@ -222,7 +285,7 @@ root, and thus where it read `.env` from. `create`, `update`, and
 `attachment-upload` print it, and `--json` gives it in `roots`. The protection
 is that you can see it, and not a permission check.
 
-`markfluence` *reads* a project file, but it **executes** nothing because the
+`markfluence` *reads* a project file, but it *executes* nothing because the
 file is present. Nothing in the file can send a credential to a different
 place. To go up and trust what you find is the shape of
 [CVE-2022-24765](https://github.blog/2022-04-12-git-security-vulnerability-announced/).
@@ -234,9 +297,6 @@ markfluence uses the discovery model of `.editorconfig`, and not the model of
 git: go up, the nearest file wins, and nothing executes. If somebody adds a
 hook system later, it must have its own consent step, separate from the
 presence of this file. This document does not decide that.
-
-**No `init` command makes this file.** Make it by hand. That is
-[#5](https://github.com/mozilla/markfluence/issues/5).
 
 ## `.markfluence/`: local state, not committed
 
@@ -299,35 +359,12 @@ project file: that is [#5](https://github.com/mozilla/markfluence/issues/5).
 
 ## `--root`
 
-This is a persistent flag that overrides discovery for the whole invocation. It
+This is a persistent flag that overrides the search for the root, for the
+whole invocation. It
 applies one value to every file in the same way. It is not a per-file setting,
 because it means "use this directory as the root, and nothing else". That
 includes a tree that has no `markfluence.yaml` and never will, such as a
 checkout that you do not control or a generated snapshot.
-
-## What the root bounds
-
-**S1/S2** (`docs/guarantees.md`): markfluence writes no file outside the root.
-Since `_plans/026` commit 6, it also reads no file outside the root. There are
-3 reads:
-
-- An **image leaf**. It resolves relative to the directory of the page, and
-  the root bounds it. Thus `../assets/logo.png` from a page one directory below
-  the root is in bounds, and the same reference from a page at the root is
-  not. A path that resolves
-  outside the root is `IMAGE BROKEN`. markfluence refuses a symlink, also when
-  it resolves inside the root (`os.Lstat`, not `os.Stat`).
-- A frontmatter **`parent:` path**. markfluence reads it through the same root,
-  but the failure is different on purpose. A parent that escapes, or that is a
-  symlink, is a **hard error**, and not an image that is broken and reported.
-  The parent is important: a publish under the wrong parent, or under no parent
-  with no message, is worse than no publish.
-- **Link and anchor resolution** needs no clamp at all. markfluence builds the
-  index (`internal/linkindex`) when it goes *down* from the root. Thus nothing
-  outside the root can be in the index, and markfluence does not find a
-  destination that would escape. The guarantee holds by construction, and not
-  by a check. See [Non-goals](guarantees.md#symlinks) for why a symlinked
-  ancestor also cannot trick the walk.
 
 ## Attachment identity
 
@@ -383,12 +420,12 @@ One invocation can cover more than one project, and nothing refuses this. The
 projects can be nested `markfluence.yaml` files, or files under fully separate
 ones.
 
-markfluence finds the root of each file independently. A link across the
+markfluence finds the root of each file separately. A link across the
 boundary of a root does not resolve. That is an unresolved link, and not an
 error, as any other miss is. A `parent:` that escapes the root of its file is
 still a hard error. This is true also when the target is part of the same
 command under a *different* root.
 
-This comes from per-file discovery with no special case. The resolution of
-`.editorconfig` and `tsconfig.json` nests in the same way, and they do not
-need to forbid it.
+This comes from finding the root for each file, with no special case. The
+resolution of `.editorconfig` and `tsconfig.json` nests in the same way, and
+they do not need to forbid it.
