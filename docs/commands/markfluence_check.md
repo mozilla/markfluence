@@ -1,36 +1,44 @@
 ## markfluence check
 
-Validate markdown files against the converter and frontmatter rules, offline
+Check Markdown files for problems, with no network access
 
 ### Synopsis
 
-Validate one or more markdown FILEs against the converter and frontmatter
-rules, with no network access and no credentials -- fast, safe, and
-CI/agent-friendly. Reports conversion warnings and broken image/link
-references, and metadata sanity (parseable, page_width valid, page_id
-numeric when present, page_status non-empty when present). Each file is
-processed independently; the command exits non-zero if any file is broken
-or failed outright. Warnings alone do not fail.
+Check one or more Markdown FILEs for problems before you publish them.
+check makes no network request and needs no credentials, so it is fast and
+safe to run in CI or from an agent.
 
-A file's metadata is checked wherever it lives -- its own frontmatter or a
-'pages:' entry for it in markfluence.yaml -- and an entry is reported only
-when its file is one of the FILEs given, so one bad entry never blocks
-checking the rest of a repository. Two locations naming different pages is
-an error; a file keeping its own keys in a project that uses 'pages:' is a
-warning, since both work.
+check reports:
 
-One thing check cannot decide: whether a page_status: names a status the
-space actually offers. A space's statuses are its own configuration, read
-from Confluence, and check makes no requests -- so an empty page_status is
-reported and a misspelled one is not. update and create check the name.
+  - conversion warnings
+  - broken images and broken links
+  - frontmatter that does not parse
+  - a page_width that is not valid
+  - a page_id that is not a number
+  - a title or page_status that is present but empty
+  - a markfluence.yaml that markfluence cannot load
 
-"link not resolved: TARGET" means TARGET is a sibling .md file that exists
-under the documentation root but has no page_id yet -- the normal state of
-a tree that hasn't been published, not a defect. "same-page anchor not
-resolved: #heading" is the same situation for a same-page anchor: it
-resolves to a real heading in the current file, but can't be turned into
-an absolute URL until this file itself has a page_id -- resolved by this
-file's own first publish, nothing to fix.
+check does each file separately. It exits with a code that is not zero if any
+file is broken or failed. A warning alone does not fail.
+
+check reads the metadata of a file from its frontmatter and from its pages:
+entry in markfluence.yaml. It reports an entry only when that file is one of
+the FILEs. Thus one bad entry does not stop the check of the other files. Two
+locations that name different pages are an error. A file with its own
+frontmatter in a project that uses pages: gets a warning, because both work.
+
+check cannot tell whether a page can have the status that page_status names.
+Confluence decides that for each page and each account, and check makes no
+request. Thus check reports an empty page_status, but not a misspelled one.
+update and create do a check of the name.
+
+"link not resolved: TARGET" means that TARGET is a .md file under the
+documentation root that has no page_id yet. That is the usual state of a tree
+that nobody published yet, and it is not a defect.
+
+"same-page anchor not resolved: #heading" is the same for an anchor in the
+current file. The heading exists, but markfluence cannot make its URL until
+this file has a page_id. The first publish of the file resolves it.
 
 ```
 markfluence check FILE... [flags]
@@ -39,10 +47,10 @@ markfluence check FILE... [flags]
 ### Examples
 
 ```
-  # Validate a batch of files
+  # Check a set of files
   markfluence check docs/*.md
 
-  # Show the storage HTML a publish would send
+  # Show the storage HTML that a publish would send
   markfluence check --show-html docs/one-page.md
 
 ```
@@ -51,7 +59,7 @@ markfluence check FILE... [flags]
 
 ```
   -h, --help        help for check
-      --show-html   Also print the converted storage HTML and attachment list, for debugging.
+      --show-html   Also print the converted storage HTML and the list of attachments, for debugging.
 ```
 
 ### Options inherited from parent commands
