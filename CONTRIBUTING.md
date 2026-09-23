@@ -31,9 +31,10 @@ make test
 Run `make` with no target to see the list of rules and their descriptions.
 Remember `make check`. See the next section.
 
-To use the binary with a real Confluence site, put a `.env` file in the working
-directory. See [`.env.example`](.env.example) and the
-[Configure](README.md#configure) section of the README.
+To use the binary with a real Confluence site, create your credentials file at
+`~/.config/markfluence/credentials`, or name a file with `--env-file`. See
+[`.env.example`](.env.example) and the [Configure](README.md#configure)
+section of the README.
 
 ## Before you open a pull request
 

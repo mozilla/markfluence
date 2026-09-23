@@ -31,7 +31,7 @@ $ curl -s https://YOUR-SITE.atlassian.net/_edge/tenant_info
 {"cloudId":"<a uuid>"}
 ```
 
-No credentials. That is why it can be a `--cloud-id` flag while the token cannot.
+No credentials: the cloud ID is not a secret. It still resolves with the URL, from the same place, because it names one site.
 
 **A scoped token requires the gateway. Verified 2026-08-20** with a scoped
 service-account token — the credential the earlier attempt lacked. An unscoped

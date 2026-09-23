@@ -17,7 +17,8 @@ import (
 // Config is what a project file declares. Every field is project-*wide*, and
 // every one is a default the file being published overrides: the chain is
 // flag > frontmatter > project file, which is not the credentials chain
-// (flag > environment > .env) and must not be conflated with it. A setting
+// (--env-file > environment > credentials file) and must not be conflated
+// with it. A setting
 // here answers "what is this content", not "who are you" (#100).
 //
 // Values are raw strings. A vocabulary is validated where it is consumed --
@@ -199,13 +200,12 @@ func (c Config) declared() []string {
 // answer in the file the reader is looking at. This is where that answer goes.
 //
 // It is an explicit call from the command layer rather than a side effect of
-// loading, and that placement is the point. Loading happens once per root for
-// two unrelated reasons -- a Markdown file's root, and the separate walk from
-// the working directory that only locates .env -- so printing during a load
-// described whichever root came first and fired for commands that read no
-// settings at all (`info`, `search`). A command calls this when it has a cache
-// whose roots are the ones it actually used, beside where it already reports
-// `root:`.
+// loading, and that placement is the point. Loading a root does not mean the
+// command uses its settings -- `pageref` loads one to resolve a `.md`
+// argument for `page-info`, and `export` loads one at its destination -- so
+// printing during a load would fire for commands that read no settings. A
+// command calls this when it has a cache whose roots are the ones it actually
+// used, beside where it already reports `root:`.
 //
 // Only a file declaring something earns a line: the marker that ships declares
 // nothing, and a line per root in a batch would be noise.

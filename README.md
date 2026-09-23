@@ -187,28 +187,38 @@ makes a network request.
 
 ## Configure
 
-markfluence needs a Confluence site URL, a username, and an API token. It
-resolves each one in this sequence: **the flag first, then the environment
-variable, then the `.env` file**.
+markfluence needs a Confluence site URL, a username, and an API token:
 
-| Setting | Flag | Environment variable or `.env` |
-| --- | --- | --- |
-| Site URL | `--url` | `CONFLUENCE_URL` |
-| Username | `--username` | `CONFLUENCE_USERNAME` |
-| API token | *none. It is never a flag* | `CONFLUENCE_TOKEN` |
-| Cloud ID, optional | `--cloud-id` | `CONFLUENCE_CLOUD_ID` |
+| Setting | Name |
+| --- | --- |
+| Site URL | `CONFLUENCE_URL` |
+| Username | `CONFLUENCE_USERNAME` |
+| API token | `CONFLUENCE_TOKEN` |
+| Cloud ID, optional | `CONFLUENCE_CLOUD_ID` |
 
-markfluence reads a `.env` file without help, so you do not need to `source`
-it. It reads the file from the [documentation root](#the-documentation-root).
-The documentation root is the directory that holds `markfluence.yaml`, and
-markfluence finds it when it goes up from the working directory. If no
-`markfluence.yaml` file is above the working directory, the root is the working
-directory itself. You can also give an explicit path with `--env-file PATH`.
-The `--root PATH` flag moves this path for the `create`, `update`, `diff`,
-and `attachment-upload` commands. For those commands, and for `check`, `--root`
-also moves the per-file root that they find by themselves.
+markfluence reads each setting from these places, and uses the first one that
+has it:
 
-Copy `.env.example` to `.env` and fill it in:
+1. the file that you name with `--env-file PATH`
+2. the environment variable
+3. your credentials file, `~/.config/markfluence/credentials`
+
+If you set `XDG_CONFIG_HOME`, the credentials file is
+`$XDG_CONFIG_HOME/markfluence/credentials`. This is the same path on Linux and
+macOS.
+
+markfluence does not look for credentials in the working directory or in a
+project. A repository that you clone cannot give markfluence a URL to send your
+token to.
+
+Create the credentials file one time on each computer:
+
+```
+mkdir -p ~/.config/markfluence
+$EDITOR ~/.config/markfluence/credentials
+```
+
+Put these lines in it:
 
 ```
 CONFLUENCE_URL=https://your-org.atlassian.net
@@ -218,19 +228,46 @@ CONFLUENCE_TOKEN=your-api-token
 # CONFLUENCE_CLOUD_ID=
 ```
 
-> [!NOTE]
-> markfluence does not accept the API token as a command line flag. The token
-> comes from the environment or from the `.env` file.
-
 Then restrict the file, because it holds your API token:
 
 ```
-chmod 600 .env
+chmod 600 ~/.config/markfluence/credentials
 ```
 
+> [!NOTE]
+> There is no command-line flag for any of these settings, so your API token
+> cannot get into your shell history.
+
+Two rules stop markfluence from sending a token to the wrong site:
+
+- **The URL and the token must come from the same place.** If the URL comes
+  from the environment and the token comes from the credentials file,
+  markfluence stops and tells you where each one came from.
+- **markfluence reads the cloud ID only from the place that gives the URL.** It
+  ignores a cloud ID from another place.
+
+The username can come from any place.
+
+To use a different site for one command, put its settings in a file and name
+the file with `--env-file`. You can also set the URL and the token together in
+the environment:
+
+```
+CONFLUENCE_URL=https://other.atlassian.net CONFLUENCE_TOKEN=... markfluence read 123
+```
+
+If you set only `CONFLUENCE_URL`, markfluence stops, because the token then
+comes from a different place.
+
+A file for `--env-file` has the same format as the credentials file. For
+credentials for each project, you can also use a tool such as
+[direnv](https://direnv.net/), which sets environment variables when you enter
+a directory.
+
 markfluence gives a warning when two conditions are both true. The first
-condition is that the mode of the `.env` file gives a permission to a person who
-is not you: read, write, or execute. The second condition is that the file holds
+condition is that the mode of the credentials file, or of the file that
+`--env-file` names, gives a permission to a person who is not you: read,
+write, or execute. The second condition is that the file holds
 `CONFLUENCE_TOKEN`. The warning gives the name of the file, the fault in its
 mode, and the `chmod` command that corrects it. If you run markfluence with
 `--json`, markfluence does not print the warning. It puts the warning in the
@@ -671,9 +708,7 @@ directory of the file itself. The root bounds which images and which `parent:`
 references a file can read. The recorded source path of an image is relative to
 the root. markfluence reports the root that it used one time for each different
 value in a run. The `--root PATH` flag overrides this search for the whole
-command. For `create`, `update`, `diff`, and `attachment-upload`, it also moves
-the directory that markfluence reads `.env` from. See
-[Configure](#configure).
+command.
 
 For the reasons behind this model, what it corrects, and what it costs, see
 [docs/root-model.md](docs/root-model.md) and

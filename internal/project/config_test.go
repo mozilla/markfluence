@@ -333,11 +333,10 @@ func TestReportSettingsSaysNothingForAMarkerWithNoSettings(t *testing.T) {
 	}
 }
 
-// Loading must not print. It happens once per root for two unrelated reasons
-// -- a Markdown file's root, and the separate walk from the working directory
-// that only locates .env -- so a line emitted during a load described
-// whichever root came first and fired for commands (info, search) that read no
-// settings at all.
+// Loading must not print. A root is loaded for reasons that read no settings
+// -- pageref resolving a .md argument for page-info, export at its
+// destination -- so a line emitted during a load would fire for commands that
+// never use a setting.
 func TestLoadingAProjectFilePrintsNothing(t *testing.T) {
 	ui.SetDebug(true)
 	t.Cleanup(func() { ui.SetDebug(false) })
