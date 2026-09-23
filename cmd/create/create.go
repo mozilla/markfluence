@@ -56,57 +56,58 @@ var (
 // Cmd is the create command.
 var Cmd = &cobra.Command{
 	Use:   "create FILE...",
-	Short: "Create new Confluence pages from markdown files",
-	Long: "Create new Confluence pages from markdown FILEs.\n\n" +
-		"The title comes from frontmatter, or from --title, which overrides it and\n" +
-		"requires a single FILE. The space comes from --space, then frontmatter,\n" +
-		"then a space: in markfluence.yaml -- the answer closest to the content\n" +
-		"wins. The parent comes from --parent or frontmatter and may be a page or\n" +
-		"a Cloud folder -- give a folder's id the same way you would a page's.\n" +
-		"Page width follows the same chain and defaults to max.\n\n" +
-		"A page_status: line sets the created page's status -- the coloured\n" +
-		"lozenge beside its title. Which statuses a page may be given is decided\n" +
-		"by Confluence per page and per account rather than by a fixed list, and\n" +
-		"the only page that can answer for a new page is the new page, so unlike\n" +
-		"labels the name is checked after the page exists: a name it will not\n" +
-		"take leaves the page created, with no status and a warning naming the\n" +
-		"ones it would take. Omitted, the page is created with no status.\n\n" +
-		"Every file is checked first -- including converting it -- and if any would\n" +
-		"fail, nothing is created. A page_id that resolves to nothing is a failure\n" +
-		"too, not a fresh page: create will not publish a second copy and overwrite\n" +
-		"an id it cannot explain. Remove the page_id to create a new page, or\n" +
-		"correct it.\n\n" +
-		"Once every file passes, a content-less stub is reserved for each,\n" +
-		"parents-first, before any of them is converted -- so a link between two\n" +
-		"files in the same batch resolves regardless of which direction it points,\n" +
-		"or whether the two link to each other. A parent cycle among the given\n" +
-		"files is rejected instead. A run interrupted after the reserve phase\n" +
-		"leaves an empty page version behind rather than no page; every id is\n" +
-		"already written back, so a plain update finishes the job.\n\n" +
-		"A whole tree can be created in one pass: give each child a parent: that\n" +
-		"points at its parent's .md file, and creation is ordered parents-first\n" +
-		"with the real ids filled in.\n\n" +
-		"Unless --no-persist is given, each created page's\n" +
-		"title/space/parent/page_id/page_width are recorded -- in the file's own\n" +
-		"frontmatter, or in a 'pages:' entry in markfluence.yaml when that is\n" +
-		"where the file's metadata lives. A file with no frontmatter in a project\n" +
-		"that uses 'pages:' gets an entry, so the markdown stays untouched; a file\n" +
-		"that already carries frontmatter keeps using it. Recording into\n" +
-		"markfluence.yaml modifies that shared file, once per created page.\n\n" +
-		"--dry-run makes the same checks as a real run, so it exits non-zero on the\n" +
-		"same failures and one unpublishable file aborts the preview for the whole\n" +
-		"batch. To lint several files independently, use check instead.",
+	Short: "Create new Confluence pages from Markdown files",
+	Long: "Create new Confluence pages from Markdown FILEs.\n\n" +
+		"The title comes from the frontmatter, or from --title. --title overrides the\n" +
+		"frontmatter, and it works with one FILE only.\n\n" +
+		"The space comes from --space or the frontmatter. If they disagree, create\n" +
+		"refuses the file. If neither gives a space, create uses the space: in\n" +
+		"markfluence.yaml.\n\n" +
+		"The page width comes from --page-width, then the frontmatter, then\n" +
+		"markfluence.yaml. The first one that gives a value wins, and the default is\n" +
+		"max.\n\n" +
+		"The parent comes from --parent or the frontmatter. It can be a page or a Cloud\n" +
+		"folder. Give the id of a folder in the same way as the id of a page.\n\n" +
+		"A page_status: line sets the status of the new page, which is the colored\n" +
+		"lozenge next to its title. Confluence decides which statuses a page can have,\n" +
+		"for each page and each account. Only the new page can answer for a new page.\n" +
+		"Thus create does a check of the name after the page exists. If the page does\n" +
+		"not accept the name, the page stays created, with no status and a warning that\n" +
+		"lists the names that it accepts. With no page_status:, the page has no status.\n\n" +
+		"create does a check of every file first, and converts each one. If any file\n" +
+		"would fail, create makes no page. A page_id that names no page is also a\n" +
+		"failure. create does not make a second copy and overwrite an id that it cannot\n" +
+		"explain. To make a new page, remove the page_id or correct it.\n\n" +
+		"When every file passes, create reserves an empty page for each file, parents\n" +
+		"first, before it publishes any of them. Thus a link between two files in the\n" +
+		"same batch resolves in either direction, also when the two files link to each\n" +
+		"other. create refuses a parent cycle among the files.\n\n" +
+		"If a run stops after the reserve step, it leaves an empty page version, and not\n" +
+		"no page. create already wrote every id back, so a plain update completes the\n" +
+		"job.\n\n" +
+		"To create a whole tree in one run, give each child a parent: that names the .md\n" +
+		"file of its parent. create makes the parents first, and fills in the real ids.\n\n" +
+		"create records the title, space, parent, page_id, and page_width of each new\n" +
+		"page, unless you give --no-persist. It writes them to the frontmatter of the\n" +
+		"file, or to its pages: entry in markfluence.yaml when the metadata of the file\n" +
+		"is there. In a project that uses pages:, a file with no frontmatter gets an\n" +
+		"entry, so the Markdown does not change. A file that has frontmatter keeps it.\n" +
+		"A write to markfluence.yaml changes that shared file one time for each new\n" +
+		"page.\n\n" +
+		"--dry-run does the same checks as a real run. Thus it fails on the same\n" +
+		"problems, and one file that cannot publish stops the preview of the whole batch.\n" +
+		"To check files separately, use check.",
 	Example: "  # Create one page in a space\n" +
 		"  markfluence create docs/new_page.md --space ENG\n\n" +
-		"  # Create it under an existing parent page or folder\n" +
+		"  # Create it under a parent page or folder that exists\n" +
 		"  markfluence create docs/child.md --space ENG --parent 123456\n\n" +
-		"  # Create a whole tree, hierarchy taken from each file's parent: path\n" +
+		"  # Create a whole tree, with the parent: path of each file\n" +
 		"  markfluence create docs/*.md --space ENG\n\n" +
-		"  # Override the title and width for a single file\n" +
+		"  # Override the title and the width for one file\n" +
 		"  markfluence create note.md --space ENG --title \"Ad-hoc note\" --page-width wide\n\n" +
-		"  # Create without writing page_id back into the file\n" +
+		"  # Create the page, and do not write the page_id back into the file\n" +
 		"  markfluence create note.md --space ENG --no-persist\n\n" +
-		"  # Preview everything, write nothing\n" +
+		"  # Show what would happen, and write nothing\n" +
 		"  markfluence create docs/*.md --space ENG --dry-run",
 	Args:              cobra.MinimumNArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
@@ -114,19 +115,19 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
-	Cmd.Flags().StringVar(&spaceOpt, "space", "", "Target space key.")
-	Cmd.Flags().StringVar(&parentOpt, "parent", "", "Parent page or folder id for the new page(s).")
+	Cmd.Flags().StringVar(&spaceOpt, "space", "", "Key of the target space.")
+	Cmd.Flags().StringVar(&parentOpt, "parent", "", "Id of the parent page or folder for the new pages.")
 	Cmd.Flags().StringVar(&titleOpt, "title", "",
-		"Override the page title (requires a single FILE).")
+		"Page title. Overrides the frontmatter. Works with one FILE only.")
 	Cmd.Flags().StringVar(&pageWidthOpt, "page-width", "",
-		"Override the page width: narrow, wide, or max.")
+		"Page width: narrow, wide, or max. Overrides the frontmatter.")
 	Cmd.Flags().BoolVar(&persistOpt, "persist", true,
 		"Record title/space/parent/page_id/page_width for each created page, in the "+
 			"file's frontmatter or in its markfluence.yaml entry.")
 	Cmd.Flags().BoolVar(&noPersistOpt, "no-persist", false,
-		"Do not record anything: leave both the file and markfluence.yaml untouched.")
+		"Record no metadata. Do not change the file or markfluence.yaml.")
 	Cmd.Flags().BoolVar(&dryRunOpt, "dry-run", false,
-		"Preview what would be created without writing to Confluence or files.")
+		"Show what create would do, and write nothing to Confluence or to files.")
 	// --persist exists only so wantPersist has a positive flag to combine with
 	// --no-persist; it says nothing --no-persist's absence doesn't already say,
 	// so it stays out of --help.
