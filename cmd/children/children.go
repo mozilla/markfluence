@@ -33,29 +33,30 @@ var Cmd = &cobra.Command{
 	Use:   command + " [PAGE]",
 	Short: "List the pages and folders under a Confluence page, folder, or space",
 	Long: "List the pages and folders under a Confluence page or folder.\n\n" +
-		"PAGE is a numeric id, a Confluence page or folder URL, or a markdown\n" +
-		"file whose frontmatter has a page_id.\n\n" +
-		"Pass --space KEY instead of a PAGE to list a whole space. Depth 1 is\n" +
-		"then the space's top level, which is usually just its homepage, so\n" +
-		"--depth 2 or --depth all is what shows the tree. Walking a space costs\n" +
-		"one pair of requests per page and folder in it.\n\n" +
-		"Folders are listed alongside pages, with a TYPE column, because a\n" +
-		"folder can hold the only pages in a subtree -- listing pages alone\n" +
-		"would show nothing for a folder that contains folders.\n\n" +
-		"A folder counts as a level: at the default --depth 1 a child folder\n" +
-		"appears as a row, and --depth 2 shows what is inside it.",
-	Example: "  # Direct children of a page\n" +
+		"PAGE is a page id or folder id, or a Confluence page URL or folder URL. It can\n" +
+		"also be a Markdown file that names a page_id in its frontmatter or in its\n" +
+		"pages: entry.\n\n" +
+		"To list a whole space, give --space KEY and no PAGE. Then depth 1 is the top\n" +
+		"level of the space, which is usually only its homepage. Thus use --depth 2 or\n" +
+		"--depth all to see the tree. A walk of a space makes two requests for each page\n" +
+		"and folder in it.\n\n" +
+		"The list shows folders next to pages, with a TYPE column. A folder can hold the\n" +
+		"only pages in a part of the tree. If children listed only pages, a folder that\n" +
+		"holds only folders would show nothing.\n\n" +
+		"A folder counts as a level. At the default --depth 1, a child folder is a row,\n" +
+		"and --depth 2 shows what is in it.",
+	Example: "  # List the direct children of a page\n" +
 		"  markfluence children 1234567890\n\n" +
-		"  # Deeper, or the whole subtree\n" +
+		"  # Go deeper, or list the whole subtree\n" +
 		"  markfluence children 1234567890 --depth 3\n" +
 		"  markfluence children 1234567890 --depth all\n\n" +
-		"  # By folder URL, or by the file that publishes to a page\n" +
+		"  # Give a folder URL, or the file that publishes to a page\n" +
 		"  markfluence children \"https://org.atlassian.net/wiki/spaces/ENG/folder/1234567890\"\n" +
 		"  markfluence children docs/index.md\n\n" +
-		"  # A whole space, and every page and folder in it\n" +
+		"  # List a whole space, and every page and folder in it\n" +
 		"  markfluence children --space ENG\n" +
 		"  markfluence children --space ENG --depth all\n\n" +
-		"  # Just the page ids\n" +
+		"  # Print only the page ids\n" +
 		"  markfluence children 1234567890 --json | jq -r '.results[] | select(.type==\"page\") | .id'\n",
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
@@ -64,9 +65,9 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().StringVar(&depthOpt, "depth", "1",
-		`How deep to recurse: a positive number, or "all".`)
+		"How many levels to list: a positive number, or \"all\".")
 	Cmd.Flags().StringVar(&spaceOpt, "space", "",
-		"List a whole space, by key, instead of a PAGE.")
+		"List a whole space, by its key, and not a PAGE.")
 	completion.RegisterFlag(Cmd, "depth", completion.Values("1", "2", "3", depthAll))
 	// A space key lives on the server, and completion runs on every keystroke,
 	// so it completes to nothing rather than stalling the shell.
