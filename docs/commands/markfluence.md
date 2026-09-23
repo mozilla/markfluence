@@ -6,15 +6,28 @@ Publish Markdown to Confluence
 
 markfluence publishes and manipulates Confluence pages from Markdown files.
 
-It needs a site URL, a username, and an API token. It reads each one from a flag
-first, then from an environment variable, then from a .env file:
+It needs a site URL, a username, and an API token, and for a scoped token a
+cloud ID:
 
-  site URL   --url        CONFLUENCE_URL
-  username   --username   CONFLUENCE_USERNAME
-  API token  (no flag)    CONFLUENCE_TOKEN
-  cloud ID   --cloud-id   CONFLUENCE_CLOUD_ID
+  CONFLUENCE_URL        the site, such as https://YOUR-SITE.atlassian.net
+  CONFLUENCE_USERNAME   your email address
+  CONFLUENCE_TOKEN      your API token
+  CONFLUENCE_CLOUD_ID   optional; only for a scoped API token
 
-The API token is never a flag, so it cannot get into your shell history.
+markfluence reads each one from these places, and uses the first it finds:
+
+  1. the file that --env-file names
+  2. the environment variable
+  3. your credentials file, ~/.config/markfluence/credentials
+     ($XDG_CONFIG_HOME/markfluence/credentials if you set XDG_CONFIG_HOME)
+
+The two files hold KEY=value lines. Put the URL and the token in the same
+place: markfluence refuses to send a token to a URL from a different place.
+It reads the cloud ID only from the place that gives the URL.
+
+There is no flag for any of these, so the token cannot get into your shell
+history. To use a different site for one command, name a file with
+--env-file.
 
 Set the cloud ID only for a scoped API token, such as the token of a service
 account. Confluence refuses a scoped token at your site URL, so markfluence
@@ -29,15 +42,12 @@ markfluence [flags]
 ### Options
 
 ```
-      --cloud-id string   Atlassian cloud ID. Set it only for a scoped API token. If not set, markfluence uses $CONFLUENCE_CLOUD_ID, then .env
   -d, --debug             Print debug details, such as each retry decision
-      --env-file string   Env file to read credentials from. The default is .env in the documentation root of the working directory, or in the working directory if there is no markfluence.yaml
+      --env-file string   File to read credentials from, before the environment and your credentials file
   -h, --help              help for markfluence
       --json              Write JSON, and no human output. A result goes to stdout. A fatal error goes to stderr as a JSON error object
       --no-color          Print output with no color
       --root string       Documentation root for every file. The default is the nearest directory above each file that has a markfluence.yaml, or the directory of the file if there is none
-      --url string        Confluence site URL. If not set, markfluence uses $CONFLUENCE_URL, then .env
-      --username string   Confluence username (your email address). If not set, markfluence uses $CONFLUENCE_USERNAME, then .env
 ```
 
 ### SEE ALSO

@@ -540,18 +540,16 @@ func TestCreateBatchIgnoresDirectoryNesting(t *testing.T) {
 }
 
 // testCmd builds a bare *cobra.Command carrying the flags run() reads itself,
-// pointed at url. It doesn't go through the real root command tree, and
-// CONFLUENCE_TOKEN (never a flag) comes from the environment instead, as it
-// would in a real invocation. --root is pinned to the fixture directory so a
-// fixture's images resolve inside a root the test chose, rather than whatever
-// Discover's fallback happens to pick.
+// and sets credentials for url in the environment, where a real invocation
+// finds them. It doesn't go through the real root command tree. --root is
+// pinned to the fixture directory so a fixture's images resolve inside a root
+// the test chose, rather than whatever Discover's fallback happens to pick.
 func testCmd(t *testing.T, url, root string) *cobra.Command {
 	t.Helper()
+	t.Setenv("CONFLUENCE_URL", url)
+	t.Setenv("CONFLUENCE_USERNAME", "u")
 	t.Setenv("CONFLUENCE_TOKEN", "t")
 	c := &cobra.Command{}
-	c.Flags().String("url", url, "")
-	c.Flags().String("username", "u", "")
-	c.Flags().String("cloud-id", "", "")
 	c.Flags().String("env-file", "", "")
 	c.Flags().String("root", root, "")
 	return c

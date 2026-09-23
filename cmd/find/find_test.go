@@ -14,18 +14,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// testCmd builds a bare *cobra.Command carrying the flags run() reads,
-// pointed at url. It doesn't go through the real root command (which would
-// need a full command tree and CONFLUENCE_TOKEN can't be a flag), so the
-// token is supplied via the environment instead, exactly as a real
-// invocation would.
+// testCmd builds a bare *cobra.Command carrying the flags run() reads, and
+// sets credentials for url in the environment, where a real invocation finds
+// them. It doesn't go through the real root command tree.
 func testCmd(t *testing.T, url string) *cobra.Command {
 	t.Helper()
+	t.Setenv("CONFLUENCE_URL", url)
+	t.Setenv("CONFLUENCE_USERNAME", "u")
 	t.Setenv("CONFLUENCE_TOKEN", "t")
 	c := &cobra.Command{}
-	c.Flags().String("url", url, "")
-	c.Flags().String("username", "u", "")
-	c.Flags().String("cloud-id", "", "")
 	c.Flags().String("env-file", "", "")
 	return c
 }

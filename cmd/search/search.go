@@ -95,9 +95,6 @@ func init() {
 }
 
 func run(cmd *cobra.Command, args []string) error {
-	url, _ := cmd.Flags().GetString("url")
-	username, _ := cmd.Flags().GetString("username")
-	cloudID, _ := cmd.Flags().GetString("cloud-id")
 	envFile, _ := cmd.Flags().GetString("env-file")
 
 	// Everything in this block is a usage error and needs no server to recognize.
@@ -119,9 +116,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return fatalFail(err.Error(), jsonout.CodeValidation)
 	}
 
-	c, err := client.Resolve(client.ResolveOptions{
-		URL: url, Username: username, CloudID: cloudID, EnvFile: envFile,
-	})
+	c, err := client.Resolve(envFile)
 	if err != nil {
 		return fatalFail(err.Error(), jsonout.CodeConfig)
 	}

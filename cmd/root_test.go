@@ -21,9 +21,20 @@ func TestRootCommandWiring(t *testing.T) {
 	if rootCmd.Use != "markfluence" {
 		t.Errorf("rootCmd.Use = %q, want %q", rootCmd.Use, "markfluence")
 	}
-	for _, flag := range []string{"url", "debug", "no-color", "json", "env-file", "root"} {
+	for _, flag := range []string{"debug", "no-color", "json", "env-file", "root"} {
 		if rootCmd.PersistentFlags().Lookup(flag) == nil {
 			t.Errorf("persistent flag --%s not registered", flag)
+		}
+	}
+}
+
+// TestNoCredentialFlags: credentials come from an env file, the environment,
+// or the credentials file, and never from a flag (#188). A flag for the URL
+// alone would always mean credentials from two places.
+func TestNoCredentialFlags(t *testing.T) {
+	for _, flag := range []string{"url", "username", "cloud-id"} {
+		if rootCmd.PersistentFlags().Lookup(flag) != nil {
+			t.Errorf("persistent flag --%s is registered, want no credential flags", flag)
 		}
 	}
 }
@@ -175,7 +186,7 @@ func TestSubcommandsDocumentThemselves(t *testing.T) {
 	}
 }
 
-// TestSecurityWarnerIsWired pins the one line that makes the .env permission
+// TestSecurityWarnerIsWired pins the one line that makes the permission
 // warning exist at runtime. Everything else about it is tested in
 // internal/client (the predicate) and internal/ui (the output), each against
 // its own double -- so deleting the SetSecurityWarner call in
@@ -204,7 +215,7 @@ func TestSecurityWarnerIsWired(t *testing.T) {
 	}
 	old := os.Stderr
 	os.Stderr = w
-	_, resolveErr := client.Resolve(client.ResolveOptions{EnvFile: path})
+	_, resolveErr := client.Resolve(path)
 	os.Stderr = old
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
@@ -217,7 +228,7 @@ func TestSecurityWarnerIsWired(t *testing.T) {
 		t.Fatalf("Resolve: %v", resolveErr)
 	}
 	if !strings.Contains(string(out), "holds your API token") {
-		t.Errorf("stderr = %q, want the .env permission warning: is SetSecurityWarner still wired?", out)
+		t.Errorf("stderr = %q, want the permission warning: is SetSecurityWarner still wired?", out)
 	}
 }
 
