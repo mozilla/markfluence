@@ -1,18 +1,18 @@
 ## markfluence schema
 
-Print the JSON Schema for --json output
+Print the JSON Schema of the --json output
 
 ### Synopsis
 
-Print the JSON Schema (draft 2020-12) that markfluence's --json output
-conforms to, so a script, a CI job, or an agent can fetch the contract from
-the binary instead of the repository.
+Print the JSON Schema (draft 2020-12) of the --json output of markfluence.
+Thus a script, a CI job, or an agent can get the contract from the binary, and
+not from the repository.
 
-The schema is embedded at build time and describes schema_version 1, the
-version this binary emits. Both the schema command and the tests that
-validate real --json output read that same embedded copy.
+The build puts the schema into the binary. It describes schema_version 1,
+which is the version that this binary writes. The schema command, and the tests
+that check real --json output, read the same copy.
 
-The output is the schema document itself, so --json changes nothing here.
+The output is the schema document itself, so --json has no effect here.
 
 ```
 markfluence schema [flags]
@@ -24,7 +24,7 @@ markfluence schema [flags]
   # Save the schema
   markfluence schema > schema.json
 
-  # Which commands emit a --json envelope
+  # Show which commands write a --json envelope
   markfluence schema | jq -r '.properties.command.enum | join(" ")'
 
 ```

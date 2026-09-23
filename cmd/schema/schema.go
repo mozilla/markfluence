@@ -13,18 +13,18 @@ import (
 // Cmd is the schema command.
 var Cmd = &cobra.Command{
 	Use:   "schema",
-	Short: "Print the JSON Schema for --json output",
-	Long: fmt.Sprintf("Print the JSON Schema (draft 2020-12) that markfluence's --json output\n"+
-		"conforms to, so a script, a CI job, or an agent can fetch the contract from\n"+
-		"the binary instead of the repository.\n\n"+
-		"The schema is embedded at build time and describes schema_version %d, the\n"+
-		"version this binary emits. Both the schema command and the tests that\n"+
-		"validate real --json output read that same embedded copy.\n\n"+
-		"The output is the schema document itself, so --json changes nothing here.",
+	Short: "Print the JSON Schema of the --json output",
+	Long: fmt.Sprintf("Print the JSON Schema (draft 2020-12) of the --json output of markfluence.\n"+
+		"Thus a script, a CI job, or an agent can get the contract from the binary, and\n"+
+		"not from the repository.\n\n"+
+		"The build puts the schema into the binary. It describes schema_version %d,\n"+
+		"which is the version that this binary writes. The schema command, and the tests\n"+
+		"that check real --json output, read the same copy.\n\n"+
+		"The output is the schema document itself, so --json has no effect here.",
 		jsonout.SchemaVersion),
 	Example: "  # Save the schema\n" +
 		"  markfluence schema > schema.json\n\n" +
-		"  # Which commands emit a --json envelope\n" +
+		"  # Show which commands write a --json envelope\n" +
 		"  markfluence schema | jq -r '.properties.command.enum | join(\" \")'\n",
 	Args: cobra.NoArgs,
 	// The command takes no arguments; without this, completion would offer every
