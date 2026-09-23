@@ -44,7 +44,7 @@ markfluence [flags]
 ### SEE ALSO
 
 * [markfluence attachment-download](markfluence_attachment-download.md)	 - Download the attachments of a Confluence page
-* [markfluence attachment-list](markfluence_attachment-list.md)	 - List a Confluence page's attachments
+* [markfluence attachment-list](markfluence_attachment-list.md)	 - List the attachments of a Confluence page
 * [markfluence attachment-upload](markfluence_attachment-upload.md)	 - Upload or replace attachments on a Confluence page
 * [markfluence check](markfluence_check.md)	 - Validate markdown files against the converter and frontmatter rules, offline
 * [markfluence children](markfluence_children.md)	 - List the pages and folders under a Confluence page, folder, or space

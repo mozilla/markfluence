@@ -1,22 +1,21 @@
 ## markfluence attachment-list
 
-List a Confluence page's attachments
+List the attachments of a Confluence page
 
 ### Synopsis
 
-List a Confluence page's attachments.
+List the attachments of a Confluence page.
 
-PAGE is a numeric page id, a Confluence page URL, or a markdown file
-whose frontmatter has a page_id.
+PAGE is a page id, a Confluence page URL, or a Markdown file that names a
+page_id in its frontmatter or in its pages: entry.
 
-The NAME column is the name Confluence stores, which is what
-attachment-download takes. For an image markfluence published that is
-the encoded source path, and the SOURCE column shows the markdown
-image path it came from.
+The NAME column is the name that Confluence stores. attachment-download takes
+this name. For an image that markfluence published, it is the base name of the
+file. The SOURCE column shows the path that the Markdown image used.
 
-SOURCE is a dash when no source path is recorded: the attachment was
-uploaded by hand, or it was published before markfluence recorded one.
-Use --json, whose managed field tells those two apart.
+SOURCE is a dash when no path is recorded. Either a person uploaded the
+attachment by hand, or markfluence published it before it recorded paths. The
+managed field of --json tells you which.
 
 ```
 markfluence attachment-list PAGE [flags]
@@ -25,10 +24,10 @@ markfluence attachment-list PAGE [flags]
 ### Examples
 
 ```
-  # Every attachment on a page
+  # List every attachment on a page
   markfluence attachment-list 1234567890
 
-  # By the file that publishes to it
+  # List the attachments of the page that a file publishes to
   markfluence attachment-list docs/foo.md
 
 ```
