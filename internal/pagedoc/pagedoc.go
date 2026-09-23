@@ -99,7 +99,7 @@ func Render(c *client.ConfluenceClient, page *client.Page, pl Placement, users *
 // caller, the way project.Cache and linkindex.Cache already are, and it is a
 // parameter rather than package state so two runs cannot see each other's.
 //
-// Not persisted to disk, and the reason is a guarantee rather than effort: L2
+// Not persisted to disk, and the reason is a principle rather than effort: L2
 // (invocation-independent) says output depends only on the files on disk, and a
 // disk cache would add "and on what your cache happens to hold" -- two people
 // exporting the same page would get different names, with nothing in the diff

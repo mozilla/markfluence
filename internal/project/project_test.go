@@ -36,13 +36,12 @@ func TestDiscoverFindsProjectFile(t *testing.T) {
 	}
 }
 
-// TestDiscoverIndependentOfWorkingDirectory is guarantee L2
-// (invocation-independent, docs/design-principles.md): how a reference resolves must
-// depend only on the files on disk, not on the working directory the process
-// happens to be running from. Discover takes startDir as an argument rather
-// than consulting os.Getwd, so this pins that as a behavioral guarantee
-// against a future regression, not just an implementation detail nobody
-// checks.
+// TestDiscoverIndependentOfWorkingDirectory is principle L2
+// (invocation-independent, docs/design-principles.md): how a reference resolves
+// must depend only on the files on disk, not on the working directory the
+// process happens to be running from. Discover takes startDir as an argument
+// rather than consulting os.Getwd, so this pins that as a behavioral guarantee
+// against a future regression, not just an implementation detail nobody checks.
 func TestDiscoverIndependentOfWorkingDirectory(t *testing.T) {
 	root := t.TempDir()
 	writeProjectFile(t, root)

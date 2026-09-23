@@ -33,12 +33,12 @@ func TestResolveParentNoneGiven(t *testing.T) {
 	}
 }
 
-// TestResolveParentIgnoresDirectoryNesting is guarantee L8 (no-layout-inference,
-// docs/design-principles.md): hierarchy is never inferred from disk layout. The
-// directory shape here is deliberately the one most tempting to "helpfully"
-// infer from -- a file named after its parent directory, one level down from a
-// same-named sibling file -- and it must still resolve to no parent at all
-// when nothing said so.
+// TestResolveParentIgnoresDirectoryNesting is principle L8
+// (no-layout-inference, docs/design-principles.md): hierarchy is never inferred
+// from disk layout. The directory shape here is deliberately the one most
+// tempting to "helpfully" infer from -- a file named after its parent
+// directory, one level down from a same-named sibling file -- and it must still
+// resolve to no parent at all when nothing said so.
 func TestResolveParentIgnoresDirectoryNesting(t *testing.T) {
 	root := rootFor(t, t.TempDir())
 	if err := os.MkdirAll(filepath.Join(root.Dir, "section"), 0o755); err != nil {
