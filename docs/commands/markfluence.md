@@ -53,7 +53,7 @@ markfluence [flags]
 * [markfluence export](markfluence_export.md)	 - Write a Confluence page and its attachments to a directory
 * [markfluence find](markfluence_find.md)	 - Find Confluence pages and folders by their exact title
 * [markfluence page-info](markfluence_page-info.md)	 - Show the metadata of a Confluence page
-* [markfluence read](markfluence_read.md)	 - Fetch a Confluence page and print its body
+* [markfluence read](markfluence_read.md)	 - Get a Confluence page and print its body
 * [markfluence schema](markfluence_schema.md)	 - Print the JSON Schema for --json output
 * [markfluence search](markfluence_search.md)	 - Find Confluence pages by full-text search
 * [markfluence space-info](markfluence_space-info.md)	 - Print metadata about a Confluence space

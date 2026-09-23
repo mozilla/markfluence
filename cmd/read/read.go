@@ -28,31 +28,33 @@ var formatFlag string
 // Cmd is the read command.
 var Cmd = &cobra.Command{
 	Use:   "read PAGE",
-	Short: "Fetch a Confluence page and print its body",
-	Long: "Fetch a Confluence page and print its body to stdout.\n\n" +
-		"PAGE is a numeric page id, a Confluence page URL (the modern\n" +
-		"/wiki/.../pages/<id>/... form or a legacy ?pageId=<id> URL), or a\n" +
-		"markdown file whose frontmatter has a page_id.\n\n" +
-		"It composes with shell redirection.\n\n" +
-		"--format markdown (the default) carries title/space/parent/page_id/\n" +
-		"labels/page_status/page_width frontmatter and is a best-effort inverse\n" +
-		"of what create/update publish. The Confluence API has\n" +
-		"no markdown representation, so the storage body is converted here:\n" +
-		"constructs markfluence emits round-trip faithfully, while editor-authored\n" +
-		"content degrades gracefully -- a macro markfluence does not map, and a\n" +
-		"column layout, pass through as raw storage tags with their bodies kept as\n" +
-		"readable markdown, so they publish back unchanged. Some transforms are\n" +
-		"lossy (a table cell colour outside the named swatches comes back as a\n" +
-		"literal hex), so this is a reading aid rather than a guaranteed source\n" +
-		"round-trip.\n\n" +
-		"--format storage prints the raw storage-format XHTML exactly as stored.",
-	Example: "  # Markdown, with frontmatter, to stdout\n" +
+	Short: "Get a Confluence page and print its body",
+	Long: "Get a Confluence page and print its body to stdout. You can redirect the\n" +
+		"output to a file.\n\n" +
+		"PAGE is a page id, a Confluence page URL, or a Markdown file that names a\n" +
+		"page_id in its frontmatter or in its pages: entry. A URL can have the usual\n" +
+		"/wiki/.../pages/<id>/... form, or the older ?pageId=<id> form.\n\n" +
+		"--format markdown is the default. The output has title, space, parent,\n" +
+		"page_id, labels, page_status, and page_width in the frontmatter. It is the\n" +
+		"inverse of what create and update publish, as far as that is possible.\n\n" +
+		"The Confluence API has no Markdown form, so markfluence converts the storage\n" +
+		"format itself. The constructs that markfluence writes come back correctly. For\n" +
+		"content from the Confluence editor, some details change:\n\n" +
+		"  - A macro that markfluence does not map, and a column layout, come back as\n" +
+		"    raw storage tags. Their bodies stay as Markdown that you can read, and they\n" +
+		"    publish back with no change.\n" +
+		"  - Some conversions lose detail. For example, a cell color that is not one of\n" +
+		"    the named swatches comes back as a literal hex value.\n\n" +
+		"Thus the output helps you read a page, but it is not a guaranteed round trip.\n\n" +
+		"--format storage prints the raw storage format XHTML exactly as Confluence\n" +
+		"stores it.",
+	Example: "  # Print Markdown, with frontmatter, to stdout\n" +
 		"  markfluence read 1234567890\n\n" +
-		"  # Save it as a file you can edit and publish back\n" +
+		"  # Save it as a file that you can edit and publish back\n" +
 		"  markfluence read 1234567890 > page.md\n\n" +
-		"  # The raw storage Confluence holds\n" +
+		"  # Print the raw storage format that Confluence holds\n" +
 		"  markfluence read 1234567890 --format storage > page.storage.xml\n\n" +
-		"  # By URL\n" +
+		"  # Give a URL\n" +
 		"  markfluence read \"https://org.atlassian.net/wiki/spaces/ENG/pages/1234567890/Title\"",
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
@@ -61,7 +63,7 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().StringVar(&formatFlag, "format", formatMarkdown,
-		"Output format: markdown (default) or storage")
+		"Output format: markdown (the default) or storage")
 
 	completion.RegisterFlag(Cmd, "format", completion.Values(formatMarkdown, formatStorage))
 }

@@ -1,30 +1,34 @@
 ## markfluence read
 
-Fetch a Confluence page and print its body
+Get a Confluence page and print its body
 
 ### Synopsis
 
-Fetch a Confluence page and print its body to stdout.
+Get a Confluence page and print its body to stdout. You can redirect the
+output to a file.
 
-PAGE is a numeric page id, a Confluence page URL (the modern
-/wiki/.../pages/<id>/... form or a legacy ?pageId=<id> URL), or a
-markdown file whose frontmatter has a page_id.
+PAGE is a page id, a Confluence page URL, or a Markdown file that names a
+page_id in its frontmatter or in its pages: entry. A URL can have the usual
+/wiki/.../pages/<id>/... form, or the older ?pageId=<id> form.
 
-It composes with shell redirection.
+--format markdown is the default. The output has title, space, parent,
+page_id, labels, page_status, and page_width in the frontmatter. It is the
+inverse of what create and update publish, as far as that is possible.
 
---format markdown (the default) carries title/space/parent/page_id/
-labels/page_status/page_width frontmatter and is a best-effort inverse
-of what create/update publish. The Confluence API has
-no markdown representation, so the storage body is converted here:
-constructs markfluence emits round-trip faithfully, while editor-authored
-content degrades gracefully -- a macro markfluence does not map, and a
-column layout, pass through as raw storage tags with their bodies kept as
-readable markdown, so they publish back unchanged. Some transforms are
-lossy (a table cell colour outside the named swatches comes back as a
-literal hex), so this is a reading aid rather than a guaranteed source
-round-trip.
+The Confluence API has no Markdown form, so markfluence converts the storage
+format itself. The constructs that markfluence writes come back correctly. For
+content from the Confluence editor, some details change:
 
---format storage prints the raw storage-format XHTML exactly as stored.
+  - A macro that markfluence does not map, and a column layout, come back as
+    raw storage tags. Their bodies stay as Markdown that you can read, and they
+    publish back with no change.
+  - Some conversions lose detail. For example, a cell color that is not one of
+    the named swatches comes back as a literal hex value.
+
+Thus the output helps you read a page, but it is not a guaranteed round trip.
+
+--format storage prints the raw storage format XHTML exactly as Confluence
+stores it.
 
 ```
 markfluence read PAGE [flags]
@@ -33,23 +37,23 @@ markfluence read PAGE [flags]
 ### Examples
 
 ```
-  # Markdown, with frontmatter, to stdout
+  # Print Markdown, with frontmatter, to stdout
   markfluence read 1234567890
 
-  # Save it as a file you can edit and publish back
+  # Save it as a file that you can edit and publish back
   markfluence read 1234567890 > page.md
 
-  # The raw storage Confluence holds
+  # Print the raw storage format that Confluence holds
   markfluence read 1234567890 --format storage > page.storage.xml
 
-  # By URL
+  # Give a URL
   markfluence read "https://org.atlassian.net/wiki/spaces/ENG/pages/1234567890/Title"
 ```
 
 ### Options
 
 ```
-      --format string   Output format: markdown (default) or storage (default "markdown")
+      --format string   Output format: markdown (the default) or storage (default "markdown")
   -h, --help            help for read
 ```
 
