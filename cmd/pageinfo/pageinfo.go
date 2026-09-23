@@ -29,26 +29,26 @@ var showProperties bool
 // Cmd is the info command.
 var Cmd = &cobra.Command{
 	Use:   "page-info PAGE",
-	Short: "Print metadata about a Confluence page",
-	Long: "Print metadata about a Confluence page.\n\n" +
-		"Id, title, content status, space, parent, version, page width, page\n" +
-		"status, labels, the created/updated author stamps, and the page URL. An\n" +
-		"empty field is omitted rather than printed blank.\n\n" +
-		"Two of those wear the word status and mean different things.\n" +
-		"content_status is current, archived or trashed. page_status is the\n" +
-		"coloured lozenge beside the title, and page_status/available lists what\n" +
-		"THIS page can be given, for the account you are running as.\n\n" +
-		"That list is not a property of the space, and reading it as one will\n" +
-		"mislead you: Confluence decides it per page and per account, so another\n" +
-		"page in the same space may allow more or fewer. To learn what a\n" +
-		"page_status: line may say for some page, ask about that page.\n\n" +
-		"PAGE is a numeric page id, a Confluence page URL, or a markdown file\n" +
-		"whose frontmatter has a page_id.\n\n" +
-		"--properties also lists every one of the page's content properties, which\n" +
-		"is where Confluence keeps things like the page width.",
-	Example: "  # By page id\n" +
+	Short: "Show the metadata of a Confluence page",
+	Long: "Show the metadata of a Confluence page. This is its id, title, content status,\n" +
+		"space, parent, version, page width, page status, and labels. It also shows the\n" +
+		"created and updated stamps, and the URL. page-info does not print an empty\n" +
+		"field.\n\n" +
+		"PAGE is a page id, a Confluence page URL, or a Markdown file that names a\n" +
+		"page_id in its frontmatter or in its pages: entry.\n\n" +
+		"Two fields use the word \"status\", and they are different things:\n\n" +
+		"  content_status  current, archived, or trashed\n" +
+		"  page_status     the colored lozenge next to the title\n\n" +
+		"page_status/available lists the statuses that you can give to THIS page, with\n" +
+		"the account that runs the command. That list is not a property of the space.\n" +
+		"Confluence decides it for each page and each account, so a different page in\n" +
+		"the same space can have more statuses or fewer. To see what a page_status: line\n" +
+		"can say for a page, ask about that page.\n\n" +
+		"--properties also lists all the content properties of the page. Confluence\n" +
+		"keeps data such as the page width in them.",
+	Example: "  # Give a page id\n" +
 		"  markfluence page-info 1234567890\n\n" +
-		"  # By the file that publishes to it, with content properties\n" +
+		"  # Give the file that publishes to the page, and show its content properties\n" +
 		"  markfluence page-info docs/foo.md --properties",
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completion.MarkdownFiles,
@@ -57,7 +57,7 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().BoolVar(&showProperties, "properties", false,
-		"Also list all of the page's content properties.")
+		"Also list all the content properties of the page.")
 }
 
 func run(cmd *cobra.Command, args []string) error {

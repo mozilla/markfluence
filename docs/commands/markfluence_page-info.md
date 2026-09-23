@@ -1,30 +1,30 @@
 ## markfluence page-info
 
-Print metadata about a Confluence page
+Show the metadata of a Confluence page
 
 ### Synopsis
 
-Print metadata about a Confluence page.
+Show the metadata of a Confluence page. This is its id, title, content status,
+space, parent, version, page width, page status, and labels. It also shows the
+created and updated stamps, and the URL. page-info does not print an empty
+field.
 
-Id, title, content status, space, parent, version, page width, page
-status, labels, the created/updated author stamps, and the page URL. An
-empty field is omitted rather than printed blank.
+PAGE is a page id, a Confluence page URL, or a Markdown file that names a
+page_id in its frontmatter or in its pages: entry.
 
-Two of those wear the word status and mean different things.
-content_status is current, archived or trashed. page_status is the
-coloured lozenge beside the title, and page_status/available lists what
-THIS page can be given, for the account you are running as.
+Two fields use the word "status", and they are different things:
 
-That list is not a property of the space, and reading it as one will
-mislead you: Confluence decides it per page and per account, so another
-page in the same space may allow more or fewer. To learn what a
-page_status: line may say for some page, ask about that page.
+  content_status  current, archived, or trashed
+  page_status     the colored lozenge next to the title
 
-PAGE is a numeric page id, a Confluence page URL, or a markdown file
-whose frontmatter has a page_id.
+page_status/available lists the statuses that you can give to THIS page, with
+the account that runs the command. That list is not a property of the space.
+Confluence decides it for each page and each account, so a different page in
+the same space can have more statuses or fewer. To see what a page_status: line
+can say for a page, ask about that page.
 
---properties also lists every one of the page's content properties, which
-is where Confluence keeps things like the page width.
+--properties also lists all the content properties of the page. Confluence
+keeps data such as the page width in them.
 
 ```
 markfluence page-info PAGE [flags]
@@ -33,10 +33,10 @@ markfluence page-info PAGE [flags]
 ### Examples
 
 ```
-  # By page id
+  # Give a page id
   markfluence page-info 1234567890
 
-  # By the file that publishes to it, with content properties
+  # Give the file that publishes to the page, and show its content properties
   markfluence page-info docs/foo.md --properties
 ```
 
@@ -44,7 +44,7 @@ markfluence page-info PAGE [flags]
 
 ```
   -h, --help         help for page-info
-      --properties   Also list all of the page's content properties.
+      --properties   Also list all the content properties of the page.
 ```
 
 ### Options inherited from parent commands
