@@ -15,7 +15,30 @@ cannot get into your shell history.
 
 ## Set up your credentials file
 
-Do this one time on each computer.
+Do this one time on each computer. The easy way is to let markfluence do it:
+
+```
+markfluence credentials-init
+```
+
+This command:
+
+- asks for the URL of your site, your username, and your API token. It reads
+  the token without echo.
+- gets the cloud ID of the site, if the site is at atlassian.net.
+- checks the credentials with Confluence, and shows the account that they
+  belong to. If Confluence refuses them, it saves nothing. If it cannot tell,
+  for example because it cannot reach the site, it asks you whether to save.
+- writes your credentials file with mode 0600.
+
+Run it again to change a setting, for example to replace an expired token.
+Each question shows the current value, and Enter keeps it. The command writes
+the whole file again, so it tells you first if the file has comments or other
+lines that it will not keep.
+
+It needs a terminal. In CI, use environment variables instead: see [CI](#ci).
+
+### Write the file yourself
 
 1. Make the directory:
 
@@ -29,7 +52,7 @@ Do this one time on each computer.
    CONFLUENCE_URL=https://your-org.atlassian.net
    CONFLUENCE_USERNAME=you@example.com
    CONFLUENCE_TOKEN=your-api-token
-   # Optional. Set this only for a *scoped* API token.
+   # Optional. A *scoped* API token needs it; a normal token works either way.
    # CONFLUENCE_CLOUD_ID=
    ```
 
@@ -50,6 +73,10 @@ To get an API token, see Atlassian's
 [Manage API tokens for your Atlassian account](https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/).
 For a scoped token and the cloud ID, see
 [Scoped tokens and service accounts](../README.md#scoped-tokens-and-service-accounts).
+A normal personal token works with or without a cloud ID, so
+`credentials-init` saves one for every site at atlassian.net. It saves none for
+a site at a different domain, such as an Atlassian Government Cloud site,
+because markfluence sends a cloud ID only to the `api.atlassian.com` gateway.
 
 ## Where markfluence looks
 
@@ -157,7 +184,8 @@ error object on stderr. stderr is a JSON document in that mode.
 ## Errors
 
 **`missing Confluence …`**: no place gives that setting. The error lists the
-places that markfluence looked in. Set the setting there. If more than one
+places that markfluence looked in. Run `markfluence credentials-init`, or set
+the setting in one of those places. If more than one
 setting is missing, set them in one place, because of the rule above. If only
 one of the URL and the token is set, the error names its place, because the
 other must go there too.
