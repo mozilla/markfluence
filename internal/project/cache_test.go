@@ -193,13 +193,13 @@ func TestCacheCloseIsSafeWithABackfilledSharedRoot(t *testing.T) {
 	c.Close() // must not panic despite closing the same *os.Root more than once
 }
 
-// TestCacheResolveIndependentOfBatchComposition is the other half of
-// guarantee L2 (invocation-independent, docs/design-principles.md): resolving one
-// file's root must not depend on which other files happen to be in the same
-// batch. A single Cache is shared across every file in a create/update
-// invocation, so its memoization must be purely an optimization -- it must
-// never change what a given directory resolves to depending on what else was
-// resolved through the same Cache, in either order.
+// TestCacheResolveIndependentOfBatchComposition is the other half of principle
+// L2 (invocation-independent, docs/design-principles.md): resolving one file's
+// root must not depend on which other files happen to be in the same batch. A
+// single Cache is shared across every file in a create/update invocation, so
+// its memoization must be purely an optimization -- it must never change what a
+// given directory resolves to depending on what else was resolved through the
+// same Cache, in either order.
 //
 // target and sibling deliberately belong to two different, unrelated
 // projects (each with its own marker file): a contamination bug that just

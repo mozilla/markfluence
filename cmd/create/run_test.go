@@ -514,12 +514,12 @@ func TestCreateAllStubIsEmptyThenPublished(t *testing.T) {
 	}
 }
 
-// TestCreateBatchIgnoresDirectoryNesting is guarantee L8 (no-layout-inference,
-// docs/design-principles.md) at the batch level: a file nested several directories
-// deep, alongside files at shallower levels with names that could plausibly
-// read as its ancestors, must still be created as a top-level page unless a
-// parent: field or --parent said otherwise. Nothing about the tree shape may
-// contribute to the decision.
+// TestCreateBatchIgnoresDirectoryNesting is principle L8 (no-layout-inference,
+// docs/design-principles.md) at the batch level: a file nested several
+// directories deep, alongside files at shallower levels with names that could
+// plausibly read as its ancestors, must still be created as a top-level page
+// unless a parent: field or --parent said otherwise. Nothing about the tree
+// shape may contribute to the decision.
 func TestCreateBatchIgnoresDirectoryNesting(t *testing.T) {
 	resetOpts(t)
 	dir := t.TempDir()

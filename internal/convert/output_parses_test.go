@@ -1,11 +1,11 @@
 package convert_test
 
-// This file tests guarantee L7 (output-is-valid-markdown, docs/design-principles.md):
-// anything markfluence writes to disk is Markdown that renders. Every other
-// test in this package checks that StorageToMarkdown produces a specific
-// *string*; this one checks that the string it produces is actually
-// recognized as the Markdown it looks like, by feeding it back through a real
-// parser rather than just eyeballing the golden.
+// This file tests principle L7 (output-is-valid-markdown,
+// docs/design-principles.md): anything markfluence writes to disk is Markdown
+// that renders. Every other test in this package checks that StorageToMarkdown
+// produces a specific *string*; this one checks that the string it produces is
+// actually recognized as the Markdown it looks like, by feeding it back through
+// a real parser rather than just eyeballing the golden.
 
 import (
 	"bytes"

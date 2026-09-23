@@ -4,16 +4,17 @@ package convert_test
 // Markdown back, and exporting again yields the same Markdown. Once a page has
 // been through markfluence, it stops moving.
 //
-// This is L5 as docs/design-principles.md words it: the page keeps its meaning, and a
-// second export gives the same Markdown. It is deliberately not "publishing an
-// export back changes nothing on the page", which does not hold. Measured
-// against a live page (2026-09-05; docs/confluence/storage-format.md): Confluence's editor writes
-// <li><p>text</p></li> where the converter emits <li>text</li>, and a TOC macro
-// carries ac:local-id/ac:macro-id/data-layout attributes that the converter's
-// canonical form omits. Both render identically and neither loses content, but
-// the stored bytes differ, so a byte-equality test would fail for reasons that
-// have nothing to do with this feature. What a reader actually depends on is
-// that the *export* is stable, which is what this asserts.
+// This is L5 as docs/design-principles.md words it: the page keeps its meaning,
+// and a second export gives the same Markdown. It is deliberately not
+// "publishing an export back changes nothing on the page", which does not hold.
+// Measured against a live page (2026-09-05; docs/confluence/storage-format.md):
+// Confluence's editor writes <li><p>text</p></li> where the converter emits
+// <li>text</li>, and a TOC macro carries ac:local-id/ac:macro-id/data-layout
+// attributes that the converter's canonical form omits. Both render identically
+// and neither loses content, but the stored bytes differ, so a byte-equality
+// test would fail for reasons that have nothing to do with this feature. What a
+// reader actually depends on is that the *export* is stable, which is what this
+// asserts.
 //
 // The corpus is every storage2md case rather than a hand-kept list, because a
 // hardcoded list is how #125 stayed invisible: an ac:adf-extension existed and
