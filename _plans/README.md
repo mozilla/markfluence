@@ -17,10 +17,7 @@ end at exactly the moment somebody needs it.
 - **12 Go files cite a plan by number** — `internal/project/project.go`,
   `internal/convert/attachname.go`, `cmd/create/create.go` and others. Those
   comments exist where the code looks arbitrary and the reasoning is long.
-- **[docs/guarantees.md](../docs/guarantees.md) cites them 14 times**, and
-  load-bearingly: a guarantee's *status* is often justified by the plan that
-  set it ("`_plans/026` accepted it as the cost").
-- **[docs/root-model.md](../docs/root-model.md) cites them 10 times**, and 22
+- **[docs/root-model.md](../docs/root-model.md) cites them 5 times**, and 22
   commit messages do too — those can never be fixed.
 
 They are also versioned with the code they describe, which a notebook cannot
