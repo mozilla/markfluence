@@ -1,6 +1,6 @@
 package convert_test
 
-// This file tests guarantee L7 (output-is-valid-markdown, docs/guarantees.md):
+// This file tests guarantee L7 (output-is-valid-markdown, docs/design-principles.md):
 // anything markfluence writes to disk is Markdown that renders. Every other
 // test in this package checks that StorageToMarkdown produces a specific
 // *string*; this one checks that the string it produces is actually

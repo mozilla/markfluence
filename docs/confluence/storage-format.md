@@ -45,7 +45,7 @@ which changes what renders:
 - The editor's TOC macro carries `ac:local-id`, `ac:macro-id` and `data-layout`
   attributes; the converter's canonical form has none of them.
 
-This is why L5 (`roundtrip-from-confluence`, [../guarantees.md](../guarantees.md))
+This is why L5 (`roundtrip-from-confluence`, [../design-principles.md](../design-principles.md))
 promises the page keeps its *meaning* rather than its bytes. The Markdown side
 is stricter: after one cycle it stops changing, which
 `TestRoundTripMarkdownIsAFixedPoint` checks over every `storage2md` case.

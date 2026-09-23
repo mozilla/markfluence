@@ -194,7 +194,7 @@ func TestCacheCloseIsSafeWithABackfilledSharedRoot(t *testing.T) {
 }
 
 // TestCacheResolveIndependentOfBatchComposition is the other half of
-// guarantee L2 (invocation-independent, docs/guarantees.md): resolving one
+// guarantee L2 (invocation-independent, docs/design-principles.md): resolving one
 // file's root must not depend on which other files happen to be in the same
 // batch. A single Cache is shared across every file in a create/update
 // invocation, so its memoization must be purely an optimization -- it must

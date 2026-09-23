@@ -515,7 +515,7 @@ func TestCreateAllStubIsEmptyThenPublished(t *testing.T) {
 }
 
 // TestCreateBatchIgnoresDirectoryNesting is guarantee L8 (no-layout-inference,
-// docs/guarantees.md) at the batch level: a file nested several directories
+// docs/design-principles.md) at the batch level: a file nested several directories
 // deep, alongside files at shallower levels with names that could plausibly
 // read as its ancestors, must still be created as a top-level page unless a
 // parent: field or --parent said otherwise. Nothing about the tree shape may
