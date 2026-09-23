@@ -31,31 +31,29 @@ var (
 // Cmd is the attachment-download command.
 var Cmd = &cobra.Command{
 	Use:   command + " PAGE [NAME...]",
-	Short: "Download a Confluence page's attachments",
-	Long: "Download a Confluence page's attachments.\n\n" +
-		"PAGE is a numeric page id, a Confluence page URL, or a markdown file\n" +
-		"whose frontmatter has a page_id. Each NAME is an attachment name as\n" +
-		"attachment-list reports it; with no NAME, every attachment is\n" +
-		"downloaded.\n\n" +
-		"An attachment markfluence published records the markdown image path it\n" +
-		"came from, and is written back to that path under --dest, so the\n" +
-		"downloaded tree matches what the page's markdown references and\n" +
-		"previews locally.\n\n" +
-		"An attachment without a recorded path -- one that originated in\n" +
-		"Confluence -- is written under a directory named after the page, since\n" +
-		"an attachment name is unique per page and not per space: two pages'\n" +
-		"diagram.png would otherwise be one file. That is where `read` and\n" +
-		"`export` point at it too.\n\n" +
-		"--flat writes everything directly under --dest, under stored names.\n\n" +
-		"A recorded path that would resolve outside --dest is refused for that\n" +
-		"attachment, since the path comes from an attachment comment anyone who\n" +
-		"can edit the page controls.\n\n" +
-		"A file that already exists is skipped unless --force.",
-	Example: "  # Every attachment, to the paths they were published from\n" +
+	Short: "Download the attachments of a Confluence page",
+	Long: "Download the attachments of a Confluence page to your machine.\n\n" +
+		"PAGE is a page id, a Confluence page URL, or a Markdown file that names a\n" +
+		"page_id in its frontmatter or in its pages: entry. Each NAME is an attachment\n" +
+		"name, as attachment-list shows it. With no NAME, markfluence downloads every\n" +
+		"attachment.\n\n" +
+		"markfluence records the source path of each image that it publishes. It writes\n" +
+		"such an attachment back to that path under --dest. Thus the downloaded files\n" +
+		"are where the Markdown of the page expects them, and a local preview works.\n\n" +
+		"An attachment with no recorded path came from Confluence. markfluence writes it\n" +
+		"into a directory named after the page title. An attachment name is unique on a\n" +
+		"page, but not in a space, so two pages can each have a diagram.png. read and\n" +
+		"export also point to this directory.\n\n" +
+		"--flat writes every attachment directly into --dest, with its stored name.\n\n" +
+		"markfluence refuses an attachment whose recorded path would go outside --dest.\n" +
+		"The path comes from the attachment comment, and anybody who can edit the page\n" +
+		"can change that comment.\n\n" +
+		"markfluence skips a file that already exists, unless you give --force.",
+	Example: "  # Download every attachment to the paths it was published from\n" +
 		"  markfluence attachment-download 1234567890 --dest ./out\n\n" +
-		"  # Just one, by its stored name\n" +
+		"  # Download one attachment, by its stored name\n" +
 		"  markfluence attachment-download 1234567890 diagram.png --dest ./out\n\n" +
-		"  # Ignore recorded paths and write everything flat\n" +
+		"  # Ignore the recorded paths, and write everything into one directory\n" +
 		"  markfluence attachment-download 1234567890 --dest ./out --flat\n",
 	Args:              cobra.MinimumNArgs(1),
 	ValidArgsFunction: completion.PageThenNames,
@@ -63,12 +61,12 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
-	Cmd.Flags().StringVar(&dest, "dest", ".", "Directory to write attachments into.")
+	Cmd.Flags().StringVar(&dest, "dest", ".", "Directory to write the attachments into.")
 	Cmd.Flags().BoolVar(&flat, "flat", false,
-		"Write every attachment under its stored name, ignoring recorded paths.")
-	Cmd.Flags().BoolVar(&force, "force", false, "Overwrite files that already exist.")
+		"Write every attachment into --dest with its stored name, and ignore recorded paths.")
+	Cmd.Flags().BoolVar(&force, "force", false, "Overwrite a file that already exists.")
 	Cmd.Flags().BoolVar(&dryRun, "dry-run", false,
-		"Preview what would be written without creating any files.")
+		"Show what markfluence would write, and write no files.")
 
 	completion.RegisterFlag(Cmd, "dest", completion.Directories)
 }
