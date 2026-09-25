@@ -10,12 +10,42 @@ The JSON Schema at [`schema/json-output/v1.json`](../schema/json-output/v1.json)
 is the authoritative contract for each field. The `markfluence schema` command
 also prints it.
 
+## Compatibility
+
+`schema_version` is `1`. It increases only for a change that can break a
+consumer.
+
+These changes are compatible, and `schema_version` stays the same:
+
+- a new key on the envelope, on a result, on a summary, or on the error
+  object;
+- a constraint that is made looser.
+
+These changes break compatibility, and `schema_version` increases:
+
+- a key that is removed or renamed;
+- a key whose type or meaning changes;
+- a key that can be `null` and could not before;
+- a new value in an enum, such as `code`, `status`, or `command`.
+
+Thus a consumer must ignore a key that it does not know. The published schema
+is open for this reason: an object can have keys that the schema does not list.
+If you validate the output, validate against the schema that
+`markfluence schema` prints, which is the schema of the binary that you run.
+A copy from an older release does not list the newer keys, but it still
+accepts them.
+
+markfluence's own tests validate against a closed copy of the schema, which
+refuses any key that the schema does not list. Thus a key cannot get into the
+output before it gets into the schema.
+
 ## Notes on the schema
 
 - **Stable for each command.** Each command always writes the same keys in the
   same shapes. An empty value is `null` or `[]`. The *set* of keys is different
   for each command. Any change that breaks compatibility increases
-  `schema_version`.
+  `schema_version`. See [Compatibility](#compatibility) for which changes
+  those are.
 - **`roots`** lists each different
   [documentation root](../README.md#the-documentation-root) that the command
   resolved, in sorted order. It is `[]` for a command that has no per-file root,

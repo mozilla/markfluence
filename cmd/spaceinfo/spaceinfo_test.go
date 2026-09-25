@@ -548,7 +548,7 @@ func TestUnknownSpaceIsNil(t *testing.T) {
 }
 
 // Every field always marshals, per internal/schematest's rule: no omitempty,
-// so additionalProperties:false and required catch an added or renamed one.
+// so the tests' closed schema and required catch an added or renamed one.
 func TestJSONResultAlwaysCarriesEveryField(t *testing.T) {
 	r := stub{pages: [][]string{{row("1", "current", "", 30, 30)}}}.build(t, 7)
 	blob, err := json.Marshal(r.jsonResult())

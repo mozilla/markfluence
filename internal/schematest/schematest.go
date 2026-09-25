@@ -1,11 +1,15 @@
 // Package schematest is a test-only helper that validates markfluence's --json
 // output against the published JSON Schema (schema/json-output/v1.json). It is
-// the drift guard: because the schema uses additionalProperties:false
-// throughout, any new field on a result struct fails validation until the schema
-// is updated to match.
+// the drift guard: any new field on a result struct fails validation until the
+// schema is updated to match.
 //
 // It validates against the copy embedded in package schema -- the same bytes
-// `markfluence schema` prints -- so what ships is what these tests checked.
+// `markfluence schema` prints -- so what ships is what these tests checked. But
+// not as published: the published schema is open, because a new key is a
+// compatible change and a consumer holding an older copy must not reject one
+// (#200, docs/json-output.md). The drift guard needs the opposite, so the
+// tests validate against Closed(schema), which forbids every key the schema
+// does not list.
 package schematest
 
 import (
@@ -34,7 +38,7 @@ func compile() {
 		return
 	}
 	c := jsonschema.NewCompiler()
-	if err := c.AddResource(schemaID, doc); err != nil {
+	if err := c.AddResource(schemaID, Closed(doc)); err != nil {
 		compileErr = err
 		return
 	}
@@ -79,4 +83,32 @@ func validate(t *testing.T, sch *jsonschema.Schema, instance []byte) {
 	if err := sch.Validate(v); err != nil {
 		t.Errorf("instance does not conform to schema:\n%v\n--- instance ---\n%s", err, instance)
 	}
+}
+
+// Closed returns doc -- a schema decoded by jsonschema.UnmarshalJSON -- with
+// additionalProperties set to false on every object schema that lists its
+// properties and does not say otherwise, modifying doc in place.
+//
+// "Object schema" means a node declaring "type": "object". That is what keeps
+// the closing off the envelope's if/then branches: an if closed this way
+// would stop matching any real envelope, and a then closed this way would
+// forbid every envelope key but results and summary. Neither declares a
+// type, and nothing in the schema relies on an untyped node being closed.
+func Closed(doc any) any {
+	switch n := doc.(type) {
+	case map[string]any:
+		if _, hasProps := n["properties"]; hasProps && n["type"] == "object" {
+			if _, said := n["additionalProperties"]; !said {
+				n["additionalProperties"] = false
+			}
+		}
+		for _, v := range n {
+			Closed(v)
+		}
+	case []any:
+		for _, v := range n {
+			Closed(v)
+		}
+	}
+	return doc
 }
