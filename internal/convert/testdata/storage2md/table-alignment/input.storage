@@ -5,6 +5,7 @@
 <th><p style="text-align: center;">Paragraph form</p></th>
 <th style="text-align: right;">Cell form</th>
 <th><p style="text-align: end;">ADF names</p></th>
+<th><p style="text-align: left;">No left</p></th>
 </tr>
 </thead>
 <tbody>
@@ -12,13 +13,15 @@
 <td>a</td>
 <td><p style="text-align: center;">b</p></td>
 <td style="text-align: right;">c</td>
-<td><p style="text-align: start;">d</p></td>
+<td><p style="text-align: end;">d</p></td>
+<td><p style="text-align: start;">e</p></td>
 </tr>
 <tr>
-<td>e</td>
-<td><p style="text-align: center;">f</p></td>
-<td>g</td>
-<td><p style="text-align: end;">h</p></td>
+<td>f</td>
+<td><p style="text-align: center;">g</p></td>
+<td style="text-align: right;"><p>h</p></td>
+<td><p style="text-align: end;">i</p></td>
+<td>j</td>
 </tr>
 </tbody>
 </table>

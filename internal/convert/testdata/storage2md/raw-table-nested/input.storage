@@ -1,0 +1,6 @@
+<table>
+<tbody>
+<tr><th><p>Outer</p></th></tr>
+<tr><td><table><tbody><tr><th><p>Inner</p></th></tr><tr><td><p>x</p></td></tr></tbody></table></td></tr>
+</tbody>
+</table>

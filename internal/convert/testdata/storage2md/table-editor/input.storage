@@ -1,0 +1,12 @@
+<table data-table-width="1110" data-layout="align-start" ac:local-id="d96e038d-2301-4df5-a7dd-beb8d59ea872" data-table-display-mode="default">
+<tbody>
+<tr ac:local-id="03dc764a7f41">
+<th ac:local-id="27ae7e919d59"><p>Service</p></th>
+<th ac:local-id="3dc799484d0a" colspan="1" rowspan="1"><p style="text-align: right;">Errors</p></th>
+</tr>
+<tr ac:local-id="402ee120a6d8">
+<td data-highlight-colour="#e3fcef" ac:local-id="3ffa7fc1c753"><p>auth</p></td>
+<td ac:local-id="07281a316ccf"><p style="text-align: right;">3</p></td>
+</tr>
+</tbody>
+</table>

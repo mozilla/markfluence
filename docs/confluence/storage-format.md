@@ -95,6 +95,7 @@ should look like.
 | `center` | kept | `center` |
 | `wide` | kept | `wide` |
 | `full-width` | kept | `full-width` |
+| `default` (verified 2026-09-25) | kept | `default` |
 | `bogus-value` | **kept verbatim** | **`None`** — silently dropped |
 | *(absent)* | absent | absent |
 
@@ -195,6 +196,54 @@ back as `---`. Only center and right make the round trip.
 > Checking any of this with `body-format=view` will tell you both `align` and
 > `text-align` survive, because the legacy renderer echoes them. That is wrong.
 > Use ADF.
+
+## Table markup
+
+What else a table may carry, one hypothesis per table.
+
+**Verified 2026-09-25** on a scratch page in the personal space, storage read
+back and then ADF, the page trashed afterwards:
+
+| written | stored | takes effect (ADF) |
+|---|---|---|
+| `<th>` in the first row | kept | header row |
+| `<th>` first in every row | kept | header column |
+| two header rows in `<thead>` | kept | two header rows |
+| `<tfoot>` | kept | an ordinary last row; no footer |
+| `<caption>` | **tag dropped, its text left loose** | the caption text becomes a paragraph above the table |
+| `colspan`, `rowspan` on `<th>`/`<td>` | kept | yes |
+| `style="background-color: …"` on a cell | kept, as `rgb()` | **no** |
+| `class="highlight-blue"` on a cell | kept | no |
+| `valign="bottom"` on a cell | kept | **yes**, cell `valign` |
+| `style="vertical-align: top;"` on a cell | kept | no |
+| `scope="col"` on a `<th>` | kept | no |
+| `data-colwidth` on a cell | **dropped** | no |
+| `data-table-display-mode="fixed"` | kept | `displayMode: fixed` |
+| `data-number-column="true"` | **dropped** | no |
+| `class="numberingColumn"` on each row's first cell | kept | **numbered column**, those cells removed from ADF |
+| `class`, `border`, `width`, `style="width: …"` on `<table>` | kept | no (the `style` width induced `layout: default`) |
+| a table inside a cell | kept | **not a table**: a `nested-table` migration extension, "A table in a table cell can't be created or edited in the new editor" |
+
+Colour, alignment, layout and widths are in their own sections here. So the
+markup that works is header rows and columns, `colspan`/`rowspan`,
+`data-highlight-colour`, `text-align`, `valign`, a `<colgroup>`,
+`data-layout`, `data-table-width`, `data-table-display-mode`, and a numbered
+column spelled as `numberingColumn` cells. Everything else is stored and
+ignored, or dropped; `<caption>` and a nested table do harm.
+
+### What the editor writes on a table
+
+**Verified 2026-09-25** on page 2913502220, three tables made in the editor:
+every table carries `data-table-width` (1110 on two, 778 on the third) and
+`ac:local-id`, every row and cell carries `ac:local-id`, and one table carries
+`data-table-display-mode="default"`. None has a `<colgroup>`.
+
+So those attributes say nothing about what an author chose. `read` ignores
+them when deciding whether a table can be a GFM table (#55,
+`internal/convert/storage_to_md_table.go`), along with
+`data-layout="align-start"` and a span of 1. `data-table-width` is the costly
+one: it is also what a hand resize records, and a resized table that reads
+back as GFM loses the resize on its next publish.
 
 ## Cell background colors
 

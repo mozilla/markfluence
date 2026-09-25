@@ -373,177 +373,6 @@ func (r *mdRenderer) renderListItem(li *snode, cont string) string {
 	return item
 }
 
-// renderTable renders a table as a GFM pipe table. Alignment is not preserved.
-func (r *mdRenderer) renderTable(n *snode) string {
-	var rows []*snode
-	var header *snode
-	var walk func(*snode)
-	walk = func(x *snode) {
-		for _, k := range x.kids {
-			switch k.name {
-			case "thead", "tbody":
-				walk(k)
-			case "tr":
-				if header == nil && len(rows) == 0 && rowHasHeaderCell(k) {
-					header = k
-				} else {
-					rows = append(rows, k)
-				}
-			}
-		}
-	}
-	walk(n)
-	if header == nil {
-		if len(rows) == 0 {
-			return ""
-		}
-		header, rows = rows[0], rows[1:]
-	}
-
-	head := r.cellTexts(header)
-	var b strings.Builder
-	b.WriteString("| " + strings.Join(head, " | ") + " |\n")
-	b.WriteString("| " + strings.Join(columnSeparators(header, rows, len(head)), " | ") + " |")
-	for _, row := range rows {
-		b.WriteString("\n| " + strings.Join(r.cellTexts(row), " | ") + " |")
-	}
-	return b.String()
-}
-
-// alignSeparators are the GFM delimiter cells, keyed by the alignment recovered
-// from storage.
-var alignSeparators = map[string]string{
-	"left":   ":---",
-	"center": ":---:",
-	"right":  "---:",
-}
-
-// textAlignRE pulls the value out of a text-align declaration anywhere in a style
-// attribute.
-var textAlignRE = regexp.MustCompile(`(?i)text-align\s*:\s*([a-z]+)`)
-
-// whitespaceRunRE collapses a run of whitespace to a single space in collapse
-// below. Not the same concern as linkindex's identically-shaped regexp (that
-// one collapses a run to a hyphen, for a Confluence anchor slug); duplicated
-// rather than imported, since sharing it would couple this file's general
-// text-collapsing to an unrelated package over one regexp literal.
-var whitespaceRunRE = regexp.MustCompile(`\s+`)
-
-// columnSeparators builds the delimiter row, recovering each column's alignment
-// from its cells.
-//
-// Confluence aligns a paragraph while GFM aligns a column, so a column whose
-// cells disagree cannot be represented: the most common alignment wins and the
-// rest are dropped. Cells that declare nothing do not vote -- a single centered
-// cell in a column of plain ones still centers the column, which is the only
-// reading that survives the round trip at all.
-func columnSeparators(header *snode, rows []*snode, cols int) []string {
-	counts := make([]map[string]int, cols)
-	order := make([]map[string]int, cols)
-	seen := 0
-	for _, tr := range append([]*snode{header}, rows...) {
-		if tr == nil {
-			continue
-		}
-		i := 0
-		for _, c := range tr.kids {
-			if c.name != "th" && c.name != "td" {
-				continue
-			}
-			if i >= cols {
-				break
-			}
-			if a := cellAlignment(c); a != "" {
-				if counts[i] == nil {
-					counts[i], order[i] = map[string]int{}, map[string]int{}
-				}
-				counts[i][a]++
-				if _, ok := order[i][a]; !ok {
-					seen++
-					order[i][a] = seen
-				}
-			}
-			i++
-		}
-	}
-
-	seps := make([]string, cols)
-	for i := range seps {
-		seps[i] = "---"
-		best := ""
-		for a, n := range counts[i] {
-			// Ties go to whichever alignment appeared first, so the delimiter row
-			// does not depend on map iteration order.
-			if best == "" || n > counts[i][best] || (n == counts[i][best] && order[i][a] < order[i][best]) {
-				best = a
-			}
-		}
-		if sep, ok := alignSeparators[best]; ok {
-			seps[i] = sep
-		}
-	}
-	return seps
-}
-
-// cellAlignment reports the alignment stored on one cell, normalized to the GFM
-// vocabulary. Confluence's own form is a text-align on a paragraph inside the
-// cell, which is what markfluence writes; the cell-level form works too and is
-// read for the same reason. "start"/"end" are ADF's names for left/right and turn
-// up in hand-edited storage.
-func cellAlignment(c *snode) string {
-	styles := []string{c.attrs["style"]}
-	for _, k := range c.kids {
-		if k.name == "p" {
-			styles = append(styles, k.attrs["style"])
-		}
-	}
-	for _, s := range styles {
-		m := textAlignRE.FindStringSubmatch(s)
-		if m == nil {
-			continue
-		}
-		switch strings.ToLower(m[1]) {
-		case "left", "start":
-			return "left"
-		case "center":
-			return "center"
-		case "right", "end":
-			return "right"
-		}
-	}
-	return ""
-}
-
-// rowHasHeaderCell reports whether a <tr> contains a <th>.
-func rowHasHeaderCell(tr *snode) bool {
-	for _, c := range tr.kids {
-		if c.name == "th" {
-			return true
-		}
-	}
-	return false
-}
-
-// cellTexts renders a row's cells to inline strings with pipes escaped,
-// prefixed with a bg: marker for a cell carrying a background color.
-func (r *mdRenderer) cellTexts(tr *snode) []string {
-	var cells []string
-	for _, c := range tr.kids {
-		if c.name == "th" || c.name == "td" {
-			text := r.renderCellLines(c)
-			if marker := cellBGMarkerComment(c); marker != "" {
-				if text == "" {
-					text = marker
-				} else {
-					text = marker + " " + text
-				}
-			}
-			cells = append(cells, text)
-		}
-	}
-	return cells
-}
-
 // renderCellLines renders a table cell's content as a single physical line.
 // Confluence writes one <p> per line when a cell holds more than one --
 // hitting Enter inside a cell in the editor starts a new <p>, not a <br> -- and
@@ -959,6 +788,13 @@ func imageTitle(attrs map[string]string) string {
 
 // --- helpers -----------------------------------------------------------------
 
+// whitespaceRunRE collapses a run of whitespace to a single space in collapse
+// below. Not the same concern as linkindex's identically-shaped regexp (that
+// one collapses a run to a hyphen, for a Confluence anchor slug); duplicated
+// rather than imported, since sharing it would couple this file's general
+// text-collapsing to an unrelated package over one regexp literal.
+var whitespaceRunRE = regexp.MustCompile(`\s+`)
+
 // collapse replaces every run of whitespace with a single space (reusing the
 // package's whitespace regexp).
 func collapse(s string) string {
@@ -1071,7 +907,11 @@ func (r *mdRenderer) renderRawBlock(n *snode) string {
 
 	// Content container: raw tags around a Markdown body.
 	if isContentContainer(n.name) {
-		if md := strings.Join(r.blockStrings(n.kids, ""), "\n\n"); md != "" {
+		blocks := r.blockStrings(n.kids, "")
+		if n.name == "th" || n.name == "td" {
+			blocks = r.rawCellBlocks(n)
+		}
+		if md := strings.Join(blocks, "\n\n"); md != "" {
 			return open + "\n\n" + md + "\n\n" + closeTag
 		}
 		return open + closeTag
@@ -1098,10 +938,12 @@ func (r *mdRenderer) renderRawBlock(n *snode) string {
 
 // isContentContainer reports whether an element holds block content that should
 // be converted to Markdown rather than serialized raw, so a passed-through
-// wrapper keeps an editable body.
+// wrapper keeps an editable body. A table cell is one because a table only
+// reaches renderRawBlock when Markdown cannot express it (renderTable), and its
+// cells' text should stay as editable as a layout cell's.
 func isContentContainer(name string) bool {
 	switch name {
-	case "ac:rich-text-body", "ac:layout-cell", "ac:adf-content":
+	case "ac:rich-text-body", "ac:layout-cell", "ac:adf-content", "th", "td":
 		return true
 	}
 	return false

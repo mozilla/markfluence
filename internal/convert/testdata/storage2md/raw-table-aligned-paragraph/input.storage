@@ -1,0 +1,6 @@
+<table data-layout="wide">
+<tbody>
+<tr><th><p>Note</p></th></tr>
+<tr><td><p><em>First</em> line</p><p style="text-align: center;">centred <strong>line</strong></p></td></tr>
+</tbody>
+</table>

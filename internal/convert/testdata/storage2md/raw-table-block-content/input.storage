@@ -1,0 +1,6 @@
+<table>
+<tbody>
+<tr><th><p>Step</p></th><th><p>How</p></th></tr>
+<tr><td><h3>Restart</h3></td><td><p>Restart with:</p><ac:structured-macro ac:name="code" ac:macro-id="x1"><ac:parameter ac:name="language">bash</ac:parameter><ac:plain-text-body><![CDATA[systemctl restart auth]]></ac:plain-text-body></ac:structured-macro></td></tr>
+</tbody>
+</table>
