@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/mozilla/markfluence/schema/json-output/v1.json",
   "title": "markfluence --json output (schema_version 1)",
-  "description": "The single JSON document markfluence writes to stdout under --json. results holds one object per target (a single element for page-info/read; one per attachment for attachment-list); its item shape and the summary shape depend on command. The typed error object written to stderr on a fatal/pre-flight failure conforms to #/$defs/errorObject. The schema is open: an object may carry keys it does not list, because adding a key is a compatible change within a schema_version, and a consumer must ignore keys it does not know. Removing or renaming a key, or changing its type or meaning, increases schema_version (docs/json-output.md).",
+  "description": "The single JSON document markfluence writes to stdout under --json. results holds one object per target (a single element for page-info/read; one per attachment for attachment-list); its item shape and the summary shape depend on command. The typed error object written to stderr on a fatal/pre-flight failure conforms to #/$defs/errorObject. The schema is open: an object may carry keys it does not list, and a consumer must ignore keys it does not know. Which changes keep schema_version and which increase it: https://github.com/mozilla/markfluence/blob/main/docs/json-output.md#compatibility",
   "type": "object",
   "required": ["schema_version", "markfluence_version", "command", "roots", "warnings", "results", "summary"],
   "properties": {
     "schema_version": { "const": 1 },
     "markfluence_version": { "type": "string" },
-    "command": { "enum": ["page-info", "space-info", "user-info", "read", "update", "create", "check", "diff", "children", "find", "search", "user-find", "attachment-list", "attachment-upload", "attachment-download", "export"] },
+    "command": { "description": "A new command adds a value here. That is a compatible change: only the new command's own output carries it.", "enum": ["page-info", "space-info", "user-info", "read", "update", "create", "check", "diff", "children", "find", "search", "user-find", "attachment-list", "attachment-upload", "attachment-download", "export"] },
     "roots": { "type": "array", "items": { "type": "string" }, "description": "Every distinct documentation root the command resolved, sorted. Empty for a command with no per-file root concept, and for a pre-flight failure that never reached root resolution." },
     "warnings": { "type": "array", "items": { "type": "string" }, "description": "Warnings about the invocation itself rather than about any page or file -- currently the two warnings raised while reading credentials: a file holding the API token (the credentials file, or one named by --env-file) that is reachable by anyone but its owner, and a CONFLUENCE_CLOUD_ID that was ignored because it came from a different place than the URL. Always present, [] when there is nothing to report, the same convention roots and results follow. Not per-result warnings: those live on the result." },
     "results": { "type": "array" },
@@ -605,7 +605,7 @@
       "type": "object",
       "required": ["field", "confluence", "local", "source", "comparable", "note"],
       "properties": {
-        "field": { "enum": ["title", "space", "parent", "page_status", "page_width", "labels"] },
+        "field": { "type": "string", "description": "The frontmatter field: currently title, space, parent, page_status, page_width, or labels. A string rather than an enum, because a frontmatter field markfluence learns later is reported here too, and a consumer must accept a field name it does not know." },
         "confluence": {
           "description": "The page's value; null when it could not be read, which is the one case comparable is false. A list is spelled in frontmatter's flow form, [a, b].",
           "$ref": "#/$defs/stringOrNull"

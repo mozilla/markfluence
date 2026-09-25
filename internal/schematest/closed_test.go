@@ -1,7 +1,6 @@
 package schematest
 
 import (
-	"strconv"
 	"strings"
 	"testing"
 
@@ -9,86 +8,62 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
-// published compiles the schema exactly as it ships, open, which is what a
-// consumer validates against.
-func published(t *testing.T) *jsonschema.Schema {
+func decoded(t *testing.T) any {
 	t.Helper()
 	doc, err := jsonschema.UnmarshalJSON(strings.NewReader(schema.V1))
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := jsonschema.NewCompiler()
-	if err := c.AddResource(schemaID, doc); err != nil {
-		t.Fatal(err)
-	}
-	sch, err := c.Compile(schemaID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return sch
+	return doc
 }
 
-func mustValidate(t *testing.T, sch *jsonschema.Schema, instance string) error {
-	t.Helper()
-	v, err := jsonschema.UnmarshalJSON(strings.NewReader(instance))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return sch.Validate(v)
-}
-
-// walk calls f on every object node of a decoded schema, with its JSON pointer.
-func walk(n any, path string, f func(path string, node map[string]any)) {
-	switch m := n.(type) {
-	case map[string]any:
-		f(path, m)
-		for k, v := range m {
-			walk(v, path+"/"+k, f)
-		}
-	case []any:
-		for i, v := range m {
-			walk(v, path+"/"+strconv.Itoa(i), f)
-		}
-	}
-}
-
-// TestPublishedSchemaIsOpen pins the consumer half of #200: a key closed in
-// the published file is a key no later release may add without breaking
-// whoever validates against the copy they have.
+// TestPublishedSchemaIsOpen pins the consumer half of #200: an object the
+// published file closes is one no later release may add a key to without
+// breaking whoever validates against the copy they have. Any other
+// additionalProperties (a schema for a map's values, say) is fine.
 func TestPublishedSchemaIsOpen(t *testing.T) {
-	doc, err := jsonschema.UnmarshalJSON(strings.NewReader(schema.V1))
-	if err != nil {
-		t.Fatal(err)
-	}
-	walk(doc, "#", func(path string, node map[string]any) {
-		if _, ok := node["additionalProperties"]; ok {
-			t.Errorf("%s sets additionalProperties; the published schema must stay open "+
-				"(the tests close it: see Closed)", path)
+	eachSchema(decoded(t), "#", func(path string, node map[string]any) {
+		if node["additionalProperties"] == false {
+			t.Errorf("%s sets additionalProperties: false; the published schema must stay open "+
+				"(the tests close it: see closeObjects)", path)
 		}
 	})
 }
 
-// TestClosedClosesObjectSchemasOnly: every object schema listing properties
-// is closed, and the envelope's if/then branches -- which declare no type --
-// are not. Closing a then would forbid every envelope key but results and
-// summary; closing an if would stop it matching anything.
-func TestClosedClosesObjectSchemasOnly(t *testing.T) {
-	doc, err := jsonschema.UnmarshalJSON(strings.NewReader(schema.V1))
-	if err != nil {
-		t.Fatal(err)
-	}
+// TestEveryPropertiesNodeIsTyped keeps the closing complete. closeObjects
+// closes only a node declaring "type": "object", so a nested object written
+// without a type would be left open, and a stray key on it would pass the
+// drift guard with every test green. The one legitimate untyped node listing
+// properties is an envelope if/then branch.
+func TestEveryPropertiesNodeIsTyped(t *testing.T) {
+	eachSchema(decoded(t), "#", func(path string, node map[string]any) {
+		if _, ok := node["properties"]; !ok || isObjectSchema(node) {
+			return
+		}
+		if strings.HasPrefix(path, "#/allOf/") &&
+			(strings.HasSuffix(path, "/if") || strings.HasSuffix(path, "/then")) {
+			return
+		}
+		t.Errorf(`%s lists properties without "type": "object", so the drift guard leaves it open`, path)
+	})
+}
+
+// TestCloseObjectsClosesObjectSchemasOnly: every object schema is closed, and
+// nothing else is -- the if/then branches least of all.
+func TestCloseObjectsClosesObjectSchemasOnly(t *testing.T) {
+	doc := decoded(t)
+	closeObjects(doc)
 	closed := 0
-	walk(Closed(doc), "#", func(path string, node map[string]any) {
-		_, hasProps := node["properties"]
+	eachSchema(doc, "#", func(path string, node map[string]any) {
 		ap, said := node["additionalProperties"]
 		switch {
-		case hasProps && node["type"] == "object":
+		case isObjectSchema(node):
 			if ap != false {
 				t.Errorf("%s: object schema not closed", path)
 			}
 			closed++
 		case said:
-			t.Errorf("%s: closed, but it is not an object schema that lists properties", path)
+			t.Errorf("%s: closed, but it is not an object schema", path)
 		}
 	})
 	if closed == 0 {
@@ -96,16 +71,33 @@ func TestClosedClosesObjectSchemasOnly(t *testing.T) {
 	}
 }
 
+// TestCloseObjectsLeavesInstanceDataAlone: a const is a value, and closing an
+// object-shaped one would change what it requires.
+func TestCloseObjectsLeavesInstanceDataAlone(t *testing.T) {
+	doc := map[string]any{
+		"type":       "object",
+		"properties": map[string]any{"x": map[string]any{}},
+		"const":      map[string]any{"type": "object", "properties": map[string]any{}},
+	}
+	closeObjects(doc)
+	if doc["additionalProperties"] != false {
+		t.Error("the schema itself was not closed")
+	}
+	if _, said := doc["const"].(map[string]any)["additionalProperties"]; said {
+		t.Error("closeObjects wrote into a const")
+	}
+}
+
 // exportEnvelope is a valid export envelope whose one row is a failed export,
 // with extra added to that row.
-func exportEnvelope(extra string) string {
-	return `{"schema_version": 1, "markfluence_version": "dev", "command": "export",
+func exportEnvelope(extra string) []byte {
+	return []byte(`{"schema_version": 1, "markfluence_version": "dev", "command": "export",
 		"roots": [], "warnings": [],
 		"results": [{"ok": false, "page_id": "123", "title": "", "space": "", "parent": null,
 			"parent_type": null, "parent_file": null, "dry_run": false, "status": "",
 			"dest_path": null, "attachments": [], "warnings": [],
 			"error": "boom", "code": "NETWORK"` + extra + `}],
-		"summary": {"total": 1, "succeeded": 0, "failed": 1, "skipped": 0, "project_file": null}}`
+		"summary": {"total": 1, "succeeded": 0, "failed": 1, "skipped": 0, "project_file": null}}`)
 }
 
 // TestAnUnlistedKeyIsCompatible pins both halves at once: the drift guard
@@ -113,11 +105,10 @@ func exportEnvelope(extra string) string {
 // it, which is what makes adding a key a compatible change.
 func TestAnUnlistedKeyIsCompatible(t *testing.T) {
 	doc := exportEnvelope(`, "brand_new": 1`)
-	load(t)
-	if err := mustValidate(t, envelope, doc); err == nil {
+	if err := check(t, compile(t, true).envelope, doc); err == nil {
 		t.Error("the closed schema accepted an unlisted key; the drift guard is off")
 	}
-	if err := mustValidate(t, published(t), doc); err != nil {
+	if err := check(t, compile(t, false).envelope, doc); err != nil {
 		t.Errorf("the published schema refused an unlisted key: %v", err)
 	}
 }
@@ -127,8 +118,8 @@ func TestAnUnlistedKeyIsCompatible(t *testing.T) {
 // both shapes, and a oneOf refuses a row that matches two.
 func TestFailedExportRowIsValid(t *testing.T) {
 	doc := exportEnvelope("")
-	if err := mustValidate(t, published(t), doc); err != nil {
+	if err := check(t, compile(t, false).envelope, doc); err != nil {
 		t.Errorf("published schema: %v", err)
 	}
-	ValidateEnvelope(t, []byte(doc))
+	ValidateEnvelope(t, doc)
 }

@@ -19,14 +19,23 @@ These changes are compatible, and `schema_version` stays the same:
 
 - a new key on the envelope, on a result, on a summary, or on the error
   object;
-- a constraint that is made looser.
+- a constraint that is made looser;
+
+- a new command, which adds a value to the `command` enum. Only the new
+  command's own output carries that value, so no consumer of an existing
+  command sees it;
+- a new value of `field` in a `diff` result. It is a string rather than an
+  enum for this reason: a frontmatter field that markfluence learns later is
+  reported there too.
 
 These changes break compatibility, and `schema_version` increases:
 
 - a key that is removed or renamed;
 - a key whose type or meaning changes;
 - a key that can be `null` and could not before;
-- a new value in an enum, such as `code`, `status`, or `command`.
+- a new value in any other enum, such as `code` or a result's `status`. A
+  consumer can reasonably handle each value of those, and a new one would
+  reach a consumer of an existing command.
 
 Thus a consumer must ignore a key that it does not know. The published schema
 is open for this reason: an object can have keys that the schema does not list.
