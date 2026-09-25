@@ -56,10 +56,11 @@ tells you which place:
    about what the configuration makes. Thus do the rehearsal, and not that
    check.
 
-   Then run `rm -rf dist completions`. git ignores both, but stale copies are
-   confusing. Run `git status` too. If `go mod tidy` changed `go.mod` or
-   `go.sum`, the tree was not tidy: commit that change in a normal pull
-   request, and do not release until it merges.
+   Then run `make clean`.
+
+   Run `git status` too. If `go mod tidy` changed `go.mod` or `go.sum`, the
+   tree was not tidy: commit that change in a normal pull request, and do not
+   release until it merges.
 
 3. (Laptop) **Make the tag and push it.**
 
@@ -109,27 +110,21 @@ tells you which place:
    still gives the earlier version.
 
 6. (Laptop) **Make sure that the correct thing shipped.** Download a real
-   archive and run the binary from it. Run this from the root of the
-   markfluence git repository. These commands are for macOS:
+   archive and run the binary from it. The script is for macOS on Apple
+   silicon:
 
    ```sh
-   # create a temp dir, download the release, untar it, check the version
-   mkdir tmp
-   pushd tmp
-   gh release download v1.2.3 -p 'markfluence_*_darwin_arm64.tar.gz' -p checksums.txt &&
-   shasum -a 256 --check --ignore-missing checksums.txt &&
-   tar -xzf markfluence_*_darwin_arm64.tar.gz markfluence &&
-   ./markfluence --version
-
-   # --- verify the version ---
-
-   # clean up
-   popd
-   rm -rf tmp
+   scripts/check-release.sh v1.2.3
    ```
 
-   It must print the version of the tag with no leading `v`, for example
-   `markfluence 1.2.3 (...)`. Run `./markfluence`, and not `markfluence`. The
+   The script downloads the `darwin_arm64` archive and `checksums.txt` into a
+   temporary directory, and verifies the archive against the checksum. It then
+   runs the binary from the archive, and makes sure that it prints the version
+   of the tag with no leading `v`, for example `markfluence 1.2.3 (...)`. It
+   prints `OK: v1.2.3` and exits 0 only if all of that is correct. It removes
+   the temporary directory in all cases.
+
+   The script runs the binary from the archive, and not `markfluence`. The
    plain `markfluence` runs the binary on your `PATH`. For a maintainer, that
    is usually the `make install` build with the stamp `dev`, so it does not
    test the release at all.
