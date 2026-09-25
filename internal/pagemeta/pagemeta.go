@@ -26,6 +26,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/mozilla/markfluence/internal/frontmatter"
@@ -163,9 +164,14 @@ func (r Resolved) Parent() (parent string, declared bool) {
 // disagreement is a warning and frontmatter wins.
 //
 // A *blank* value on either side is not a disagreement. Every null spelling
-// reads as "" already, so `parent:` with nothing after it says no more than an
+// reads as "" already, so `page_id:` with nothing after it says no more than an
 // absent key does -- treating it as a conflicting answer would fail files that
 // say nothing at all.
+//
+// parent is the exception. A blank parent says something: the top of the
+// space, which update moves a page to (#10). So a present parent is compared
+// blank or not, and `parent: null` in one location against an id in the other
+// is a coordinate disagreement like any other.
 func Resolve(key string, mf *frontmatter.MarkdownFile, root *project.Root) (Resolved, error) {
 	entry, hasEntry := entryFor(key, root)
 
@@ -213,11 +219,15 @@ func Resolve(key string, mf *frontmatter.MarkdownFile, root *project.Root) (Reso
 	for _, k := range sortedKeys(mf.Frontmatter, entry.Fields) {
 		file, inFile := nonBlank(mf.Frontmatter, k)
 		manifest, inEntry := nonBlank(entry.Fields, k)
+		if k == "parent" {
+			file, inFile = present(mf.Frontmatter, k)
+			manifest, inEntry = present(entry.Fields, k)
+		}
 		switch {
 		case inFile && inEntry && file != manifest:
 			if coordinates[k] {
 				conflicts = append(conflicts, fmt.Sprintf(
-					"%s: frontmatter says %q, %s says %q", k, file, project.Filename, manifest))
+					"%s: frontmatter says %s, %s says %s", k, spell(file), project.Filename, spell(manifest)))
 				continue
 			}
 			r.Warnings = append(r.Warnings, fmt.Sprintf(
@@ -375,6 +385,21 @@ func nonBlank(m map[string]string, k string) (string, bool) {
 	}
 	v = strings.TrimSpace(v)
 	return v, v != ""
+}
+
+// present reads a key, reporting whether it is there at all, blank or not.
+func present(m map[string]string, k string) (string, bool) {
+	v, ok := m[k]
+	return strings.TrimSpace(v), ok
+}
+
+// spell quotes a value for a disagreement message, spelling a blank one as
+// null, which is what a blank parent means.
+func spell(v string) string {
+	if v == "" {
+		return "null"
+	}
+	return strconv.Quote(v)
 }
 
 func sortedKeys(a map[string]string, b map[string]string) []string {

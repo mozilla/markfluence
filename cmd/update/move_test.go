@@ -16,6 +16,7 @@ import (
 	"github.com/mozilla/markfluence/internal/jsonout"
 	"github.com/mozilla/markfluence/internal/linkindex"
 	"github.com/mozilla/markfluence/internal/pagedoc"
+	"github.com/mozilla/markfluence/internal/pagemeta"
 	"github.com/mozilla/markfluence/internal/project"
 	"github.com/mozilla/markfluence/internal/schematest"
 )
@@ -38,8 +39,8 @@ type tree struct {
 	roots []rootRow
 	// requests is every request, "METHOD path".
 	requests []string
-	// failMove makes the move route answer 403.
-	failMove bool
+	// failMove makes the move route answer 403, and failBody the body PUT.
+	failMove, failBody bool
 }
 
 type rootRow struct {
@@ -94,6 +95,11 @@ func (tr *tree) client() *client.ConfluenceClient {
 			}
 			_, _ = fmt.Fprintf(w, `{"pageId":%q}`, id)
 		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/wiki/api/v2/pages/"):
+			if tr.failBody {
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"statusCode":403,"message":"no"}`))
+				return
+			}
 			var body struct {
 				Version struct {
 					Number int `json:"number"`
@@ -110,6 +116,9 @@ func (tr *tree) client() *client.ConfluenceClient {
 }
 
 func (tr *tree) writeNode(w http.ResponseWriter, id, kind string) {
+	// Leading zeros name the same content, and the answer carries the
+	// canonical id, which is what a spelling like 0100 relies on.
+	id = strings.TrimLeft(id, "0")
 	n, ok := tr.nodes[id]
 	if !ok || n.kind != kind {
 		w.WriteHeader(http.StatusNotFound)
@@ -330,6 +339,69 @@ func TestAFailedMoveFailsTheFileWithNothingElseWritten(t *testing.T) {
 	if w := tr.writes(); len(w) != 1 || !strings.Contains(w[0], "/move/") {
 		t.Errorf("writes = %v, want only the refused move", w)
 	}
+	if r.move != nil || r.jsonResult().Moved != nil {
+		t.Errorf("move = %+v: a move that failed must not be reported", r.move)
+	}
+}
+
+// A move made before a later failure stands, so both --json and the human
+// line report it.
+func TestAMoveBeforeAFailureIsReported(t *testing.T) {
+	tr := newTree(t)
+	tr.failBody = true
+	r := publishFile(t, tr, "page_id: 1\nparent: 200\n")
+	if r.ok || r.move == nil || r.jsonResult().Moved == nil {
+		t.Fatalf("result = %+v, want a failure that reports the move", r)
+	}
+	out := captureStdout(t, r.renderHuman)
+	if !strings.Contains(out, `moved under "Runbooks"`) {
+		t.Errorf("human output does not report the move:\n%s", out)
+	}
+}
+
+// A failure after the move was planned but before it was made claims nothing.
+func TestAPlannedMoveIsNotReportedWhenALaterCheckFails(t *testing.T) {
+	tr := newTree(t)
+	dir := projectWith(t, "# marker\n", map[string]string{
+		// Two images sharing a base name: the converter refuses the document,
+		// after the move is planned and before it is made.
+		"f.md":    "---\npage_id: 1\nparent: 200\n---\n![a](a/x.png) ![b](b/x.png)\n",
+		"a/x.png": "png",
+		"b/x.png": "png",
+	})
+	r := tr.run(t, filepath.Join(dir, "f.md"))
+	if r.ok || r.code != jsonout.CodeConvert {
+		t.Fatalf("result = %+v, want a converter failure", r)
+	}
+	if r.move != nil || len(tr.moves()) != 0 {
+		t.Errorf("move = %+v moves = %v on a run that moved nothing", r.move, tr.moves())
+	}
+}
+
+// A parent that is neither a number nor a .md path is refused before any
+// request, rather than reaching the API as an id.
+func TestAParentThatIsNotAnIDIsRefused(t *testing.T) {
+	for _, ref := range []string{"docs/parent", "https://example.net/wiki/x", "123?x"} {
+		tr := newTree(t)
+		r := publishFile(t, tr, "page_id: 1\nparent: \""+ref+"\"\n")
+		if r.ok || !strings.Contains(r.errMsg, "is not a page or folder id") {
+			t.Errorf("%q: result = %+v, want a refusal", ref, r)
+		}
+		for _, req := range tr.requests {
+			if !strings.HasSuffix(req, "/pages/1") {
+				t.Errorf("%q: request %q, want only the page itself", ref, req)
+			}
+		}
+	}
+}
+
+// 0123 names the page's current parent, so nothing moves.
+func TestAnotherSpellingOfTheCurrentParentDoesNotMove(t *testing.T) {
+	tr := newTree(t)
+	r := publishFile(t, tr, "page_id: 1\nparent: \"0100\"\n")
+	if !r.ok || r.move != nil || len(tr.moves()) != 0 {
+		t.Fatalf("result = %+v moves = %v, want no move", r, tr.moves())
+	}
 }
 
 func TestADryRunReportsTheMoveWithoutMakingIt(t *testing.T) {
@@ -402,6 +474,32 @@ func TestSpaceMismatchFailsBeforeAnyWrite(t *testing.T) {
 	}
 }
 
+// Confluence resolves a space key without regard to case, so eng is ENG.
+func TestSpaceIsComparedWithoutCase(t *testing.T) {
+	tr := newTree(t)
+	if r := publishFile(t, tr, "page_id: 1\nspace: eng\n"); !r.ok {
+		t.Fatalf("result = %+v, want ok", r)
+	}
+}
+
+func TestAPageWhoseSpaceIsUnknownIsNotRefusedAsAMismatch(t *testing.T) {
+	root := &project.Root{Config: project.Config{Space: "ENG"}}
+	err := checkSpace(pagemetaResolved(), root, "")
+	if err == nil || !strings.Contains(err.Error(), "cannot tell which space") {
+		t.Errorf("err = %v, want one saying the page's space is unknown", err)
+	}
+}
+
+// Pages sharing a position: the last one listed is last.
+func TestTheTopOfTheSpaceIsAfterTheLastTiedPage(t *testing.T) {
+	tr := newTree(t)
+	tr.roots = []rootRow{{id: "10", status: "current"}, {id: "11", status: "current"}, {id: "12", status: "current"}}
+	publishFile(t, tr, "page_id: 1\nparent: null\n")
+	if got := tr.moves(); len(got) != 1 || got[0] != "1/move/after/12" {
+		t.Errorf("moves = %v, want after 12", got)
+	}
+}
+
 // The file's own space wins over the project default, as it does for create.
 func TestTheFilesSpaceBeatsTheProjectDefault(t *testing.T) {
 	tr := newTree(t)
@@ -427,4 +525,8 @@ func TestMovedInJSON(t *testing.T) {
 	if got == nil || got.From == nil || *got.From != "100" || got.To != nil {
 		t.Errorf("moved = %+v, want from 100 to null", got)
 	}
+}
+
+func pagemetaResolved() pagemeta.Resolved {
+	return pagemeta.Resolved{Fields: map[string]string{}}
 }
