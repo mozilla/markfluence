@@ -357,6 +357,12 @@ value looks exactly like an unfinished edit, so markfluence refuses it. Use
 the Confluence UI to clear a status. `labels: []` can mean "remove them all",
 because an empty sequence has its own spelling.
 
+`create` gives a new page a width of `max` when no place declares `page_width`
+because WillKG thinks it looks better and markfluence should create
+good-looking pages where possible. For `update`, it's a different story where
+the user could be updating existing content that wasn't created by markfluence
+and we should respect whatever the page width was by default.
+
 ## Conformance
 
 ### C1 `preview-compatible-resolution`
