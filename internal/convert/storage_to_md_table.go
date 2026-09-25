@@ -451,38 +451,50 @@ func styleAlign(style string) (string, bool) {
 // (storage-format.md, verified 2026-08-07), and the next read keeps it, since a
 // raw cell's attributes are written as they are.
 //
-// Only when every piece of content is a paragraph declaring the same alignment
-// and nothing else in its style, and the cell's own style is at most a
-// text-align: loose text or a list would otherwise gain an alignment it did not
-// have. Otherwise the cell is returned unchanged and rawCellBlocks writes an
-// aligned paragraph as storage.
+// Only center and right move, spelled that way whatever the paragraphs said
+// ("end" is right): those are the values verified on a cell. Left, start and
+// justify have no effect in Confluence, and start does not even survive its
+// sanitizer, so paragraphs that all say one of those simply lose the
+// declaration, and so does the cell.
+//
+// Only when every piece of content is a paragraph declaring an alignment and
+// nothing else in its style, all to the same effect, and the cell's own style
+// is at most a text-align: loose text, a list, or a paragraph relying on the
+// cell's alignment would otherwise gain or lose one. Otherwise the cell is
+// returned unchanged and rawCellBlocks writes an aligned paragraph as storage.
 func hoistCellAlign(c *snode) *snode {
 	if !onlyTextAlign(c.attrs["style"]) {
 		return c
 	}
-	var decl string
+	var value string
+	seen := false
 	for _, k := range c.kids {
 		switch {
 		case k.name == "" && strings.TrimSpace(k.text) == "":
 		case k.name == "p" && emptyCell(k):
 		case k.name == "p" && allowedAttrs(k, paragraphAttrOK):
-			m := textAlignDeclRE.FindString(k.attrs["style"])
-			if m == "" || (decl != "" && !strings.EqualFold(normalizeDecl(m), decl)) {
+			a, declared := styleAlign(k.attrs["style"])
+			if !declared || (seen && a != value) {
 				return c
 			}
-			decl = normalizeDecl(m)
+			value, seen = a, true
 		default:
 			return c
 		}
 	}
-	if decl == "" {
+	if !seen {
 		return c
 	}
 	out := &snode{name: c.name, attrs: map[string]string{}, kids: make([]*snode, len(c.kids))}
 	for k, v := range c.attrs {
 		out.attrs[k] = v
 	}
-	out.attrs["style"] = decl
+	// The paragraphs' declaration overrides the cell's, so the cell's goes
+	// either way; it is written back only when it does something.
+	delete(out.attrs, "style")
+	if value != "" {
+		out.attrs["style"] = "text-align: " + value + ";"
+	}
 	for i, k := range c.kids {
 		out.kids[i] = k
 		if k.name == "p" && k.attrs["style"] != "" {
@@ -496,12 +508,6 @@ func hoistCellAlign(c *snode) *snode {
 		}
 	}
 	return out
-}
-
-// normalizeDecl spells a matched text-align declaration the way markfluence
-// writes one.
-func normalizeDecl(m string) string {
-	return "text-align: " + strings.ToLower(textAlignDeclRE.FindStringSubmatch(m)[1]) + ";"
 }
 
 // rawCellBlocks renders a raw table cell's body as Markdown blocks. What

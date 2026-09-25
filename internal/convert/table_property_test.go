@@ -219,7 +219,7 @@ func modelTable(b *strings.Builder, t *snode, indent string) {
 	for _, sec := range t.kids {
 		switch sec.name {
 		case "colgroup":
-			if layout == "align-start" && pixelColgroup(sec) {
+			if layout == "align-start" && modelPixelColgroup(sec) {
 				continue
 			}
 			var cols []string
@@ -259,9 +259,11 @@ func modelRow(b *strings.Builder, tr *snode, indent string) {
 		if v, ok := attrs["data-highlight-colour"]; ok {
 			attrs["data-highlight-colour"] = strings.ToLower(v)
 		}
-		cellAlign, _ := styleAlign(attrs["style"])
-		if onlyTextAlign(attrs["style"]) {
+		cellAlign, rest := modelStyle(attrs["style"])
+		if rest == "" {
 			delete(attrs, "style")
+		} else {
+			attrs["style"] = rest
 		}
 		fmt.Fprintf(b, "%s  %s%s\n", indent, c.name, modelAttrs(attrs))
 		for _, blk := range modelBlocks(c, cellAlign, indent+"    ") {
@@ -273,7 +275,7 @@ func modelRow(b *strings.Builder, tr *snode, indent string) {
 // modelBlocks models a cell's content as blocks. An empty cell -- nothing but
 // empty paragraphs -- has none.
 func modelBlocks(c *snode, cellAlign, indent string) []string {
-	if emptyCell(c) {
+	if modelEmpty(c) {
 		return nil
 	}
 	var out []string
@@ -290,9 +292,12 @@ func modelBlocks(c *snode, cellAlign, indent string) []string {
 			run = append(run, k)
 		case "p":
 			flush()
-			a, declared := styleAlign(k.attrs["style"])
-			if !declared {
+			a, rest := modelStyle(k.attrs["style"])
+			if !strings.Contains(strings.ToLower(k.attrs["style"]), "text-align") {
 				a = cellAlign
+			}
+			if rest != "" {
+				a += " style=" + rest // a paragraph style that does something else
 			}
 			text := strings.TrimSpace(modelInline(k.kids))
 			if strings.Trim(text, "⏎") == "" {
@@ -423,7 +428,7 @@ func modelInline(kids []*snode) string {
 func modelAttrs(attrs map[string]string) string {
 	var keys []string
 	for k := range attrs {
-		if !isID(k) && !droppedAttrs[k] {
+		if !modelIDs[k] {
 			keys = append(keys, k)
 		}
 	}
@@ -440,6 +445,95 @@ var pointZeroRE = regexp.MustCompile(`(\d)\.0px`)
 // normalizeWidths reads 300px and 300.0px as one width: Confluence rewrites
 // the first as the second on write.
 func normalizeWidths(v string) string { return pointZeroRE.ReplaceAllString(v, "${1}px") }
+
+// The model's own reading of the rules below, deliberately not the converter's
+// helpers (styleAlign, onlyTextAlign, pixelColgroup, emptyCell, isID): an
+// oracle that calls the code it checks is wrong in the same way whenever that
+// code is, and passes. These are written from what Confluence does
+// (storage-format.md), not from how the converter decides.
+
+// modelIDs are the server-generated ids Confluence regenerates on publish.
+var modelIDs = map[string]bool{"ac:local-id": true, "local-id": true, "ac:macro-id": true}
+
+// modelStyle splits a style attribute into the effective alignment -- CSS's
+// last text-align, as Confluence shows it: center, right (which end is), or
+// nothing for left, start, justify and anything unrecognised -- and the other
+// declarations, normalized, which take effect or not on their own.
+func modelStyle(style string) (align, rest string) {
+	var others []string
+	for _, decl := range strings.Split(style, ";") {
+		prop, value, ok := strings.Cut(decl, ":")
+		if !ok {
+			if strings.TrimSpace(decl) != "" {
+				others = append(others, strings.TrimSpace(decl))
+			}
+			continue
+		}
+		prop = strings.ToLower(strings.TrimSpace(prop))
+		value = strings.ToLower(strings.TrimSpace(value))
+		if prop != "text-align" {
+			others = append(others, prop+": "+value)
+			continue
+		}
+		switch value {
+		case "center":
+			align = "center"
+		case "right", "end":
+			align = "right"
+		default:
+			align = ""
+		}
+	}
+	return align, strings.Join(others, "; ")
+}
+
+// modelPixelColgroup reports whether every <col> in a <colgroup> carries a
+// pixel width and nothing else but an id: the editor's measured widths.
+func modelPixelColgroup(g *snode) bool {
+	for k := range g.attrs {
+		if !modelIDs[k] {
+			return false
+		}
+	}
+	for _, c := range g.kids {
+		if c.name == "" {
+			if strings.TrimSpace(c.text) != "" {
+				return false
+			}
+			continue
+		}
+		if c.name != "col" || len(c.kids) != 0 {
+			return false
+		}
+		for k, v := range c.attrs {
+			if modelIDs[k] {
+				continue
+			}
+			w := strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(v), "width:")), ";")
+			if k != "style" || !strings.HasPrefix(strings.TrimSpace(v), "width:") ||
+				!strings.HasSuffix(strings.TrimSpace(w), "px") ||
+				strings.Trim(strings.TrimSuffix(strings.TrimSpace(w), "px"), "0123456789.") != "" {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// modelEmpty reports whether a node shows nothing: no text but whitespace, and
+// no element but paragraphs that show nothing.
+func modelEmpty(n *snode) bool {
+	return strings.TrimSpace(textContent(n)) == "" && !modelHasElement(n)
+}
+
+func modelHasElement(n *snode) bool {
+	for _, k := range n.kids {
+		if k.name != "" && (k.name != "p" || modelHasElement(k)) {
+			return true
+		}
+	}
+	return false
+}
 
 // --- the generator ---------------------------------------------------------------
 
@@ -486,8 +580,10 @@ func (g *tableGen) table(depth int) string {
 	if g.chance(0.3) {
 		b.WriteString("<colgroup>")
 		for range cols {
-			if g.chance(0.9) {
+			if x := g.r.Float64(); x < 0.8 {
 				fmt.Fprintf(&b, `<col style="width: %d.0px;" />`, 40+g.r.IntN(300))
+			} else if x < 0.9 {
+				fmt.Fprintf(&b, `<col style="width: %d%%;" />`, 10+g.r.IntN(50))
 			} else {
 				b.WriteString("<col />")
 			}
@@ -609,8 +705,13 @@ func (g *tableGen) paragraph(align string, cellStyle bool) string {
 	if g.chance(0.4) {
 		attrs += ` local-id="p"`
 	}
-	if align != "" && !cellStyle {
+	switch {
+	case align != "" && !cellStyle && g.chance(0.05):
+		attrs += fmt.Sprintf(` style="text-align: %s; color: rgb(255,0,0);"`, align)
+	case align != "" && !cellStyle:
 		attrs += fmt.Sprintf(` style="text-align: %s;"`, align)
+	case g.chance(0.02):
+		attrs += ` style="color: rgb(255,0,0);"`
 	}
 	body := g.inline()
 	if g.chance(0.3) {
