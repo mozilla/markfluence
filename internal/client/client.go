@@ -1114,10 +1114,8 @@ func (c *ConfluenceClient) DownloadAttachment(att Attachment, w io.Writer) error
 type attachmentPlan struct {
 	att         LocalAttachment
 	action      string // "created", "updated", or "skipped"
-	comment     string
 	contentType string
 	existingID  string // the current attachment id, for an "updated" upload
-	sum         string // the file's full SHA-256, which the upload must match
 }
 
 // planAttachments decides, per file, whether it would be created, updated, or
@@ -1143,12 +1141,11 @@ func (c *ConfluenceClient) planAttachments(pageID string, attachments []LocalAtt
 			return nil, err
 		}
 		sum := full[:checksumHexLen]
-		comment := attachmentComment(sum, att.Source)
 		contentType := mime.TypeByExtension(filepath.Ext(att.Filename))
 		if contentType == "" {
 			contentType = "application/octet-stream"
 		}
-		p := attachmentPlan{att: att, comment: comment, contentType: contentType, sum: full}
+		p := attachmentPlan{att: att, contentType: contentType}
 		cur, ok := remote[att.Filename]
 		if ok {
 			// Recorded even for a skip, so a forced upload can replace in place
@@ -1271,18 +1268,23 @@ func writeTextField(mw *multipart.Writer, name, value string) error {
 
 // uploadAttachment posts p's file to rawURL as a multipart attachment upload.
 //
-// The file is opened a second time here, after planAttachments computed the
-// checksum the comment records, so the bytes sent could differ from the bytes
-// that checksum describes. The upload hashes what it copies and sends nothing
-// on a mismatch: an attachment whose comment misdescribes its content would
-// read as up to date on the next publish, or as changed when it is not.
+// The file is read once, whole, and the comment's checksum is taken from those
+// bytes rather than from planAttachments' earlier read: the file may have
+// changed in between (an autosave, a build step), and a comment misdescribing
+// its content would read as up to date on the next publish. The upload
+// buffers the whole form anyway, so reading first costs nothing extra.
 func (c *ConfluenceClient) uploadAttachment(rawURL string, p attachmentPlan) error {
 	f, err := p.att.Open()
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
-	filename, comment, contentType := p.att.Filename, p.comment, p.contentType
+	data, err := io.ReadAll(f)
+	_ = f.Close()
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(data)
+	comment := attachmentComment(hex.EncodeToString(sum[:])[:checksumHexLen], p.att.Source)
 
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
@@ -1298,19 +1300,14 @@ func (c *ConfluenceClient) uploadAttachment(rawURL string, p attachmentPlan) err
 		return err
 	}
 	h := textproto.MIMEHeader{}
-	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, filename))
-	h.Set("Content-Type", contentType)
+	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, p.att.Filename))
+	h.Set("Content-Type", p.contentType)
 	part, err := mw.CreatePart(h)
 	if err != nil {
 		return err
 	}
-	sent := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(part, sent), f); err != nil {
+	if _, err := part.Write(data); err != nil {
 		return err
-	}
-	if hex.EncodeToString(sent.Sum(nil)) != p.sum {
-		return fmt.Errorf("%s changed while publishing: it no longer matches the checksum taken before "+
-			"the upload, so nothing was uploaded", p.att.Path)
 	}
 	if err := mw.Close(); err != nil {
 		return err
