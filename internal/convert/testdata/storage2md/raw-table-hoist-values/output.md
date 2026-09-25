@@ -3,7 +3,7 @@
 <tr>
 <th>
 
-End
+End is stripped
 
 </th>
 <th>
@@ -18,7 +18,7 @@ Justify over a centred cell
 </th>
 </tr>
 <tr>
-<td style="text-align: right;">
+<td>
 
 a
 
@@ -30,7 +30,7 @@ b
 c
 
 </td>
-<td>
+<td style="text-align: center;">
 
 d
 

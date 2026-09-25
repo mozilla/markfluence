@@ -384,7 +384,7 @@ func TestRoundTripPassthrough(t *testing.T) {
 		"raw-table-nested", "raw-table-numbered", "raw-table-valign", "raw-table-display-fixed",
 		"raw-table-aligned-paragraph", "table-alignment-disagree", "raw-table-cell-content", "raw-table-unknown-align",
 		"raw-table-loose-text", "raw-table-list-aligned", "raw-table-textless-paragraphs", "raw-table-repeated-align",
-		"raw-mixed-content", "raw-table-list-pipe", "raw-table-hoist-values",
+		"raw-mixed-content", "raw-table-list-pipe", "raw-table-hoist-values", "raw-table-no-effect-styles",
 	} {
 		t.Run(name, func(t *testing.T) {
 			src, err := os.ReadFile(filepath.Join(storage2mdDir, name, "output.md"))

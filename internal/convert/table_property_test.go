@@ -293,8 +293,8 @@ func modelBlocks(c *snode, cellAlign, indent string) []string {
 		case "p":
 			flush()
 			a, rest := modelStyle(k.attrs["style"])
-			if !strings.Contains(strings.ToLower(k.attrs["style"]), "text-align") {
-				a = cellAlign
+			if a == "" {
+				a = cellAlign // left, justify, start and end do not override the cell
 			}
 			if rest != "" {
 				a += " style=" + rest // a paragraph style that does something else
@@ -455,10 +455,12 @@ func normalizeWidths(v string) string { return pointZeroRE.ReplaceAllString(v, "
 // modelIDs are the server-generated ids Confluence regenerates on publish.
 var modelIDs = map[string]bool{"ac:local-id": true, "local-id": true, "ac:macro-id": true}
 
-// modelStyle splits a style attribute into the effective alignment -- CSS's
-// last text-align, as Confluence shows it: center, right (which end is), or
-// nothing for left, start, justify and anything unrecognised -- and the other
-// declarations, normalized, which take effect or not on their own.
+// modelStyle splits a style attribute into the alignment its text-align
+// gives and the other declarations, normalized, which take effect or not on
+// their own. Only center and right give one (verified 2026-09-25): left and
+// justify do nothing, and start and end are stripped when Confluence stores
+// them, so all four leave a paragraph aligned by its cell, as no declaration
+// does. The last text-align wins, as in CSS.
 func modelStyle(style string) (align, rest string) {
 	var others []string
 	for _, decl := range strings.Split(style, ";") {
@@ -476,10 +478,8 @@ func modelStyle(style string) (align, rest string) {
 			continue
 		}
 		switch value {
-		case "center":
-			align = "center"
-		case "right", "end":
-			align = "right"
+		case "center", "right":
+			align = value
 		default:
 			align = ""
 		}
@@ -487,34 +487,31 @@ func modelStyle(style string) (align, rest string) {
 	return align, strings.Join(others, "; ")
 }
 
+// modelColWidthRE is a pixel column width as the editor writes it.
+var modelColWidthRE = regexp.MustCompile(`^width: ?\d+(\.\d+)?px;?$`)
+
 // modelPixelColgroup reports whether every <col> in a <colgroup> carries a
 // pixel width and nothing else but an id: the editor's measured widths.
 func modelPixelColgroup(g *snode) bool {
 	for k := range g.attrs {
-		if !modelIDs[k] {
+		if k != "ac:local-id" && k != "local-id" {
 			return false
 		}
 	}
 	for _, c := range g.kids {
-		if c.name == "" {
-			if strings.TrimSpace(c.text) != "" {
-				return false
+		switch {
+		case c.name == "" && strings.TrimSpace(c.text) == "":
+		case c.name == "col" && len(c.kids) == 0:
+			for k, v := range c.attrs {
+				if k == "ac:local-id" || k == "local-id" {
+					continue
+				}
+				if k != "style" || !modelColWidthRE.MatchString(strings.TrimSpace(v)) {
+					return false
+				}
 			}
-			continue
-		}
-		if c.name != "col" || len(c.kids) != 0 {
+		default:
 			return false
-		}
-		for k, v := range c.attrs {
-			if modelIDs[k] {
-				continue
-			}
-			w := strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(v), "width:")), ";")
-			if k != "style" || !strings.HasPrefix(strings.TrimSpace(v), "width:") ||
-				!strings.HasSuffix(strings.TrimSpace(w), "px") ||
-				strings.Trim(strings.TrimSuffix(strings.TrimSpace(w), "px"), "0123456789.") != "" {
-				return false
-			}
 		}
 	}
 	return true
@@ -712,6 +709,8 @@ func (g *tableGen) paragraph(align string, cellStyle bool) string {
 		attrs += fmt.Sprintf(` style="text-align: %s;"`, align)
 	case g.chance(0.02):
 		attrs += ` style="color: rgb(255,0,0);"`
+	case g.chance(0.03):
+		attrs += ` style=""`
 	}
 	body := g.inline()
 	if g.chance(0.3) {

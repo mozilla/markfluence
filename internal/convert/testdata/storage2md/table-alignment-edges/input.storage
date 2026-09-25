@@ -1,8 +1,8 @@
 <table data-layout="align-start">
 <tbody>
-<tr><th><p style="text-align: right;">Count</p></th><th style="text-align: center;"><p style="text-align: left;">Left wins</p></th><th><p style="text-align: justify;">Justified</p></th></tr>
+<tr><th><p style="text-align: right;">Count</p></th><th style="text-align: center;"><p style="text-align: left;">Left inherits the cell</p></th><th><p style="text-align: justify;">Justified</p></th></tr>
 <tr><td><p style="text-align: right;">3</p></td><td style="text-align: center;"><p style="text-align: left;">a</p></td><td><p style="text-align: justify;">b</p></td></tr>
-<tr><td><p /></td><td>c</td><td>d</td></tr>
-<tr><td></td><td>e</td><td>f</td></tr>
+<tr><td><p /></td><td style="text-align: center;">c</td><td>d</td></tr>
+<tr><td></td><td style="text-align: center;">e</td><td>f</td></tr>
 </tbody>
 </table>

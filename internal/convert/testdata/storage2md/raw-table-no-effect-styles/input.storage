@@ -1,0 +1,6 @@
+<table data-layout="wide">
+<tbody>
+<tr><th><p>Start beside centre</p></th><th><p>Empty style</p></th><th><p>Cell start</p></th><th><p>Cell start, lines disagree</p></th></tr>
+<tr><td><p style="text-align: start;">c</p><p style="text-align: center;">d</p></td><td><p style="">x</p><p style="">y</p></td><td style="text-align: start;">loose</td><td style="text-align: start;"><p>a</p><p style="text-align: center;">b</p></td></tr>
+</tbody>
+</table>

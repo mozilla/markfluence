@@ -475,3 +475,12 @@ Nothing changes on the publish side.
   spelled `right`) -- the values verified on a cell -- and drops left, start
   and justify, which do nothing; start does not survive Confluence's
   sanitizer, so hoisting it would have changed the Markdown on the next read.
+- **From the review of the design-review commit:** "a paragraph's own
+  declaration beats its cell's" was CSS, not Confluence. Probed (2026-09-25):
+  only center and right do anything and override the cell; left and justify
+  do nothing and start and end are stripped, on a paragraph or a cell, so
+  all four leave a paragraph aligned by its cell. `end` had been read as
+  right; it is ADF's name for right, and a storage `end` means nothing.
+  `normalizeCellAlign` now drops every declaration that does nothing on
+  every path, not only when hoisting, and the property test's model follows
+  the measured rule and has its own colgroup regex.

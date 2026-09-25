@@ -197,6 +197,32 @@ back as `---`. Only center and right make the round trip.
 > `text-align` survive, because the legacy renderer echoes them. That is wrong.
 > Use ADF.
 
+### A paragraph's alignment and its cell's
+
+**Verified 2026-09-25**, one cell per hypothesis on a scratch page, storage and
+ADF read back, the page trashed:
+
+| written | stored | ADF paragraph mark |
+|---|---|---|
+| centred cell, `<p style="text-align: start;">` | `<p style="">` | `center` |
+| centred cell, `<p style="text-align: justify;">` | kept | `center` |
+| centred cell, `<p style="text-align: left;">` | kept | `center` |
+| centred cell, `<p style="text-align: end;">` | `<p style="">` | `center` |
+| centred cell, `<p style="text-align: right;">` | kept | `end` |
+| right cell, `<p style="text-align: center;">` | kept | `center` |
+| centred cell, loose text | kept | `center` |
+| `<p style="text-align: end;">` in a plain cell | `<p style="">` | none |
+| `<td style="text-align: start;">` or `end` | `<td style="">` | none |
+| `<p style="">` | kept | none |
+
+So only `center` and `right` do anything, on a paragraph or a cell, and a
+paragraph saying one of them overrides its cell's. A paragraph saying `left` or
+`justify` (which do nothing) or `start` or `end` (which the sanitizer strips) is
+aligned by its cell, as a paragraph saying nothing is. `end` is ADF's name for
+right, and not a storage value that means it. `read` follows this
+(`internal/convert/storage_to_md_table.go`), and drops the four on the way back,
+since `start` and `end` written back would be stripped and read differently.
+
 ## Table markup
 
 What else a table may carry, one hypothesis per table.
