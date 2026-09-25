@@ -87,10 +87,14 @@ func tableShape(n *snode) (pipeTable, bool) {
 			}
 		case "tr":
 			trs = append(trs, k)
+		case "colgroup":
+			if n.attrs["data-layout"] != "align-start" || !pixelColgroup(k) {
+				return pipeTable{}, false
+			}
 		default:
-			// A <colgroup> is column widths, a <tfoot> a row Confluence
-			// renders as an ordinary one but that a pipe table would
-			// republish without the tag; anything else is unknown.
+			// A <tfoot> is a row Confluence renders as an ordinary one but
+			// that a pipe table would republish without the tag; anything
+			// else is unknown.
 			return pipeTable{}, false
 		}
 	}
@@ -99,6 +103,7 @@ func tableShape(n *snode) (pipeTable, bool) {
 	}
 
 	var t pipeTable
+	var voted []bool
 	for i, tr := range trs {
 		cells, ok := rowCells(tr)
 		if !ok || len(cells) == 0 {
@@ -112,6 +117,7 @@ func tableShape(n *snode) (pipeTable, bool) {
 			want = "th"
 			t.header = tr
 			t.aligns = make([]string, len(cells))
+			voted = make([]bool, len(cells))
 		} else {
 			t.rows = append(t.rows, tr)
 		}
@@ -128,10 +134,14 @@ func tableShape(n *snode) (pipeTable, bool) {
 			}
 			// GFM aligns a column, Confluence a paragraph, so a column whose
 			// cells disagree cannot be written without republishing some of
-			// them with an alignment they did not have.
-			if i == 0 {
-				t.aligns[col] = a
-			} else if a != t.aligns[col] {
+			// them with an alignment they did not have. An empty cell has
+			// nothing to align, so it does not vote: republished, it gains an
+			// empty aligned paragraph, which reads back the same.
+			switch {
+			case emptyCell(c):
+			case !voted[col]:
+				t.aligns[col], voted[col] = a, true
+			case a != t.aligns[col]:
 				return pipeTable{}, false
 			}
 		}
@@ -161,6 +171,60 @@ func rowCells(tr *snode) ([]*snode, bool) {
 	return cells, true
 }
 
+// pixelColgroup reports whether a <colgroup> holds nothing but pixel column
+// widths, which is what the browser editor writes on an align-start table
+// whenever it saves one -- the widths it measured, summing to the
+// data-table-width it writes beside them (page 3109814418, 2026-09-25, a
+// markfluence table saved without touching the table). A resize writes the
+// same shape, so ignoring it loses a resized column's width on the next
+// publish; nothing tells the two apart but a sum Atlassian does not document.
+// On any other layout a <colgroup> keeps the table raw: a table in the
+// default or full-width layout is not one markfluence wrote.
+func pixelColgroup(g *snode) bool {
+	if !allowedAttrs(g, idOnly) {
+		return false
+	}
+	for _, c := range g.kids {
+		switch {
+		case c.name == "col":
+			if len(c.kids) > 0 || !allowedAttrs(c, pixelWidth) {
+				return false
+			}
+		case c.name != "" || strings.TrimSpace(c.text) != "":
+			return false
+		}
+	}
+	return true
+}
+
+// pixelWidthRE matches the style the editor writes on a <col>.
+var pixelWidthRE = regexp.MustCompile(`^\s*width:\s*[0-9]+(\.[0-9]+)?px;?\s*$`)
+
+// pixelWidth accepts a <col>'s id and a pixel width.
+func pixelWidth(name, value string) bool {
+	return isID(name) || (name == "style" && pixelWidthRE.MatchString(value))
+}
+
+// emptyCell reports whether a cell holds no content: no text, and no element
+// but empty paragraphs.
+func emptyCell(c *snode) bool {
+	for _, k := range c.kids {
+		switch k.name {
+		case "":
+			if strings.TrimSpace(k.text) != "" {
+				return false
+			}
+		case "p":
+			if !emptyCell(k) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // cellExpressible reports whether a cell's attributes and children fit in a
 // pipe table cell: a colour, an alignment, and content that is paragraphs,
 // lists or inline markup. A heading, a code block or any other block macro, a
@@ -185,12 +249,12 @@ func cellExpressible(c *snode) bool {
 }
 
 // cellInline are the elements that may sit directly in a cell, outside any
-// paragraph, and still render as the cell's inline text. A macro is not among
-// them: directly in a cell it is usually a block one.
+// paragraph, and still render as the cell's inline text: the ones renderInline
+// has a Markdown form for. A macro is not among them: directly in a cell it is
+// usually a block one.
 var cellInline = map[string]bool{
 	"ac:image": true, "ac:link": true, "a": true, "strong": true, "b": true, "em": true,
 	"i": true, "code": true, "del": true, "s": true, "strike": true, "br": true,
-	"span": true, "u": true, "sub": true, "sup": true, "ac:emoticon": true, "time": true,
 }
 
 // allowedAttrs reports whether ok accepts every attribute of n.
@@ -203,20 +267,25 @@ func allowedAttrs(n *snode, ok func(name, value string) bool) bool {
 	return true
 }
 
-// idOnly accepts only the server-generated id, which read drops everywhere.
-func idOnly(name, _ string) bool { return name == "ac:local-id" }
+// isID reports whether an attribute is a server-generated id. The editor writes
+// ac:local-id on tables, rows and cells, and a bare local-id on every
+// paragraph (page 3109814418); Confluence regenerates both on publish.
+func isID(name string) bool { return name == "ac:local-id" || name == "local-id" }
+
+// idOnly accepts only a server-generated id.
+func idOnly(name, _ string) bool { return isID(name) }
 
 // tableAttrOK accepts what the editor writes on a table nobody configured.
 // data-table-width is ignored whatever its value: the editor writes one on
 // every table it saves, and a hand resize is lost with it on the next publish.
 // Any other layout or display mode is a choice somebody made.
 func tableAttrOK(name, value string) bool {
-	switch name {
-	case "ac:local-id", "data-table-width":
+	switch {
+	case isID(name), name == "data-table-width":
 		return true
-	case "data-layout":
+	case name == "data-layout":
 		return value == "align-start"
-	case "data-table-display-mode":
+	case name == "data-table-display-mode":
 		return value == "default"
 	}
 	return false
@@ -225,12 +294,12 @@ func tableAttrOK(name, value string) bool {
 // cellAttrOK accepts a cell's id, its colour (a bg: marker), a span of one,
 // and a style that says nothing but its alignment.
 func cellAttrOK(name, value string) bool {
-	switch name {
-	case "ac:local-id", "data-highlight-colour":
+	switch {
+	case isID(name), name == "data-highlight-colour":
 		return true
-	case "rowspan", "colspan":
+	case name == "rowspan", name == "colspan":
 		return strings.TrimSpace(value) == "1"
-	case "style":
+	case name == "style":
 		return onlyTextAlign(value)
 	}
 	return false
@@ -239,17 +308,20 @@ func cellAttrOK(name, value string) bool {
 // paragraphAttrOK accepts a cell paragraph's id and a style that says nothing
 // but its alignment.
 func paragraphAttrOK(name, value string) bool {
-	switch name {
-	case "ac:local-id":
+	switch {
+	case isID(name):
 		return true
-	case "style":
+	case name == "style":
 		return onlyTextAlign(value)
 	}
 	return false
 }
 
-// textAlignDeclRE matches one text-align declaration in a style attribute.
-var textAlignDeclRE = regexp.MustCompile(`(?i)text-align\s*:\s*[a-z-]+\s*;?`)
+// textAlignDeclRE matches one text-align declaration in a style attribute,
+// with a value the delimiter row can carry or that has no effect in Confluence
+// (justify is stored and ignored, storage-format.md). Any other value keeps the
+// style unmatched, and so the table raw.
+var textAlignDeclRE = regexp.MustCompile(`(?i)text-align\s*:\s*(left|start|center|right|end|justify)\s*(;|$)`)
 
 // onlyTextAlign reports whether a style attribute holds no declaration but
 // text-align, the one a pipe table carries (as its delimiter row).
@@ -272,14 +344,16 @@ var textAlignRE = regexp.MustCompile(`(?i)text-align\s*:\s*([a-z]+)`)
 // hand-edited storage, and left is no alignment at all, since Confluence has
 // no explicit left (storage-format.md).
 func cellAlign(c *snode) (string, bool) {
-	cell := styleAlign(c.attrs["style"])
+	cell, _ := styleAlign(c.attrs["style"])
 	found, seen := cell, false
 	for _, k := range c.kids {
 		if k.name != "p" {
 			continue
 		}
-		a := styleAlign(k.attrs["style"])
-		if a == "" {
+		// A paragraph's own declaration wins over the cell's, as in CSS, so a
+		// left paragraph in a centred cell is left.
+		a, declared := styleAlign(k.attrs["style"])
+		if !declared {
 			a = cell
 		}
 		if seen && a != found {
@@ -290,35 +364,91 @@ func cellAlign(c *snode) (string, bool) {
 	return found, true
 }
 
-// styleAlign reads a text-align declaration from a style attribute.
-func styleAlign(style string) string {
+// styleAlign reads a text-align declaration from a style attribute, and
+// whether there was one: left, start and justify are declarations of no
+// alignment.
+func styleAlign(style string) (string, bool) {
 	m := textAlignRE.FindStringSubmatch(style)
 	if m == nil {
-		return ""
+		return "", false
 	}
 	switch strings.ToLower(m[1]) {
 	case "center":
-		return "center"
+		return "center", true
 	case "right", "end":
-		return "right"
+		return "right", true
 	}
-	return ""
+	return "", true
 }
 
-// rawCellBlocks renders a raw table cell's body as Markdown blocks, except a
-// paragraph carrying an attribute Markdown cannot hold -- in practice an
-// alignment -- which stays storage on its own line, since a Markdown paragraph
-// would drop it. That costs the paragraph's editability, not its alignment.
+// rawCellBlocks renders a raw table cell's body as Markdown blocks. Three
+// things differ from blockStrings, each because the raw form must lose
+// nothing:
+//
+//   - text and inline elements sitting directly in the cell, outside any
+//     paragraph, are one paragraph, not a block apiece;
+//   - an empty paragraph -- a deliberate blank line, Enter twice in the editor
+//     -- stays as <p />, unless the cell holds nothing else;
+//   - a paragraph carrying an attribute Markdown cannot hold, in practice an
+//     alignment, stays storage on its own line, which costs that paragraph's
+//     editability rather than its alignment.
 func (r *mdRenderer) rawCellBlocks(c *snode) []string {
-	var out []string
-	for _, k := range c.kids {
-		if k.name == "p" && !allowedAttrs(k, idOnly) {
-			out = append(out, serialize(k))
-			continue
-		}
-		out = append(out, r.blockStrings([]*snode{k}, "")...)
+	if emptyCell(c) {
+		return nil
 	}
-	return out
+	var run []*snode
+	var blocks []string
+	flush := func() {
+		if s := strings.TrimSpace(r.renderInlineChildren(&snode{kids: run})); s != "" {
+			blocks = append(blocks, s)
+		}
+		run = nil
+	}
+	for _, k := range c.kids {
+		switch {
+		case k.name == "" || cellInline[k.name] || rawCellInline[k.name]:
+			run = append(run, k)
+			continue
+		case k.name == "p" && emptyCell(k):
+			flush()
+			blocks = append(blocks, "<p />")
+		case k.name == "p" && !allowedAttrs(k, idOnly):
+			flush()
+			blocks = append(blocks, serialize(withoutIDs(k)))
+		default:
+			flush()
+			blocks = append(blocks, r.blockStrings([]*snode{k}, "")...)
+		}
+	}
+	flush()
+	return blocks
+}
+
+// rawCellInline are inline elements beyond cellInline that group into a raw
+// cell's loose paragraph rather than becoming a block of their own. read has no
+// Markdown for them and renders their text (or nothing), the same as in any
+// paragraph; that is an older gap than this one.
+var rawCellInline = map[string]bool{
+	"span": true, "u": true, "sub": true, "sup": true, "time": true, "ac:emoticon": true,
+}
+
+// withoutIDs is n with the server-generated ids removed from it and everything
+// under it. attrString drops ac:local-id already; the bare local-id the editor
+// writes on a paragraph would otherwise be copied into the Markdown.
+func withoutIDs(n *snode) *snode {
+	c := &snode{name: n.name, text: n.text}
+	if n.attrs != nil {
+		c.attrs = map[string]string{}
+		for k, v := range n.attrs {
+			if !isID(k) {
+				c.attrs[k] = v
+			}
+		}
+	}
+	for _, k := range n.kids {
+		c.kids = append(c.kids, withoutIDs(k))
+	}
+	return c
 }
 
 // cellTexts renders a row's cells to inline strings with pipes escaped,

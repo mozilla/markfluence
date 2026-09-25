@@ -907,9 +907,11 @@ func (r *mdRenderer) renderRawBlock(n *snode) string {
 
 	// Content container: raw tags around a Markdown body.
 	if isContentContainer(n.name) {
-		blocks := r.blockStrings(n.kids, "")
+		var blocks []string
 		if n.name == "th" || n.name == "td" {
 			blocks = r.rawCellBlocks(n)
+		} else {
+			blocks = r.blockStrings(n.kids, "")
 		}
 		if md := strings.Join(blocks, "\n\n"); md != "" {
 			return open + "\n\n" + md + "\n\n" + closeTag
@@ -925,7 +927,13 @@ func (r *mdRenderer) renderRawBlock(n *snode) string {
 	var parts []string
 	for _, k := range n.kids {
 		if k.name == "" {
-			continue // drop inter-tag whitespace
+			// Whitespace between tags is layout; anything else is content a
+			// wrapper happens to hold loose, and passing it through is what
+			// the raw form is for.
+			if t := strings.TrimSpace(k.text); t != "" {
+				parts = append(parts, xmlTextEscape(t))
+			}
+			continue
 		}
 		if isContentContainer(k.name) || hasElementChild(k) {
 			parts = append(parts, r.renderRawBlock(k))

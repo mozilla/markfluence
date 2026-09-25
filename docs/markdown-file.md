@@ -419,11 +419,18 @@ Details:
 `read` and `export` give back a GFM table when GFM can express the whole
 table. Otherwise, they give back a raw table in the form above, with the
 content of each cell as Markdown. A paragraph with an alignment stays storage
-format, because a Markdown paragraph has no alignment. `read` ignores some
-attributes that the Confluence editor adds to every table that it saves, such
-as `data-table-width`. Thus a table with a width that someone changed in the
-editor comes back as a GFM table, and it loses that width when you publish it
-again.
+format, because a Markdown paragraph has no alignment.
+
+A table that markfluence published stays a GFM table after someone edits the
+page in Confluence. The Confluence editor adds attributes to every table that
+it saves: IDs, a `data-table-width`, and, on a table with the `align-start`
+layout that markfluence uses, a `<colgroup>` with the column widths that it
+measured. `read` ignores these. The editor writes the same `<colgroup>` when
+someone changes a column width by hand. Thus that change is lost when you
+publish the file again, and the columns fit their content again. (Column
+widths that add up to more than the page give the table a horizontal scroll
+bar, so this is often what you want.) A table with any other layout and a
+`<colgroup>` comes back as a raw table.
 
 ### GitHub alerts
 
