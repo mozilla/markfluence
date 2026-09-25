@@ -9,8 +9,14 @@ Thus a script, a CI job, or an agent can get the contract from the binary, and
 not from the repository.
 
 The build puts the schema into the binary. It describes schema_version 1,
-which is the version that this binary writes. The schema command, and the tests
-that check real --json output, read the same copy.
+which is the version that this binary writes. Validate against this copy, and
+not against a copy from another release.
+
+The schema is open: an object can have keys that the schema does not list. A
+later release can add a key and keep the same schema_version, so a consumer must
+ignore a key that it does not know. A change that can break a consumer, such as
+a key that is removed or renamed, increases schema_version. docs/json-output.md
+has the whole rule.
 
 The output is the schema document itself, so --json has no effect here.
 
