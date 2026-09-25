@@ -266,21 +266,16 @@ func TestStorageToMarkdownPassesThroughListsInCells(t *testing.T) {
 	// a list authored inside a cell in the browser; markfluence's own write
 	// side (a <ul> typed directly into a Markdown cell) never adds the <p>,
 	// since goldmark's raw HTML passthrough carries it through unchanged.
-	// The third cell's link href carries a literal "|": code review on the
-	// original fix found that reusing cellTexts's blanket "|" -> "\|" escape
-	// (needed so literal pipe *text* doesn't get read as a column boundary in
-	// the single-line row a cell becomes) against serialize's raw-HTML output
-	// would corrupt the href with a backslash that has no meaning inside a
-	// quoted attribute -- a URL, unlike table text, has no escaping syntax at
-	// all, so this must come back byte-identical.
-	in := `<table><tbody><tr><th>a</th><th>b</th><th>c</th></tr><tr>` +
+	// A list holding a "|" -- in its text or an href -- cannot be a pipe cell
+	// at all: unescaped the "|" splits the row, and escaped it survives into
+	// the href as a literal backslash. Such a table reads back raw instead
+	// (#55, storage2md/raw-table-list-pipe).
+	in := `<table><tbody><tr><th>a</th><th>b</th></tr><tr>` +
 		`<td><ul><li>one</li><li>two</li></ul></td>` +
 		`<td><ol><li><p>a</p></li><li><p>b</p></li></ol></td>` +
-		`<td><ul><li><a href="https://example.com/a|b">c</a></li></ul></td>` +
 		`</tr></tbody></table>`
-	want := "| a | b | c |\n| --- | --- | --- |\n" +
-		"| <ul><li>one</li><li>two</li></ul> | <ol><li><p>a</p></li><li><p>b</p></li></ol> |" +
-		` <ul><li><a href="https://example.com/a|b">c</a></li></ul> |` + "\n"
+	want := "| a | b |\n| --- | --- |\n" +
+		"| <ul><li>one</li><li>two</li></ul> | <ol><li><p>a</p></li><li><p>b</p></li></ol> |\n"
 
 	got, err := convert.StorageToMarkdown(in, convert.StorageOptions{})
 	if err != nil {
@@ -301,8 +296,8 @@ func TestStorageToMarkdownPassesThroughListsInCells(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MdToConfluence: %v", err)
 	}
-	if !strings.Contains(page.HTML, `<ul><li>one</li><li>two</li></ul>`) {
-		t.Errorf("published storage lost the list:\n%s", page.HTML)
+	if !strings.Contains(page.HTML, `<td><ul><li>one</li><li>two</li></ul></td>`) {
+		t.Errorf("published storage lost the list, or the table:\n%s", page.HTML)
 	}
 }
 
@@ -389,7 +384,7 @@ func TestRoundTripPassthrough(t *testing.T) {
 		"raw-table-nested", "raw-table-numbered", "raw-table-valign", "raw-table-display-fixed",
 		"raw-table-aligned-paragraph", "table-alignment-disagree", "raw-table-cell-content", "raw-table-unknown-align",
 		"raw-table-loose-text", "raw-table-list-aligned", "raw-table-textless-paragraphs", "raw-table-repeated-align",
-		"raw-mixed-content",
+		"raw-mixed-content", "raw-table-list-pipe",
 	} {
 		t.Run(name, func(t *testing.T) {
 			src, err := os.ReadFile(filepath.Join(storage2mdDir, name, "output.md"))

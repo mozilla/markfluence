@@ -397,6 +397,7 @@ func (r *mdRenderer) renderCellLines(c *snode) string {
 	// has no escaping meaning at all and would corrupt the value verbatim
 	// on the next publish instead of protecting anything.
 	escapeCellPipe := func(s string) string { return strings.ReplaceAll(s, "|", `\|`) }
+	isList := map[int]bool{}
 	flush := func() {
 		if len(run) == 0 {
 			return
@@ -425,12 +426,22 @@ func (r *mdRenderer) renderCellLines(c *snode) string {
 			// every item together the way rendering it as inline content would.
 			flush()
 			lines = append(lines, serialize(k))
+			isList[len(lines)-1] = true
 		default:
 			run = append(run, k)
 		}
 	}
 	flush()
-	return strings.ReplaceAll(strings.Join(lines, "<br>"), "  \n", "<br>")
+	// A list ends a line by being a block, so no <br> goes beside one: a <br>
+	// there publishes as a blank line the cell did not have.
+	var b strings.Builder
+	for i, line := range lines {
+		if i > 0 && !isList[i] && !isList[i-1] {
+			b.WriteString("<br>")
+		}
+		b.WriteString(line)
+	}
+	return strings.ReplaceAll(b.String(), "  \n", "<br>")
 }
 
 // cellBGMarkerComment recovers a "<!-- bg:NAME -->" marker from a cell's

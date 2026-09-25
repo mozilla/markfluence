@@ -244,19 +244,58 @@ func cellExpressible(c *snode) bool {
 	if !allowedAttrs(c, cellAttrOK) {
 		return false
 	}
+	// An empty paragraph between two lines is a <br><br> a pipe cell keeps;
+	// one at either end of a cell with content in it becomes a <br> at the end
+	// of the row, which the next read cannot tell from nothing.
+	if !emptyCell(c) {
+		var content []*snode
+		for _, k := range c.kids {
+			if k.name != "" || strings.TrimSpace(k.text) != "" {
+				content = append(content, k)
+			}
+		}
+		for _, k := range []*snode{content[0], content[len(content)-1]} {
+			if k.name == "p" && emptyCell(k) {
+				return false
+			}
+		}
+	}
 	for _, k := range c.kids {
 		switch {
 		case k.name == "":
 		case k.name == "p":
-			if !allowedAttrs(k, paragraphAttrOK) {
+			if !allowedAttrs(k, paragraphAttrOK) || onlyBreaks(k) {
 				return false
 			}
-		case k.name == "ul", k.name == "ol", cellInline[k.name]:
+		case k.name == "ul", k.name == "ol":
+			// A list in a pipe cell is its raw tags on the row's one line, and
+			// a "|" anywhere in them -- text or an href -- ends the cell:
+			// unescaped it splits the row and the table stops parsing, and
+			// "\|" survives into an attribute as a literal backslash.
+			if strings.Contains(serialize(k), "|") {
+				return false
+			}
+		case cellInline[k.name]:
 		default:
 			return false
 		}
 	}
 	return true
+}
+
+// onlyBreaks reports whether a paragraph holds line breaks and nothing else,
+// which a pipe cell renders as nothing at all; the raw form keeps it.
+func onlyBreaks(p *snode) bool {
+	seen := false
+	for _, k := range p.kids {
+		switch {
+		case k.name == "br":
+			seen = true
+		case k.name != "" || strings.TrimSpace(k.text) != "":
+			return false
+		}
+	}
+	return seen
 }
 
 // cellInline are the elements that may sit directly in a cell, outside any
@@ -359,14 +398,25 @@ func cellAlign(c *snode) (string, bool) {
 	cell, _ := styleAlign(c.attrs["style"])
 	found, seen := cell, false
 	for _, k := range c.kids {
-		if k.name != "p" {
+		var a string
+		switch {
+		case k.name == "p" && emptyCell(k):
+			continue // nothing to align, as an empty cell does not vote in its column
+		case k.name == "p":
+			// A paragraph's own declaration wins over the cell's, as in CSS,
+			// so a left paragraph in a centred cell is left.
+			var declared bool
+			if a, declared = styleAlign(k.attrs["style"]); !declared {
+				a = cell
+			}
+		case k.name == "" && strings.TrimSpace(k.text) == "":
 			continue
-		}
-		// A paragraph's own declaration wins over the cell's, as in CSS, so a
-		// left paragraph in a centred cell is left.
-		a, declared := styleAlign(k.attrs["style"])
-		if !declared {
+		case k.name == "" || cellInline[k.name]:
+			// Loose inline content is a line with no paragraph to align it,
+			// so it has the cell's alignment.
 			a = cell
+		default:
+			continue
 		}
 		if seen && a != found {
 			return "", false
