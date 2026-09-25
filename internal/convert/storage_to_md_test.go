@@ -213,7 +213,9 @@ func TestRoundTripTableCellBG(t *testing.T) {
 // renders as the two-trailing-spaces hard break valid in ordinary block
 // content but not inside a single table row.
 func TestStorageToMarkdownJoinsMultilineCells(t *testing.T) {
-	in := `<table><tbody><tr>` +
+	// The header row keeps the table a pipe table: with no header row it would
+	// read back raw (#55), which is not what this is about.
+	in := `<table><tbody><tr><th>a</th><th>b</th><th>c</th><th>d</th></tr><tr>` +
 		`<td><p>line one</p><p>line two</p></td>` +
 		`<td><p>mid-line<br/>break</p></td>` +
 		`<td><p>plain, no wrapper issue</p></td>` +
@@ -221,8 +223,8 @@ func TestStorageToMarkdownJoinsMultilineCells(t *testing.T) {
 		// the absence of one, and must survive rather than being silently dropped.
 		`<td><p>line one</p><p></p><p>line three</p></td>` +
 		`</tr></tbody></table>`
-	want := "| line one<br>line two | mid-line<br>break | plain, no wrapper issue" +
-		" | line one<br><br>line three |\n| --- | --- | --- | --- |\n"
+	want := "| a | b | c | d |\n| --- | --- | --- | --- |\n" +
+		"| line one<br>line two | mid-line<br>break | plain, no wrapper issue | line one<br><br>line three |\n"
 
 	got, err := convert.StorageToMarkdown(in, convert.StorageOptions{})
 	if err != nil {
@@ -271,14 +273,14 @@ func TestStorageToMarkdownPassesThroughListsInCells(t *testing.T) {
 	// would corrupt the href with a backslash that has no meaning inside a
 	// quoted attribute -- a URL, unlike table text, has no escaping syntax at
 	// all, so this must come back byte-identical.
-	in := `<table><tbody><tr>` +
+	in := `<table><tbody><tr><th>a</th><th>b</th><th>c</th></tr><tr>` +
 		`<td><ul><li>one</li><li>two</li></ul></td>` +
 		`<td><ol><li><p>a</p></li><li><p>b</p></li></ol></td>` +
 		`<td><ul><li><a href="https://example.com/a|b">c</a></li></ul></td>` +
 		`</tr></tbody></table>`
-	want := "| <ul><li>one</li><li>two</li></ul> | <ol><li><p>a</p></li><li><p>b</p></li></ol> |" +
-		` <ul><li><a href="https://example.com/a|b">c</a></li></ul> |` + "\n" +
-		"| --- | --- | --- |\n"
+	want := "| a | b | c |\n| --- | --- | --- |\n" +
+		"| <ul><li>one</li><li>two</li></ul> | <ol><li><p>a</p></li><li><p>b</p></li></ol> |" +
+		` <ul><li><a href="https://example.com/a|b">c</a></li></ul> |` + "\n"
 
 	got, err := convert.StorageToMarkdown(in, convert.StorageOptions{})
 	if err != nil {
@@ -378,7 +380,15 @@ func TestStorageToMarkdownCoalescesSplitMarks(t *testing.T) {
 // are passthrough: a case whose output is ordinary Markdown is covered by its
 // own golden.
 func TestRoundTripPassthrough(t *testing.T) {
-	for _, name := range []string{"layout", "unknown-macros", "excerpt", "aclink", "adf-panel"} {
+	for _, name := range []string{
+		"layout", "unknown-macros", "excerpt", "aclink", "adf-panel",
+		// Every table that reads back raw (#55): the raw form must publish to
+		// the same table, or read -> edit -> update would still strip it.
+		"raw-table-layout", "raw-table-colgroup", "raw-table-spans", "raw-table-no-header",
+		"raw-table-header-column", "raw-table-short-row", "raw-table-block-content",
+		"raw-table-nested", "raw-table-numbered", "raw-table-valign", "raw-table-display-fixed",
+		"raw-table-aligned-paragraph", "table-alignment-disagree",
+	} {
 		t.Run(name, func(t *testing.T) {
 			src, err := os.ReadFile(filepath.Join(storage2mdDir, name, "output.md"))
 			if err != nil {

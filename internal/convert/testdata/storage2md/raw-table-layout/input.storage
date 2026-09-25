@@ -1,0 +1,7 @@
+<table data-layout="center" data-table-width="900" ac:local-id="745c5bdd-04e2-4e3e-a99a-a887101b987c">
+<colgroup><col style="width: 300.0px;" /><col style="width: 600.0px;" /></colgroup>
+<tbody>
+<tr><th><p>Service</p></th><th><p>Owner</p></th></tr>
+<tr><td data-highlight-colour="#e3fcef"><p>auth</p></td><td><p><a href="https://example.com/runbooks">SRE runbooks</a></p></td></tr>
+</tbody>
+</table>

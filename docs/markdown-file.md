@@ -321,6 +321,110 @@ line, and a table row cannot do that. Thus you cannot use it here.
 `read` and `export` get back the same tags. They do not change them to anything
 else.
 
+#### Column alignment
+
+To align a column, use the delimiter row of GFM: `:---:` centers a column and
+`---:` aligns it to the right.
+
+```markdown
+| Service | Errors |
+| ------- | -----: |
+| auth    |      3 |
+```
+
+Confluence has no explicit left alignment. Left is its default. Thus `:---`
+publishes the same as `---`, and `read` gives back `---`.
+
+#### Tables that Markdown cannot express
+
+A GFM table cannot express some things that a Confluence table can: column
+widths, a layout other than the default, merged cells, a table with no header
+row, a header column, or a code block or a heading in a cell. For these, write
+the table as raw storage format. markfluence publishes it with no change. See
+[Raw Confluence storage format](#raw-confluence-storage-format).
+
+Put each table, row, and cell tag on its own line. Put a blank line before and
+after the content of a cell. Then markfluence converts the content of the cell
+as Markdown. Without the blank lines, the content is storage format, and
+markfluence does not convert it.
+
+```
+<table data-layout="center" data-table-width="900">
+<colgroup>
+<col style="width: 300px;" />
+<col style="width: 600px;" />
+</colgroup>
+<tbody>
+<tr>
+<th colspan="2">
+
+Q3 results
+
+</th>
+</tr>
+<tr>
+<td rowspan="2" data-highlight-colour="#e3fcef">
+
+**auth** is [up](https://status.example.com)
+
+</td>
+<td>
+
+99.9%
+
+</td>
+</tr>
+<tr>
+<td>
+
+99.8%
+
+</td>
+</tr>
+</tbody>
+</table>
+```
+
+This is the table markup that has an effect in Confluence:
+
+| markup | effect |
+| --- | --- |
+| `<th>` cells in the first row | a header row |
+| a `<th>` cell first in each row | a header column |
+| `colspan` and `rowspan` on a cell | merged cells |
+| `data-highlight-colour="#rrggbb"` on a cell | the background color of the cell |
+| `style="text-align: center;"` or `right` on a cell, or on a `<p>` in a cell | alignment |
+| `valign` on a cell, such as `valign="bottom"` | vertical alignment |
+| `<colgroup>` with a `<col style="width: 300px;" />` for each column | column widths |
+| `data-layout` on the table: `align-start`, `align-end`, `center`, `default`, `wide`, or `full-width` | the layout of the table |
+| `data-table-width` on the table, in pixels | the width of the table |
+| `data-table-display-mode="fixed"` on the table | the fixed display mode of the editor |
+| `class="numberingColumn"` on the first cell of each row | a numbered column |
+
+Details:
+
+- markfluence does not add `data-layout="align-start"` to a raw table, as it
+  does to a GFM table. You control all the attributes.
+- If a table has a `<colgroup>` and no `data-layout`, Confluence picks a layout
+  from the total width of the columns. Wide columns make the table
+  `full-width`. Thus, if you give column widths, also give a `data-layout`.
+- Column widths in pixels always work. Column widths in percent work only if
+  the table also has `data-table-width`.
+- Do not use `<caption>`. Confluence removes the tag and puts its text in a
+  paragraph above the table.
+- Do not put a table in a table cell. The Confluence editor cannot edit a
+  nested table.
+- Colors in `style` or `class` do nothing. Use `data-highlight-colour`.
+
+`read` and `export` give back a GFM table when GFM can express the whole
+table. Otherwise, they give back a raw table in the form above, with the
+content of each cell as Markdown. A paragraph with an alignment stays storage
+format, because a Markdown paragraph has no alignment. `read` ignores some
+attributes that the Confluence editor adds to every table that it saves, such
+as `data-table-width`. Thus a table with a width that someone changed in the
+editor comes back as a GFM table, and it loses that width when you publish it
+again.
+
 ### GitHub alerts
 
 GitHub alerts become Confluence panels in the color that GitHub gives them. The
@@ -557,3 +661,6 @@ Right column.
 
 Storage markup in a fenced code block stays literal. markfluence does not
 activate it.
+
+A table uses the same conventions. See
+[Tables that Markdown cannot express](#tables-that-markdown-cannot-express).

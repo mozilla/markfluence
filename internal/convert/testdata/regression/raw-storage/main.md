@@ -27,6 +27,38 @@ Right column with a list:
 </ac:layout-section>
 </ac:layout>
 
+A raw table passes through with every attribute, including a blank line
+inside it. A cell body set off by blank lines is Markdown; one tight against
+its tags stays literal:
+
+<table data-layout="center" data-table-width="900">
+<colgroup>
+<col style="width: 300px;" />
+<col style="width: 600px;" />
+</colgroup>
+<tbody>
+<tr>
+<th colspan="2">
+
+Q3 **results**
+
+</th>
+</tr>
+
+<tr>
+<td rowspan="2" data-highlight-colour="#e3fcef">
+
+**auth** is [up](https://example.net)
+
+</td>
+<td><p style="text-align: right;">tight **not markdown**</p></td>
+</tr>
+<tr>
+<td>99.8%</td>
+</tr>
+</tbody>
+</table>
+
 Storage format inside a code fence stays literal:
 
 ```
