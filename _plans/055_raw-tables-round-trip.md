@@ -468,3 +468,10 @@ Nothing changes on the publish side.
   drops a trailing space inside any mark (`**bold**next`), in every
   paragraph (#204). Two lists side by side merging into one is another
   general gap the generator found (#205).
+- **From the design review:** the property test's model called five of the
+  converter's own rule helpers, so a mistake in one would have been a mistake
+  in the oracle too; it now has its own readings of each, and a mutation in
+  any of them fails the test. Hoisting moves only center and right (`end`
+  spelled `right`) -- the values verified on a cell -- and drops left, start
+  and justify, which do nothing; start does not survive Confluence's
+  sanitizer, so hoisting it would have changed the Markdown on the next read.
