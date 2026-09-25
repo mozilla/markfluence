@@ -449,7 +449,7 @@ func normalizeWidths(v string) string { return pointZeroRE.ReplaceAllString(v, "
 // get exercised. Text avoids a leading Markdown block marker ("1. ", "# "),
 // which #203 covers, and inline tags read has no Markdown for (<time>, <u>),
 // which read drops in every paragraph, and two lists side by side, which
-// Markdown reads back as one -- all gaps older than #55.
+// Markdown reads back as one (#205) -- all gaps older than #55.
 type tableGen struct{ r *rand.Rand }
 
 func (g *tableGen) chance(p float64) bool { return g.r.Float64() < p }
@@ -638,7 +638,7 @@ func (g *tableGen) cell(align string, cellStyle bool, depth int) string {
 	for range blocks {
 		x := g.r.Float64()
 		if lastList && x >= 0.77 && x < 0.84 {
-			x = 0 // two lists side by side merge into one in any Markdown (a gap older than #55)
+			x = 0 // two lists side by side merge into one in any Markdown (#205)
 		}
 		lastList = x >= 0.77 && x < 0.84
 		switch {

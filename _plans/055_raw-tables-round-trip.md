@@ -466,5 +466,5 @@ Nothing changes on the publish side.
   failed, neither on table rules: `> 90 days` in a raw cell became a
   blockquote (#203), and `<del>… for </del>13.5h` lost its space -- `read`
   drops a trailing space inside any mark (`**bold**next`), in every
-  paragraph. Two lists side by side merging into one is another general gap
-  the generator found.
+  paragraph (#204). Two lists side by side merging into one is another
+  general gap the generator found (#205).
