@@ -543,8 +543,8 @@ func TestParentDeclared(t *testing.T) {
 		{"empty in frontmatter", "", "page_id: 1\nparent:\n", "", true},
 		{"null in the entry", "pages:\n  a.md:\n    page_id: 1\n    parent: null\n", "", "", true},
 		{"id in frontmatter", "", "page_id: 1\nparent: 7\n", "7", true},
-		{"null in frontmatter, id in the entry", "pages:\n  a.md:\n    parent: 7\n", "page_id: 1\nparent: null\n", "7", true},
-		{"id in frontmatter, null in the entry", "pages:\n  a.md:\n    parent: null\n", "page_id: 1\nparent: 7\n", "7", true},
+		{"null in both", "pages:\n  a.md:\n    parent: null\n", "page_id: 1\nparent: ~\n", "", true},
+		{"null in frontmatter, none in the entry", "pages:\n  a.md:\n    title: A\n", "page_id: 1\nparent: null\n", "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := rootWith(t, tc.manifest)
@@ -581,5 +581,21 @@ func TestSpaceFallsBackToTheProjectDefault(t *testing.T) {
 	r, _ := Resolve("a.md", parse(t, "page_id: 1\n"), rootWith(t, ""))
 	if got, _ := r.Space(nil); got != "" {
 		t.Errorf("no declaration anywhere: Space() = %q, want empty", got)
+	}
+}
+
+// A blank parent means the top of the space, so it disagrees with an id in the
+// other location -- a coordinate disagreement, which fails the file rather
+// than letting either side move the page.
+func TestNullParentAgainstAnIDIsACoordinateDisagreement(t *testing.T) {
+	for _, tc := range []struct{ manifest, block string }{
+		{"pages:\n  a.md:\n    parent: 7\n", "page_id: 1\nparent: null\n"},
+		{"pages:\n  a.md:\n    parent: null\n", "page_id: 1\nparent: 7\n"},
+	} {
+		_, err := Resolve("a.md", parse(t, tc.block), rootWith(t, tc.manifest))
+		if err == nil || !strings.Contains(err.Error(), "parent: frontmatter says") ||
+			!strings.Contains(err.Error(), "null") {
+			t.Errorf("%q vs %q: err = %v, want a parent disagreement naming null", tc.block, tc.manifest, err)
+		}
 	}
 }

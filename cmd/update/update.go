@@ -376,7 +376,6 @@ func processFile(
 	if err != nil {
 		return r.fail(err, jsonout.CodeOr(err, jsonout.CodeValidation))
 	}
-	r.move = mv
 
 	// The name half of page_status, resolved to the status to write. Before any
 	// request that could change the page -- the file names a status and the wire
@@ -464,6 +463,9 @@ func processFile(
 		if !bodyChanged {
 			r.versionNew = page.Version.Number
 		}
+		// Reported only here and once the move has happened, never when it was
+		// merely planned: a failure in between must not claim a move.
+		r.move = mv
 		r.previewWidth(c, pageID, width, applyWidth)
 		r.previewLabels(c, pageID, labelSet)
 		r.previewStatus(c, pageID, status, statusDeclared)
@@ -480,6 +482,7 @@ func processFile(
 		if err := c.MovePage(pageID, mv.position, mv.target); err != nil {
 			return r.fail(err, jsonout.CodeFor(err))
 		}
+		r.move = mv
 	}
 
 	// CodeOr, not CodeFor: planning an upload checksums every local asset, so

@@ -3,6 +3,7 @@ package update
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/pagemeta"
@@ -18,10 +19,17 @@ import (
 // A refusal, never a move: moving between spaces needs write access to both,
 // takes the whole subtree along, and can change who may see it, and nobody has
 // needed it.
+//
+// Compared without regard to case, because Confluence resolves a space key that
+// way (sre, Sre and SRE all name SRE, on v1 and v2 alike), so a file saying eng
+// names the space ENG.
 func checkSpace(meta pagemeta.Resolved, root *project.Root, liveSpace string) error {
 	declared, fromProject := meta.Space(root)
-	if declared == "" || declared == liveSpace {
+	if declared == "" || strings.EqualFold(declared, liveSpace) {
 		return nil
+	}
+	if liveSpace == "" {
+		return fmt.Errorf("cannot tell which space the page is in, so cannot check it against %s", declared)
 	}
 	where := "this file declares"
 	if fromProject {
@@ -63,6 +71,9 @@ func planMove(
 		if page.ParentID == "" {
 			return nil, nil
 		}
+		if spaceKey == "" {
+			return nil, errors.New("cannot tell which space the page is in, so cannot move it to the top of it")
+		}
 		last, err := lastRootPage(c, spaceKey, page.ID)
 		if err != nil {
 			return nil, err
@@ -81,6 +92,12 @@ func planMove(
 	if err != nil {
 		return nil, err
 	}
+	// Compared again as the id the server answered with: 0123 and 123 name
+	// one page, and moving a page onto its own parent would put it last among
+	// its siblings on every run.
+	if t.ID == page.ParentID {
+		return nil, nil
+	}
 	within, err := parentref.Within(c, t, page.ID)
 	if err != nil {
 		return nil, err
@@ -89,7 +106,7 @@ func planMove(
 		return nil, fmt.Errorf("parent %s is this page or one of the pages under it, "+
 			"so moving the page there would make a loop", ref)
 	}
-	return &move{from: page.ParentID, to: id, toTitle: t.Title, position: client.MoveAppend, target: id}, nil
+	return &move{from: page.ParentID, to: t.ID, toTitle: t.Title, position: client.MoveAppend, target: t.ID}, nil
 }
 
 // lastRootPage is the page a move to the top of the space goes after, which
@@ -109,7 +126,10 @@ func lastRootPage(c *client.ConfluenceClient, spaceKey, pageID string) (string, 
 		if r.ID == pageID || (r.Status != "" && r.Status != "current") {
 			continue
 		}
-		if last == nil || r.Extensions.Position > last.Extensions.Position {
+		// >=, so among pages sharing a position the last one listed wins: the
+		// listing is in display order, and a space nobody has reordered can
+		// report one position for every page.
+		if last == nil || r.Extensions.Position >= last.Extensions.Position {
 			last = r
 		}
 	}

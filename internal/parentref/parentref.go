@@ -19,6 +19,7 @@ import (
 	"github.com/mozilla/markfluence/internal/client"
 	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/pagemeta"
+	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/project"
 )
 
@@ -105,9 +106,15 @@ func PageID(root *project.Root, f File, ref string) (string, error) {
 
 // Resolve turns a parent reference into the id it names: an id is returned as
 // given, and a ".md" path is located and read. A ".md" parent that declares no
-// page id is an error naming both places one could be.
+// page id is an error naming both places one could be, and anything else that
+// is not a number is refused before it reaches a request, where the API would
+// answer with a 400 that says nothing useful (and a raw value would be pasted
+// into a URL path).
 func Resolve(root *project.Root, fileDir, ref string) (string, error) {
 	if !IsFile(ref) {
+		if !pageref.IsDigits(ref) {
+			return "", fmt.Errorf("parent %q is not a page or folder id or a path to a .md file", ref)
+		}
 		return ref, nil
 	}
 	f, err := Locate(root, fileDir, ref)
@@ -117,6 +124,9 @@ func Resolve(root *project.Root, fileDir, ref string) (string, error) {
 	id, err := PageID(root, f, ref)
 	if err != nil {
 		return "", err
+	}
+	if id != "" && !pageref.IsDigits(id) {
+		return "", fmt.Errorf("parent %s: its page_id %q is not a number", ref, id)
 	}
 	if id == "" {
 		return "", fmt.Errorf("parent not yet published (no page_id in the file or in %s): %s",
@@ -193,6 +203,10 @@ func Within(c *client.ConfluenceClient, t Target, pageID string) (bool, error) {
 		if parentID == "" {
 			return false, nil
 		}
+		// An ancestor that cannot be read -- a whiteboard or database, which
+		// neither route answers for, or a page the caller cannot see -- ends
+		// the walk with "no loop". That only weakens the preview: Confluence
+		// still refuses a real loop with a 400 when the move is made.
 		id = parentID
 		switch parentType {
 		case "folder":

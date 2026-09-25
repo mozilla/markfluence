@@ -114,6 +114,11 @@ func (r *updateResult) fail(err error, code jsonout.Code) *updateResult {
 func (r *updateResult) renderHuman() {
 	prefix := "[" + r.file + "]"
 	if !r.ok {
+		// A move made before the failure stands: the page is in its new place,
+		// and a reader retrying must know the tree already changed.
+		if r.move != nil {
+			ui.Info(prefix + " " + r.move.describe(r.dryRun))
+		}
 		ui.Error(prefix + " " + r.errMsg)
 		return
 	}
