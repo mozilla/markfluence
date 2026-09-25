@@ -2,9 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/mozilla/markfluence/schema/json-output/v1.json",
   "title": "markfluence --json output (schema_version 1)",
-  "description": "The single JSON document markfluence writes to stdout under --json. results holds one object per target (a single element for page-info/read; one per attachment for attachment-list); its item shape and the summary shape depend on command. The typed error object written to stderr on a fatal/pre-flight failure conforms to #/$defs/errorObject.",
+  "description": "The single JSON document markfluence writes to stdout under --json. results holds one object per target (a single element for page-info/read; one per attachment for attachment-list); its item shape and the summary shape depend on command. The typed error object written to stderr on a fatal/pre-flight failure conforms to #/$defs/errorObject. The schema is open: an object may carry keys it does not list, because adding a key is a compatible change within a schema_version, and a consumer must ignore keys it does not know. Removing or renaming a key, or changing its type or meaning, increases schema_version (docs/json-output.md).",
   "type": "object",
-  "additionalProperties": false,
   "required": ["schema_version", "markfluence_version", "command", "roots", "warnings", "results", "summary"],
   "properties": {
     "schema_version": { "const": 1 },
@@ -20,7 +19,7 @@
       "if": { "properties": { "command": { "const": "page-info" } }, "required": ["command"] },
       "then": {
         "properties": {
-          "results": { "items": { "oneOf": [{ "$ref": "#/$defs/infoResult" }, { "$ref": "#/$defs/singleOpFailure" }] } },
+          "results": { "items": { "anyOf": [{ "$ref": "#/$defs/infoResult" }, { "$ref": "#/$defs/singleOpFailure" }] } },
           "summary": { "$ref": "#/$defs/basicSummary" }
         }
       }
@@ -47,7 +46,7 @@
       "if": { "properties": { "command": { "const": "read" } }, "required": ["command"] },
       "then": {
         "properties": {
-          "results": { "items": { "oneOf": [{ "$ref": "#/$defs/readResult" }, { "$ref": "#/$defs/singleOpFailure" }] } },
+          "results": { "items": { "anyOf": [{ "$ref": "#/$defs/readResult" }, { "$ref": "#/$defs/singleOpFailure" }] } },
           "summary": { "$ref": "#/$defs/basicSummary" }
         }
       }
@@ -85,7 +84,7 @@
         "properties": {
           "results": {
             "items": {
-              "oneOf": [{ "$ref": "#/$defs/diffResult" }, { "$ref": "#/$defs/singleOpFailure" }]
+              "anyOf": [{ "$ref": "#/$defs/diffResult" }, { "$ref": "#/$defs/singleOpFailure" }]
             }
           },
           "summary": { "$ref": "#/$defs/basicSummary" }
@@ -98,7 +97,7 @@
         "properties": {
           "results": {
             "items": {
-              "oneOf": [{ "$ref": "#/$defs/attachmentUploadResult" }, { "$ref": "#/$defs/singleOpFailure" }]
+              "anyOf": [{ "$ref": "#/$defs/attachmentUploadResult" }, { "$ref": "#/$defs/singleOpFailure" }]
             }
           },
           "summary": { "$ref": "#/$defs/attachmentSummary" }
@@ -110,7 +109,7 @@
       "then": {
         "properties": {
           "results": {
-            "items": { "oneOf": [{ "$ref": "#/$defs/exportResult" }, { "$ref": "#/$defs/singleOpFailure" }] }
+            "items": { "anyOf": [{ "$ref": "#/$defs/exportResult" }, { "$ref": "#/$defs/singleOpFailure" }] }
           },
           "summary": { "$ref": "#/$defs/exportSummary" }
         }
@@ -122,7 +121,7 @@
         "properties": {
           "results": {
             "items": {
-              "oneOf": [{ "$ref": "#/$defs/attachmentDownloadResult" }, { "$ref": "#/$defs/singleOpFailure" }]
+              "anyOf": [{ "$ref": "#/$defs/attachmentDownloadResult" }, { "$ref": "#/$defs/singleOpFailure" }]
             }
           },
           "summary": { "$ref": "#/$defs/attachmentSummary" }
@@ -135,7 +134,7 @@
         "properties": {
           "results": {
             "items": {
-              "oneOf": [
+              "anyOf": [
                 { "$ref": "#/$defs/childrenResult" },
                 { "$ref": "#/$defs/singleOpFailure" }
               ]
@@ -178,7 +177,7 @@
         "properties": {
           "results": {
             "items": {
-              "oneOf": [{ "$ref": "#/$defs/attachmentListResult" }, { "$ref": "#/$defs/singleOpFailure" }]
+              "anyOf": [{ "$ref": "#/$defs/attachmentListResult" }, { "$ref": "#/$defs/singleOpFailure" }]
             }
           },
           "summary": { "$ref": "#/$defs/basicSummary" }
@@ -196,7 +195,6 @@
     "childrenResult": {
       "description": "One page or folder under the requested node, or under the requested space's root. The results array is flat and in walk order (depth-first, siblings in the order Confluence displays them); parent_id and depth carry the hierarchy. parent_id is null for a page at the root of a space, which hangs off no node -- under --space, that is every depth-1 row. space and url are both derived from the row's webui link, so a row missing one is missing both.",
       "type": "object",
-      "additionalProperties": false,
       "required": ["ok", "id", "type", "title", "status", "parent_id", "depth", "space", "url"],
       "properties": {
         "ok": { "const": true },
@@ -213,7 +211,6 @@
     "findResult": {
       "description": "One page or folder whose title matches exactly. There is no failure variant: find names no page to fail about, so a failed search is an error object on stderr with no envelope. status may be \"archived\" -- such a page is absent from the page tree but still reserves its title, so it blocks creating a page with that title in the same space. A folder reserves nothing, so a folder match is discovery only and never explains a creation conflict. space and url are both derived from the match's link, so a row missing one is missing both.",
       "type": "object",
-      "additionalProperties": false,
       "required": ["ok", "id", "type", "title", "space", "status", "url"],
       "properties": {
         "ok": { "const": true },
@@ -228,7 +225,6 @@
     "searchResult": {
       "description": "One full-text match. The array is in Confluence's relevance order, best first; that order is the only ranking available (the API reports score as 0.0 on every row), so re-sorting results discards it. The ordering is stable in membership but not in position: two identical searches return the same set of hits, but equally-ranked neighbours can trade places, so do not diff two runs expecting the same sequence or treat a position as an identifier. There is no failure variant and no status field: search names no page to fail about, so a failed search is an error object on stderr with no envelope, and the search index cannot see archived content, so every hit is current -- use find to discover an archived page. type is an open string rather than an enum because --type all and --cql can return whiteboard, database, or any content type Atlassian adds. space and url are both derived from the hit's link, so a result missing one is missing both; excerpt is null when the match was in the title alone, and is always a single line with Confluence's highlight markers removed and entities unescaped.",
       "type": "object",
-      "additionalProperties": false,
       "required": ["ok", "id", "type", "title", "space", "url", "excerpt"],
       "properties": {
         "ok": { "const": true },
@@ -243,7 +239,6 @@
     "searchSummary": {
       "description": "search's summary. failed is always 0, since a failed search is an error object with no envelope rather than a failed result. truncated says --limit was reached with matches left over; it is a flag and not a count because the API's totalSize is an estimate that has been observed both to drift between pages and to be nonzero against an empty results array. skipped counts index rows that carried no addressable content object -- a `type = space` hit, for example -- which is reachable only via --cql or --type all; it is reported rather than dropped quietly, because otherwise such a query yields total 0 and reads as a genuine miss.",
       "type": "object",
-      "additionalProperties": false,
       "required": ["total", "succeeded", "failed", "truncated", "skipped"],
       "properties": {
         "total": { "type": "integer" },
@@ -256,7 +251,6 @@
     "userFindResult": {
       "description": "One matched Confluence user. mention is the whole Markdown line that mentions this person, built by the same converter function that renders a mention back out of storage, so pasting it into a body and publishing round-trips exactly. It is carried rather than left to the consumer because assembling it requires knowing two non-obvious things: the profile host is Atlassian Home rather than the site, and the leading \"@\" on the link text is what distinguishes a mention from an ordinary link to a profile. The account id appears in two live shapes on a single instance -- a 24-character hex string and a \"712020:\"-prefixed UUID -- so treat it as opaque and never pattern-match it. There is no failure variant: user-find names no page to fail about, so a failed lookup is an error object on stderr with no envelope. There is deliberately no type field even though the API returns one, because every account answers \"known\", automation and page-template accounts included, so it distinguishes nothing; and no separate url, since the profile URL is already inside mention. Deactivated accounts never appear: Confluence omits them from the user directory and no filter restores them.",
       "type": "object",
-      "additionalProperties": false,
       "required": ["ok", "account_id", "display_name", "mention"],
       "properties": {
         "ok": { "const": true },
@@ -268,7 +262,6 @@
     "userFindSummary": {
       "description": "user-find's summary. failed is always 0, since a failed lookup is an error object with no envelope rather than a failed result. truncated says --limit was reached with matches left over, and is a flag rather than a count for a stronger reason than search's: this route's totalSize reports the number of rows on the page just fetched, not the size of the result set, so no count of the remainder exists to report.",
       "type": "object",
-      "additionalProperties": false,
       "required": ["total", "succeeded", "failed", "truncated"],
       "properties": {
         "total": { "type": "integer" },
@@ -286,7 +279,6 @@
     },
     "pageWidth": {
       "type": "object",
-      "additionalProperties": false,
       "required": ["value", "default"],
       "properties": {
         "value": { "type": "string" },
@@ -299,7 +291,6 @@
     "pageStatus": {
       "description": "What a publishing verb did with the page's status -- the coloured lozenge beside its title. action is \"unchanged\" when the page already carried it, which is reported rather than implied because writing a status bumps the page version.",
       "type": "object",
-      "additionalProperties": false,
       "required": ["name", "action"],
       "properties": {
         "name": { "type": "string" },
@@ -316,7 +307,6 @@
     },
     "author": {
       "type": "object",
-      "additionalProperties": false,
       "required": ["account_id", "name"],
       "properties": {
         "account_id": { "type": "string" },
@@ -325,7 +315,6 @@
     },
     "stamp": {
       "type": "object",
-      "additionalProperties": false,
       "required": ["at", "by"],
       "properties": {
         "at": { "type": "string" },
@@ -337,7 +326,6 @@
     },
     "attachment": {
       "type": "object",
-      "additionalProperties": false,
       "required": ["action", "filename"],
       "properties": {
         "action": { "type": "string" },
@@ -347,7 +335,6 @@
     "labelAction": {
       "description": "What happened to one label in an asserted set.",
       "type": "object",
-      "additionalProperties": false,
       "required": ["action", "name"],
       "properties": {
         "action": {
@@ -367,7 +354,6 @@
     "labelInfo": {
       "description": "One label a page carries. managed is true for the global prefix, the only one markfluence writes or removes.",
       "type": "object",
-      "additionalProperties": false,
       "required": ["name", "prefix", "managed"],
       "properties": {
         "name": { "type": "string" },
@@ -385,7 +371,6 @@
     "singleOpFailure": {
       "description": "An operational failure for a single-target command (page-info/read): page not found, fetch error, etc.",
       "type": "object",
-      "additionalProperties": false,
       "required": ["ok", "page_id", "error", "code"],
       "properties": {
         "ok": { "const": false },
@@ -397,7 +382,6 @@
     "userInfoResult": {
       "description": "One account: who the configured credentials belong to (self true) or who an account id names (self false). user-info reports exactly one of these; an operational failure is an errorObject on stderr instead, since there is no page id to name in a result.",
       "type": "object",
-      "additionalProperties": false,
       "required": [
         "ok", "self", "account_id", "display_name", "public_name", "email",
         "account_type", "account_status", "external_collaborator", "guest",
@@ -425,7 +409,6 @@
           "oneOf": [
             {
               "type": "object",
-              "additionalProperties": false,
               "required": ["id", "key", "name", "url"],
               "properties": {
                 "id": { "type": "string" },
@@ -445,7 +428,6 @@
           "oneOf": [
             {
               "type": "object",
-              "additionalProperties": false,
               "required": ["visible", "write", "admin"],
               "properties": {
                 "visible": { "type": "integer" },
@@ -461,7 +443,6 @@
     "spaceInfoResult": {
       "description": "One space's metadata, what the calling account may do in it, the page statuses a page_status: line here may use, and exact page counts. space-info reports exactly one of these; an operational failure is an errorObject on stderr instead, since there is no page id to name in a result.",
       "type": "object",
-      "additionalProperties": false,
       "required": [
         "ok", "key", "name", "id", "type", "status", "description", "labels",
         "homepage_id", "homepage_title", "access", "page_statuses", "pages", "recent"
@@ -488,7 +469,6 @@
           "oneOf": [
             {
               "type": "object",
-              "additionalProperties": false,
               "required": ["read", "create_pages", "admin"],
               "properties": {
                 "read": { "type": "boolean" },
@@ -502,7 +482,6 @@
         "page_statuses": {
           "description": "What a page_status: line for a page in this space may say, and where the answer came from. source \"space\" is the space's own configured list, readable only by a space admin. source \"page\" is what THIS account may set on probe_page_id, which is NOT the space's list: Confluence decides the list per (caller, page), so another page in the same space may allow more or fewer, and a write of a status absent from it is refused. source null with names null means neither could be read.",
           "type": "object",
-          "additionalProperties": false,
           "required": ["source", "probe_page_id", "names"],
           "properties": {
             "source": { "enum": ["space", "page", null] },
@@ -517,7 +496,6 @@
           "oneOf": [
             {
               "type": "object",
-              "additionalProperties": false,
               "required": ["current", "archived", "roots"],
               "properties": {
                 "current": { "type": "integer" },
@@ -533,7 +511,6 @@
           "oneOf": [
             {
               "type": "object",
-              "additionalProperties": false,
               "required": ["days", "pages_created", "pages_touched", "pages_created_and_touched", "last_activity"],
               "properties": {
                 "days": { "type": "integer" },
@@ -550,7 +527,6 @@
     },
     "infoResult": {
       "type": "object",
-      "additionalProperties": false,
       "required": [
         "ok", "page_id", "title", "content_status", "space", "parent", "parent_type",
         "version", "page_width", "page_status", "page_status_available", "labels",
@@ -569,7 +545,6 @@
         "parent_type": { "$ref": "#/$defs/parentTypeOrNull" },
         "version": {
           "type": "object",
-          "additionalProperties": false,
           "required": ["number"],
           "properties": { "number": { "type": "integer" } }
         },
@@ -591,7 +566,6 @@
               "type": "array",
               "items": {
                 "type": "object",
-                "additionalProperties": false,
                 "required": ["key", "value"],
                 "properties": { "key": { "type": "string" }, "value": {} }
               }
@@ -602,7 +576,6 @@
     },
     "readResult": {
       "type": "object",
-      "additionalProperties": false,
       "required": [
         "ok", "page_id", "title", "space", "parent", "parent_type", "page_width",
         "page_status", "labels", "format", "body"
@@ -630,7 +603,6 @@
     "frontmatterDifference": {
       "description": "One frontmatter field the file and the page disagree about. Only differing fields appear, and only fields the file declares: an absent labels or page_width leaves the page's own alone, so a field the file is silent about has no difference to have.",
       "type": "object",
-      "additionalProperties": false,
       "required": ["field", "confluence", "local", "source", "comparable", "note"],
       "properties": {
         "field": { "enum": ["title", "space", "parent", "page_status", "page_width", "labels"] },
@@ -653,7 +625,6 @@
     "diffResult": {
       "description": "What differs between one file and its page. diff exits 1 when differs is true and 2 for any trouble, which is diff(1)'s contract rather than this schema's usual 1/2 -- see docs/json-output.md.",
       "type": "object",
-      "additionalProperties": false,
       "required": [
         "ok", "file", "page_id", "title", "url", "metadata_source", "differs", "body_differs",
         "added", "removed", "diff", "frontmatter", "warnings"
@@ -689,7 +660,6 @@
     },
     "updateResult": {
       "type": "object",
-      "additionalProperties": false,
       "required": [
         "ok", "status", "dry_run", "file", "page_id", "title", "space", "url",
         "version", "page_width", "labels", "page_status", "attachments", "warnings", "broken",
@@ -709,7 +679,6 @@
             { "type": "null" },
             {
               "type": "object",
-              "additionalProperties": false,
               "required": ["previous", "new"],
               "properties": { "previous": { "type": "integer" }, "new": { "type": "integer" } }
             }
@@ -728,7 +697,6 @@
             { "type": "null" },
             {
               "type": "object",
-              "additionalProperties": false,
               "required": ["page_version", "publish_sha256"],
               "properties": {
                 "page_version": { "type": "integer" },
@@ -748,7 +716,6 @@
     "createResult": {
       "description": "One input file's create outcome. page_id and url describe the created page; on a failure they are null, except in two cases where a real page exists and its id must stay visible: the file's frontmatter page_id blocked creation (page_id is that id, url is the page already at it, null when the id resolves to nothing), or a page was created on the server but recording its metadata afterward failed -- in the file's frontmatter or in its markfluence.yaml entry -- in which case page_id/url name that orphaned page so it can be recovered.",
       "type": "object",
-      "additionalProperties": false,
       "required": [
         "ok", "status", "dry_run", "file", "page_id", "title", "space", "parent", "parent_type", "parent_file", "url",
         "page_width", "labels", "page_status", "persisted", "attachments", "warnings", "broken",
@@ -781,7 +748,6 @@
     "checkResult": {
       "description": "One checked file. broken/warnings are always [] (never null), matching ConfluencePage's own convention. status=broken means broken is non-empty (frontmatter or converter); status=failed means the file never reached a clean answer at all (unreadable, unterminated frontmatter, frontmatter that is not valid YAML or not a flat mapping of single-line scalars, bad page_width, non-numeric page_id) -- code is VALIDATION in that case. debug is non-null only when --show-html was passed and the file reached the converter (never on a failed file).",
       "type": "object",
-      "additionalProperties": false,
       "required": ["ok", "status", "file", "broken", "warnings", "debug", "error", "code"],
       "properties": {
         "ok": { "type": "boolean" },
@@ -794,7 +760,6 @@
             { "type": "null" },
             {
               "type": "object",
-              "additionalProperties": false,
               "required": ["html", "attachments"],
               "properties": {
                 "html": { "type": "string" },
@@ -810,7 +775,6 @@
     "checkAttachment": {
       "description": "ConfluencePage.Attachments verbatim: a local image check's --show-html surfaces, not an upload outcome (contrast update/create's attachments array, which reports an action).",
       "type": "object",
-      "additionalProperties": false,
       "required": ["filename", "path", "source"],
       "properties": {
         "filename": { "type": "string" },
@@ -821,7 +785,6 @@
     "attachmentUploadResult": {
       "description": "One uploaded file. status uses the same verbs as the attachments array on update/create. dest_path is always null: upload has no local destination to report, and only exists here so upload and download share one result shape.",
       "type": "object",
-      "additionalProperties": false,
       "required": ["ok", "status", "dry_run", "filename", "dest_path", "error", "code"],
       "properties": {
         "ok": { "type": "boolean" },
@@ -836,7 +799,6 @@
     "exportSummary": {
       "description": "export batch summary. skipped counts pages whose file was already on disk; a run that exports nothing new is all skipped and still succeeded. project_file says what happened to the markfluence.yaml a multi-page export needs to be republishable: null for a single-page export, which needs none.",
       "type": "object",
-      "additionalProperties": false,
       "required": ["total", "succeeded", "failed", "skipped", "project_file"],
       "properties": {
         "total": { "type": "integer" },
@@ -849,7 +811,6 @@
     "exportResult": {
       "description": "One exported page. status is whether the page file was written or skipped; the attachments array holds every attachment considered, including unreferenced ones (dest_path null, status skipped_unreferenced). warnings lists anything worth saying about this page besides its outcome, and is present whether or not it exported: references it makes to attachments that are not attached, and a name it did not choose because a sibling slugged the same.",
       "type": "object",
-      "additionalProperties": false,
       "required": [
         "ok", "page_id", "title", "space", "parent", "parent_type", "parent_file", "dry_run",
         "status", "dest_path", "attachments", "warnings", "error", "code"
@@ -872,7 +833,6 @@
           "type": "array",
           "items": {
             "type": "object",
-            "additionalProperties": false,
             "required": ["status", "filename", "dest_path", "error", "code"],
             "properties": {
               "status": { "enum": ["downloaded", "skipped", "skipped_unreferenced", "failed"] },
@@ -891,7 +851,6 @@
     "attachmentDownloadResult": {
       "description": "One attachment written to disk. filename is the stored attachment name; dest_path is the local path written, which depends on the recorded source path, --flat, and --dest. dest_path is null only when resolving it is what failed.",
       "type": "object",
-      "additionalProperties": false,
       "required": ["ok", "status", "dry_run", "filename", "dest_path", "error", "code"],
       "properties": {
         "ok": { "type": "boolean" },
@@ -906,7 +865,6 @@
     "attachmentListResult": {
       "description": "One attachment on the page. filename is the name Confluence stores; for an attachment markfluence published that is the encoded source path, and source is the Markdown image path it came from. managed is false for a hand-uploaded attachment (sha256 and source both null). source may also be null on a managed attachment published before markfluence recorded source paths, in which case sha256 is still set.",
       "type": "object",
-      "additionalProperties": false,
       "required": ["ok", "id", "filename", "size", "media_type", "version", "comment", "managed", "sha256", "source"],
       "properties": {
         "ok": { "const": true },
@@ -924,7 +882,6 @@
     "attachmentSummary": {
       "description": "attachment-upload/attachment-download batch summary.",
       "type": "object",
-      "additionalProperties": false,
       "required": ["total", "succeeded", "failed", "skipped"],
       "properties": {
         "total": { "type": "integer" },
@@ -936,7 +893,6 @@
     "basicSummary": {
       "description": "page-info/read batch summary (total:1), and attachment-list (total: the attachment count).",
       "type": "object",
-      "additionalProperties": false,
       "required": ["total", "succeeded", "failed"],
       "properties": {
         "total": { "type": "integer" },
@@ -946,7 +902,6 @@
     },
     "updateSummary": {
       "type": "object",
-      "additionalProperties": false,
       "required": ["total", "succeeded", "failed", "skipped"],
       "properties": {
         "total": { "type": "integer" },
@@ -957,7 +912,6 @@
     },
     "createSummary": {
       "type": "object",
-      "additionalProperties": false,
       "required": ["total", "succeeded", "failed", "aborted"],
       "properties": {
         "total": { "type": "integer" },
@@ -969,7 +923,6 @@
     "checkSummary": {
       "description": "clean/warnings count files on the ok:true side (clean has neither broken nor warnings; warnings has only warnings); failed already covers both the broken and failed statuses on the ok:false side rather than splitting them the way status does.",
       "type": "object",
-      "additionalProperties": false,
       "required": ["total", "succeeded", "failed", "clean", "warnings"],
       "properties": {
         "total": { "type": "integer" },
@@ -982,7 +935,6 @@
     "errorObject": {
       "description": "The typed error object written to stderr on a fatal/pre-flight failure. command may be empty for a pre-parse (bad-flag) error.",
       "type": "object",
-      "additionalProperties": false,
       "required": ["schema_version", "command", "error", "code", "warnings"],
       "properties": {
         "schema_version": { "const": 1 },

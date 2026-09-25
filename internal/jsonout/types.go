@@ -84,8 +84,8 @@ type AttachmentActionResult struct {
 // #/$defs/singleOpFailure in the schema.
 //
 // It is a struct rather than the map each command used to build inline because
-// every field then marshals unconditionally, which is what lets the schema's
-// additionalProperties:false and required catch a renamed or added key. A map
+// every field then marshals unconditionally, which is what lets the closed
+// schema the tests validate against, and required, catch a renamed or added key. A map
 // only carries the keys the caller remembered to set, so drift in one showed up
 // nowhere.
 type SingleOpFailure struct {

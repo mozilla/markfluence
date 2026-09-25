@@ -28,8 +28,9 @@ type jsonSearchResult struct {
 
 // jsonSearchSummary is search's summary.
 //
-// basicSummary cannot be reused: it is additionalProperties:false, and both
-// fields below are load-bearing.
+// basicSummary cannot be reused: it lists neither field, the closed schema the
+// tests validate against refuses an unlisted key, and both fields below are
+// load-bearing.
 //
 // truncated is a flag rather than a count of what was dropped, because there is
 // no trustworthy count to report -- totalSize drifted 294/292/291 against 289

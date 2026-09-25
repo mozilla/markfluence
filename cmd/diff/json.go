@@ -11,8 +11,8 @@ import (
 // diffResult is the --json result for one file.
 //
 // Every field is on this struct and nothing uses omitempty, so every one always
-// marshals and the schema's additionalProperties:false / required catch an
-// added, renamed or removed field whatever a fixture sets.
+// marshals and the closed schema the tests validate against (schematest.Closed)
+// and required catch an added, renamed or removed field whatever a fixture sets.
 type diffResult struct {
 	OK   bool   `json:"ok"`
 	File string `json:"file"`

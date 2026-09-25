@@ -31,8 +31,9 @@ type jsonUserResult struct {
 
 // jsonUserSummary is user-find's summary.
 //
-// basicSummary cannot be reused: it is additionalProperties:false, and
-// truncated is load-bearing. It is a flag rather than a count for a sharper
+// basicSummary cannot be reused: it does not list truncated, the closed schema
+// the tests validate against refuses an unlisted key, and truncated is
+// load-bearing. It is a flag rather than a count for a sharper
 // reason than search's drift -- this route's totalSize reports the rows on the
 // current page, so it cannot describe the result set at all.
 type jsonUserSummary struct {
