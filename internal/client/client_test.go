@@ -708,7 +708,7 @@ func writeTempImage(t *testing.T) (path, sum string) {
 	if err := os.WriteFile(path, []byte("image-bytes"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	sum, err := fileChecksum(path)
+	sum, err := fileChecksum(LocalAttachment{Path: path})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1951,5 +1951,59 @@ func TestRemoveLabelDoesNotSwallowARejectedCredential(t *testing.T) {
 	err := c.RemoveLabel("123", "runbook")
 	if err == nil {
 		t.Fatal("RemoveLabel = nil, want the credential failure reported")
+	}
+}
+
+// TestSyncAttachmentsRefusesAnEscapeThroughTheRoot is #186 end to end: the
+// file is read through the root that checked it, so a directory on its path
+// that became a symbolic link out of the root fails the sync, and nothing is
+// uploaded.
+func TestSyncAttachmentsRefusesAnEscapeThroughTheRoot(t *testing.T) {
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "x.png"), []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "d")); err != nil {
+		t.Fatal(err)
+	}
+
+	c, s := newServer(t, resp{200, `{"results":[]}`})
+	att := LocalAttachment{Filename: "x.png", Path: filepath.Join(dir, "d", "x.png"), Source: "d/x.png", Root: root}
+	if _, err := c.SyncAttachments("1", []LocalAttachment{att}); err == nil {
+		t.Fatal("SyncAttachments read through a symlinked directory out of the root, want an error")
+	}
+	for _, m := range s.calls {
+		if m == http.MethodPost {
+			t.Errorf("calls = %v, want no upload", s.calls)
+		}
+	}
+}
+
+// TestUploadRefusesAFileThatChangedSinceItsChecksum: the comment records the
+// checksum taken when planning, so bytes that differ at upload time are
+// refused rather than sent under a checksum that misdescribes them.
+func TestUploadRefusesAFileThatChangedSinceItsChecksum(t *testing.T) {
+	path, sum := writeTempImage(t)
+	c, s := newServer(t)
+	p := attachmentPlan{att: LocalAttachment{Filename: "x.png", Path: path, Source: "x.png"},
+		comment: "c", contentType: "image/png", sum: sum}
+	if err := os.WriteFile(path, []byte("edited meanwhile"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := c.uploadAttachment(c.BaseURL()+"/wiki/rest/api/content/1/child/attachment", p)
+	if err == nil || !strings.Contains(err.Error(), "changed while publishing") {
+		t.Errorf("err = %v, want changed while publishing", err)
+	}
+	if FromRequest(err) {
+		t.Errorf("err = %v is a request error; a changed local file is a local failure", err)
+	}
+	if len(s.calls) != 0 {
+		t.Errorf("calls = %v, want nothing sent", s.calls)
 	}
 }

@@ -31,7 +31,6 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -1118,6 +1117,7 @@ type attachmentPlan struct {
 	comment     string
 	contentType string
 	existingID  string // the current attachment id, for an "updated" upload
+	sum         string // the file's full SHA-256, which the upload must match
 }
 
 // planAttachments decides, per file, whether it would be created, updated, or
@@ -1138,17 +1138,17 @@ func (c *ConfluenceClient) planAttachments(pageID string, attachments []LocalAtt
 
 	plans := make([]attachmentPlan, 0, len(attachments))
 	for _, att := range attachments {
-		sum, err := fileChecksum(att.Path)
+		full, err := fileChecksum(att)
 		if err != nil {
 			return nil, err
 		}
-		sum = sum[:checksumHexLen]
+		sum := full[:checksumHexLen]
 		comment := attachmentComment(sum, att.Source)
 		contentType := mime.TypeByExtension(filepath.Ext(att.Filename))
 		if contentType == "" {
 			contentType = "application/octet-stream"
 		}
-		p := attachmentPlan{att: att, comment: comment, contentType: contentType}
+		p := attachmentPlan{att: att, comment: comment, contentType: contentType, sum: full}
 		cur, ok := remote[att.Filename]
 		if ok {
 			// Recorded even for a skip, so a forced upload can replace in place
@@ -1236,14 +1236,12 @@ func (c *ConfluenceClient) syncAttachments(pageID string, attachments []LocalAtt
 		switch p.action {
 		case "created":
 			if err := c.uploadAttachment(
-				c.baseURL+"/wiki/rest/api/content/"+pageID+"/child/attachment",
-				p.att.Filename, p.comment, p.att.Path, p.contentType); err != nil {
+				c.baseURL+"/wiki/rest/api/content/"+pageID+"/child/attachment", p); err != nil {
 				return nil, err
 			}
 		case "updated":
 			if err := c.uploadAttachment(
-				c.baseURL+"/wiki/rest/api/content/"+pageID+"/child/attachment/"+p.existingID+"/data",
-				p.att.Filename, p.comment, p.att.Path, p.contentType); err != nil {
+				c.baseURL+"/wiki/rest/api/content/"+pageID+"/child/attachment/"+p.existingID+"/data", p); err != nil {
 				return nil, err
 			}
 		}
@@ -1271,13 +1269,20 @@ func writeTextField(mw *multipart.Writer, name, value string) error {
 	return err
 }
 
-// uploadAttachment posts a multipart attachment upload to rawURL.
-func (c *ConfluenceClient) uploadAttachment(rawURL, filename, comment, filePath, contentType string) error {
-	f, err := os.Open(filePath)
+// uploadAttachment posts p's file to rawURL as a multipart attachment upload.
+//
+// The file is opened a second time here, after planAttachments computed the
+// checksum the comment records, so the bytes sent could differ from the bytes
+// that checksum describes. The upload hashes what it copies and sends nothing
+// on a mismatch: an attachment whose comment misdescribes its content would
+// read as up to date on the next publish, or as changed when it is not.
+func (c *ConfluenceClient) uploadAttachment(rawURL string, p attachmentPlan) error {
+	f, err := p.att.Open()
 	if err != nil {
 		return err
 	}
 	defer func() { _ = f.Close() }()
+	filename, comment, contentType := p.att.Filename, p.comment, p.contentType
 
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
@@ -1299,8 +1304,13 @@ func (c *ConfluenceClient) uploadAttachment(rawURL, filename, comment, filePath,
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(part, f); err != nil {
+	sent := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(part, sent), f); err != nil {
 		return err
+	}
+	if hex.EncodeToString(sent.Sum(nil)) != p.sum {
+		return fmt.Errorf("%s changed while publishing: it no longer matches the checksum taken before "+
+			"the upload, so nothing was uploaded", p.att.Path)
 	}
 	if err := mw.Close(); err != nil {
 		return err
@@ -1322,8 +1332,9 @@ func (c *ConfluenceClient) uploadAttachment(rawURL, filename, comment, filePath,
 	return nil
 }
 
-func fileChecksum(path string) (string, error) {
-	f, err := os.Open(path)
+// fileChecksum is the SHA-256 of att's file, read through att.Open.
+func fileChecksum(att LocalAttachment) (string, error) {
+	f, err := att.Open()
 	if err != nil {
 		return "", err
 	}
