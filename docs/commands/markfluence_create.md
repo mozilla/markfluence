@@ -18,7 +18,9 @@ markfluence.yaml. The first one that gives a value wins, and the default is
 max.
 
 The parent comes from --parent or the frontmatter. It can be a page or a Cloud
-folder. Give the id of a folder in the same way as the id of a page.
+folder. Give the id of a folder in the same way as the id of a page. A new page
+goes last among the children of its parent. markfluence never changes the order
+of siblings, so reorder them in Confluence.
 
 A page_status: line sets the status of the new page, which is the colored
 lozenge next to its title. Confluence decides which statuses a page can have,

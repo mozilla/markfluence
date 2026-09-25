@@ -536,6 +536,35 @@ func TestParentPathThatNamesNoPage(t *testing.T) {
 	}
 }
 
+// parent: null is a declaration -- update moves the page to the top of the
+// space for it -- so it is compared, shown as null, against a page that has a
+// parent; and it agrees with a page at the top.
+func TestNullParentIsCompared(t *testing.T) {
+	dir := projectDir(t, "", map[string]string{
+		"runbook.md": "---\npage_id: 1234567890\nparent: null\n---\n\nHello.\n",
+	})
+	o := runDiff(t, pageStub{body: "<p>Hello.</p>", parentID: "555"}, dir, "runbook.md")
+	if o.exit != 1 || !strings.Contains(o.stderr, "parent") || !strings.Contains(o.stderr, "null") {
+		t.Errorf("exit = %d, want 1 and a parent row showing null; stderr:\n%s", o.exit, o.stderr)
+	}
+	o = runDiff(t, pageStub{body: "<p>Hello.</p>"}, dir, "runbook.md")
+	if o.exit != 0 {
+		t.Errorf("a page at the top agrees with parent: null; exit = %d, stderr:\n%s", o.exit, o.stderr)
+	}
+}
+
+// The project's space: default is compared when the file declares no space,
+// because update refuses a page outside it; the report says where it came from.
+func TestProjectDefaultSpaceIsCompared(t *testing.T) {
+	dir := projectDir(t, "space: OPS\n", map[string]string{
+		"runbook.md": "---\npage_id: 1234567890\n---\n\nHello.\n",
+	})
+	o := runDiff(t, pageStub{body: "<p>Hello.</p>"}, dir, "runbook.md")
+	if o.exit != 1 || !strings.Contains(o.stderr, "project default") || !strings.Contains(o.stderr, "refuses") {
+		t.Errorf("exit = %d, want 1 and a space row naming the project default; stderr:\n%s", o.exit, o.stderr)
+	}
+}
+
 // Placement.Dir: a page deeper than the root has to render a recorded
 // attachment's path relative to its own file, or every sourced image differs.
 func TestAttachmentPathIsRelativeToTheFile(t *testing.T) {

@@ -212,3 +212,25 @@ it.
   it is how labels already behave.
 - **Moves in `create`.** `create` places a new page where the file says, which
   is already correct.
+
+## Amended during implementation
+
+- **No ancestors route.** D5's loop check was to read the target's ancestors
+  (v2 `GET /pages/{id}/ancestors`, or `/folders/{id}/ancestors`). Both need
+  `read:content.metadata:confluence`, which no other markfluence call needs
+  and the documented token does not carry. `parentref.Within` walks the
+  target's `parentId` chain through the page and folder routes instead: a
+  request per level, only when a move is about to happen.
+- **`parentref` is `Locate`/`PageID`/`Resolve`/`Lookup`/`Within`**, not
+  `PageID`/`Kind`. `create` needs to stop between locating a `.md` parent and
+  reading it (an in-set parent is known without a read), and `update` needs
+  the target's title and parent, not only its kind.
+- **`pagemeta.Resolved` gained `Space(root)` and `Parent()`**, so `update` and
+  `diff` read the two coordinates, and the project default, through one call.
+- **Verified end to end** on 2026-09-25 against the personal space with the
+  built binary: a matching parent skipped; a dry run previewed a move and
+  wrote nothing; a move under a page, to the top (`parent: null`), and back
+  under a `.md` parent each moved the page with the version unchanged and the
+  body `PUT` skipped; a parent below the page was refused as a loop; a space
+  declared in the file, and one from the project default, were each refused;
+  `diff` reported the project-default space.

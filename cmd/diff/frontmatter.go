@@ -6,16 +6,15 @@ package diff
 
 import (
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/mozilla/markfluence/internal/client"
-	"github.com/mozilla/markfluence/internal/frontmatter"
 	"github.com/mozilla/markfluence/internal/labels"
 	"github.com/mozilla/markfluence/internal/pagemeta"
 	"github.com/mozilla/markfluence/internal/pagestatus"
 	"github.com/mozilla/markfluence/internal/pagewidth"
+	"github.com/mozilla/markfluence/internal/parentref"
 	"github.com/mozilla/markfluence/internal/project"
 )
 
@@ -56,7 +55,9 @@ var fieldOrder = []string{"title", "space", "parent", "page_status", "page_width
 // mean something: `update` does not touch a field the file does not declare, so
 // a field the file is silent about has no difference to have. Absent means
 // untouched for page_width and labels (L9), absent means "keep the live title"
-// for title, and absent means "do not move the page" for space and parent.
+// for title, and absent means "do not move the page" for parent. space is the
+// one field whose project default counts as well, since update refuses a page
+// outside it.
 func compareMetadata(
 	c *client.ConfluenceClient, page *client.Page,
 	meta pagemeta.Resolved, root *project.Root, fileDir string,
@@ -78,17 +79,23 @@ func compareMetadata(
 		})
 	}
 
-	if local, ok := declared(meta, "space"); ok {
+	if local, fromProject := meta.Space(root); local != "" {
+		source := sourceLabel(meta.Origin["space"])
+		if fromProject {
+			// update's rule, via the same call: the project default is a
+			// declaration, and a page outside it is refused.
+			source = projectDefault
+		}
 		add(difference{
 			Field: "space", Confluence: client.SpaceKeyFromWebUI(page.Links.WebUI), Local: local,
-			Source: sourceLabel(meta.Origin["space"]), Comparable: true,
-			// Named here rather than left implicit: `update` sends no spaceId,
-			// so unlike a title this is a disagreement it will not reconcile.
-			Note: "update does not move a page between spaces",
+			Source: source, Comparable: true,
+			// Named here rather than left implicit: unlike every other field,
+			// update does not reconcile this one. It refuses the file.
+			Note: "update refuses a page in another space; move it in Confluence",
 		})
 	}
 
-	if local, ok := declared(meta, "parent"); ok {
+	if local, ok := meta.Parent(); ok {
 		add(parentDifference(page, meta, root, fileDir, local))
 	}
 
@@ -127,27 +134,38 @@ func declared(meta pagemeta.Resolved, field string) (string, bool) {
 }
 
 // parentDifference compares a parent, resolving a ".md" reference to the page
-// id it names before comparing.
+// id it names before comparing. A blank local parent is the top of the space,
+// and is shown as null on both sides.
 //
 // A file that came out of an export tree spells its parent as a relative path
 // to the parent's own .md while the live page's parent is an id, so comparing
-// the spellings would report a difference on every such file. This is the
-// resolution `create` already does for a .md parent, minus the refusals that
-// exist to protect a publish: nothing is written here, so an unreadable parent
-// is reported rather than fatal.
+// the spellings would report a difference on every such file. The resolution
+// is internal/parentref, the one create and update use; nothing is written
+// here, so a parent that cannot be resolved is reported as a note rather than
+// failing the command.
 func parentDifference(
 	page *client.Page, meta pagemeta.Resolved, root *project.Root, fileDir, local string,
 ) difference {
-	d := difference{
-		Field: "parent", Confluence: page.ParentID, Local: local,
-		Source: sourceLabel(meta.Origin["parent"]), Comparable: true,
-		Note: "update does not move a page to a new parent",
+	live := page.ParentID
+	if live == "" {
+		live = "null"
 	}
-	if !strings.HasSuffix(local, ".md") {
+	if local == "" {
+		local = "null"
+	}
+	d := difference{
+		Field: "parent", Confluence: live, Local: local,
+		Source: sourceLabel(meta.Origin["parent"]), Comparable: true,
+	}
+	if !parentref.IsFile(local) {
 		return d
 	}
 
-	id, err := parentPageID(root, fileDir, local)
+	var id string
+	f, err := parentref.Locate(root, fileDir, local)
+	if err == nil {
+		id, err = parentref.PageID(root, f, local)
+	}
 	switch {
 	case err != nil:
 		d.Note = err.Error()
@@ -167,40 +185,6 @@ func parentDifference(
 		}
 	}
 	return d
-}
-
-// parentPageID reads the page id a parent .md reference names, through the
-// root's os.Root so the read stays inside the documentation root.
-func parentPageID(root *project.Root, fileDir, ref string) (string, error) {
-	if root == nil || root.FS == nil {
-		return "", fmt.Errorf("no documentation root, so %s cannot be resolved", ref)
-	}
-	abs := filepath.Join(fileDir, filepath.FromSlash(ref))
-	rel, err := filepath.Rel(root.Dir, abs)
-	if err != nil {
-		return "", fmt.Errorf("%s cannot be resolved", ref)
-	}
-	rel = filepath.ToSlash(rel)
-	if rel == ".." || strings.HasPrefix(rel, "../") {
-		return "", fmt.Errorf("%s is outside the documentation root", ref)
-	}
-	data, err := root.FS.ReadFile(rel)
-	if err != nil {
-		return "", fmt.Errorf("%s cannot be read", ref)
-	}
-	pmf, err := frontmatter.Parse(abs, string(data))
-	if err != nil {
-		return "", fmt.Errorf("%s has unreadable frontmatter", ref)
-	}
-	// Through pagemeta, not pmf.PageID(): the parent's coordinates may live in
-	// its own pages: entry, and reading only the file would report a published
-	// parent as unpublished.
-	key, _ := pagemeta.KeyFor(root, abs)
-	pMeta, err := pagemeta.Resolve(key, pmf, root)
-	if err != nil {
-		return "", fmt.Errorf("%s: %v", ref, err)
-	}
-	return strings.TrimSpace(pMeta.Fields["page_id"]), nil
 }
 
 // widthDifference compares the page width, reporting ok=false when nothing
@@ -332,7 +316,7 @@ func declaredWidth(meta pagemeta.Resolved, root *project.Root) (value, source st
 		// markfluence.yaml, but one is a top-level setting and the other is a
 		// field inside this file's entry, and a reader is being told where to
 		// go and edit.
-		return string(w), project.Filename + " (project default)", true
+		return string(w), projectDefault, true
 	}
 	return "", "", false
 }
@@ -392,6 +376,11 @@ func renderList(names []string) string {
 // it is the most useful answer of the three: correcting a field both locations
 // supply means editing both files, and being told only one of them is how a
 // value comes back on the next run.
+// projectDefault labels a value that comes from a top-level setting in
+// markfluence.yaml rather than from this file's pages: entry: both live in the
+// same file, but a reader is being told where to go and edit.
+const projectDefault = project.Filename + " (project default)"
+
 func sourceLabel(s pagemeta.Source) string {
 	switch s {
 	case pagemeta.FromFrontmatter:

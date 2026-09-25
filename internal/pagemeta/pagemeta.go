@@ -123,6 +123,34 @@ func (r Resolved) InManifest() bool { return r.Source == FromManifest || r.Sourc
 // metadata", for reporting, and this answers "should update act on it".
 func (r Resolved) Managed() bool { return r.managed }
 
+// Space is the space a file declares: its own space field (frontmatter or
+// pages: entry), else the project's space: default in markfluence.yaml, else
+// "". fromProject reports the second case, so a message can say which place to
+// edit.
+//
+// The project default counts as a declaration for update's space check (#10,
+// _plans/053): a project that says space: ENG and a page somewhere else is a
+// mistake whose intent nobody can know. update and diff both ask here, so the
+// two cannot disagree about what a file declares.
+func (r Resolved) Space(root *project.Root) (space string, fromProject bool) {
+	if v := strings.TrimSpace(r.Fields["space"]); v != "" {
+		return v, false
+	}
+	if root != nil && root.Config.Space != "" {
+		return root.Config.Space, true
+	}
+	return "", false
+}
+
+// Parent is the parent a file declares, and whether it declares one at all.
+// A present key with a blank value -- parent: null, parent: ~, or parent: with
+// nothing after it -- declares the top of the space, and returns ("", true).
+// Only an absent key returns false, which leaves the page where it is (L9).
+func (r Resolved) Parent() (parent string, declared bool) {
+	v, ok := r.Fields["parent"]
+	return strings.TrimSpace(v), ok
+}
+
 // Resolve merges a file's frontmatter with its pages: entry, if it has one.
 //
 // key is the file's path normalized by project.NormalizePageKey -- the caller

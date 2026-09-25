@@ -66,6 +66,15 @@ var Cmd = &cobra.Command{
 		"to. A name that does not agree fails that file, and the error lists the names\n" +
 		"that would work. page-info shows them too. A status write gives the page a new\n" +
 		"version, so update does not send a status that already agrees.\n\n" +
+		"update also puts the page where the file says. A parent: line moves the page\n" +
+		"under that page or folder, and parent: null moves it to the top of its space.\n" +
+		"With no parent: line, update does not move the page. A moved page goes last\n" +
+		"among its new siblings. markfluence never changes the order of siblings, so\n" +
+		"reorder them in Confluence. A move does not give the page a new version.\n\n" +
+		"update does not move a page to a different space. If the file or its entry\n" +
+		"declares a space, or markfluence.yaml has a space: default, and the page is in a\n" +
+		"different space, update fails that file. Move the page in Confluence, or\n" +
+		"correct the space.\n\n" +
 		"update never writes to the file or to markfluence.yaml. Thus you can safely\n" +
 		"correct a wrong page_id. A page_id that names no page fails that file, and the\n" +
 		"error tells you what to do. A page_id that is not a number fails with no\n" +
@@ -88,8 +97,9 @@ var Cmd = &cobra.Command{
 		"update does each file separately. It exits with a code that is not zero if any\n" +
 		"file failed, also a refused page.\n\n" +
 		"--dry-run shows the new version, the attachment uploads, and any change to the\n" +
-		"width, the labels, or the page status. It writes nothing to Confluence. It does\n" +
-		"the same two checks as a real run, so its preview agrees with the real run.",
+		"parent, the width, the labels, or the page status. It writes nothing to\n" +
+		"Confluence. It does the same two checks as a real run, so its preview agrees\n" +
+		"with the real run.",
 	Example: "  # Publish a file. The page id comes from its frontmatter or its entry\n" +
 		"  markfluence update docs/managing_an_incident.md\n\n" +
 		"  # Publish a whole tree, as CI does. The metadata comes from the files\n" +
@@ -311,6 +321,11 @@ func processFile(
 			"correct it, or remove it and use create instead")), jsonout.CodeNotFound)
 	}
 	r.space = client.SpaceKeyFromWebUI(page.Links.WebUI)
+	// Before the divergence check: a page in the wrong space is the more basic
+	// error, and a refusal pays for nothing further.
+	if err := checkSpace(meta, root, r.space); err != nil {
+		return r.fail(err, jsonout.CodeValidation)
+	}
 	if title == "" {
 		title = page.Title // fall back to the live page's title
 	}
@@ -352,6 +367,16 @@ func processFile(
 			base.PageVersion, page.Version.Number),
 			jsonout.CodeConflict)
 	}
+
+	// Whether the page moves, and whether it can: every read the move needs,
+	// before any write, so a parent that cannot be resolved or would make a
+	// loop fails the file with nothing written -- under --dry-run too. The
+	// move itself comes first among the writes below (_plans/053 D5).
+	mv, err := planMove(c, meta, root, filepath.Dir(abs), page, r.space)
+	if err != nil {
+		return r.fail(err, jsonout.CodeOr(err, jsonout.CodeValidation))
+	}
+	r.move = mv
 
 	// The name half of page_status, resolved to the status to write. Before any
 	// request that could change the page -- the file names a status and the wire
@@ -445,6 +470,16 @@ func processFile(
 		r.ok = true
 		r.status = statusFor(r, bodyChanged)
 		return r
+	}
+
+	// The move first, and fatal, unlike the width and label passes below: those
+	// run once the page is published, so failing would report a publish that
+	// happened, while nothing has been written when this runs. A v1 move
+	// leaves the page version alone, so nothing after it needs to know.
+	if mv != nil {
+		if err := c.MovePage(pageID, mv.position, mv.target); err != nil {
+			return r.fail(err, jsonout.CodeFor(err))
+		}
 	}
 
 	// CodeOr, not CodeFor: planning an upload checksums every local asset, so
@@ -552,7 +587,7 @@ func usableBase(log *actionlog.Log, key, pageID string) (actionlog.Entry, bool) 
 // the render matched the recorded base and nothing else was found to do,
 // rather than that two timestamps happened to line up.
 func statusFor(r *updateResult, bodyChanged bool) string {
-	if bodyChanged || r.widthSet || wroteAnAttachment(r) || changedALabel(r) || setAStatus(r) {
+	if bodyChanged || r.move != nil || r.widthSet || wroteAnAttachment(r) || changedALabel(r) || setAStatus(r) {
 		return statusPublished
 	}
 	return statusSkipped

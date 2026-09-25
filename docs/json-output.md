@@ -132,6 +132,12 @@ output before it gets into the schema.
   result can be `published` with no new version. `body_changed` is `null` when
   the check did not run: there was no base, the base had no sha, or you gave
   `--force`. `--force` always publishes and uses neither check.
+- **`moved`** on `update` is the parent of the page before and after a move to
+  the `parent` that the file declares (#10). It is `null` when the page did not
+  move. `from` or `to` is `null` for the top of the space. A move alone makes
+  the result `published` with no new version, because a move does not change
+  the page version. On a failed result, `moved` is set if the move happened
+  before the failure, since the page is then in its new place.
 - **`code: "CONFLICT"`** is the refusal to overwrite a page that has a newer
   version than your copy. It is not `VALIDATION`, because nothing in the file
   is wrong. To correct it, export the page again or give `--force`. The run

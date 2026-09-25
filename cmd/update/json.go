@@ -87,6 +87,10 @@ type updateResult struct {
 	// Reported as --json's "base" -- a fact about the log rather than about
 	// the check, so it is set even under --force, where the checks do not run.
 	base *actionlog.Entry
+	// move is the move this run made (or, under --dry-run, would make), nil
+	// when the page stayed where it was.
+	move *move
+
 	// bodyChanged is what the idempotence check concluded, nil when it could
 	// not run: no base, no sha in the base, or --force. A tri-state rather
 	// than a bool because "the check did not run" is the thing a CI consumer
@@ -136,6 +140,9 @@ func (r *updateResult) renderHuman() {
 		}
 		ui.Info(prefix + " Skipping -- no changes")
 		return
+	}
+	if r.move != nil {
+		ui.Info(prefix + " " + r.move.describe(r.dryRun))
 	}
 	for _, a := range r.attachments {
 		ui.Info(fmt.Sprintf("%s attachment %s: %s", prefix, a.Action, a.Filename))
@@ -194,9 +201,12 @@ type jsonUpdateResult struct {
 	Base *jsonUpdateBase `json:"base"`
 	// BodyChanged is what the idempotence check concluded, null when it did
 	// not run (no base, a base with no sha, or --force).
-	BodyChanged *bool         `json:"body_changed"`
-	Error       *string       `json:"error"`
-	Code        *jsonout.Code `json:"code"`
+	BodyChanged *bool `json:"body_changed"`
+	// Moved is the page's parent before and after a move, null when the page
+	// did not move. Either side is null for the top of the space.
+	Moved *jsonMoved    `json:"moved"`
+	Error *string       `json:"error"`
+	Code  *jsonout.Code `json:"code"`
 }
 
 // jsonUpdateBase is the recorded base, reported so a consumer can see what the
@@ -204,6 +214,13 @@ type jsonUpdateResult struct {
 type jsonUpdateBase struct {
 	PageVersion   int    `json:"page_version"`
 	PublishSHA256 string `json:"publish_sha256"`
+}
+
+// jsonMoved is a move: the parent ids before and after, null for the top of
+// the space.
+type jsonMoved struct {
+	From *string `json:"from"`
+	To   *string `json:"to"`
 }
 
 type jsonUpdateVersion struct {
@@ -230,6 +247,9 @@ func (r *updateResult) jsonResult() jsonUpdateResult {
 
 		MetadataSource: strOrNil(r.metadataSource),
 		BodyChanged:    r.bodyChanged,
+	}
+	if r.move != nil {
+		res.Moved = &jsonMoved{From: strOrNil(r.move.from), To: strOrNil(r.move.to)}
 	}
 	if r.base != nil {
 		res.Base = &jsonUpdateBase{

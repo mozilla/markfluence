@@ -55,9 +55,13 @@ only those. An absent labels or page_width leaves the value on the page alone,
 and an absent title keeps the live title. Thus for a file with only page_id and
 title, diff reports the title and the body, and nothing else.
 
-diff compares space and parent, but no command changes them now. update does
-not move a page to a different space or parent. Thus a difference in either
-one is a disagreement that you must correct by hand.
+diff compares parent as a page id, so a parent: that names a .md file agrees
+with the page when that file's page_id is the page's parent. parent: null means
+the top of the space, and update moves the page to agree with parent.
+
+diff also compares a space: default in markfluence.yaml when the file declares
+no space. update does not move a page to a different space. It refuses the
+file, so a difference in space is one that you must correct by hand.
 
 DIFFERENCES THAT YOU DID NOT MAKE
 
