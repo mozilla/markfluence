@@ -385,17 +385,17 @@ func onlyTextAlign(style string) bool {
 }
 
 // cellAlign reports the one alignment a cell's content carries, normalized to
-// the delimiter row's vocabulary, or false when its paragraphs disagree -- a
-// cell with one centred line and one plain one has no column alignment that
+// the delimiter row's vocabulary, or false when its lines disagree -- a cell
+// with one centred line and one plain one has no column alignment that
 // republishes it unchanged.
 //
-// Confluence's own form is a text-align on each paragraph, which is what
-// markfluence writes; a text-align on the cell works too and covers every
-// paragraph in it. "start"/"end" are ADF's names for left/right and turn up in
-// hand-edited storage, and left is no alignment at all, since Confluence has
-// no explicit left (storage-format.md).
+// Each line's alignment is what Confluence shows (storage-format.md, verified
+// 2026-09-25): a paragraph's own center or right, which overrides its cell's,
+// and otherwise its cell's -- a paragraph saying left or justify, which do
+// nothing, or start or end, which Confluence strips, is aligned by its cell
+// like one that says nothing. Loose inline content is a line too.
 func cellAlign(c *snode) (string, bool) {
-	cell, _ := styleAlign(c.attrs["style"])
+	cell := styleAlign(c.attrs["style"])
 	found, seen := cell, false
 	for _, k := range c.kids {
 		var a string
@@ -403,17 +403,12 @@ func cellAlign(c *snode) (string, bool) {
 		case k.name == "p" && emptyCell(k):
 			continue // nothing to align, as an empty cell does not vote in its column
 		case k.name == "p":
-			// A paragraph's own declaration wins over the cell's, as in CSS,
-			// so a left paragraph in a centred cell is left.
-			var declared bool
-			if a, declared = styleAlign(k.attrs["style"]); !declared {
+			if a = styleAlign(k.attrs["style"]); a == "" {
 				a = cell
 			}
 		case k.name == "" && strings.TrimSpace(k.text) == "":
 			continue
 		case k.name == "" || cellInline[k.name]:
-			// Loose inline content is a line with no paragraph to align it,
-			// so it has the cell's alignment.
 			a = cell
 		default:
 			continue
@@ -426,82 +421,93 @@ func cellAlign(c *snode) (string, bool) {
 	return found, true
 }
 
-// styleAlign reads a text-align declaration from a style attribute, and
-// whether there was one: left, start and justify are declarations of no
-// alignment.
-func styleAlign(style string) (string, bool) {
+// styleAlign reads the alignment a style attribute's text-align gives, center
+// or right, and "" for one that does nothing: left and justify have no effect,
+// and start and end do not survive Confluence's sanitizer (storage-format.md).
+func styleAlign(style string) string {
 	m := textAlignDeclRE.FindStringSubmatch(style)
 	if m == nil {
-		return "", false
+		return ""
 	}
 	switch strings.ToLower(m[1]) {
 	case "center":
-		return "center", true
-	case "right", "end":
-		return "right", true
+		return "center"
+	case "right":
+		return "right"
 	}
-	return "", true
+	return ""
 }
 
-// hoistCellAlign returns a raw cell with its paragraphs' shared alignment moved
-// onto the cell, so the paragraphs can stay Markdown: a Markdown paragraph has
-// no alignment, and one written as storage keeps its images and links as
-// storage too -- an image that is never uploaded when the file is published to
-// a new page. A text-align on the cell is a form Confluence honours
-// (storage-format.md, verified 2026-08-07), and the next read keeps it, since a
-// raw cell's attributes are written as they are.
+// normalizeCellAlign returns a raw cell with its alignment written the way
+// that survives a publish: every declaration that does nothing is dropped
+// (left, justify, start, end, an empty style), and when every line of the cell
+// shows the same center or right it moves onto the cell, so the paragraphs can
+// stay Markdown -- a Markdown paragraph has no alignment, and one written as
+// storage keeps its images as storage too, never uploaded when the file is
+// published to a new page. A text-align on the cell is a form Confluence
+// honours, and the next read keeps it, since a raw cell's attributes are
+// written as they are.
 //
-// Only center and right move, spelled that way whatever the paragraphs said
-// ("end" is right): those are the values verified on a cell. Left, start and
-// justify have no effect in Confluence, and start does not even survive its
-// sanitizer, so paragraphs that all say one of those simply lose the
-// declaration, and so does the cell.
-//
-// Only when every piece of content is a paragraph declaring an alignment and
-// nothing else in its style, all to the same effect, and the cell's own style
-// is at most a text-align: loose text, a list, or a paragraph relying on the
-// cell's alignment would otherwise gain or lose one. Otherwise the cell is
-// returned unchanged and rawCellBlocks writes an aligned paragraph as storage.
-func hoistCellAlign(c *snode) *snode {
-	if !onlyTextAlign(c.attrs["style"]) {
-		return c
-	}
-	var value string
-	seen := false
-	for _, k := range c.kids {
-		switch {
-		case k.name == "" && strings.TrimSpace(k.text) == "":
-		case k.name == "p" && emptyCell(k):
-		case k.name == "p" && allowedAttrs(k, paragraphAttrOK):
-			a, declared := styleAlign(k.attrs["style"])
-			if !declared || (seen && a != value) {
-				return c
-			}
-			value, seen = a, true
-		default:
-			return c
-		}
-	}
-	if !seen {
-		return c
-	}
+// Dropping a declaration that does nothing is what keeps the Markdown a fixed
+// point: start and end are stripped when Confluence stores them, so written
+// back they would read differently the next time. A cell or paragraph style
+// saying something else as well is left alone, and such a paragraph stays
+// storage (rawCellBlocks).
+func normalizeCellAlign(c *snode) *snode {
 	out := &snode{name: c.name, attrs: map[string]string{}, kids: make([]*snode, len(c.kids))}
 	for k, v := range c.attrs {
 		out.attrs[k] = v
 	}
-	// The paragraphs' declaration overrides the cell's, so the cell's goes
-	// either way; it is written back only when it does something.
-	delete(out.attrs, "style")
-	if value != "" {
-		out.attrs["style"] = "text-align: " + value + ";"
+	if st, ok := c.attrs["style"]; ok && onlyTextAlign(st) {
+		delete(out.attrs, "style")
+		if a := styleAlign(st); a != "" {
+			out.attrs["style"] = "text-align: " + a + ";"
+		}
 	}
 	for i, k := range c.kids {
 		out.kids[i] = k
-		if k.name == "p" && k.attrs["style"] != "" {
+		if st, ok := k.attrs["style"]; k.name == "p" && ok && onlyTextAlign(st) {
 			p := &snode{name: "p", attrs: map[string]string{}, kids: k.kids}
 			for a, v := range k.attrs {
 				if a != "style" {
 					p.attrs[a] = v
+				}
+			}
+			if a := styleAlign(st); a != "" {
+				p.attrs["style"] = "text-align: " + a + ";"
+			}
+			out.kids[i] = p
+		}
+	}
+
+	// Hoist when every line shows one alignment, and every paragraph is one
+	// Markdown can hold once its alignment is gone.
+	a, ok := cellAlign(out)
+	if !ok {
+		return out
+	}
+	for _, k := range out.kids {
+		switch {
+		case k.name == "" || cellInline[k.name] || rawCellInline[k.name]:
+		case k.name == "p" && allowedAttrs(k, paragraphAttrOK):
+		case k.name == "p":
+			return out
+		default:
+			if a != "" {
+				return out // a list or a block would gain an alignment it lacked
+			}
+		}
+	}
+	delete(out.attrs, "style")
+	if a != "" {
+		out.attrs["style"] = "text-align: " + a + ";"
+	}
+	for i, k := range out.kids {
+		if k.name == "p" && k.attrs["style"] != "" {
+			p := &snode{name: "p", attrs: map[string]string{}, kids: k.kids}
+			for at, v := range k.attrs {
+				if at != "style" {
+					p.attrs[at] = v
 				}
 			}
 			out.kids[i] = p
@@ -520,7 +526,7 @@ func hoistCellAlign(c *snode) *snode {
 //   - a paragraph that renders to nothing although it holds something (a
 //     <br />, a date read has no Markdown for) stays storage;
 //   - a paragraph carrying an attribute Markdown cannot hold, in practice an
-//     alignment hoistCellAlign could not move to the cell, stays storage on
+//     alignment normalizeCellAlign could not move to the cell, stays storage on
 //     its own line, which costs that paragraph's editability rather than its
 //     alignment;
 //   - a table stays raw. A nested table that fits GFM would otherwise be

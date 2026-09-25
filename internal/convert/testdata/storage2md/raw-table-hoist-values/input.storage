@@ -1,6 +1,6 @@
 <table data-layout="wide">
 <tbody>
-<tr><th><p>End</p></th><th><p>Start</p></th><th><p>Justify over a centred cell</p></th></tr>
+<tr><th><p>End is stripped</p></th><th><p>Start</p></th><th><p>Justify over a centred cell</p></th></tr>
 <tr><td><p style="text-align: end;">a</p><p style="text-align: end;">b</p></td><td><p style="text-align: start;">c</p></td><td style="text-align: center;"><p style="text-align: justify;">d</p></td></tr>
 </tbody>
 </table>

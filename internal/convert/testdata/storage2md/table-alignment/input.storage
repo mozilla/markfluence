@@ -4,7 +4,7 @@
 <th>Plain</th>
 <th><p style="text-align: center;">Paragraph form</p></th>
 <th style="text-align: right;">Cell form</th>
-<th><p style="text-align: end;">ADF names</p></th>
+<th><p style="text-align: end;">End is stripped</p></th>
 <th><p style="text-align: left;">No left</p></th>
 </tr>
 </thead>

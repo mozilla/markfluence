@@ -915,7 +915,7 @@ func attrString(attrs map[string]string) string {
 // parameters survive verbatim.
 func (r *mdRenderer) renderRawBlock(n *snode) string {
 	if n.name == "th" || n.name == "td" {
-		n = hoistCellAlign(n)
+		n = normalizeCellAlign(n)
 	}
 	open := "<" + n.name + attrString(n.attrs) + ">"
 	closeTag := "</" + n.name + ">"
