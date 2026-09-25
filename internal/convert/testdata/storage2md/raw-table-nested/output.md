@@ -10,9 +10,24 @@ Outer
 <tr>
 <td>
 
-| Inner |
-| --- |
-| x |
+<table>
+<tbody>
+<tr>
+<th>
+
+Inner
+
+</th>
+</tr>
+<tr>
+<td>
+
+x
+
+</td>
+</tr>
+</tbody>
+</table>
 
 </td>
 </tr>

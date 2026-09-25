@@ -1,6 +1,5 @@
 <table data-layout="wide">
 <tbody>
-loose text in the section
 <tr>
 <th>
 
@@ -33,9 +32,9 @@ one
 three
 
 </td>
-<td>
+<td style="text-align: center;">
 
-<p style="text-align: center;">centred</p>
+centred
 
 </td>
 </tr>

@@ -140,7 +140,8 @@ systemctl restart auth
 
 **7. An aligned paragraph inside a raw cell** is written as a raw `<p>` on its
 own line, since a Markdown paragraph has no alignment (D4). Its text is then
-storage, not Markdown.
+storage, not Markdown. *Amended: when every paragraph in the cell shares the
+alignment, it moves to the cell instead (see the end of this plan).*
 
 ```
 <td>
@@ -437,3 +438,16 @@ Nothing changes on the publish side.
   only in tables, and are left alone. Old-editor markup (`class="wrapped"`,
   empty `<col />`s) still keeps a table raw: in the sample, ignoring it would
   change 3 of 109 old tables.
+- **From the second review, each reproduced first:** a cell's shared
+  paragraph alignment moves onto the cell as `style="text-align: …"`, so its
+  paragraphs stay Markdown -- an aligned paragraph kept as storage kept its
+  image as `<ac:image>`, which is never uploaded when an exported tree is
+  published to new pages; a paragraph stays storage only when a cell's
+  paragraphs disagree. A nested table in a raw cell stays raw. A paragraph
+  that renders to nothing (`<br />`, `<time>`) stays storage. Two text-align
+  declarations keep a table raw. A list in an aligned column keeps a table
+  raw. The bare `local-id` is dropped everywhere. An element holding loose
+  text is written whole. Cell text that looks like a Markdown block (`1. `,
+  `# `) becomes structure on publish, in every paragraph `read` writes, not
+  only in tables: a separate issue. A table with no `data-layout` stays
+  ignorable, as D2 decided.
