@@ -412,3 +412,28 @@ Nothing changes on the publish side.
   body today, and always has.
 - **Honouring a hand resize** (`data-table-width` on a pipe table). It would
   need a way to write a width in Markdown.
+
+## Amended during implementation
+
+- **D2's premise was measured wrong, then corrected.** Page 2913502220 was
+  not typical, and a markfluence table saved in the browser editor (page
+  3109814418) came back with a bare `local-id` on every paragraph and a
+  `<colgroup>` of measured pixel widths summing to `data-table-width`, so it
+  read back raw. Both are now ignored: `local-id` everywhere, the
+  `<colgroup>` only on an `align-start` table. A resize writes the same shape
+  (only its sum stops matching `data-table-width`, seen once), so a resized
+  column is lost on the next publish -- chosen over trusting the sum.
+  `data-layout="default"` and `full-width`, common on tables markfluence did
+  not write (a 261-table sample), stay reasons to go raw: they are visible
+  layouts.
+- **From the code review, each reproduced first:** loose inline content in a
+  raw cell is one paragraph, not a block per element; an empty paragraph in
+  a raw cell stays `<p />`; loose text in a table wrapper is kept; a
+  `text-align` of an unknown value keeps a table raw (`justify` has no effect
+  and is accepted); a paragraph's own alignment beats its cell's; an empty
+  cell does not vote on its column's alignment; the tags allowed loose in a
+  pipe cell are only those `read` can render. Inline tags `read` cannot
+  render inside a paragraph (`<time>`, `<u>`...) are dropped everywhere, not
+  only in tables, and are left alone. Old-editor markup (`class="wrapped"`,
+  empty `<col />`s) still keeps a table raw: in the sample, ignoring it would
+  change 3 of 109 old tables.

@@ -1,0 +1,8 @@
+<table data-layout="wide">
+<tbody>
+loose text in the section
+<tr><th><p local-id="a1">Loose</p></th><th><p>Blank line</p></th><th><p>Aligned</p></th></tr>
+<tr><td>a <strong>b</strong> c</td><td><p>one</p><p local-id="a2" /><p>three</p></td><td><p local-id="a3" style="text-align: center;">centred</p></td></tr>
+<tr><td><p /></td><td></td><td><p>x</p></td></tr>
+</tbody>
+</table>

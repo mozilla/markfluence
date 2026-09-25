@@ -238,12 +238,34 @@ every table carries `data-table-width` (1110 on two, 778 on the third) and
 `ac:local-id`, every row and cell carries `ac:local-id`, and one table carries
 `data-table-display-mode="default"`. None has a `<colgroup>`.
 
+**Verified 2026-09-25** on page 3109814418, a table `create` published and
+then saved in the browser editor. An edit elsewhere on the page, leaving the
+table alone, added `ac:local-id` to the table, rows and cells, a bare
+`local-id` to every paragraph, `data-table-width="229"`, and a `<colgroup>` of
+pixel widths (72, 97, 60) that sum to it -- widths the editor measured, on the
+unchanged `data-layout="align-start"`. Colours and alignments were untouched.
+Dragging one column border then changed the `<col>` widths (72, 154, 48) and
+left `data-table-width` at 229. A save through the API instead (the page's ADF
+`PUT` back) added none of this.
+
 So those attributes say nothing about what an author chose. `read` ignores
 them when deciding whether a table can be a GFM table (#55,
-`internal/convert/storage_to_md_table.go`), along with
-`data-layout="align-start"` and a span of 1. `data-table-width` is the costly
-one: it is also what a hand resize records, and a resized table that reads
-back as GFM loses the resize on its next publish.
+`internal/convert/storage_to_md_table.go`), along with a span of 1 -- and a
+`<colgroup>` of pixel widths only on an `align-start` table, which is what
+keeps a markfluence table a GFM table after an editor save. Two are costly:
+`data-table-width` and that `<colgroup>` are also what a hand resize records,
+so a resized table that reads back as GFM loses the resize on its next
+publish. The only sign of a resize is a `<col>` sum that no longer matches
+`data-table-width`, seen once and not relied on.
+
+**Tables markfluence did not write are mostly different.** Of 152 tables on
+50 pages edited since June 2026 (a CQL sample, 2026-09-25), 83 carry
+`data-layout="default"`, 27 `full-width`, and 35 a `<colgroup>`; 27 read back
+as GFM. Of 109 tables on 50 pages last edited before 2019, 6 do, and the rest
+mostly for structure GFM cannot hold -- no header row (48), merged cells (33),
+block content in a cell. `read` keeps a layout other than `align-start` as a
+reason to write a table raw: it is visible, and republishing a GFM table would
+replace it with `align-start`.
 
 ## Cell background colors
 
