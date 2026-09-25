@@ -11,14 +11,15 @@ That opens a draft advisory only you and the maintainers can see.
 Helpful things to include:
 
 - the command you ran, and the version (`markfluence --version`)
-- whether the site is Confluence Cloud or Data Center
+- whether the site is standard Confluence Cloud, or Atlassian Government or
+  isolated Cloud
 - the smallest reproduction you can manage
 
 > [!IMPORTANT]
 > **Don't put a real API token, or a token fragment, in a report.** If you think
-> a token was exposed while you were investigating, revoke it first — an
-> Atlassian API token can't be rotated in place, so recovery means issuing a new
-> one. A redacted site URL is fine (use example.com); say so if you've redacted it.
+> a token was exposed while you were investigating, revoke it first. An
+> Atlassian API token can't be edited or rotated in place — Atlassian's UI only
+> revokes one — so recovery means revoking it and issuing a new one. A redacted site URL is fine (use example.com); say so if you've redacted it.
 
 Reports are handled on a best-effort basis by a small number of maintainers.
 There's no guaranteed response time. Once there's a fix, disclosure is
@@ -53,7 +54,9 @@ the destination directory. A path that escapes that clamp is an arbitrary file
 write driven by a Confluence page you may not control.
 
 **Reading files outside the documentation root.** When publishing, image paths
-resolve relative to the Markdown file and are bounded by the working directory.
+resolve relative to the Markdown file and are bounded by its documentation
+root: the nearest directory above the file with a `markfluence.yaml`, or the
+file's own directory if there is none.
 A path that escapes that bound would publish a local file the author never meant
 to expose.
 
