@@ -451,3 +451,20 @@ Nothing changes on the publish side.
   `# `) becomes structure on publish, in every paragraph `read` writes, not
   only in tables: a separate issue. A table with no `data-layout` stays
   ignorable, as D2 decided.
+- **A property test** (`table_property_test.go`) generates tables and checks
+  that each reads, gives a fixed point, and publishes back to the same model
+  of what takes effect. Over 3000 seeds, and 600,000 more under the fuzzer, it
+  found: a `|` in a list in a pipe cell breaks the table (older than #55; now
+  raw); a `<br>` beside a list in a pipe cell adds a blank line (older;
+  removed); a trailing empty paragraph, or one of only `<br />`s, is lost in a
+  pipe cell (now raw); loose text beside an aligned paragraph was read as
+  aligned, and an empty paragraph as a disagreement (both new; fixed). It
+  also showed `docs/markdown-file.md` was wrong that a multi-line cell
+  publishes back to paragraphs: it publishes line breaks, which look the
+  same, and the model accepts that.
+- **Over the personal space** (148 tables, 39 pages, 2026-09-25) two tables
+  failed, neither on table rules: `> 90 days` in a raw cell became a
+  blockquote (#203), and `<del>… for </del>13.5h` lost its space -- `read`
+  drops a trailing space inside any mark (`**bold**next`), in every
+  paragraph. Two lists side by side merging into one is another general gap
+  the generator found.

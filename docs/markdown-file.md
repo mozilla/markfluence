@@ -303,7 +303,8 @@ use a real newline, because a GFM table row must stay on one physical line.
 In storage format, the editor of Confluence records a multi-line cell as
 separate paragraphs, and not with `<br>`. `read` and `export` change that back
 to the `<br>` form above.
-That form publishes back to the same paragraphs.
+That form publishes as line breaks in one paragraph, which look the same in a
+cell.
 
 #### Lists in cells
 
