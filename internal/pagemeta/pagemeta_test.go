@@ -528,3 +528,58 @@ func TestPageStatusDisagreementWarnsAndFrontmatterWins(t *testing.T) {
 		t.Errorf("Origin[page_status] = %q, want frontmatter", r.Origin["page_status"])
 	}
 }
+
+// Parent separates an absent parent (leave the page alone) from a blank one
+// (the top of the space), in either location; and a blank on one side is
+// silence when the other names a parent.
+func TestParentDeclared(t *testing.T) {
+	for _, tc := range []struct {
+		name, manifest, block, want string
+		declared                    bool
+	}{
+		{"absent", "", "page_id: 1\n", "", false},
+		{"null in frontmatter", "", "page_id: 1\nparent: null\n", "", true},
+		{"tilde in frontmatter", "", "page_id: 1\nparent: ~\n", "", true},
+		{"empty in frontmatter", "", "page_id: 1\nparent:\n", "", true},
+		{"null in the entry", "pages:\n  a.md:\n    page_id: 1\n    parent: null\n", "", "", true},
+		{"id in frontmatter", "", "page_id: 1\nparent: 7\n", "7", true},
+		{"null in frontmatter, id in the entry", "pages:\n  a.md:\n    parent: 7\n", "page_id: 1\nparent: null\n", "7", true},
+		{"id in frontmatter, null in the entry", "pages:\n  a.md:\n    parent: null\n", "page_id: 1\nparent: 7\n", "7", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := rootWith(t, tc.manifest)
+			r, err := Resolve("a.md", parse(t, tc.block), root)
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			got, declared := r.Parent()
+			if got != tc.want || declared != tc.declared {
+				t.Errorf("Parent() = %q, %v; want %q, %v", got, declared, tc.want, tc.declared)
+			}
+		})
+	}
+}
+
+func TestSpaceFallsBackToTheProjectDefault(t *testing.T) {
+	root := rootWith(t, "space: ENG\n")
+	for _, tc := range []struct {
+		block, want string
+		fromProject bool
+	}{
+		{"page_id: 1\n", "ENG", true},
+		{"page_id: 1\nspace: OPS\n", "OPS", false},
+		{"page_id: 1\nspace: null\n", "ENG", true},
+	} {
+		r, err := Resolve("a.md", parse(t, tc.block), root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, fromProject := r.Space(root); got != tc.want || fromProject != tc.fromProject {
+			t.Errorf("%q: Space() = %q, %v; want %q, %v", tc.block, got, fromProject, tc.want, tc.fromProject)
+		}
+	}
+	r, _ := Resolve("a.md", parse(t, "page_id: 1\n"), rootWith(t, ""))
+	if got, _ := r.Space(nil); got != "" {
+		t.Errorf("no declaration anywhere: Space() = %q, want empty", got)
+	}
+}

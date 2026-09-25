@@ -81,6 +81,7 @@ func TestJSONResultPublished(t *testing.T) {
   "metadata_source": "frontmatter",
   "base": null,
   "body_changed": null,
+  "moved": null,
   "error": null,
   "code": null
 }`

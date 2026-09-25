@@ -84,9 +84,12 @@ var Cmd = &cobra.Command{
 		"only those. An absent labels or page_width leaves the value on the page alone,\n" +
 		"and an absent title keeps the live title. Thus for a file with only page_id and\n" +
 		"title, diff reports the title and the body, and nothing else.\n\n" +
-		"diff compares space and parent, but no command changes them now. update does\n" +
-		"not move a page to a different space or parent. Thus a difference in either\n" +
-		"one is a disagreement that you must correct by hand.\n\n" +
+		"diff compares parent as a page id, so a parent: that names a .md file agrees\n" +
+		"with the page when that file's page_id is the page's parent. parent: null means\n" +
+		"the top of the space, and update moves the page to agree with parent.\n\n" +
+		"diff also compares a space: default in markfluence.yaml when the file declares\n" +
+		"no space. update does not move a page to a different space. It refuses the\n" +
+		"file, so a difference in space is one that you must correct by hand.\n\n" +
 		"DIFFERENCES THAT YOU DID NOT MAKE\n\n" +
 		"The Confluence side is the page, rendered back to Markdown. That round trip\n" +
 		"loses some details, in documented ways. Expect these differences. None of them\n" +

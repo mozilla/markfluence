@@ -663,7 +663,7 @@
       "required": [
         "ok", "status", "dry_run", "file", "page_id", "title", "space", "url",
         "version", "page_width", "labels", "page_status", "attachments", "warnings", "broken",
-        "metadata_source", "base", "body_changed", "error", "code"
+        "metadata_source", "base", "body_changed", "moved", "error", "code"
       ],
       "properties": {
         "ok": { "type": "boolean" },
@@ -708,6 +708,20 @@
         "body_changed": {
           "description": "Whether the body PUT was needed: false means the page already held what this file renders to, so only attachments, width and labels could have changed and version.previous equals version.new. null means the check did not run -- no base, a base carrying no sha, or --force, which always publishes.",
           "type": ["boolean", "null"]
+        },
+        "moved": {
+          "description": "The page's parent before and after a move to the parent the file declares, null when the page did not move. from or to is null for the top of the space. Under --dry-run, the move that would happen. A move leaves the page version alone, and the page lands last among its new siblings. Also set on a failed result when the move happened before the failure.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["from", "to"],
+              "properties": {
+                "from": { "$ref": "#/$defs/stringOrNull" },
+                "to": { "$ref": "#/$defs/stringOrNull" }
+              }
+            }
+          ]
         },
         "error": { "$ref": "#/$defs/stringOrNull" },
         "code": { "$ref": "#/$defs/codeOrNull" }

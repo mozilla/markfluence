@@ -38,6 +38,7 @@ import (
 	"github.com/mozilla/markfluence/internal/pageref"
 	"github.com/mozilla/markfluence/internal/pagestatus"
 	"github.com/mozilla/markfluence/internal/pagewidth"
+	"github.com/mozilla/markfluence/internal/parentref"
 	"github.com/mozilla/markfluence/internal/project"
 	"github.com/mozilla/markfluence/internal/ui"
 	"github.com/spf13/cobra"
@@ -67,7 +68,9 @@ var Cmd = &cobra.Command{
 		"markfluence.yaml. The first one that gives a value wins, and the default is\n" +
 		"max.\n\n" +
 		"The parent comes from --parent or the frontmatter. It can be a page or a Cloud\n" +
-		"folder. Give the id of a folder in the same way as the id of a page.\n\n" +
+		"folder. Give the id of a folder in the same way as the id of a page. A new page\n" +
+		"goes last among the children of its parent. markfluence never changes the order\n" +
+		"of siblings, so reorder them in Confluence.\n\n" +
 		"A page_status: line sets the status of the new page, which is the colored\n" +
 		"lozenge next to its title. Confluence decides which statuses a page can have,\n" +
 		"for each page and each account. Only the new page can answer for a new page.\n" +
@@ -275,7 +278,7 @@ func validationFailure(filename, message string) failure {
 //
 // The code defaults through jsonout.CodeOr rather than to VALIDATION, because
 // phase 1 makes four kinds of server call -- checkPageID, ResolveSpaceID,
-// checkParentInSpace, checkTitleFree -- and each can fail for reasons that have
+// parentref.Lookup, checkTitleFree -- and each can fail for reasons that have
 // nothing to do with the file. A hardcoded VALIDATION reported a revoked token
 // as a defect in a file that was perfectly fine, which is the worst case
 // because a rejected credential arrives as a 404 on every v2 route and
@@ -948,21 +951,12 @@ func resolveFile(
 	}, nil
 }
 
-// parentKey is the manifest key for a parent file, or "" when it has none --
-// which pagemeta.Resolve reads as "no entry", the right answer for a parent
-// outside this root.
-func parentKey(root *project.Root, abs string) string {
-	key, _ := pagemeta.KeyFor(root, abs)
-	return key
-}
-
-// resolveParent resolves a file's parent: reference. A ".md" reference is read
-// through root's os.Root -- root.FS -- rather than the bare filesystem: a
-// parent escaping root is a hard error (S2), not an unresolved-and-reported
-// case the way a link is, because a parent is load-bearing. Publishing under
-// the wrong parent -- or under none, silently -- is worse than not publishing
-// at all. A symlinked parent target is refused the same way a symlinked image
-// leaf is.
+// resolveParent resolves a file's parent: reference. The shared part -- a
+// ".md" reference read through root's os.Root, refused outside it or through
+// a symlink (S2), and an id checked against the space -- is
+// internal/parentref, which update and diff use too. What is create's own is
+// the --parent flag and a parent this run creates, whose kind is known without
+// asking the server.
 func resolveParent(
 	filename string, fm map[string]string, inSetAbs map[string]bool, c *client.ConfluenceClient, spaceID string,
 	root *project.Root,
@@ -982,116 +976,35 @@ func resolveParent(
 		return parentInfo{kind: parentTop}, nil
 	}
 
-	if strings.HasSuffix(parentValue, ".md") {
-		parentPath := filepath.Join(filepath.Dir(filename), parentValue)
-		parentAbs, err := filepath.Abs(parentPath)
+	if parentref.IsFile(parentValue) {
+		f, err := parentref.Locate(root, filepath.Dir(filename), parentValue)
 		if err != nil {
 			return parentInfo{}, err
 		}
-		rel, err := filepath.Rel(root.Dir, parentAbs)
+		if inSetAbs[f.Abs] {
+			return parentInfo{kind: parentInSet, abs: f.Abs, parentType: "page", display: parentValue}, nil
+		}
+		pID, err := parentref.PageID(root, f, parentValue)
 		if err != nil {
 			return parentInfo{}, err
 		}
-		rel = filepath.ToSlash(rel)
-		if rel == ".." || strings.HasPrefix(rel, "../") {
-			return parentInfo{}, fmt.Errorf(
-				"parent %s resolves outside the documentation root (%s); a parent must be within it",
-				parentValue, root.Dir)
-		}
-
-		info, statErr := root.FS.Lstat(rel)
-		if statErr != nil && strings.Contains(statErr.Error(), "escapes from parent") {
-			// An escape only os.Root can see -- a symlinked intermediate
-			// directory -- reads as "not found" otherwise, the same trap
-			// internal/convert/images.go's rootRelative comment names; name it
-			// explicitly instead of sending the author looking for a typo.
-			return parentInfo{}, fmt.Errorf(
-				"parent %s resolves outside the documentation root (%s); a parent must be within it",
-				parentValue, root.Dir)
-		}
-		if statErr != nil || info.IsDir() {
-			return parentInfo{}, fmt.Errorf("parent file not found: %s", parentValue)
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return parentInfo{}, fmt.Errorf("parent file is a symlink, not a regular file: %s", parentValue)
-		}
-
-		if inSetAbs[parentAbs] {
-			// An in-set parent is a page this run creates, so its kind is known
-			// without asking the server.
-			return parentInfo{kind: parentInSet, abs: parentAbs, parentType: "page", display: parentValue}, nil
-		}
-		data, err := root.FS.ReadFile(rel)
-		if err != nil {
-			return parentInfo{}, err
-		}
-		pmf, err := frontmatter.Parse(parentPath, string(data))
-		if err != nil {
-			return parentInfo{}, fmt.Errorf("parent %s: %w", parentValue, err)
-		}
-		// Through pagemeta, not pmf.PageID(): the *parent's* coordinates may
-		// live in its own pages: entry rather than in its frontmatter, and
-		// reading only the file reported a published parent as "not yet
-		// published" -- which is #139's linkindex trap in a second place,
-		// where it fails a create rather than degrading a link.
-		pMeta, err := pagemeta.Resolve(parentKey(root, parentAbs), pmf, root)
-		if err != nil {
-			return parentInfo{}, fmt.Errorf("parent %s: %w", parentValue, err)
-		}
-		pID := strings.TrimSpace(pMeta.Fields["page_id"])
 		if pID == "" {
 			return parentInfo{}, fmt.Errorf(
 				"parent not yet published (no page_id in the file or in %s): %s",
 				project.Filename, parentValue)
 		}
-		parentType, err := checkParentInSpace(c, pID, spaceID)
+		t, err := parentref.Lookup(c, pID, spaceID)
 		if err != nil {
 			return parentInfo{}, err
 		}
-		return parentInfo{kind: parentPublished, id: pID, parentType: parentType, display: parentValue}, nil
+		return parentInfo{kind: parentPublished, id: pID, parentType: t.Kind, display: parentValue}, nil
 	}
 
-	parentType, err := checkParentInSpace(c, parentValue, spaceID)
+	t, err := parentref.Lookup(c, parentValue, spaceID)
 	if err != nil {
 		return parentInfo{}, err
 	}
-	return parentInfo{kind: parentExternal, id: parentValue, parentType: parentType}, nil
-}
-
-// checkParentInSpace verifies that parentID names something in spaceID that can
-// hold a page, and reports what it is ("page" or "folder").
-//
-// A parent may be either, and the two live in separate v2 route families: a
-// folder id answers every page route with 404, so finding nothing as a page
-// proves nothing until the folder route has also been asked. Publishing into a
-// folder needs no other accommodation — Confluence accepts a folder as parentId
-// — so the only thing that ever blocked it was refusing it here
-// (docs/confluence/folders.md).
-func checkParentInSpace(c *client.ConfluenceClient, parentID, spaceID string) (string, error) {
-	p, err := c.GetPageOrNil(parentID)
-	if err != nil {
-		return "", err
-	}
-	if p != nil {
-		if p.SpaceID != spaceID {
-			return "", fmt.Errorf("parent page %s is not in the target space", parentID)
-		}
-		return "page", nil
-	}
-
-	f, err := c.GetFolderOrNil(parentID)
-	if err != nil {
-		return "", err
-	}
-	if f != nil {
-		if f.SpaceID != spaceID {
-			return "", fmt.Errorf("parent folder %s is not in the target space", parentID)
-		}
-		return "folder", nil
-	}
-
-	// Neither kind, so "page" would be the wrong noun in the error.
-	return "", fmt.Errorf("parent %s not found: no page or folder has that id", parentID)
+	return parentInfo{kind: parentExternal, id: parentValue, parentType: t.Kind}, nil
 }
 
 // topoSort orders records parents-before-children, seeding the queue in input

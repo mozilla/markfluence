@@ -38,6 +38,17 @@ to. A name that does not agree fails that file, and the error lists the names
 that would work. page-info shows them too. A status write gives the page a new
 version, so update does not send a status that already agrees.
 
+update also puts the page where the file says. A parent: line moves the page
+under that page or folder, and parent: null moves it to the top of its space.
+With no parent: line, update does not move the page. A moved page goes last
+among its new siblings. markfluence never changes the order of siblings, so
+reorder them in Confluence. A move does not give the page a new version.
+
+update does not move a page to a different space. If the file or its entry
+declares a space, or markfluence.yaml has a space: default, and the page is in a
+different space, update fails that file. Move the page in Confluence, or
+correct the space.
+
 update never writes to the file or to markfluence.yaml. Thus you can safely
 correct a wrong page_id. A page_id that names no page fails that file, and the
 error tells you what to do. A page_id that is not a number fails with no
@@ -67,8 +78,9 @@ update does each file separately. It exits with a code that is not zero if any
 file failed, also a refused page.
 
 --dry-run shows the new version, the attachment uploads, and any change to the
-width, the labels, or the page status. It writes nothing to Confluence. It does
-the same two checks as a real run, so its preview agrees with the real run.
+parent, the width, the labels, or the page status. It writes nothing to
+Confluence. It does the same two checks as a real run, so its preview agrees
+with the real run.
 
 ```
 markfluence update FILE... [flags]

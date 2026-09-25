@@ -123,7 +123,7 @@ func TestResolveParentMdFilePublished(t *testing.T) {
 }
 
 // TestResolveParentExternalID is the plain "--parent 500" case: a bare id,
-// never a .md path, resolved straight through checkParentInSpace.
+// never a .md path, resolved straight through parentref.Lookup.
 func TestResolveParentExternalID(t *testing.T) {
 	root := rootFor(t, t.TempDir())
 	c := parentServer(t, map[string]string{"500": `{"id":"500","spaceId":"space1"}`}, nil)

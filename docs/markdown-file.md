@@ -52,8 +52,8 @@ For a page with the real title `null`, write `title: "null"`.
 
 | Field | Value domain | Notes |
 | --- | --- | --- |
-| `space` | a space key (e.g. `ENG`, or a personal space like `~1234abcd`) | The target space for `create`. You can also give `--space`, or set a `space:` default for the whole project (see below). If `--space` and this field disagree, `create` refuses the file. `create` writes it back. It is always a key, and never a numeric space id. |
-| `parent` | `null`, a numeric page **or folder** id, or a relative `.md` path | See [`parent`](#parent). `create` uses it, or `--parent`. |
+| `space` | a space key (e.g. `ENG`, or a personal space like `~1234abcd`) | The target space for `create`. You can also give `--space`, or set a `space:` default for the whole project (see below). If `--space` and this field disagree, `create` refuses the file. `create` writes it back. `update` refuses a page that is in a different space, and does not move it. It is always a key, and never a numeric space id. |
+| `parent` | `null`, a numeric page **or folder** id, or a relative `.md` path | See [`parent`](#parent). `create` uses it, or `--parent`. `update` moves the page to agree with it. |
 | `page_id` | a numeric page id, or `null` | The target page. `update` needs one, in the frontmatter or in the entry for the file in `markfluence.yaml`. Without one, `update` fails, and it does not search by title. `create` writes it back after it creates the page. `null` or absent means "no page yet". |
 | `title` | text | The Confluence page title. `create` needs it, or `--title`, and writes it back. For `update`, an absent title keeps the live title of the page. An empty `title:` is an error in both. |
 | `labels` | a list of label names, e.g. `[ci/cd, howto]` | The labels of the page. See [`labels`](#labels). |
@@ -74,6 +74,17 @@ To create a page, you need only the `title` in the frontmatter, or `--title`.
   `<page_id>  # <original.md>`.
 - A `.md` path must be inside the documentation root, and it cannot be a
   symlink. Otherwise `create` refuses the file.
+
+`update` moves a page to agree with `parent`. With `parent: null` (or `~`, or
+an empty value), it moves the page to the top of its space. With no `parent:`
+line, it does not move the page. The page takes its children with it. A move
+does not give the page a new version. `update` refuses a parent that it
+cannot find, a parent in a different space, and a parent that is the page
+itself or a page under it, and it does this before it writes anything.
+
+A new page from `create`, and a page that `update` moves, go last among the
+children of the parent. markfluence never changes the order of siblings after
+that. To put pages in a different order, drag them in Confluence.
 
 ### `labels`
 
@@ -167,6 +178,11 @@ the project file**. The answer that is nearest to the content wins.
 
 `space` is different at the top. If `--space` and a frontmatter `space:`
 disagree, `create` refuses the file, and neither wins.
+
+`update` uses the space from the file, or else the `space:` default, as a
+check. If the page is in a different space, `update` refuses the file, because
+markfluence cannot know which of the two is the mistake. It never moves a page
+between spaces.
 
 For both settings, markfluence reads the project file only when the two levels
 above it say nothing. Thus the project file never disagrees with either of

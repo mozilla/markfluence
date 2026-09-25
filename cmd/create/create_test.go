@@ -2,6 +2,7 @@ package create
 
 import (
 	"errors"
+	"github.com/mozilla/markfluence/internal/parentref"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -360,7 +361,8 @@ func TestCheckParentInSpaceAcceptsFolder(t *testing.T) {
 				id = "200"
 			}
 
-			kind, err := checkParentInSpace(c, id, space)
+			target, err := parentref.Lookup(c, id, space)
+			kind := target.Kind
 			if tc.wantErr != "" {
 				if err == nil {
 					t.Fatalf("want error %q, got kind %q", tc.wantErr, kind)

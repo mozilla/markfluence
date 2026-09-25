@@ -318,10 +318,40 @@ body PUT returned. It is not. Nothing after the body write touches it.
 reports**, checked on both publishes above, so a caller recording what it
 published does not need a re-read to learn the number.
 
-**Not verified:** whether a *move* (the v1 `content/{id}/move` route, #10)
-bumps the version, and whether restoring a previous version from the UI does.
-Measured once, on one Cloud instance, through the gateway, with a personal
-token.
+**Not verified:** whether restoring a previous version from the UI bumps the
+version, or whether a move made in the UI does. Measured once, on one Cloud
+instance, through the gateway, with a personal token.
+
+## Moving a page
+
+**Verified 2026-09-25** on scratch pages in a personal space, through the
+gateway, with a personal token (#10, `_plans/053`). There are two routes, and
+they differ in the one way that matters to `update`.
+
+| request | result |
+|---|---|
+| v2 `PUT /pages/{id}`, version+1, same body, new `parentId` | 200. The page moves, **and its version goes up by one**. It lands last among the new parent's children. |
+| the same, version unchanged | 409 `Version must be incremented`. A v2 move always bumps the version. |
+| v2 `PUT`, version+1, `parentId: null` | 200, and **nothing changes**. v2 cannot move a page to the top of a space. |
+| v2 `PUT`, version+1, nothing changed at all | 200, and the version does **not** go up. |
+| v1 `PUT /rest/api/content/{id}/move/append/{pageId}` | 200 `{"pageId": …}`. The page moves under the page, last. **The version does not change.** |
+| v1 `move/append/{folderId}` | 200. The page moves into the folder. The version does not change. |
+| v1 `move/after/{topLevelPageId}` | 200. The page moves to the top of the space (`parentId` null). The version does not change. |
+| a page with a child, moved by either route | The child moves with it. |
+| v2, target is the page's own descendant | 400 `Cannot move the content here as it creates a parent-child loop.` Nothing changes. |
+| v2, target does not exist | 404 `Cannot find content with id [1]`. Nothing changes. |
+
+So `MovePage` uses the v1 route for every move. Leaving the version alone keeps
+a move out of `update`'s moved-page check and its unchanged-body skip, which
+both read the version, and v1 is the only route that reaches the top of a
+space. There is no "append to the space": a move to the top goes `after` the
+last page already there, which the homepage guarantees exists.
+
+`update` checks for a loop before it moves, so `--dry-run` can report one, by
+walking the target's `parentId` chain through `GET /pages/{id}` and
+`GET /folders/{id}`. The v2 `GET /pages/{id}/ancestors` route would answer in
+one request, but it needs `read:content.metadata:confluence`, a scope nothing
+else markfluence does needs.
 
 ## Scopes
 
@@ -363,6 +393,7 @@ below.
 | `PageState` | v1 | `GET /content/{id}/state` | `read:confluence-content.summary` |
 | `AvailableStates` | v1 | `GET /content/{id}/state/available` | `write:confluence-content` |
 | `SetPageState` | v1 | `PUT /content/{id}/state` | `write:confluence-content` |
+| `MovePage` | v1 | `PUT /content/{id}/move/{position}/{targetId}` | `write:confluence-content` |
 
 Union, which is what a token needs:
 
@@ -384,10 +415,11 @@ read:content-details:confluence
 granted before labels existed (#138). It buys the two label writes and, since
 #168, the page-status write and the route that lists a space's statuses (see
 [page-status.md](page-status.md) — that vocabulary route is a *read* behind a
-write scope, which is Atlassian's oddity, not ours). Reading a page's labels is
-covered by `read:page:confluence`, which a token doing anything at all already
-has. So the failure mode stays narrow and recognizable — every command works,
-and only the label and page-status halves of `create`/`update` 401.
+write scope, which is Atlassian's oddity, not ours), and since #10, `update`'s
+page move. Reading a page's labels is covered by `read:page:confluence`, which a
+token doing anything at all already has. So the failure mode stays narrow and
+recognizable — every command works, and only the label, page-status and move
+halves of `create`/`update` 401.
 
 The `GET` on `/rest/api/space` and `/rest/api/space/{key}` is **undocumented** —
 Atlassian's OpenAPI document carries only `POST` for the collection and
