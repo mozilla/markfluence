@@ -73,8 +73,8 @@ func TestOpenRefusesAnEscapeMadeAfterTheCheck(t *testing.T) {
 		_ = f.Close()
 		t.Fatalf("Open read %q from outside the root, want an error", b)
 	}
-	if !strings.Contains(err.Error(), a.Path) {
-		t.Errorf("err = %v, want it to name the file", err)
+	if want := a.Path + " is outside the documentation root"; err.Error() != want {
+		t.Errorf("err = %v, want %q", err, want)
 	}
 }
 
@@ -110,5 +110,31 @@ func TestOpenWithoutARootUsesPath(t *testing.T) {
 	}
 	if got := read(t, LocalAttachment{Path: path, Source: "renamed.png"}); got != "given" {
 		t.Errorf("read %q, want given", got)
+	}
+}
+
+// TestOpenRefusesASymlinkInsideTheRoot: os.Root would follow a link that stays
+// inside the root, and markfluence follows none, so a link swapped in at the
+// file's own name cannot publish another file in the project under its name.
+func TestOpenRefusesASymlinkInsideTheRoot(t *testing.T) {
+	dir, root := rootWith(t)
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("CONFLUENCE_TOKEN=x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, "d", "x.png")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../.env", filepath.Join(dir, "d", "x.png")); err != nil {
+		t.Fatal(err)
+	}
+	a := LocalAttachment{Path: filepath.Join(dir, "d", "x.png"), Source: "d/x.png", Root: root}
+	f, err := a.Open()
+	if err == nil {
+		b, _ := io.ReadAll(f)
+		_ = f.Close()
+		t.Fatalf("Open read %q through an in-root symlink, want an error", b)
+	}
+	if !strings.Contains(err.Error(), "symbolic link") {
+		t.Errorf("err = %v", err)
 	}
 }

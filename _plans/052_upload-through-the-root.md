@@ -79,3 +79,25 @@ file into memory, so this costs one hash and no extra read. The error is local
   across network calls. Reopening through the root and verifying the checksum
   gives the same guarantee.
 - **Bounding `attachment-upload` by a root** (D3).
+
+## Amended after code review
+
+- **D4: a symbolic link inside the root is refused too.** `os.Root` refuses
+  an escape but follows a link that stays inside the root, and markfluence
+  follows none (docs/design-principles.md, Symlinks). A link swapped in at an
+  image's own name since the converter's `Lstat` would publish another file in
+  the project, a `.env` say, under the image's name. After opening through the
+  root, `Open` re-`Lstat`s the name, refuses a link, and requires `os.SameFile`
+  between the name and the handle.
+- **D4: an escape reads as "outside the documentation root"**, the converter's
+  wording, not `os.Root`'s bare `path escapes from parent` under a generic
+  "opening" wrapper, which read as a disk failure.
+- **D5 is replaced.** Refusing a file that changed between planning and
+  upload made an autosave or a build step fail a whole publish, half done.
+  Instead `uploadAttachment` reads the file whole and takes the comment's
+  checksum from the bytes it sends, which keeps the comment honest with no new
+  way to fail; the upload buffered the whole form already. The planned
+  checksum and comment no longer ride on the plan.
+- **Not changed:** a batch that stops partway still reports none of the
+  uploads that landed before the failure. That predates this plan (any upload
+  error does it) and is left for its own change.

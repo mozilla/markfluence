@@ -1985,25 +1985,27 @@ func TestSyncAttachmentsRefusesAnEscapeThroughTheRoot(t *testing.T) {
 	}
 }
 
-// TestUploadRefusesAFileThatChangedSinceItsChecksum: the comment records the
-// checksum taken when planning, so bytes that differ at upload time are
-// refused rather than sent under a checksum that misdescribes them.
-func TestUploadRefusesAFileThatChangedSinceItsChecksum(t *testing.T) {
-	path, sum := writeTempImage(t)
-	c, s := newServer(t)
-	p := attachmentPlan{att: LocalAttachment{Filename: "x.png", Path: path, Source: "x.png"},
-		comment: "c", contentType: "image/png", sum: sum}
+// TestUploadStampsTheChecksumOfWhatItSends: a file edited between planning
+// and upload is uploaded as it is now, and the comment's checksum describes
+// those bytes, not the ones planned -- or the next publish would read a
+// changed attachment as up to date.
+func TestUploadStampsTheChecksumOfWhatItSends(t *testing.T) {
+	path, planned := writeTempImage(t)
+	c, s := newServer(t, resp{200, `{}`})
+	p := attachmentPlan{att: LocalAttachment{Filename: "x.png", Path: path, Source: "x.png"}, contentType: "image/png"}
 	if err := os.WriteFile(path, []byte("edited meanwhile"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err := c.uploadAttachment(c.BaseURL()+"/wiki/rest/api/content/1/child/attachment", p)
-	if err == nil || !strings.Contains(err.Error(), "changed while publishing") {
-		t.Errorf("err = %v, want changed while publishing", err)
+	if err := c.uploadAttachment(c.BaseURL()+"/wiki/rest/api/content/1/child/attachment", p); err != nil {
+		t.Fatal(err)
 	}
-	if FromRequest(err) {
-		t.Errorf("err = %v is a request error; a changed local file is a local failure", err)
+	now, err := fileChecksum(LocalAttachment{Path: path})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(s.calls) != 0 {
-		t.Errorf("calls = %v, want nothing sent", s.calls)
+	body := s.bodies[0]
+	if !strings.Contains(body, now[:checksumHexLen]) || strings.Contains(body, planned[:checksumHexLen]) ||
+		!strings.Contains(body, "edited meanwhile") {
+		t.Errorf("upload body does not carry the new bytes with their own checksum:\n%s", body)
 	}
 }
