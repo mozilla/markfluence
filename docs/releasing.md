@@ -137,15 +137,57 @@ tells you which place:
    "$(brew --prefix)/bin/markfluence" --version
    ```
 
-7. (Laptop) **Read the published release notes, and correct them if they are
-   bad.**
+7. (Laptop) **Write the release notes.** goreleaser publishes a list of
+   commits. Replace it with release notes that a user can read. You can give
+   this prompt to Claude Code, from the root of the repository. It finds the
+   release itself, so you can paste it as it is:
+
+   ```text
+   Write the release notes for the latest release of markfluence.
+
+   1. Run git fetch --tags. Find the tag of the latest published release:
+      gh release view --json tagName --jq .tagName
+      Call it TAG, and the tag before it (git describe --tags --abbrev=0
+      TAG^) PREVIOUS. Print both, so that I can see which release the notes
+      are for.
+   2. Download the published notes of TAG into notes.md:
+      gh release view TAG --json body --jq .body > notes.md
+      They are goreleaser's list of commits since PREVIOUS.
+   3. Read the full message of each commit in PREVIOUS..TAG, and the issues
+      and pull requests that they name. Use gh for the issues and pull
+      requests.
+   4. Replace the contents of notes.md with release notes in this structure.
+      Leave out a section that has no entries:
+
+      ## What's new
+      ### Features
+      ### Bugs fixed
+      ## Backwards incompatible changes
+      ## Security issues fixed
+
+      - One bullet for each change that a user can see, as a high-level
+        summary. Put the issue number as a link at the end of the bullet.
+      - Combine the commits of one change into one bullet. Leave out changes
+        that only affect documentation, tests, plans, or the build, unless a
+        user sees the result, for example a platform that is no longer built.
+      - For each backwards incompatible change, say what a user must do. If
+        the change needs more than one sentence of instructions, add a
+        subsection under "Backwards incompatible changes" for it.
+      - Make sure that each statement is true for this release: read the code
+        and the docs, and use `git tag --contains` to find the release that
+        first had a change.
+      - Do not wrap paragraphs. In GitHub release notes, a newline is a line
+        break.
+      - End with: **Full changelog:**
+        https://github.com/mozilla/markfluence/compare/PREVIOUS...TAG
+   5. Do not publish the notes. I will edit notes.md.
+   ```
+
+   Read `notes.md`, and correct it. Then publish it, and delete the file:
 
    ```sh
-   gh release view v1.2.3
-   # if it reads badly:
-   gh release view v1.2.3 --json body --jq .body > notes.md
-   # ...edit notes.md...
    gh release edit v1.2.3 --notes-file notes.md
+   rm notes.md
    ```
 
    GitHub Releases supports full GFM, but a newline is a line break. Do not
