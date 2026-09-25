@@ -146,6 +146,17 @@ func tableShape(n *snode) (pipeTable, bool) {
 			}
 		}
 	}
+	// A list cannot sit in an aligned column: the pipe cell publishes it inside
+	// the column's aligned <p>, where a list is invalid, and the next read loses
+	// it.
+	for _, tr := range append([]*snode{t.header}, t.rows...) {
+		cells, _ := rowCells(tr)
+		for col, c := range cells {
+			if t.aligns[col] != "" && (findChild(c, "ul") != nil || findChild(c, "ol") != nil) {
+				return pipeTable{}, false
+			}
+		}
+	}
 	return t, true
 }
 
@@ -320,18 +331,19 @@ func paragraphAttrOK(name, value string) bool {
 // textAlignDeclRE matches one text-align declaration in a style attribute,
 // with a value the delimiter row can carry or that has no effect in Confluence
 // (justify is stored and ignored, storage-format.md). Any other value keeps the
-// style unmatched, and so the table raw.
+// style unmatched, and so the table raw. It is the one definition of a
+// declaration read understands: onlyTextAlign validates with it and styleAlign
+// reads with it.
 var textAlignDeclRE = regexp.MustCompile(`(?i)text-align\s*:\s*(left|start|center|right|end|justify)\s*(;|$)`)
 
-// onlyTextAlign reports whether a style attribute holds no declaration but
-// text-align, the one a pipe table carries (as its delimiter row).
+// onlyTextAlign reports whether a style attribute holds no declaration but a
+// single text-align, the one a pipe table carries (as its delimiter row). Two
+// are refused rather than resolved: CSS takes the last, and a style that says
+// it twice was not written by an editor.
 func onlyTextAlign(style string) bool {
-	return strings.Trim(textAlignDeclRE.ReplaceAllString(style, ""), " \t\n;") == ""
+	return len(textAlignDeclRE.FindAllString(style, -1)) <= 1 &&
+		strings.Trim(textAlignDeclRE.ReplaceAllString(style, ""), " \t\n;") == ""
 }
-
-// textAlignRE pulls the value out of a text-align declaration anywhere in a style
-// attribute.
-var textAlignRE = regexp.MustCompile(`(?i)text-align\s*:\s*([a-z]+)`)
 
 // cellAlign reports the one alignment a cell's content carries, normalized to
 // the delimiter row's vocabulary, or false when its paragraphs disagree -- a
@@ -368,7 +380,7 @@ func cellAlign(c *snode) (string, bool) {
 // whether there was one: left, start and justify are declarations of no
 // alignment.
 func styleAlign(style string) (string, bool) {
-	m := textAlignRE.FindStringSubmatch(style)
+	m := textAlignDeclRE.FindStringSubmatch(style)
 	if m == nil {
 		return "", false
 	}
@@ -381,17 +393,82 @@ func styleAlign(style string) (string, bool) {
 	return "", true
 }
 
-// rawCellBlocks renders a raw table cell's body as Markdown blocks. Three
-// things differ from blockStrings, each because the raw form must lose
-// nothing:
+// hoistCellAlign returns a raw cell with its paragraphs' shared alignment moved
+// onto the cell, so the paragraphs can stay Markdown: a Markdown paragraph has
+// no alignment, and one written as storage keeps its images and links as
+// storage too -- an image that is never uploaded when the file is published to
+// a new page. A text-align on the cell is a form Confluence honours
+// (storage-format.md, verified 2026-08-07), and the next read keeps it, since a
+// raw cell's attributes are written as they are.
+//
+// Only when every piece of content is a paragraph declaring the same alignment
+// and nothing else in its style, and the cell's own style is at most a
+// text-align: loose text or a list would otherwise gain an alignment it did not
+// have. Otherwise the cell is returned unchanged and rawCellBlocks writes an
+// aligned paragraph as storage.
+func hoistCellAlign(c *snode) *snode {
+	if !onlyTextAlign(c.attrs["style"]) {
+		return c
+	}
+	var decl string
+	for _, k := range c.kids {
+		switch {
+		case k.name == "" && strings.TrimSpace(k.text) == "":
+		case k.name == "p" && emptyCell(k):
+		case k.name == "p" && allowedAttrs(k, paragraphAttrOK):
+			m := textAlignDeclRE.FindString(k.attrs["style"])
+			if m == "" || (decl != "" && !strings.EqualFold(normalizeDecl(m), decl)) {
+				return c
+			}
+			decl = normalizeDecl(m)
+		default:
+			return c
+		}
+	}
+	if decl == "" {
+		return c
+	}
+	out := &snode{name: c.name, attrs: map[string]string{}, kids: make([]*snode, len(c.kids))}
+	for k, v := range c.attrs {
+		out.attrs[k] = v
+	}
+	out.attrs["style"] = decl
+	for i, k := range c.kids {
+		out.kids[i] = k
+		if k.name == "p" && k.attrs["style"] != "" {
+			p := &snode{name: "p", attrs: map[string]string{}, kids: k.kids}
+			for a, v := range k.attrs {
+				if a != "style" {
+					p.attrs[a] = v
+				}
+			}
+			out.kids[i] = p
+		}
+	}
+	return out
+}
+
+// normalizeDecl spells a matched text-align declaration the way markfluence
+// writes one.
+func normalizeDecl(m string) string {
+	return "text-align: " + strings.ToLower(textAlignDeclRE.FindStringSubmatch(m)[1]) + ";"
+}
+
+// rawCellBlocks renders a raw table cell's body as Markdown blocks. What
+// differs from blockStrings is each because the raw form must lose nothing:
 //
 //   - text and inline elements sitting directly in the cell, outside any
 //     paragraph, are one paragraph, not a block apiece;
 //   - an empty paragraph -- a deliberate blank line, Enter twice in the editor
 //     -- stays as <p />, unless the cell holds nothing else;
+//   - a paragraph that renders to nothing although it holds something (a
+//     <br />, a date read has no Markdown for) stays storage;
 //   - a paragraph carrying an attribute Markdown cannot hold, in practice an
-//     alignment, stays storage on its own line, which costs that paragraph's
-//     editability rather than its alignment.
+//     alignment hoistCellAlign could not move to the cell, stays storage on
+//     its own line, which costs that paragraph's editability rather than its
+//     alignment;
+//   - a table stays raw. A nested table that fits GFM would otherwise be
+//     republished with markfluence's layout and a <thead> it did not have.
 func (r *mdRenderer) rawCellBlocks(c *snode) []string {
 	if emptyCell(c) {
 		return nil
@@ -414,7 +491,17 @@ func (r *mdRenderer) rawCellBlocks(c *snode) []string {
 			blocks = append(blocks, "<p />")
 		case k.name == "p" && !allowedAttrs(k, idOnly):
 			flush()
-			blocks = append(blocks, serialize(withoutIDs(k)))
+			blocks = append(blocks, serialize(k))
+		case k.name == "p":
+			flush()
+			if s := r.blockStrings([]*snode{k}, ""); len(s) > 0 && strings.TrimSpace(strings.Join(s, "")) != "" {
+				blocks = append(blocks, s...)
+			} else {
+				blocks = append(blocks, serialize(k))
+			}
+		case k.name == "table":
+			flush()
+			blocks = append(blocks, r.renderRawBlock(k))
 		default:
 			flush()
 			blocks = append(blocks, r.blockStrings([]*snode{k}, "")...)
@@ -430,25 +517,6 @@ func (r *mdRenderer) rawCellBlocks(c *snode) []string {
 // paragraph; that is an older gap than this one.
 var rawCellInline = map[string]bool{
 	"span": true, "u": true, "sub": true, "sup": true, "time": true, "ac:emoticon": true,
-}
-
-// withoutIDs is n with the server-generated ids removed from it and everything
-// under it. attrString drops ac:local-id already; the bare local-id the editor
-// writes on a paragraph would otherwise be copied into the Markdown.
-func withoutIDs(n *snode) *snode {
-	c := &snode{name: n.name, text: n.text}
-	if n.attrs != nil {
-		c.attrs = map[string]string{}
-		for k, v := range n.attrs {
-			if !isID(k) {
-				c.attrs[k] = v
-			}
-		}
-	}
-	for _, k := range n.kids {
-		c.kids = append(c.kids, withoutIDs(k))
-	}
-	return c
 }
 
 // cellTexts renders a row's cells to inline strings with pipes escaped,

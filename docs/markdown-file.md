@@ -418,8 +418,11 @@ Details:
 
 `read` and `export` give back a GFM table when GFM can express the whole
 table. Otherwise, they give back a raw table in the form above, with the
-content of each cell as Markdown. A paragraph with an alignment stays storage
-format, because a Markdown paragraph has no alignment.
+content of each cell as Markdown. A Markdown paragraph has no alignment. Thus,
+if all the paragraphs in a cell have the same alignment, `read` puts the
+alignment on the cell, as `<td style="text-align: center;">`. If the
+paragraphs in a cell have different alignments, an aligned paragraph stays
+storage format. A table in a raw cell also stays a raw table.
 
 A table that markfluence published stays a GFM table after someone edits the
 page in Confluence. The Confluence editor adds attributes to every table that

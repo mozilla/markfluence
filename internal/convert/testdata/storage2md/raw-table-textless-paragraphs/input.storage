@@ -1,0 +1,6 @@
+<table data-layout="wide">
+<tbody>
+<tr><th><p>Blank line</p></th><th><p>Date</p></th></tr>
+<tr><td><p>a</p><p><br /></p><p>b</p></td><td><p><time datetime="2026-09-25" /></p></td></tr>
+</tbody>
+</table>

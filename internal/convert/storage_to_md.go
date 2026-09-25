@@ -873,8 +873,9 @@ func serialize(n *snode) string {
 
 // droppedAttrs are server-generated per-instance ids that are noise in the output
 // and that Confluence regenerates on publish, so passthrough serialization omits
-// them.
-var droppedAttrs = map[string]bool{"ac:macro-id": true, "ac:local-id": true}
+// them. The editor writes the bare local-id on every paragraph inside a table,
+// and on ADF content.
+var droppedAttrs = map[string]bool{"ac:macro-id": true, "ac:local-id": true, "local-id": true}
 
 // attrString renders an element's attributes (sorted, XML-escaped) as a leading-
 // space attribute list, dropping the server-generated ids in droppedAttrs.
@@ -902,6 +903,9 @@ func attrString(attrs map[string]string) string {
 // (expand, panel, …), keeping their bodies readable while the structure and
 // parameters survive verbatim.
 func (r *mdRenderer) renderRawBlock(n *snode) string {
+	if n.name == "th" || n.name == "td" {
+		n = hoistCellAlign(n)
+	}
 	open := "<" + n.name + attrString(n.attrs) + ">"
 	closeTag := "</" + n.name + ">"
 
@@ -921,19 +925,19 @@ func (r *mdRenderer) renderRawBlock(n *snode) string {
 	if len(n.kids) == 0 {
 		return "<" + n.name + attrString(n.attrs) + " />"
 	}
+	// Text in a wrapper, beside its elements, is content rather than layout,
+	// and one line per child would add whitespace to it: written whole, the
+	// element is exact.
+	if hasLooseText(n) {
+		return serialize(n)
+	}
 
 	// Wrapper: one line per element child; a child with element children (or a
 	// content container) recurses, a leaf child is serialized raw inline.
 	var parts []string
 	for _, k := range n.kids {
 		if k.name == "" {
-			// Whitespace between tags is layout; anything else is content a
-			// wrapper happens to hold loose, and passing it through is what
-			// the raw form is for.
-			if t := strings.TrimSpace(k.text); t != "" {
-				parts = append(parts, xmlTextEscape(t))
-			}
-			continue
+			continue // inter-tag whitespace; hasLooseText caught anything else
 		}
 		if isContentContainer(k.name) || hasElementChild(k) {
 			parts = append(parts, r.renderRawBlock(k))
@@ -942,6 +946,17 @@ func (r *mdRenderer) renderRawBlock(n *snode) string {
 		}
 	}
 	return open + "\n" + strings.Join(parts, "\n") + "\n" + closeTag
+}
+
+// hasLooseText reports whether n holds text other than whitespace directly,
+// beside or instead of elements.
+func hasLooseText(n *snode) bool {
+	for _, k := range n.kids {
+		if k.name == "" && strings.TrimSpace(k.text) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // isContentContainer reports whether an element holds block content that should

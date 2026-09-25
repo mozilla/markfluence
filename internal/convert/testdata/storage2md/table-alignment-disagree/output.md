@@ -6,9 +6,9 @@
 Service
 
 </th>
-<th>
+<th style="text-align: right;">
 
-<p style="text-align: right;">Errors</p>
+Errors
 
 </th>
 </tr>
@@ -18,9 +18,9 @@ Service
 auth
 
 </td>
-<td>
+<td style="text-align: right;">
 
-<p style="text-align: right;">3</p>
+3
 
 </td>
 </tr>
