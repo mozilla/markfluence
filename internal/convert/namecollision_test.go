@@ -157,3 +157,15 @@ func TestNoWarningWhenPastedNamesDoNotCollide(t *testing.T) {
 		t.Errorf("warnings = %v, want none", page.Warnings)
 	}
 }
+
+// TestAnImageAttachmentCarriesItsRoot: the upload opens the image through the
+// root that checked it (#186), so the converter must hand that root on.
+func TestAnImageAttachmentCarriesItsRoot(t *testing.T) {
+	page, err := convertBody(t, t.TempDir(), "![one](assets/x.png)\n", "assets/x.png")
+	if err != nil {
+		t.Fatalf("MdToConfluence: %v", err)
+	}
+	if len(page.Attachments) != 1 || page.Attachments[0].Root == nil {
+		t.Fatalf("attachments = %+v, want one carrying its root", page.Attachments)
+	}
+}

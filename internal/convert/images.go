@@ -146,6 +146,9 @@ func (r *storageRenderer) renderImage(
 			}
 			r.attachments = append(r.attachments, Attachment{
 				Filename: filename, Path: filepath.Join(r.root.Dir, rootRel), Source: rootRel,
+				// The upload opens Source through this, the root that just
+				// checked it, rather than Path (#186).
+				Root: r.root.FS,
 			})
 		}
 		_, _ = w.WriteString(acImage(alt, attrs, filename, ""))
