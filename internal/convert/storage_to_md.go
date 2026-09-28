@@ -24,6 +24,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 // calloutMacroInverse maps a Confluence callout macro back to a GitHub alert
@@ -638,9 +639,31 @@ func (r *mdRenderer) renderCallout(n *snode, alert string) string {
 
 // renderInlineChildren renders a node's children as a single inline string.
 func (r *mdRenderer) renderInlineChildren(n *snode) string {
-	var b strings.Builder
+	return strings.TrimSpace(r.renderInlineRun(n))
+}
+
+// renderInlineRun is renderInlineChildren without the trim, for a mark, which
+// must see the whitespace at its own edges to move it outside its delimiters.
+func (r *mdRenderer) renderInlineRun(n *snode) string {
+	var s string
 	for _, k := range coalesceSplitMarks(n.kids) {
 		part := r.renderInline(k)
+		// A mark moves its edge whitespace outside its delimiters, so a space
+		// there can meet a space in the text beside it. One is kept: storage
+		// collapses a run of spaces anyway, so the second would only reach the
+		// Markdown on this read and be gone on the next, and the Markdown would
+		// not be a fixed point.
+		if strings.HasSuffix(s, " ") && strings.HasPrefix(part, " ") && !opensWithBreak(part) {
+			part = strings.TrimLeft(part, " ")
+		}
+		// Likewise, whitespace before a hard break is gone on the next read,
+		// since publishing ends the line at the break: "a <br />" read as
+		// "a   " (three spaces) and read back as two. The break is written as
+		// exactly the two spaces that make it one.
+		if opensWithBreak(part) {
+			s = strings.TrimRight(s, " \t")
+			part = hardBreak + strings.TrimLeft(part, " \t")[1:]
+		}
 		// Storage is XHTML and its newlines are insignificant, so
 		// "<br />\nSecond" is the ordinary spelling -- and that newline
 		// normalizes to a space, landing immediately after the two-space hard
@@ -651,12 +674,39 @@ func (r *mdRenderer) renderInlineChildren(n *snode) string {
 		// *are* the next hard break. Found by the round-trip property test.
 		// Never trim a hard break itself: two of them in a row are two blank
 		// line-endings, and its own leading spaces are what make it one.
-		if k.name != "br" && strings.HasSuffix(b.String(), hardBreak) {
+		if !opensWithBreak(part) && strings.HasSuffix(s, hardBreak) {
 			part = strings.TrimLeft(part, " \t")
 		}
-		b.WriteString(part)
+		s += part
 	}
-	return strings.TrimSpace(b.String())
+	return s
+}
+
+// opensWithBreak reports whether an inline part begins with a hard break --
+// a <br /> itself, or a mark that moved one out from its leading edge -- whose
+// leading spaces are what make it a break and must never be trimmed.
+func opensWithBreak(part string) bool {
+	return strings.HasPrefix(strings.TrimLeft(part, " \t"), "\n")
+}
+
+// renderMark renders a bold, italic or strikethrough span, moving whitespace
+// at its edges outside the delimiters (#204). It cannot stay inside, since
+// CommonMark refuses "**bold **" as emphasis -- a closing delimiter preceded by
+// whitespace does not close -- and it cannot be dropped, since the editor
+// leaves a space typed at the end of a bold run inside the run, and dropping
+// it published "**bold**next" as one word. Unicode whitespace counts, because
+// CommonMark's flanking rule counts it: a trailing no-break space refuses the
+// delimiter as surely as a space does. A mark holding only whitespace has
+// nothing Markdown can mark, so it renders as that whitespace.
+func (r *mdRenderer) renderMark(n *snode, delim string) string {
+	s := r.renderInlineRun(n)
+	inner := strings.TrimFunc(s, unicode.IsSpace)
+	if inner == "" {
+		return s
+	}
+	lead := s[:len(s)-len(strings.TrimLeftFunc(s, unicode.IsSpace))]
+	trail := s[len(strings.TrimRightFunc(s, unicode.IsSpace)):]
+	return lead + delim + inner + delim + trail
 }
 
 // hardBreak is Markdown's two-space line break, as renderInline emits it for a
@@ -821,13 +871,13 @@ func (r *mdRenderer) renderInline(n *snode) string {
 	}
 	switch n.name {
 	case "strong", "b":
-		return "**" + r.renderInlineChildren(n) + "**"
+		return r.renderMark(n, "**")
 	case "em", "i":
-		return "*" + r.renderInlineChildren(n) + "*"
+		return r.renderMark(n, "*")
 	case "code":
 		return "`" + textContent(n) + "`"
 	case "del", "s", "strike":
-		return "~~" + r.renderInlineChildren(n) + "~~"
+		return r.renderMark(n, "~~")
 	case "br":
 		return hardBreak
 	case "a":

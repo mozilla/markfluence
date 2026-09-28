@@ -350,7 +350,7 @@ func TestStorageToMarkdownCoalescesSplitMarks(t *testing.T) {
 		},
 		"link only partly bold does not merge": {
 			in:   `<p><strong>a </strong><a href="https://example.com">b<strong>c</strong></a></p>`,
-			want: "**a**[b**c**](https://example.com)\n",
+			want: "**a** [b**c**](https://example.com)\n",
 		},
 	}
 	for name, tc := range tests {
