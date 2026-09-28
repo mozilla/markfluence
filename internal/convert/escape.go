@@ -35,13 +35,13 @@ func escapeText(s string, inLink bool) string {
 // through. The text between inline HTML tags is still Markdown, so "_x_" in a
 // status macro's title published as <em> (_plans/056, amended). "<" and "&"
 // are left to xmlTextEscape, which writes both as entities.
-func escapeRawText(s string) string {
-	return escapeFor(s, false, true)
+func escapeRawText(s string, inLink bool) string {
+	return escapeFor(s, inLink, true)
 }
 
 // escapeFor is escapeText, and escapeRawText when inRaw is set.
 func escapeFor(s string, inLink, inRaw bool) string {
-	if !strings.ContainsAny(s, "\\`*_~[]<&:.@") {
+	if !mayNeedEscape(s) {
 		return s
 	}
 	rs := []rune(s)
@@ -51,12 +51,33 @@ func escapeFor(s string, inLink, inRaw bool) string {
 			b.WriteRune(c)
 			continue
 		}
-		if needsEscape(rs, i, inLink) {
-			b.WriteByte('\\')
+		if !needsEscape(rs, i, inLink) {
+			b.WriteRune(c)
+			continue
 		}
+		// A tilde at its node's end -- last, or followed only by whitespace
+		// that may move to the next node -- may meet the "~~" of a del mark
+		// rendered next, and goldmark reads "\~~~b~~" as a run of three that
+		// closes nothing, so the strikethrough is lost. A character reference
+		// is not part of any run. Raw storage is followed by a tag, never a
+		// mark, and xmlTextEscape would mangle the reference, so it keeps the
+		// backslash.
+		if c == '~' && edgeSpace(rs[i+1:]) && !inRaw {
+			b.WriteString("&#126;")
+			continue
+		}
+		b.WriteByte('\\')
 		b.WriteRune(c)
 	}
 	return b.String()
+}
+
+// mayNeedEscape is a quick test that s holds nothing escapeText could escape,
+// so that ordinary prose skips the per-character pass. "." and ":" matter only
+// in "www." and "://", so they are looked for in that form.
+func mayNeedEscape(s string) bool {
+	return strings.ContainsAny(s, "\\`*_~[]<&@") || strings.Contains(s, "://") ||
+		(strings.Contains(s, ".") && strings.Contains(strings.ToLower(s), "www."))
 }
 
 // needsEscape reports whether rs[i] must be escaped.
@@ -68,40 +89,49 @@ func escapeFor(s string, inLink, inRaw bool) string {
 // trusted it would differ between a read and the read after it -- "\" before
 // a space the mark gives away would go unescaped and escape the delimiter.
 func needsEscape(rs []rune, i int, inLink bool) bool {
-	prev, next := rune(-1), rune(-1)
-	if i > 0 && !edgeSpace(rs[:i]) {
-		prev = rs[i-1]
+	prev := func() rune {
+		if i > 0 && !edgeSpace(rs[:i]) {
+			return rs[i-1]
+		}
+		return -1
 	}
-	if i < len(rs)-1 && !edgeSpace(rs[i+1:]) {
-		next = rs[i+1]
+	next := func() rune {
+		if i < len(rs)-1 && !edgeSpace(rs[i+1:]) {
+			return rs[i+1]
+		}
+		return -1
 	}
 	switch rs[i] {
 	case '\\':
 		// Only a backslash before punctuation is an escape; before anything
 		// else it is literal (C:\path). At the edge the next character is
 		// whatever the next node renders, which is usually punctuation.
-		return next == -1 || isASCIIPunct(next)
+		n := next()
+		return n == -1 || isASCIIPunct(n)
 	case '`':
 		// Any backtick can open a code span.
 		return true
 	case '*':
 		// A "*" with whitespace on both sides is neither left- nor
 		// right-flanking, so it can neither open nor close emphasis.
-		return !isSpace(prev) || !isSpace(next)
+		return !isSpace(prev()) || !isSpace(next())
 	case '_':
 		// An intraword "_" cannot open or close emphasis (snake_case), and one
 		// with whitespace on both sides is not flanking at all.
-		intraword := isAlnum(prev) && isAlnum(next)
-		spaced := isSpace(prev) && isSpace(next)
+		p, n := prev(), next()
+		intraword := isAlnum(p) && isAlnum(n)
+		spaced := isSpace(p) && isSpace(n)
 		return !intraword && !spaced
 	case '~':
 		// goldmark takes a single tilde as strikethrough, so every one could
 		// matter. But a strikethrough needs a closer, and a closer is preceded
 		// by something other than whitespace: escaping every possible closer
 		// leaves an opener with nothing to pair with. A run of two could pair
-		// with a "~~" markfluence emits, so a tilde beside another is escaped
-		// too. This keeps "about ~5 min" readable.
-		return !isSpace(prev) || prev == '~' || next == '~'
+		// with a "~~" markfluence emits, so a tilde beside another is escaped,
+		// and so is one at the node's end, where the next node may render
+		// exactly that "~~". This keeps "about ~5 min" readable.
+		p, n := prev(), next()
+		return !isSpace(p) || p == '~' || n == '~' || n == -1
 	case '[':
 		// "[x]: y" at a line start is a link reference definition and
 		// vanishes, "[ ] x" in a list item is a checkbox, and "[x]" is a link
@@ -112,10 +142,11 @@ func needsEscape(rs []rune, i int, inLink bool) bool {
 	case '<':
 		// The starts of a tag, a comment, a declaration and an autolink.
 		// "a < b" and "<3" are text.
-		return next == -1 || unicode.IsLetter(next) || next == '/' || next == '!' || next == '?'
+		n := next()
+		return n == -1 || unicode.IsLetter(n) || n == '/' || n == '!' || n == '?'
 	case '&':
 		// An entity reference publishes as its character; "AT&T" is text.
-		return next == -1 || entityRE.MatchString(string(rs[i:min(len(rs), i+maxEntity)]))
+		return next() == -1 || entityRE.MatchString(string(rs[i:min(len(rs), i+maxEntity)]))
 	case ':', '.', '@':
 		return autolinks(rs, i)
 	}

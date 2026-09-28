@@ -67,6 +67,21 @@ func TestExtractHeadings(t *testing.T) {
 	}
 }
 
+// TestExtractHeadingsRemovesEscapes: an anchor is built from a heading's
+// published text, which has no backslash escapes, and read writes them (#203).
+func TestExtractHeadingsRemovesEscapes(t *testing.T) {
+	got := extractHeadings("## Setup \\[beta]\n## Item \\#\n## C:\\path\n## a \\\\ b\n")
+	want := []string{"Setup [beta]", "Item #", "C:\\path", "a \\ b"}
+	if len(got) != len(want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("heading %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 func TestExtractHeadingsUnterminatedFenceSkipsToEnd(t *testing.T) {
 	// A fence that's never closed must not leave later real headings exposed
 	// by some off-by-one toggle; everything after the open fence is "in code."

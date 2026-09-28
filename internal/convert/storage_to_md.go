@@ -557,7 +557,7 @@ func (r *mdRenderer) renderCellLines(c *snode) string {
 			// Markdown and is escaped), keeps it exact instead of running
 			// every item together the way rendering it as inline content would.
 			flush()
-			lines = append(lines, serializeInline(k))
+			lines = append(lines, r.serializeInline(k))
 			isList[len(lines)-1] = true
 		default:
 			run = append(run, k)
@@ -609,7 +609,7 @@ func (r *mdRenderer) renderMacro(n *snode, block bool) string {
 	case block:
 		return r.renderRawBlock(n)
 	default:
-		return serializeInline(n)
+		return r.serializeInline(n)
 	}
 }
 
@@ -656,7 +656,7 @@ func (r *mdRenderer) renderInlineChildren(n *snode) string {
 // must see the whitespace at its own edges to move it outside its delimiters.
 func (r *mdRenderer) renderInlineRun(n *snode) string {
 	var buf []byte
-	for _, k := range mergeText(coalesceSplitMarks(n.kids)) {
+	for _, k := range mergeText(coalesceSplitMarks(flattenWrappers(n.kids))) {
 		part := r.renderInline(k)
 		// A mark moves its edge whitespace outside its delimiters, so a space
 		// there can meet a space in the text beside it. One is kept: storage
@@ -692,11 +692,40 @@ func (r *mdRenderer) renderInlineRun(n *snode) string {
 	return string(buf)
 }
 
+// flattenWrappers replaces each element Markdown has no syntax for (a coloured
+// <span>, <u>, <sup>) with its children. renderInline writes such a wrapper's
+// children and nothing else, so this changes no output by itself; what it
+// changes is what escapeText can see. Text split by a wrapper is one run of
+// text in the Markdown and one text node after publishing, so escaping each
+// piece on its own missed "foo@<span>bar.com</span>" (an address once joined)
+// and escaped "<u>a_</u>b" differently from the "a_b" read back next time.
+func flattenWrappers(kids []*snode) []*snode {
+	out := make([]*snode, 0, len(kids))
+	for _, k := range kids {
+		if k.name != "" && !inlineElements[k.name] {
+			out = append(out, flattenWrappers(k.kids)...)
+			continue
+		}
+		out = append(out, k)
+	}
+	return out
+}
+
+// inlineElements are the elements renderInline writes as something other
+// than their children; every other element is a transparent wrapper. It must
+// list exactly renderInline's cases.
+var inlineElements = map[string]bool{
+	"strong": true, "b": true, "em": true, "i": true, "code": true,
+	"del": true, "s": true, "strike": true, "br": true, "a": true,
+	"ac:image": true, "ac:link": true, "ac:structured-macro": true, "ac:adf-extension": true,
+}
+
 // mergeText joins adjacent text nodes into one. escapeText judges a character
 // by its neighbours within its node, so the same text split in two -- which
-// coalesceSplitMarks produces when it merges two runs of one mark -- could be
-// escaped differently from the single node publishing writes back, and the
-// Markdown would not be a fixed point.
+// coalesceSplitMarks produces when it merges two runs of one mark, and
+// flattenWrappers when it removes a wrapper -- could be escaped differently
+// from the single node publishing writes back, and the Markdown would not be a
+// fixed point.
 func mergeText(kids []*snode) []*snode {
 	out := make([]*snode, 0, len(kids))
 	for _, k := range kids {
@@ -924,7 +953,7 @@ func (r *mdRenderer) renderInline(n *snode) string {
 	case "ac:adf-extension":
 		// Likewise for an inline ADF extension, whose transparent-wrapper default
 		// would otherwise render the node and the fallback one after the other.
-		return serializeInline(adfPassthrough(n))
+		return r.serializeInline(adfPassthrough(n))
 	default:
 		// A wrapper Markdown has no syntax for (a coloured <span>, <u>, <sup>)
 		// keeps its edge whitespace for the run around it to settle: trimming it
@@ -1076,10 +1105,20 @@ func serialize(n *snode) string {
 
 // serializeInline is serialize for raw storage written inline, inside a
 // paragraph or a pipe-table cell. goldmark parses the text between inline HTML
-// tags as Markdown, so each text node is escaped as well (#203). A raw block
-// needs none of this: an HTML block's content is not parsed.
-func serializeInline(n *snode) string {
-	return serializeWith(n, func(s string) string { return xmlTextEscape(escapeRawText(s)) })
+// tags as Markdown, so each text node is escaped as well (#203), with a "]"
+// escaped inside link text. A newline is written as "&#10;", which publishes
+// as the same newline: a real one would let goldmark start a block at the
+// next line (a heading from "# b"), or read the element as an HTML block
+// whose content, escapes included, is not parsed at all.
+//
+// A raw block written across lines, as renderRawBlock writes a wrapper, needs
+// none of this, since an HTML block's content is not parsed; one written on a
+// single line with its text is inline, and uses this.
+func (r *mdRenderer) serializeInline(n *snode) string {
+	inLink := r.linkDepth > 0
+	return serializeWith(n, func(s string) string {
+		return strings.ReplaceAll(xmlTextEscape(escapeRawText(s, inLink)), "\n", "&#10;")
+	})
 }
 
 // serializeWith is serialize with text nodes written by text.
@@ -1133,6 +1172,12 @@ func attrString(attrs map[string]string) string {
 // (expand, panel, …), keeping their bodies readable while the structure and
 // parameters survive verbatim.
 func (r *mdRenderer) renderRawBlock(n *snode) string {
+	return r.rawBlock(n, true)
+}
+
+// rawBlock is renderRawBlock. top is false for an element written as a line of
+// an enclosing wrapper, which is inside that wrapper's HTML block.
+func (r *mdRenderer) rawBlock(n *snode, top bool) string {
 	if n.name == "th" || n.name == "td" {
 		n = normalizeCellAlign(n)
 	}
@@ -1157,8 +1202,14 @@ func (r *mdRenderer) renderRawBlock(n *snode) string {
 	}
 	// Text in a wrapper, beside its elements, is content rather than layout,
 	// and one line per child would add whitespace to it: written whole, the
-	// element is exact.
+	// element is exact. Written whole it is one line holding text, which is
+	// not an HTML block, so at the top its text is parsed as Markdown and is
+	// escaped; inside a wrapper's lines it is part of that wrapper's HTML
+	// block, where nothing is parsed and an escape would publish.
 	if hasLooseText(n) {
+		if top {
+			return r.serializeInline(n)
+		}
 		return serialize(n)
 	}
 
@@ -1170,7 +1221,7 @@ func (r *mdRenderer) renderRawBlock(n *snode) string {
 			continue // inter-tag whitespace; hasLooseText caught anything else
 		}
 		if isContentContainer(k.name) || hasElementChild(k) {
-			parts = append(parts, r.renderRawBlock(k))
+			parts = append(parts, r.rawBlock(k, false))
 		} else {
 			parts = append(parts, serialize(k))
 		}

@@ -1,0 +1,7 @@
+{
+  "attachments": [],
+  "broken": [],
+  "html": "<p>Headings as read writes them, with backslash escapes. Links to them must resolve to the anchors Confluence builds from the published text: <a href=\"https://wiki.example.net/wiki/spaces/ENG/pages/111/Escaped+Headings#Setup-[beta]\">setup</a>, <a href=\"https://wiki.example.net/wiki/spaces/ENG/pages/111/Escaped+Headings#Item-#\">item</a>, <a href=\"https://wiki.example.net/wiki/spaces/ENG/pages/111/Escaped+Headings#Use-_under_score\">underscore</a>.</p>\n<h2>Setup [beta]</h2>\n<h2>Item #</h2>\n<h2>Use _under_score</h2>\n",
+  "warnings": [],
+  "mentions": []
+}

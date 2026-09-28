@@ -108,7 +108,7 @@ var lineStartEscapes = []struct{ storage, want string }{
 	{`<p>---</p>`, `\---`},
 	{`<p>- - -</p>`, `\- - -`},
 	{`<p>***</p>`, `\*\*\*`},
-	{`<p>~~~</p>`, `\~\~\~`},
+	{`<p>~~~</p>`, `\~\~&#126;`},
 	{`<p>a<br />---</p>`, "a  \n\\---"},
 	{`<p>a<br />===</p>`, "a  \n\\==="},
 	{`<p>a | b<br />--- | ---</p>`, "a | b  \n\\--- | ---"},
@@ -160,4 +160,91 @@ func TestEscapeLineStarts(t *testing.T) {
 func firstTag(storage string) string {
 	name, _, _ := strings.Cut(strings.TrimPrefix(storage, "<"), ">")
 	return name
+}
+
+// TestEscapePublishesWhatThePageHeld runs storage through read and publish and
+// checks what publishing sends, not just that the Markdown is stable: a
+// backslash that publishes literally is stable too. Each row is a shape the
+// review of #203 found.
+func TestEscapePublishesWhatThePageHeld(t *testing.T) {
+	status := func(title string) string {
+		return `<ac:structured-macro ac:name="status" ac:schema-version="1">` +
+			`<ac:parameter ac:name="title">` + title + `</ac:parameter></ac:structured-macro>`
+	}
+	for _, c := range []struct {
+		name, storage string
+		want, never   []string
+	}{
+		{
+			name:    "a tilde before a del mark",
+			storage: `<p>a ~<del>b</del> c</p>`,
+			want:    []string{"a ~<del>b</del> c"},
+		},
+		{
+			name:    "an address split by a wrapper",
+			storage: `<p>foo@<span style="color: red;">bar.com</span></p>`,
+			never:   []string{"<a "},
+		},
+		{
+			name:    "a URL split by a wrapper",
+			storage: `<p>https<span>://x.com</span> and www<span>.x.com</span></p>`,
+			never:   []string{"<a "},
+		},
+		{
+			name:    "an entity split by a wrapper",
+			storage: `<p>&amp;co<span>py;</span></p>`,
+			want:    []string{"&amp;copy;"},
+		},
+		{
+			name:    "a bracket in raw storage inside link text",
+			storage: `<p><a href="https://example.com">foo ` + status("a]b") + ` bar</a></p>`,
+			want:    []string{`<a href="https://example.com">foo `, ">a]b<"},
+		},
+		{
+			name: "raw storage at a paragraph start with newlines between its tags",
+			storage: "<p><ac:structured-macro ac:name=\"status\">\n" +
+				"<ac:parameter ac:name=\"title\">_x_</ac:parameter>\n</ac:structured-macro></p>",
+			want:  []string{">_x_<"},
+			never: []string{`\_`},
+		},
+		{
+			name:    "a newline then a block marker in raw storage",
+			storage: "<p>x " + status("a\n# b") + " y</p>",
+			want:    []string{"a\n# b"},
+			never:   []string{"<h1>"},
+		},
+		{
+			name: "raw storage with loose text at block level",
+			storage: `<ac:structured-macro ac:name="foo">` +
+				`<ac:parameter ac:name="t">_x_</ac:parameter>loose _y_</ac:structured-macro>`,
+			want:  []string{">_x_<", "loose _y_"},
+			never: []string{"<em>", `\_`},
+		},
+		{
+			name:    "an underscore at a wrapper's edge",
+			storage: `<p><u>a_</u>b and <span>snake</span>_case</p>`,
+			want:    []string{"a_b and snake_case"},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			md, err := convert.StorageToMarkdown(c.storage, convert.StorageOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			published := publish(t, md)
+			for _, w := range c.want {
+				if !strings.Contains(published, w) {
+					t.Errorf("read %q publishes %q, want it to hold %q", md, published, w)
+				}
+			}
+			for _, n := range c.never {
+				if strings.Contains(published, n) {
+					t.Errorf("read %q publishes %q, which holds %q", md, published, n)
+				}
+			}
+			if again, _ := convert.StorageToMarkdown(published, convert.StorageOptions{}); again != md {
+				t.Errorf("not a fixed point: %q, then %q", md, again)
+			}
+		})
+	}
 }
