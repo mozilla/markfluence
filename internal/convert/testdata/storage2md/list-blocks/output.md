@@ -46,3 +46,39 @@ Blocks other than a code block:
   | a | b |
   | --- | --- |
   | 1 | 2 |
+
+Order and separation:
+
+- a nested list before a code block
+  - n
+  ```
+  after the list
+  ```
+- a nested list before text
+  - n
+
+  text after the list
+- a table Markdown cannot express, then a code block
+
+  <table>
+  <tbody>
+  <tr>
+  <td>
+
+  x
+
+  </td>
+  </tr>
+  </tbody>
+  </table>
+
+  ```
+  after the table
+  ```
+- ```
+  first
+  ```
+  a  
+  b
+- a  
+  b

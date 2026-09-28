@@ -27,3 +27,13 @@ echo two]]></ac:plain-text-body></ac:structured-macro></li>
 </li>
 <li><p>a table</p><table data-layout="align-start"><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table></li>
 </ul>
+<p>Order and separation:</p>
+<ul>
+<li>a nested list before a code block<ul><li>n</li></ul><ac:structured-macro ac:name="code" ac:schema-version="1"><ac:plain-text-body><![CDATA[after the list]]></ac:plain-text-body></ac:structured-macro></li>
+<li>a nested list before text<ul><li>n</li></ul>text after the list</li>
+<li>a table Markdown cannot express, then a code block<table><tbody><tr><td>x</td></tr></tbody></table><ac:structured-macro ac:name="code" ac:schema-version="1"><ac:plain-text-body><![CDATA[after the table]]></ac:plain-text-body></ac:structured-macro></li>
+<li><ac:structured-macro ac:name="code" ac:schema-version="1"><ac:plain-text-body><![CDATA[first]]></ac:plain-text-body></ac:structured-macro>a<br />
+b</li>
+<li>a<br />
+b</li>
+</ul>
