@@ -1,0 +1,29 @@
+<ol>
+<li>add a comment; something like
+<ac:structured-macro ac:name="code" ac:schema-version="1" ac:macro-id="654369b8-b2d9-4ec2-9b76-b73f5d1d43ba"><ac:plain-text-body><![CDATA[Thanks for your request.]]></ac:plain-text-body></ac:structured-macro></li>
+<li>set the status to &ldquo;IN PROGRESS&rdquo;</li>
+</ol>
+<p>The shapes a code block takes:</p>
+<ul>
+<li><p>the editor's paragraph form</p><ac:structured-macro ac:name="code" ac:schema-version="1"><ac:parameter ac:name="language">bash</ac:parameter><ac:plain-text-body><![CDATA[echo one
+
+echo two]]></ac:plain-text-body></ac:structured-macro></li>
+<li>text before<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:plain-text-body><![CDATA[middle]]></ac:plain-text-body></ac:structured-macro>text after</li>
+<li><ac:structured-macro ac:name="code" ac:schema-version="1"><ac:plain-text-body><![CDATA[only a code block]]></ac:plain-text-body></ac:structured-macro></li>
+<li>a code block, then a nested list<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:plain-text-body><![CDATA[code]]></ac:plain-text-body></ac:structured-macro>
+<ul>
+<li>nested<ac:structured-macro ac:name="code" ac:schema-version="1"><ac:plain-text-body><![CDATA[nested code]]></ac:plain-text-body></ac:structured-macro></li>
+</ul>
+</li>
+<li>a status stays inline <ac:structured-macro ac:name="status" ac:schema-version="1"><ac:parameter ac:name="title">DONE</ac:parameter></ac:structured-macro></li>
+</ul>
+<p>Blocks other than a code block:</p>
+<ul>
+<li><p>a callout</p><ac:structured-macro ac:name="info" ac:schema-version="1"><ac:rich-text-body><p>note this</p></ac:rich-text-body></ac:structured-macro></li>
+<li><p>a quote, then a nested list</p><blockquote><p>quoted</p></blockquote>
+<ul>
+<li>nested</li>
+</ul>
+</li>
+<li><p>a table</p><table data-layout="align-start"><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table></li>
+</ul>

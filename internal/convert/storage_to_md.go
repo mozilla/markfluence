@@ -345,32 +345,113 @@ func (r *mdRenderer) renderList(n *snode, ordered bool, indent string) string {
 }
 
 // renderListItem renders an <li>: its inline/paragraph content on the first line,
-// with any nested lists indented beneath it.
+// any block it holds (a code block, a table, a quote, a callout) indented under
+// it in document order, and any nested lists indented beneath all of that.
+//
+// A block must not go through renderInline: a code macro there renders its
+// fence onto the item's text line, where it is no fence at all, and its
+// unindented body ends the list (#211). The editor writes exactly that shape --
+// <li>text<ac:structured-macro ac:name="code"> -- for a code block added to a
+// list item.
+//
+// Blocks are separated from their neighbours by a blank line, except that a
+// fence needs none on either side: a fence may interrupt a paragraph and a
+// closed fence ends itself, so the item stays tight and publishes back to the
+// storage it came from rather than putting a <p> around every item's text.
+// Nothing else may go without the blank line: a quote swallows the text after
+// it as a lazy continuation, "---" under text is a setext heading underline,
+// and a raw HTML block runs until a blank line.
 func (r *mdRenderer) renderListItem(li *snode, cont string) string {
-	var head strings.Builder
+	type seg struct {
+		text  string
+		block bool
+	}
+	var segs []seg
+	var line strings.Builder
+	flush := func() {
+		if s := strings.TrimSpace(line.String()); s != "" {
+			segs = append(segs, seg{text: s})
+		}
+		line.Reset()
+	}
 	var tail []string
 	for _, k := range li.kids {
-		switch k.name {
-		case "ul":
+		switch {
+		case k.name == "ul":
 			tail = append(tail, r.renderList(k, false, cont))
-		case "ol":
+		case k.name == "ol":
 			tail = append(tail, r.renderList(k, true, cont))
-		case "p":
+		case k.name == "p":
 			if s := r.renderInlineChildren(k); s != "" {
-				if head.Len() > 0 {
-					head.WriteString(" ")
+				if line.Len() > 0 {
+					line.WriteString(" ")
 				}
-				head.WriteString(s)
+				line.WriteString(s)
+			}
+		case listItemBlock(k):
+			flush()
+			if s := r.renderBlock(k, cont); s != "" {
+				segs = append(segs, seg{text: s, block: true})
 			}
 		default:
-			head.WriteString(r.renderInline(k))
+			line.WriteString(r.renderInline(k))
 		}
 	}
-	item := strings.TrimSpace(head.String())
+	flush()
+	// tight reports whether two neighbours may go without a blank line between
+	// them. A nested list, which follows everything else, counts as text: it
+	// may interrupt a paragraph, which is how a tight item has always ended.
+	fence := func(s seg) bool { return s.block && strings.HasPrefix(s.text, "```") }
+	tight := func(a, b seg) bool {
+		return fence(a) || fence(b) || (!a.block && !b.block)
+	}
+	var b strings.Builder
+	for i, s := range segs {
+		if i > 0 {
+			b.WriteString("\n")
+			if !tight(segs[i-1], s) {
+				b.WriteString("\n")
+			}
+			b.WriteString(prefixLines(s.text, cont))
+			continue
+		}
+		// The marker indents the first line; a block's other lines still need
+		// the continuation indent, or an item that opens with a code block
+		// leaves the list at the fence's second line.
+		first, rest, more := strings.Cut(s.text, "\n")
+		b.WriteString(first)
+		if more && s.block {
+			b.WriteString("\n" + prefixLines(rest, cont))
+		} else if more {
+			b.WriteString("\n" + rest)
+		}
+	}
+	item := b.String()
 	if len(tail) > 0 {
-		item += "\n" + strings.Join(tail, "\n")
+		item += "\n"
+		if len(segs) > 0 && !tight(segs[len(segs)-1], seg{}) {
+			item += "\n"
+		}
+		item += strings.Join(tail, "\n")
 	}
 	return item
+}
+
+// listItemBlock reports whether an <li> child renders as a block of its own
+// rather than as part of the item's text line. A macro qualifies only when it
+// renders as a Markdown block (a code block or a callout): any other macro in a
+// list item stays inline and raw, as a status lozenge must.
+func listItemBlock(n *snode) bool {
+	switch n.name {
+	case "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "hr", "pre", "table":
+		return true
+	case "ac:structured-macro":
+		name := n.attrs["ac:name"]
+		return name == "code" || calloutMacroInverse[name] != ""
+	case "ac:adf-extension":
+		return adfPanelAlert(n) != ""
+	}
+	return false
 }
 
 // renderCellLines renders a table cell's content as a single physical line.
