@@ -218,7 +218,7 @@ func (r *mdRenderer) renderACLink(n *snode) string {
 			return r.renderAnchorLink(n, anchor)
 		}
 		// No target and no anchor: there is nothing to point at.
-		return serializeInline(n)
+		return r.serializeInline(n)
 	case target.name == "ri:page":
 		return r.renderPageLink(n, target, anchor)
 	case target.name == "ri:space":
@@ -230,7 +230,7 @@ func (r *mdRenderer) renderACLink(n *snode) string {
 		// images are uploaded (images.go); ri:blog-post cannot be resolved to
 		// an id, because SearchPagesByTitle does not see blog posts. Both
 		// round-trip exactly as storage.
-		return serializeInline(n)
+		return r.serializeInline(n)
 	}
 }
 
@@ -249,7 +249,7 @@ func acLinkTarget(n *snode) *snode {
 func (r *mdRenderer) renderPageLink(n, target *snode, anchor string) string {
 	href, ok := r.pageLinks[pageTarget(target)]
 	if !ok {
-		return serializeInline(n)
+		return r.serializeInline(n)
 	}
 	if anchor != "" {
 		// Appended verbatim, still percent-encoded: it is a URL fragment, and
@@ -264,7 +264,7 @@ func (r *mdRenderer) renderPageLink(n, target *snode, anchor string) string {
 func (r *mdRenderer) renderSpaceLink(n, target *snode) string {
 	key := target.attrs["ri:space-key"]
 	if key == "" || r.siteURL == "" {
-		return serializeInline(n)
+		return r.serializeInline(n)
 	}
 	return mdLink(r.acLinkText(n, key), r.siteURL+"/wiki/spaces/"+key)
 }
@@ -348,11 +348,11 @@ const unknownUserName = "Unlicensed user"
 func (r *mdRenderer) renderUserMention(n, target *snode) string {
 	id := target.attrs["ri:account-id"]
 	if id == "" {
-		return serializeInline(n)
+		return r.serializeInline(n)
 	}
 	name, known := r.userNames[id]
 	if !known {
-		return serializeInline(n)
+		return r.serializeInline(n)
 	}
 	if name == "" {
 		name = unknownUserName
@@ -366,7 +366,7 @@ func (r *mdRenderer) renderAnchorLink(n *snode, anchor string) string {
 	if !ok {
 		// A "#slug" matching no heading publishes as a dead relative href, and
 		// the forward path says nothing about it. Keep the storage, which works.
-		return serializeInline(n)
+		return r.serializeInline(n)
 	}
 	return mdLink(r.acLinkText(n, anchor), "#"+slug)
 }

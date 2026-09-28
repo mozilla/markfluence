@@ -184,9 +184,16 @@ func ConfluenceSlug(heading string) string {
 	return whitespaceRunRE.ReplaceAllString(strings.TrimSpace(heading), "-")
 }
 
+// backslashEscapeRE matches a CommonMark backslash escape: a backslash before
+// an ASCII punctuation character, which the group captures.
+var backslashEscapeRE = regexp.MustCompile("\\\\([!-/:-@\\[-`{-~])")
+
 // extractHeadings returns the text of each ATX heading in a
 // frontmatter-stripped body, skipping fenced code blocks so "#" lines inside
-// samples aren't headings.
+// samples aren't headings. Backslash escapes are removed, since Confluence
+// builds a heading's anchor from its published text, where they are gone:
+// read writes "## Setup \[beta]" for a heading whose anchor is "Setup-[beta]"
+// (#203).
 func extractHeadings(body string) []string {
 	var headings []string
 	inCode := false
@@ -210,7 +217,7 @@ func extractHeadings(body string) []string {
 			continue
 		}
 		if text := strings.TrimSpace(rest); text != "" {
-			headings = append(headings, text)
+			headings = append(headings, backslashEscapeRE.ReplaceAllString(text, "$1"))
 		}
 	}
 	return headings
