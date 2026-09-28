@@ -41,6 +41,14 @@ var inlineEscapes = []escapeCase{
 	{`C:\path`, `C:\path`, "a backslash before a letter is literal"},
 	{`a\*b`, `a\\\*b`, "a backslash before punctuation is an escape"},
 	{`a\`, `a\\`, "a backslash at the edge could meet punctuation"},
+	{`see https://x.com.`, `see https\://x.com.`, "a bare URL autolinks"},
+	{`HTTP://X.COM and ftp://x`, `HTTP\://X.COM and ftp\://x`, "every scheme goldmark links"},
+	{`www.x.com`, `www\.x.com`, "a www. at a word start autolinks"},
+	{`awww.x`, `awww.x`, "not at a word start"},
+	{`mail a@b.com`, `mail a\@b.com`, "an email address autolinks"},
+	{`@alice`, `@alice`, "an @ at the edge is a mention marker"},
+	{`x @ y`, `x @ y`, "not an address"},
+	{`at 10:30, http: fine`, `at 10:30, http: fine`, "a colon not before //"},
 }
 
 func TestEscapeText(t *testing.T) {

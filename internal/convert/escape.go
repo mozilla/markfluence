@@ -27,7 +27,7 @@ import (
 // inLink is set inside a link's text, where a "]" would end the text early and
 // must be escaped too; elsewhere a lone "]" is inert and common in prose.
 func escapeText(s string, inLink bool) string {
-	if !strings.ContainsAny(s, "\\`*_~[]<&") {
+	if !strings.ContainsAny(s, "\\`*_~[]<&:.@") {
 		return s
 	}
 	rs := []rune(s)
@@ -92,8 +92,42 @@ func needsEscape(rs []rune, i int, inLink bool) bool {
 	case '&':
 		// An entity reference publishes as its character; "AT&T" is text.
 		return next == -1 || entityRE.MatchString(string(rs[i:min(len(rs), i+maxEntity)]))
+	case ':', '.', '@':
+		return autolinks(rs, i)
 	}
 	return false
+}
+
+// autolinks reports whether rs[i] is the character that makes GFM autolink a
+// bare URL or email address: the ":" of "https://", the "." of a "www." that
+// starts a word, or the "@" of an address. Escaping it keeps plain text plain;
+// a URL stored as text rather than as a link is someone's choice, and the
+// editor turns a typed one into a link (_plans/056, D7).
+//
+// An "@" at the node's start is the one character left alone at an edge: a
+// link whose text starts with "@" is how a mention is written (#91), and
+// escaping it would turn every such link into a plain profile link.
+func autolinks(rs []rune, i int) bool {
+	before := strings.ToLower(string(rs[max(0, i-5):i]))
+	switch rs[i] {
+	case ':':
+		after := string(rs[i+1 : min(len(rs), i+3)])
+		return after == "//" && (strings.HasSuffix(before, "http") ||
+			strings.HasSuffix(before, "https") || strings.HasSuffix(before, "ftp"))
+	case '.':
+		if !strings.HasSuffix(before, "www") {
+			return false
+		}
+		return i == 3 || !isAlnum(rs[i-4])
+	case '@':
+		return i > 0 && i < len(rs)-1 && isEmailLocal(rs[i-1]) && isAlnum(rs[i+1])
+	}
+	return false
+}
+
+// isEmailLocal reports whether r may end the local part of an email address.
+func isEmailLocal(r rune) bool {
+	return isAlnum(r) || strings.ContainsRune(".!#$%&'*+/=?^_`{|}~-", r)
 }
 
 // entityRE matches a character reference at the start of a string: named,

@@ -83,3 +83,5 @@ Layout cell: \*x\*
 </ac:layout>
 
 ## Item \#
+
+Plain text, not links: https\://example.com, www\.example.com and ops\@example.com.
