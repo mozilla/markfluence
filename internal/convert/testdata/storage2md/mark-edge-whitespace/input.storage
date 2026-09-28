@@ -1,0 +1,11 @@
+<p>A trailing space inside bold: <strong>bold </strong>next.</p>
+<p>Inside italic: <em>x </em>y, and strikethrough: <del>lost for </del>13.5h.</p>
+<p>A leading space: a<strong> bold</strong> word.</p>
+<p>A space on both sides of the edge: <strong>bold </strong> next.</p>
+<p>A no-break space: <strong>a&nbsp;</strong>b.</p>
+<p>Nested marks: <strong><em>n </em></strong>x.</p>
+<p>A mark holding only a space: x<strong> </strong>y.</p>
+<p>A hard break at the end of a mark: <strong>a<br /></strong>b.</p>
+<p>A hard break at the start of a mark, after a space: a <strong><br />b</strong>.</p>
+<p>A space before a hard break: a <br />b.</p>
+<table data-layout="align-start"><thead><tr><th>Item</th><th>Time</th></tr></thead><tbody><tr><td><del>lost for </del>13.5h</td><td>1</td></tr></tbody></table>
