@@ -539,7 +539,7 @@ func (r *mdRenderer) rawCellBlocks(c *snode) []string {
 	var blocks []string
 	flush := func() {
 		if s := strings.TrimSpace(r.renderInlineChildren(&snode{kids: run})); s != "" {
-			blocks = append(blocks, s)
+			blocks = append(blocks, escapeLineStarts(s))
 		}
 		run = nil
 	}

@@ -13,3 +13,10 @@
 <table data-layout="align-start"><thead><tr><th>Pipe cell</th></tr></thead><tbody><tr><td>*x* and a|b</td></tr></tbody></table>
 <table><tbody><tr><td><p>Raw cell: *x*</p></td></tr></tbody></table>
 <ac:layout><ac:layout-section ac:type="single"><ac:layout-cell><p>Layout cell: *x*</p></ac:layout-cell></ac:layout-section></ac:layout>
+<p>1. not a list</p>
+<p># not a heading, and a line after a break:<br /># not a heading either</p>
+<p>&gt; 90 days</p>
+<ac:structured-macro ac:name="note" ac:schema-version="1"><ac:rich-text-body><p>- not a list in a callout</p></ac:rich-text-body></ac:structured-macro>
+<table><tbody><tr><td><p>1. not a list in a raw cell</p></td><td>&gt; loose text in a raw cell</td></tr></tbody></table>
+<ac:layout><ac:layout-section ac:type="single"><ac:layout-cell><p>+ not a list in a layout cell</p></ac:layout-cell></ac:layout-section></ac:layout>
+<h2>Item #</h2>
