@@ -344,9 +344,8 @@ func (r *mdRenderer) renderList(n *snode, ordered bool, indent string) string {
 	return strings.Join(lines, "\n")
 }
 
-// renderListItem renders an <li>: its inline/paragraph content on the first line,
-// any block it holds (a code block, a table, a quote, a callout) indented under
-// it in document order, and any nested lists indented beneath all of that.
+// renderListItem renders an <li>: its text on the marker's line, then every
+// block and nested list it holds, in document order, indented under it.
 //
 // A block must not go through renderInline: a code macro there renders its
 // fence onto the item's text line, where it is no fence at all, and its
@@ -354,96 +353,137 @@ func (r *mdRenderer) renderList(n *snode, ordered bool, indent string) string {
 // <li>text<ac:structured-macro ac:name="code"> -- for a code block added to a
 // list item.
 //
-// Blocks are separated from their neighbours by a blank line, except that a
-// fence needs none on either side: a fence may interrupt a paragraph and a
-// closed fence ends itself, so the item stays tight and publishes back to the
-// storage it came from rather than putting a <p> around every item's text.
-// Nothing else may go without the blank line: a quote swallows the text after
-// it as a lazy continuation, "---" under text is a setext heading underline,
-// and a raw HTML block runs until a blank line.
+// Neighbours are separated by a blank line unless tight says otherwise; see
+// there for which pairs may go without one.
 func (r *mdRenderer) renderListItem(li *snode, cont string) string {
-	type seg struct {
-		text  string
-		block bool
-	}
-	var segs []seg
+	var segs []itemSeg
 	var line strings.Builder
-	flush := func() {
+	var run []*snode
+	// addLine appends rendered text to the item's current text line. A <p>
+	// boundary becomes a space, as it always has.
+	addLine := func(s string) {
+		if s == "" {
+			return
+		}
+		if line.Len() > 0 {
+			line.WriteString(" ")
+		}
+		line.WriteString(s)
+	}
+	// flushRun renders loose inline children as one run, so they get what a
+	// <p>'s children get: the whitespace trim after a hard break, and repair
+	// of a mark the editor split around a link.
+	flushRun := func() {
+		if len(run) > 0 {
+			addLine(r.renderInlineChildren(&snode{kids: run}))
+			run = nil
+		}
+	}
+	flushLine := func() {
+		flushRun()
 		if s := strings.TrimSpace(line.String()); s != "" {
-			segs = append(segs, seg{text: s})
+			segs = append(segs, itemSeg{text: s, kind: segText})
 		}
 		line.Reset()
 	}
-	var tail []string
 	for _, k := range li.kids {
 		switch {
-		case k.name == "ul":
-			tail = append(tail, r.renderList(k, false, cont))
-		case k.name == "ol":
-			tail = append(tail, r.renderList(k, true, cont))
+		case k.name == "ul", k.name == "ol":
+			flushLine()
+			// renderList indents its own lines, at cont.
+			segs = append(segs, itemSeg{text: r.renderList(k, k.name == "ol", cont), kind: segList})
 		case k.name == "p":
-			if s := r.renderInlineChildren(k); s != "" {
-				if line.Len() > 0 {
-					line.WriteString(" ")
-				}
-				line.WriteString(s)
-			}
+			flushRun()
+			addLine(r.renderInlineChildren(k))
 		case listItemBlock(k):
-			flush()
+			flushLine()
 			if s := r.renderBlock(k, cont); s != "" {
-				segs = append(segs, seg{text: s, block: true})
+				kind := segBlock
+				if isFenceNode(k) {
+					kind = segFence
+				}
+				segs = append(segs, itemSeg{text: s, kind: kind})
 			}
 		default:
-			line.WriteString(r.renderInline(k))
+			run = append(run, k)
 		}
 	}
-	flush()
-	// tight reports whether two neighbours may go without a blank line between
-	// them. A nested list, which follows everything else, counts as text: it
-	// may interrupt a paragraph, which is how a tight item has always ended.
-	fence := func(s seg) bool { return s.block && strings.HasPrefix(s.text, "```") }
-	tight := func(a, b seg) bool {
-		return fence(a) || fence(b) || (!a.block && !b.block)
-	}
+	flushLine()
 	var b strings.Builder
 	for i, s := range segs {
 		if i > 0 {
 			b.WriteString("\n")
-			if !tight(segs[i-1], s) {
+			if !tight(segs[i-1].kind, s.kind) {
 				b.WriteString("\n")
 			}
+		}
+		if s.kind == segList {
+			b.WriteString(s.text)
+		} else {
 			b.WriteString(prefixLines(s.text, cont))
-			continue
-		}
-		// The marker indents the first line; a block's other lines still need
-		// the continuation indent, or an item that opens with a code block
-		// leaves the list at the fence's second line.
-		first, rest, more := strings.Cut(s.text, "\n")
-		b.WriteString(first)
-		if more && s.block {
-			b.WriteString("\n" + prefixLines(rest, cont))
-		} else if more {
-			b.WriteString("\n" + rest)
 		}
 	}
-	item := b.String()
-	if len(tail) > 0 {
-		item += "\n"
-		if len(segs) > 0 && !tight(segs[len(segs)-1], seg{}) {
-			item += "\n"
-		}
-		item += strings.Join(tail, "\n")
+	// The marker indents the first line, so it drops the continuation indent.
+	// An item that opens with a nested list starts it on the next line.
+	if len(segs) > 0 && segs[0].kind == segList {
+		return "\n" + b.String()
 	}
-	return item
+	return strings.TrimPrefix(b.String(), cont)
+}
+
+// itemSeg is one piece of a rendered list item: a text line, a block, or a
+// nested list.
+type itemSeg struct {
+	text string
+	kind segKind
+}
+
+type segKind int
+
+const (
+	segText segKind = iota
+	segFence
+	segBlock
+	segList
+)
+
+// tight reports whether two neighbours in a list item may go without a blank
+// line between them. Only pairs that keep the item tight qualify, since a
+// blank line makes the whole list loose and every item's text publishes inside
+// a <p>: a fence may interrupt a paragraph, and a closed fence ends itself, so
+// a fence is tight beside text, another fence or a nested list; a nested list
+// may interrupt a paragraph, which is how a tight item has always ended. No
+// other pair may go without the blank line: a quote swallows the text after it
+// as a lazy continuation, "---" under text is a setext heading underline, a raw
+// HTML block runs until a blank line (and so swallows even a fence), and text
+// after a nested list continues the list's last item.
+func tight(a, b segKind) bool {
+	switch {
+	case a == segFence || b == segFence:
+		return a != segBlock && b != segBlock
+	case a == segText:
+		return b == segList
+	case a == segList:
+		return b == segList
+	}
+	return false
+}
+
+// isFenceNode reports whether a list item's block child renders as a fenced
+// code block.
+func isFenceNode(n *snode) bool {
+	return n.name == "pre" || (n.name == "ac:structured-macro" && n.attrs["ac:name"] == "code")
 }
 
 // listItemBlock reports whether an <li> child renders as a block of its own
 // rather than as part of the item's text line. A macro qualifies only when it
 // renders as a Markdown block (a code block or a callout): any other macro in a
-// list item stays inline and raw, as a status lozenge must.
+// list item stays inline and raw, as a status lozenge must. An <hr> is left out
+// because Markdown cannot open an item with one ("- ---" is a thematic break,
+// not an item), and the editor offers no divider inside a list.
 func listItemBlock(n *snode) bool {
 	switch n.name {
-	case "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "hr", "pre", "table":
+	case "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "table":
 		return true
 	case "ac:structured-macro":
 		name := n.attrs["ac:name"]
