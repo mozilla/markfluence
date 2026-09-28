@@ -85,3 +85,15 @@ Layout cell: \*x\*
 ## Item \#
 
 Plain text, not links: https\://example.com, www\.example.com and ops\@example.com.
+
+A status macro: <ac:structured-macro ac:name="status" ac:schema-version="1"><ac:parameter ac:name="title">\_x\_ \*y\*</ac:parameter></ac:structured-macro> stays raw.
+
+| A list in a pipe cell |
+| --- |
+| <ul><li>\_x\_ and \[y]</li></ul> |
+
+A backslash before a mark's moved space: a \\ *x*, and two runs of one mark: *\ down*.
+
+**---**
+
+### \#
