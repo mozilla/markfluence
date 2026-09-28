@@ -44,3 +44,42 @@ Layout cell: \*x\*
 </ac:layout-cell>
 </ac:layout-section>
 </ac:layout>
+
+1\. not a list
+
+\# not a heading, and a line after a break:  
+\# not a heading either
+
+\> 90 days
+
+> [!WARNING]
+> \- not a list in a callout
+
+<table>
+<tbody>
+<tr>
+<td>
+
+1\. not a list in a raw cell
+
+</td>
+<td>
+
+\> loose text in a raw cell
+
+</td>
+</tr>
+</tbody>
+</table>
+
+<ac:layout>
+<ac:layout-section ac:type="single">
+<ac:layout-cell>
+
+\+ not a list in a layout cell
+
+</ac:layout-cell>
+</ac:layout-section>
+</ac:layout>
+
+## Item \#

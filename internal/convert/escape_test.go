@@ -2,6 +2,7 @@ package convert_test
 
 import (
 	"html"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -82,4 +83,71 @@ func TestMentionMarkdownEscapesTheName(t *testing.T) {
 	if got != want {
 		t.Errorf("MentionMarkdown = %q, want %q", got, want)
 	}
+}
+
+// lineStartEscapes are storage paragraphs whose text would open a block at a
+// line start, and the Markdown read must write for each.
+var lineStartEscapes = []struct{ storage, want string }{
+	{`<p>1. not a list</p>`, `1\. not a list`},
+	{`<p>1) not a list</p>`, `1\) not a list`},
+	{`<p>10. not a list</p>`, `10\. not a list`},
+	{`<p>- not a list</p>`, `\- not a list`},
+	{`<p>+ not a list</p>`, `\+ not a list`},
+	{`<p>* not a list</p>`, `\* not a list`},
+	{`<p># not a heading</p>`, `\# not a heading`},
+	{`<p>&gt; 5 errors</p>`, `\> 5 errors`},
+	{`<p>&gt;90 days</p>`, `\>90 days`},
+	{`<p>---</p>`, `\---`},
+	{`<p>- - -</p>`, `\- - -`},
+	{`<p>***</p>`, `\*\*\*`},
+	{`<p>~~~</p>`, `\~\~\~`},
+	{`<p>a<br />---</p>`, "a  \n\\---"},
+	{`<p>a<br />===</p>`, "a  \n\\==="},
+	{`<p>a | b<br />--- | ---</p>`, "a | b  \n\\--- | ---"},
+	{`<p>a<br /># b</p>`, "a  \n\\# b"},
+	{`<p>a<br />2. b</p>`, "a  \n2\\. b"},
+	{`<p><strong>a<br />1. b</strong></p>`, "**a  \n1\\. b**"},
+	{`<p>#hashtag and C#</p>`, `#hashtag and C#`},
+	{`<p>-1 is negative</p>`, `-1 is negative`},
+	{`<ul><li>1. not nested</li></ul>`, `- 1\. not nested`},
+	{`<ul><li>&gt; not a quote</li></ul>`, `- \> not a quote`},
+	{`<ul><li>[ ] not a task</li></ul>`, `- \[ ] not a task`},
+	{`<h2>Item #</h2>`, `## Item \#`},
+	{`<h2>Item ##</h2>`, `## Item \##`},
+	{`<h2>C#</h2>`, `## C#`},
+}
+
+// blockTagRE matches the tags a paragraph's text must never publish as.
+var blockTagRE = regexp.MustCompile(`<(ol|ul|h[1-6]|blockquote|hr|table|ac:structured-macro|input)\b`)
+
+func TestEscapeLineStarts(t *testing.T) {
+	for _, c := range lineStartEscapes {
+		t.Run(c.storage, func(t *testing.T) {
+			md, err := convert.StorageToMarkdown(c.storage, convert.StorageOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.TrimSpace(md); got != c.want {
+				t.Errorf("read = %q, want %q", got, c.want)
+			}
+			published := publish(t, md)
+			if tag := blockTagRE.FindString(strings.ReplaceAll(published, "<"+firstTag(c.storage), "")); tag != "" {
+				t.Errorf("%q publishes a %s: %q", md, tag, published)
+			}
+			again, err := convert.StorageToMarkdown(published, convert.StorageOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if again != md {
+				t.Errorf("not a fixed point: %q, then %q", md, again)
+			}
+		})
+	}
+}
+
+// firstTag is the name of the storage's own outermost element, which the
+// published form is allowed to contain.
+func firstTag(storage string) string {
+	name, _, _ := strings.Cut(strings.TrimPrefix(storage, "<"), ">")
+	return name
 }

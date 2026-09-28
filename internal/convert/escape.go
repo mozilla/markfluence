@@ -114,3 +114,66 @@ func isAlnum(r rune) bool { return r != -1 && (unicode.IsLetter(r) || unicode.Is
 func isASCIIPunct(r rune) bool {
 	return r < 128 && strings.ContainsRune("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~", r)
 }
+
+// escapeLineStarts escapes a block marker at the start of each line of a
+// paragraph's rendered text, where a line starts at the paragraph's start and
+// after every hard break. A marker there would open a block on publish: "1. x"
+// a list, "# x" a heading, "---" under a line a setext heading (_plans/056,
+// D3). It runs over rendered Markdown rather than text nodes, because only the
+// assembled paragraph knows where its lines start; that is safe because
+// nothing markfluence emits inline begins with a block marker (D4). It splits
+// only at hard breaks, so raw storage holding a newline is never touched.
+func escapeLineStarts(s string) string {
+	lines := strings.Split(s, hardBreak)
+	for i, line := range lines {
+		lines[i] = escapeLineStart(line)
+	}
+	return strings.Join(lines, hardBreak)
+}
+
+// escapeLineStart escapes the block marker, if any, that line starts with.
+func escapeLineStart(line string) string {
+	body := strings.TrimLeft(line, " ")
+	indent := line[:len(line)-len(body)]
+	if m := orderedMarkerRE.FindStringSubmatchIndex(body); m != nil {
+		// Escape the delimiter: "1\. x".
+		return indent + body[:m[2]] + `\` + body[m[2]:]
+	}
+	for _, re := range blockStartREs {
+		if re.MatchString(body) {
+			return indent + `\` + body
+		}
+	}
+	return line
+}
+
+// orderedMarkerRE matches an ordered list marker; its group is the delimiter.
+var orderedMarkerRE = regexp.MustCompile(`^[0-9]{1,9}([.)])(?: |$)`)
+
+// blockStartREs are the other lines that open a block, each escaped by a
+// backslash before its first character.
+var blockStartREs = []*regexp.Regexp{
+	regexp.MustCompile(`^#{1,6}(?: |$)`),         // an ATX heading
+	regexp.MustCompile(`^>`),                     // a blockquote, space or not
+	regexp.MustCompile(`^[-+*](?: |$)`),          // a bulleted list item
+	regexp.MustCompile(`^(?:-+|=+) *$`),          // a setext underline or thematic break
+	regexp.MustCompile(`^(?:[-*_] *){3,}$`),      // a thematic break
+	regexp.MustCompile(`^(?:~~~|` + "```" + `)`), // a code fence
+	// A table delimiter row, under a line that then becomes the header.
+	regexp.MustCompile(`^[|:-][|: -]*$`),
+}
+
+// escapeHeadingClose escapes a trailing run of "#" after whitespace in a
+// heading's text, which ATX headings read as a closing sequence and drop:
+// "## Item #" publishes as "Item" (_plans/056, D6). "C#" has no whitespace
+// before its "#" and is not a closing sequence.
+func escapeHeadingClose(s string) string {
+	if m := headingCloseRE.FindStringIndex(s); m != nil {
+		i := m[0] + len(strings.TrimRight(s[m[0]:], "#"))
+		return s[:i] + `\` + s[i:]
+	}
+	return s
+}
+
+// headingCloseRE matches whitespace then a run of "#" ending the text.
+var headingCloseRE = regexp.MustCompile(`\s#+$`)

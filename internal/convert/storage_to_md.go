@@ -278,7 +278,7 @@ func (r *mdRenderer) blockStrings(kids []*snode, listIndent string) []string {
 	for _, k := range kids {
 		if k.name == "" {
 			if s := strings.TrimSpace(collapse(k.text)); s != "" {
-				out = append(out, escapeText(s, false))
+				out = append(out, escapeLineStarts(escapeText(s, false)))
 			}
 			continue
 		}
@@ -296,10 +296,11 @@ func (r *mdRenderer) renderBlock(n *snode, listIndent string) string {
 		level := int(n.name[1] - '0')
 		// A heading is one line, so a hard break would end it and publish the
 		// rest as a paragraph. The break stays as the <br /> it was.
-		text := strings.ReplaceAll(r.renderInlineChildren(n), hardBreak, "<br />")
+		text := escapeHeadingClose(r.renderInlineChildren(n))
+		text = strings.ReplaceAll(text, hardBreak, "<br />")
 		return strings.Repeat("#", level) + " " + text
 	case "p":
-		return r.renderInlineChildren(n)
+		return escapeLineStarts(r.renderInlineChildren(n))
 	case "ul":
 		return r.renderList(n, false, listIndent)
 	case "ol":
@@ -322,7 +323,7 @@ func (r *mdRenderer) renderBlock(n *snode, listIndent string) string {
 	case "ac:image", "ac:link", "a", "strong", "b", "em", "i", "code", "del", "s", "strike", "br":
 		// An inline element sitting at block level (Confluence often emits a bare
 		// <ac:image> not wrapped in <p>) is rendered as its own paragraph.
-		return r.renderInline(n)
+		return escapeLineStarts(r.renderInline(n))
 	case "ac:layout", "ac:layout-section", "ac:layout-cell":
 		return r.renderRawBlock(n)
 	case "div":
@@ -391,7 +392,7 @@ func (r *mdRenderer) renderListItem(li *snode, cont string) string {
 	flushLine := func() {
 		flushRun()
 		if s := strings.TrimSpace(line.String()); s != "" {
-			segs = append(segs, itemSeg{text: s, kind: segText})
+			segs = append(segs, itemSeg{text: escapeLineStarts(s), kind: segText})
 		}
 		line.Reset()
 	}
