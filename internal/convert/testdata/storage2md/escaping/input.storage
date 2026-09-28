@@ -21,3 +21,8 @@
 <ac:layout><ac:layout-section ac:type="single"><ac:layout-cell><p>+ not a list in a layout cell</p></ac:layout-cell></ac:layout-section></ac:layout>
 <h2>Item #</h2>
 <p>Plain text, not links: https://example.com, www.example.com and ops@example.com.</p>
+<p>A status macro: <ac:structured-macro ac:name="status" ac:schema-version="1"><ac:parameter ac:name="title">_x_ *y*</ac:parameter></ac:structured-macro> stays raw.</p>
+<table data-layout="align-start"><thead><tr><th>A list in a pipe cell</th></tr></thead><tbody><tr><td><ul><li>_x_ and [y]</li></ul></td></tr></tbody></table>
+<p>A backslash before a mark's moved space: a \<em> x</em>, and two runs of one mark: <em>\ </em><em>down</em>.</p>
+<p><strong>---</strong></p>
+<h3>#</h3>

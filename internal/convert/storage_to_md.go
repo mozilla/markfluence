@@ -553,10 +553,11 @@ func (r *mdRenderer) renderCellLines(c *snode) string {
 			// expressed as Markdown list syntax inside a cell at all.
 			// Passthrough as the raw tags, which markfluence's own write side
 			// already accepts typed directly into a cell (goldmark's raw HTML
-			// passes through unchanged), keeps it exact instead of running
+			// passes through, though the text between the tags is still
+			// Markdown and is escaped), keeps it exact instead of running
 			// every item together the way rendering it as inline content would.
 			flush()
-			lines = append(lines, serialize(k))
+			lines = append(lines, serializeInline(k))
 			isList[len(lines)-1] = true
 		default:
 			run = append(run, k)
@@ -608,7 +609,7 @@ func (r *mdRenderer) renderMacro(n *snode, block bool) string {
 	case block:
 		return r.renderRawBlock(n)
 	default:
-		return serialize(n)
+		return serializeInline(n)
 	}
 }
 
@@ -655,7 +656,7 @@ func (r *mdRenderer) renderInlineChildren(n *snode) string {
 // must see the whitespace at its own edges to move it outside its delimiters.
 func (r *mdRenderer) renderInlineRun(n *snode) string {
 	var buf []byte
-	for _, k := range coalesceSplitMarks(n.kids) {
+	for _, k := range mergeText(coalesceSplitMarks(n.kids)) {
 		part := r.renderInline(k)
 		// A mark moves its edge whitespace outside its delimiters, so a space
 		// there can meet a space in the text beside it. One is kept: storage
@@ -689,6 +690,23 @@ func (r *mdRenderer) renderInlineRun(n *snode) string {
 		buf = append(buf, part...)
 	}
 	return string(buf)
+}
+
+// mergeText joins adjacent text nodes into one. escapeText judges a character
+// by its neighbours within its node, so the same text split in two -- which
+// coalesceSplitMarks produces when it merges two runs of one mark -- could be
+// escaped differently from the single node publishing writes back, and the
+// Markdown would not be a fixed point.
+func mergeText(kids []*snode) []*snode {
+	out := make([]*snode, 0, len(kids))
+	for _, k := range kids {
+		if n := len(out); n > 0 && k.name == "" && out[n-1].name == "" {
+			out[n-1] = &snode{text: out[n-1].text + k.text}
+			continue
+		}
+		out = append(out, k)
+	}
+	return out
 }
 
 // opensWithBreak reports whether an inline part begins with a hard break --
@@ -906,7 +924,7 @@ func (r *mdRenderer) renderInline(n *snode) string {
 	case "ac:adf-extension":
 		// Likewise for an inline ADF extension, whose transparent-wrapper default
 		// would otherwise render the node and the fallback one after the other.
-		return serialize(adfPassthrough(n))
+		return serializeInline(adfPassthrough(n))
 	default:
 		// A wrapper Markdown has no syntax for (a coloured <span>, <u>, <sup>)
 		// keeps its edge whitespace for the run around it to settle: trimming it
@@ -1053,8 +1071,21 @@ func jstr(s string) string {
 // serialize re-emits a node as storage XML, for passing an unknown macro through
 // unchanged (MdToConfluence's shield re-publishes it verbatim).
 func serialize(n *snode) string {
+	return serializeWith(n, xmlTextEscape)
+}
+
+// serializeInline is serialize for raw storage written inline, inside a
+// paragraph or a pipe-table cell. goldmark parses the text between inline HTML
+// tags as Markdown, so each text node is escaped as well (#203). A raw block
+// needs none of this: an HTML block's content is not parsed.
+func serializeInline(n *snode) string {
+	return serializeWith(n, func(s string) string { return xmlTextEscape(escapeRawText(s)) })
+}
+
+// serializeWith is serialize with text nodes written by text.
+func serializeWith(n *snode, text func(string) string) string {
 	if n.name == "" {
-		return xmlTextEscape(n.text)
+		return text(n.text)
 	}
 	var b strings.Builder
 	b.WriteString("<" + n.name + attrString(n.attrs))
@@ -1064,7 +1095,7 @@ func serialize(n *snode) string {
 	}
 	b.WriteString(">")
 	for _, k := range n.kids {
-		b.WriteString(serialize(k))
+		b.WriteString(serializeWith(k, text))
 	}
 	b.WriteString("</" + n.name + ">")
 	return b.String()

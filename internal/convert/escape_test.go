@@ -116,6 +116,7 @@ var lineStartEscapes = []struct{ storage, want string }{
 	{`<p>a<br />2. b</p>`, "a  \n2\\. b"},
 	{`<p><strong>a<br />1. b</strong></p>`, "**a  \n1\\. b**"},
 	{`<p>#hashtag and C#</p>`, `#hashtag and C#`},
+	{`<p><strong>---</strong></p>`, `**---**`},
 	{`<p>-1 is negative</p>`, `-1 is negative`},
 	{`<ul><li>1. not nested</li></ul>`, `- 1\. not nested`},
 	{`<ul><li>&gt; not a quote</li></ul>`, `- \> not a quote`},
@@ -123,6 +124,7 @@ var lineStartEscapes = []struct{ storage, want string }{
 	{`<h2>Item #</h2>`, `## Item \#`},
 	{`<h2>Item ##</h2>`, `## Item \##`},
 	{`<h2>C#</h2>`, `## C#`},
+	{`<h3>#</h3>`, `### \#`},
 }
 
 // blockTagRE matches the tags a paragraph's text must never publish as.

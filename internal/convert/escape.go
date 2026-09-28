@@ -27,12 +27,30 @@ import (
 // inLink is set inside a link's text, where a "]" would end the text early and
 // must be escaped too; elsewhere a lone "]" is inert and common in prose.
 func escapeText(s string, inLink bool) string {
+	return escapeFor(s, inLink, false)
+}
+
+// escapeRawText is escapeText for a text node inside raw storage written
+// inline -- an inline macro, a list in a pipe-table cell, an <ac:link> passed
+// through. The text between inline HTML tags is still Markdown, so "_x_" in a
+// status macro's title published as <em> (_plans/056, amended). "<" and "&"
+// are left to xmlTextEscape, which writes both as entities.
+func escapeRawText(s string) string {
+	return escapeFor(s, false, true)
+}
+
+// escapeFor is escapeText, and escapeRawText when inRaw is set.
+func escapeFor(s string, inLink, inRaw bool) string {
 	if !strings.ContainsAny(s, "\\`*_~[]<&:.@") {
 		return s
 	}
 	rs := []rune(s)
 	var b strings.Builder
 	for i, c := range rs {
+		if inRaw && (c == '<' || c == '&') {
+			b.WriteRune(c)
+			continue
+		}
 		if needsEscape(rs, i, inLink) {
 			b.WriteByte('\\')
 		}
@@ -42,13 +60,19 @@ func escapeText(s string, inLink bool) string {
 }
 
 // needsEscape reports whether rs[i] must be escaped.
+//
+// A neighbour is unknown (-1) past the node's edge, and also when it is
+// whitespace at the node's edge: that whitespace is not reliably this node's.
+// renderMark moves a mark's edge whitespace outside its delimiters and
+// publishing then stores it in the neighbouring node, so a decision that
+// trusted it would differ between a read and the read after it -- "\" before
+// a space the mark gives away would go unescaped and escape the delimiter.
 func needsEscape(rs []rune, i int, inLink bool) bool {
-	// prev and next are -1 at the node's edge: unknown.
 	prev, next := rune(-1), rune(-1)
-	if i > 0 {
+	if i > 0 && !edgeSpace(rs[:i]) {
 		prev = rs[i-1]
 	}
-	if i < len(rs)-1 {
+	if i < len(rs)-1 && !edgeSpace(rs[i+1:]) {
 		next = rs[i+1]
 	}
 	switch rs[i] {
@@ -134,6 +158,17 @@ func isEmailLocal(r rune) bool {
 // decimal or hexadecimal, as CommonMark recognises them.
 var entityRE = regexp.MustCompile(`^&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});`)
 
+// edgeSpace reports whether rs is nothing but whitespace, so that whitespace
+// beside a character reaches all the way to the node's edge.
+func edgeSpace(rs []rune) bool {
+	for _, r := range rs {
+		if !unicode.IsSpace(r) {
+			return false
+		}
+	}
+	return true
+}
+
 // maxEntity bounds how far entityRE can match: "&", a 32-character name, ";".
 const maxEntity = 34
 
@@ -187,20 +222,21 @@ var orderedMarkerRE = regexp.MustCompile(`^[0-9]{1,9}([.)])(?: |$)`)
 // blockStartREs are the other lines that open a block, each escaped by a
 // backslash before its first character.
 var blockStartREs = []*regexp.Regexp{
-	regexp.MustCompile(`^#{1,6}(?: |$)`),         // an ATX heading
-	regexp.MustCompile(`^>`),                     // a blockquote, space or not
-	regexp.MustCompile(`^[-+*](?: |$)`),          // a bulleted list item
-	regexp.MustCompile(`^(?:-+|=+) *$`),          // a setext underline or thematic break
-	regexp.MustCompile(`^(?:[-*_] *){3,}$`),      // a thematic break
-	regexp.MustCompile(`^(?:~~~|` + "```" + `)`), // a code fence
+	regexp.MustCompile(`^#{1,6}(?: |$)`),                             // an ATX heading
+	regexp.MustCompile(`^>`),                                         // a blockquote, space or not
+	regexp.MustCompile(`^[-+*](?: |$)`),                              // a bulleted list item
+	regexp.MustCompile(`^(?:-+|=+) *$`),                              // a setext underline or thematic break
+	regexp.MustCompile(`^(?:(?:\* *){3,}|(?:- *){3,}|(?:_ *){3,})$`), // a thematic break: one character, repeated
+	regexp.MustCompile(`^(?:~~~|` + "```" + `)`),                     // a code fence
 	// A table delimiter row, under a line that then becomes the header.
 	regexp.MustCompile(`^[|:-][|: -]*$`),
 }
 
 // escapeHeadingClose escapes a trailing run of "#" after whitespace in a
 // heading's text, which ATX headings read as a closing sequence and drop:
-// "## Item #" publishes as "Item" (_plans/056, D6). "C#" has no whitespace
-// before its "#" and is not a closing sequence.
+// "## Item #" publishes as "Item" (_plans/056, D6), and "### #" as an empty
+// heading. "C#" has no whitespace before its "#" and is not a closing
+// sequence.
 func escapeHeadingClose(s string) string {
 	if m := headingCloseRE.FindStringIndex(s); m != nil {
 		i := m[0] + len(strings.TrimRight(s[m[0]:], "#"))
@@ -209,5 +245,7 @@ func escapeHeadingClose(s string) string {
 	return s
 }
 
-// headingCloseRE matches whitespace then a run of "#" ending the text.
-var headingCloseRE = regexp.MustCompile(`\s#+$`)
+// headingCloseRE matches a run of "#" ending the text after whitespace, or
+// making up the whole text: "### #" is an empty heading with a closing
+// sequence.
+var headingCloseRE = regexp.MustCompile(`(?:^|\s)#+$`)
