@@ -376,14 +376,10 @@ func (r *mdRenderer) renderAnchorLink(n *snode, anchor string) string {
 // is that name.
 //
 // A body comes in two spellings -- ac:link-body holds rich text, and
-// ac:plain-text-link-body holds CDATA -- and both occur on real pages.
-//
-// Only the *raw* sources are escaped, and which is which is the whole point of
-// the split below. An ac:link-body has already been rendered to Markdown by
-// renderInlineChildren, so escaping it would turn a bold link body into a
-// literal "\*\*bold\*\*". The CDATA body and the fallback are plain text
-// straight off the server -- a page title, a space key, an anchor -- and a "]"
-// in any of them ends the link early.
+// ac:plain-text-link-body holds CDATA -- and both occur on real pages. The rich
+// body's text nodes are escaped as they render; the CDATA body and the fallback
+// are plain text straight off the server -- a page title, a space key, an
+// anchor -- and are escaped whole.
 func (r *mdRenderer) acLinkText(n *snode, fallback string) string {
 	if b := findChild(n, "ac:link-body"); b != nil {
 		if s := r.inlineTextForLink(b); s != "" {
@@ -398,71 +394,47 @@ func (r *mdRenderer) acLinkText(n *snode, fallback string) string {
 	return escapeLinkText(fallback)
 }
 
-// inlineTextForLink renders a node's children as a Markdown link's text,
-// escaping the result when it is nothing but plain text.
+// inlineTextForLink renders a node's children as a Markdown link's text.
 //
-// The distinction matters both ways, and an earlier version got it wrong in one
-// direction. Escaping a *rendered* body turns "<strong>bold</strong>" into a
-// literal "\*\*bold\*\*", which is why the escaping was first applied only to
-// the raw sources. But the common case for a link body is plain text, and
-// leaving it unescaped loses the link outright: a page titled "Q1 Draft]"
-// rendered as "[Q1 Draft] notes](url)", which CommonMark reads as literal text,
-// so the next update publishes no link at all. Found in review.
-//
-// "Nothing but plain text" is checkable rather than guessable: a text node is
-// an snode with an empty name, so a body whose every descendant is one carries
-// no markup for escaping to damage.
+// Its text nodes are escaped as they render, with a "]" escaped too while
+// linkDepth is raised: unescaped, a page titled "Q1 Draft]" rendered as
+// "[Q1 Draft] notes](url)", which CommonMark reads as literal text, so the next
+// update publishes no link at all. Escaping at the text node rather than over
+// the rendered result is what lets a body holding markup be escaped at all:
+// escaping "<strong>bold</strong>" after rendering turns it into a literal
+// "\*\*bold\*\*", which is why this used to escape plain-text bodies only.
 //
 // Whitespace at the text's edges is kept inside the brackets, where Markdown
 // allows it and publishes it back; trimming it joined "<a>see </a>here" into
 // "[see](url)here" (#204).
 func (r *mdRenderer) inlineTextForLink(n *snode) string {
+	r.linkDepth++
+	defer func() { r.linkDepth-- }()
 	rendered := r.renderInlineRun(n)
 	if strings.TrimSpace(rendered) == "" {
 		return ""
 	}
-	if !onlyText(n) {
-		return rendered
-	}
-	return escapeLinkText(rendered)
+	return rendered
 }
 
-// onlyText reports whether every descendant of n is a text node, so rendering
-// it produced no Markdown syntax of its own.
-func onlyText(n *snode) bool {
-	for _, k := range n.kids {
-		if k.name != "" || !onlyText(k) {
-			return false
-		}
-	}
-	return true
-}
-
-// escapeLinkText makes plain text safe to use as a Markdown link's text.
+// escapeLinkText makes plain text -- a string rather than a rendered node --
+// safe to use as a Markdown link's text: escapeText with a "]" escaped too.
 //
-// The set is deliberately the one that *breaks* a link rather than everything
-// Markdown reads specially: an unescaped "]" ends the text early and leaves the
-// rest of the line as literal junk, and a backslash has to go first or it would
-// escape the escapes. A title like "*Foo*" is a different problem -- it renders
-// as emphasis instead of as asterisks, losing fidelity without breaking the
-// link -- and is knowingly not handled here, since escaping every Markdown
-// indicator in every recovered title is a larger change with its own round-trip
-// consequences.
-//
-// Before this, mdLink was a bare Sprintf: any page title holding a bracket
-// exported as a broken link, which mentions turned from theoretical into likely
-// because display names carry them.
+// It escapes everything Markdown would read, not only what breaks the link.
+// It began as "\", "[" and "]", the set that breaks a link: before that,
+// mdLink was a bare Sprintf and any page title holding a bracket exported as a
+// broken link, which mentions turned from theoretical into likely because
+// display names carry them. A title like "*Foo*" then still rendered as
+// emphasis, and #203 closed that the way it closed it for all text.
 func escapeLinkText(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, "[", `\[`)
-	return strings.ReplaceAll(s, "]", `\]`)
+	return escapeText(s, true)
 }
 
 // mdLink renders an inline Markdown link, falling back to showing the
 // destination when there is no text for it.
 func mdLink(text, dest string) string {
 	if text == "" {
-		text = dest
+		text = escapeLinkText(dest)
 	}
 	return fmt.Sprintf("[%s](%s)", text, dest)
 }

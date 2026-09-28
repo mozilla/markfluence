@@ -116,6 +116,10 @@ type mdRenderer struct {
 	// siteURL is the Confluence site base, for a space link. Never the gateway.
 	siteURL string
 
+	// linkDepth is how many links' text is being rendered, so a text node knows
+	// to escape a "]", which would end the text early (escapeText).
+	linkDepth int
+
 	// userNames maps a mentioned account id -> that person's display name,
 	// resolved by the caller. An id missing from it passes the mention through
 	// as raw storage. See StorageOptions.UserNames.
@@ -274,7 +278,7 @@ func (r *mdRenderer) blockStrings(kids []*snode, listIndent string) []string {
 	for _, k := range kids {
 		if k.name == "" {
 			if s := strings.TrimSpace(collapse(k.text)); s != "" {
-				out = append(out, s)
+				out = append(out, escapeText(s, false))
 			}
 			continue
 		}
@@ -875,7 +879,7 @@ func concatKids(a, b []*snode) []*snode {
 // renderInline renders one inline node.
 func (r *mdRenderer) renderInline(n *snode) string {
 	if n.name == "" {
-		return collapse(n.text)
+		return escapeText(collapse(n.text), r.linkDepth > 0)
 	}
 	switch n.name {
 	case "strong", "b":
@@ -924,7 +928,7 @@ func (r *mdRenderer) renderLink(n *snode) string {
 	href := n.attrs["href"]
 	text := r.inlineTextForLink(n)
 	if text == "" {
-		text = href
+		text = escapeLinkText(href)
 	}
 	if title := n.attrs["title"]; title != "" {
 		return fmt.Sprintf("[%s](%s %s)", text, href, jstr(title))

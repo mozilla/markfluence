@@ -1,0 +1,15 @@
+<p>Emphasis: *not emphasis*, 2*3*4, a _b_ c, and a * b * c stays.</p>
+<p>Strikethrough: a ~b~ c, a ~~b~~ c, and about ~5 min stays.</p>
+<p>Code: `not code`.</p>
+<p>HTML: &lt;b&gt;not bold&lt;/b&gt;, &lt;!-- not a comment --&gt;, &lt;ac:link&gt;not storage&lt;/ac:link&gt;, and a &lt; b stays.</p>
+<p>Entities: &amp;copy; and &amp;#169;, and AT&amp;T stays.</p>
+<p>Brackets: [x], [x][y], and x] stays.</p>
+<p>Backslashes: a\*b, and C:\path stays.</p>
+<p>A link: <a href="https://example.com">Q1 *Draft*]</a>, and one with markup: <a href="https://example.com"><strong>bold</strong> _text_</a>.</p>
+<ul>
+<li>In a list item: *x* and [y]</li>
+</ul>
+<ac:structured-macro ac:name="info" ac:schema-version="1"><ac:rich-text-body><p>In a callout: *x*</p></ac:rich-text-body></ac:structured-macro>
+<table data-layout="align-start"><thead><tr><th>Pipe cell</th></tr></thead><tbody><tr><td>*x* and a|b</td></tr></tbody></table>
+<table><tbody><tr><td><p>Raw cell: *x*</p></td></tr></tbody></table>
+<ac:layout><ac:layout-section ac:type="single"><ac:layout-cell><p>Layout cell: *x*</p></ac:layout-cell></ac:layout-section></ac:layout>

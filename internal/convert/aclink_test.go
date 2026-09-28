@@ -267,11 +267,17 @@ func TestLinkTextDoesNotEscapeARenderedBody(t *testing.T) {
 	}
 }
 
-// TestLinkTextEscapesABackslashFirst: the backslash pass has to run before the
-// bracket passes, or it would escape the escapes they add.
-func TestLinkTextEscapesABackslashFirst(t *testing.T) {
-	if got := convert.EscapeLinkTextForTest(`a\b]c`); got != `a\\b\]c` {
-		t.Errorf("EscapeLinkText = %q, want %q", got, `a\\b\]c`)
+// TestLinkTextEscapesABackslashBeforeABracket: a backslash before the "]" it
+// escapes must itself be escaped, or it would escape the escape. One before a
+// letter is literal in CommonMark and is left alone.
+func TestLinkTextEscapesABackslashBeforeABracket(t *testing.T) {
+	for in, want := range map[string]string{
+		`a\]c`:  `a\\\]c`,
+		`a\b]c`: `a\b\]c`,
+	} {
+		if got := convert.EscapeLinkTextForTest(in); got != want {
+			t.Errorf("EscapeLinkText(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 
