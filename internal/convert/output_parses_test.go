@@ -51,6 +51,10 @@ var tableSeparatorRE = regexp.MustCompile(`(?m)^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3
 // be excluded from checks that only make sense for prose.
 var fencedCodeRE = regexp.MustCompile("(?s)```.*?```")
 
+// backslashEscapeRE matches one backslash escape, so that removing every match
+// leaves only the Markdown syntax that is not escaped.
+var backslashEscapeRE = regexp.MustCompile(`\\.`)
+
 // TestStorageToMarkdownOutputParsesAsMarkdown converts every storage2md case's
 // input fresh -- the exact body read/export would write to disk -- through a
 // real GFM parser, and confirms the bracket/table syntax markfluence emitted
@@ -148,8 +152,12 @@ func assertParsesCleanly(t *testing.T, source []byte) {
 	// snippet documenting Markdown syntax) with no bearing on this guarantee,
 	// and counting it would be this test's own false positive, not a bug.
 	prose := fencedCodeRE.ReplaceAll(source, nil)
+	// Backslash escapes are removed before the syntax checks: read escapes
+	// literal text that would read as Markdown (#203), so an escaped "[x](y)"
+	// is prose, not a link the parser failed to find.
+	unescaped := backslashEscapeRE.ReplaceAll(prose, nil)
 
-	wantAtLeast := len(imageOrLinkRE.FindAllIndex(prose, -1))
+	wantAtLeast := len(imageOrLinkRE.FindAllIndex(unescaped, -1))
 	if got := images + links; got < wantAtLeast {
 		t.Errorf("parsed %d image/link node(s), want at least %d matching the source's bracket syntax:\n%s",
 			got, wantAtLeast, source)
@@ -163,10 +171,13 @@ func assertParsesCleanly(t *testing.T, source []byte) {
 	// A structural sanity check independent of the floor comparison above,
 	// which can't see a rendering bug that mangles bracket syntax badly enough
 	// that the output no longer looks like link/image syntax at all -- nothing
-	// would be left for imageOrLinkRE to flag as missing. Every "[" markfluence
-	// emits outside a code fence closes, so an unequal count means something (a
-	// link, an alt-text bracket) was truncated or malformed outright.
-	if opens, closes := bytes.Count(prose, []byte("[")), bytes.Count(prose, []byte("]")); opens != closes {
-		t.Errorf("unbalanced brackets outside fenced code: %d '[' vs %d ']':\n%s", opens, closes, source)
+	// would be left for imageOrLinkRE to flag as missing. Every unescaped "["
+	// markfluence emits outside a code fence opens a link, an image or an alert
+	// and closes, so more "[" than "]" means something (a link, an alt-text
+	// bracket) was truncated or malformed outright. Escapes are removed first,
+	// since read escapes every literal "[" (#203), and fewer "[" than "]" is
+	// fine: a literal "]" outside link text is inert and left unescaped.
+	if opens, closes := bytes.Count(unescaped, []byte("[")), bytes.Count(unescaped, []byte("]")); opens > closes {
+		t.Errorf("unclosed brackets outside fenced code: %d '[' vs %d ']':\n%s", opens, closes, source)
 	}
 }
