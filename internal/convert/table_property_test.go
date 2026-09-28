@@ -554,13 +554,12 @@ func modelHasElement(n *snode) bool {
 // tableGen generates table storage from a seed. The attribute vocabulary is
 // what the live survey found (layouts, colgroups, colours, alignments, ids,
 // valign, class), weighted towards tables a pipe table can hold, so both paths
-// get exercised. Text avoids a leading Markdown block marker ("1. ", "# "),
-// which #203 covers, and inline tags read has no Markdown for (<time>, <u>),
-// which read drops in every paragraph, and two lists side by side, which
-// Markdown reads back as one (#205) -- all gaps older than #55.
-// tableGen builds table storage from a seed. edge is a second stream, for the
-// spaces markText adds at a mark's edge (#204), so that adding them left every
-// seed's table otherwise as it was.
+// get exercised. Text avoids inline tags read has no Markdown for (<time>,
+// <u>), which read drops in every paragraph, and two lists side by side, which
+// Markdown reads back as one (#205) -- both gaps older than #55.
+//
+// edge is a second stream, for the spaces markText adds at a mark's edge
+// (#204), so that adding them left every seed's table otherwise as it was.
 type tableGen struct{ r, edge *rand.Rand }
 
 func (g *tableGen) chance(p float64) bool { return g.r.Float64() < p }
@@ -689,7 +688,14 @@ func (g *tableGen) table(depth int) string {
 	return b.String()
 }
 
-var words = []string{"auth", "billing", "search", "up", "down", "3", "12", "a|b", "ok", "since noon", "x"}
+// words is the text vocabulary. The second line is text that spells Markdown
+// syntax -- a block marker when it starts a line, inline syntax anywhere --
+// which read must escape (#203); it is storage, so "<" and "&" are entities.
+var words = []string{
+	"auth", "billing", "search", "up", "down", "3", "12", "a|b", "ok", "since noon", "x",
+	"1.", "#", "&gt;", "-", "+", "*", "---", "_x_", "~", "`", "[x]",
+	"&lt;b&gt;", "&amp;copy;", `\`, "https://x.io", "a@b.io",
+}
 
 func (g *tableGen) text() string {
 	n := 1 + g.r.IntN(3)
@@ -704,6 +710,15 @@ func (g *tableGen) text() string {
 // editor leaves a space typed at the end of a bold run inside the run (#204).
 func (g *tableGen) markText() string {
 	s := g.text()
+	// A mark's text never starts or ends with punctuation: "a**(b)**" and
+	// "**&copy;**a" fail the other half of CommonMark's flanking rule, which
+	// escaping cannot fix (#216). Storage's own "&"/";" count as punctuation.
+	if isPunctWord(s[:1]) {
+		s = "ok " + s
+	}
+	if isPunctWord(s[len(s)-1:]) {
+		s += " ok"
+	}
 	if g.edge.Float64() < 0.2 {
 		s += " "
 	}
@@ -713,6 +728,12 @@ func (g *tableGen) markText() string {
 	return s
 }
 
+// isPunctWord reports whether c, one byte of generated storage, is ASCII
+// punctuation.
+func isPunctWord(c string) bool {
+	return strings.ContainsAny(c, "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
+}
+
 func (g *tableGen) inline() string {
 	switch g.r.IntN(8) {
 	case 0:
@@ -720,7 +741,9 @@ func (g *tableGen) inline() string {
 	case 1:
 		return "<em>" + g.markText() + "</em>"
 	case 2:
-		return "<code>" + g.text() + "</code>"
+		// No backtick in a code span: read writes one with a single backtick
+		// whatever it holds, an older gap than #203 that escaping cannot fix.
+		return "<code>" + strings.ReplaceAll(g.text(), "`", "'") + "</code>"
 	case 3:
 		return `<a href="https://example.com/p">` + g.text() + "</a>"
 	case 4:
