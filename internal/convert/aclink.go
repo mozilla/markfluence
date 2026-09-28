@@ -412,8 +412,15 @@ func (r *mdRenderer) acLinkText(n *snode, fallback string) string {
 // "Nothing but plain text" is checkable rather than guessable: a text node is
 // an snode with an empty name, so a body whose every descendant is one carries
 // no markup for escaping to damage.
+//
+// Whitespace at the text's edges is kept inside the brackets, where Markdown
+// allows it and publishes it back; trimming it joined "<a>see </a>here" into
+// "[see](url)here" (#204).
 func (r *mdRenderer) inlineTextForLink(n *snode) string {
-	rendered := r.renderInlineChildren(n)
+	rendered := r.renderInlineRun(n)
+	if strings.TrimSpace(rendered) == "" {
+		return ""
+	}
 	if !onlyText(n) {
 		return rendered
 	}

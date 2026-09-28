@@ -21,6 +21,14 @@ A hard break at the start of a mark, after a space: a
 A space before a hard break: a  
 b.
 
+Coloured bold: **bold** next, and underline: under next.
+
+Link text: [see ](https://example.com)here, and [**bold** ](https://example.com)next.
+
+## **A heading with a break at a mark's edge**<br />continued
+
+### A heading with a bare break<br />continued
+
 | Item | Time |
 | --- | --- |
 | ~~lost for~~ 13.5h | 1 |
