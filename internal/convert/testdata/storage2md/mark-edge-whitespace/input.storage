@@ -8,4 +8,8 @@
 <p>A hard break at the end of a mark: <strong>a<br /></strong>b.</p>
 <p>A hard break at the start of a mark, after a space: a <strong><br />b</strong>.</p>
 <p>A space before a hard break: a <br />b.</p>
+<p>Coloured bold: <span style="color: rgb(255,0,0);"><strong>bold </strong></span>next, and underline: <u>under </u>next.</p>
+<p>Link text: <a href="https://example.com">see </a>here, and <a href="https://example.com"><strong>bold </strong></a>next.</p>
+<h2><strong>A heading with a break at a mark&apos;s edge<br /></strong>continued</h2>
+<h3>A heading with a bare break<br />continued</h3>
 <table data-layout="align-start"><thead><tr><th>Item</th><th>Time</th></tr></thead><tbody><tr><td><del>lost for </del>13.5h</td><td>1</td></tr></tbody></table>

@@ -106,7 +106,7 @@ func newPropertyEnv(t testing.TB) *propertyEnv {
 }
 
 func (e *propertyEnv) check(seed uint64) string {
-	g := &tableGen{r: rand.New(rand.NewPCG(seed, 0x55))}
+	g := &tableGen{r: rand.New(rand.NewPCG(seed, 0x55)), edge: rand.New(rand.NewPCG(seed, 0x204))}
 	return e.checkStorage(fmt.Sprintf("seed %d", seed), g.table(0))
 }
 
@@ -416,10 +416,27 @@ func modelInline(kids []*snode) string {
 			if a, ok := inlineAlias[name]; ok {
 				name = a
 			}
-			fmt.Fprintf(&b, "<%s>%s</%s>", name, modelInline(k.kids), name)
+			inner := modelInline(k.kids)
+			// A space at the edge of a mark separates the same words inside it
+			// as outside, and Markdown can only put it outside (#204). Only the
+			// marks: a <code> span's spaces are its text.
+			var lead, trail string
+			if name == "strong" || name == "em" || name == "del" {
+				body := strings.TrimLeft(inner, " ")
+				lead = inner[:len(inner)-len(body)]
+				inner = strings.TrimRight(body, " ")
+				trail = body[len(inner):]
+			}
+			fmt.Fprintf(&b, "%s<%s>%s</%s>%s", lead, name, inner, name, trail)
 		}
 	}
 	s := whitespaceRunRE.ReplaceAllString(b.String(), " ")
+	// Two runs of one mark with nothing but a space between them read as one
+	// run: "<em>a</em> <em>b</em>" and "<em>a b</em>" look the same.
+	for _, m := range []string{"strong", "em", "del"} {
+		s = strings.ReplaceAll(s, "</"+m+"><"+m+">", "")
+		s = strings.ReplaceAll(s, "</"+m+"> <"+m+">", " ")
+	}
 	// Whitespace beside a line break shows nothing, and publishing writes a
 	// newline after every <br />.
 	return strings.ReplaceAll(strings.ReplaceAll(s, " ⏎", "⏎"), "⏎ ", "⏎")
@@ -541,7 +558,10 @@ func modelHasElement(n *snode) bool {
 // which #203 covers, and inline tags read has no Markdown for (<time>, <u>),
 // which read drops in every paragraph, and two lists side by side, which
 // Markdown reads back as one (#205) -- all gaps older than #55.
-type tableGen struct{ r *rand.Rand }
+// tableGen builds table storage from a seed. edge is a second stream, for the
+// spaces markText adds at a mark's edge (#204), so that adding them left every
+// seed's table otherwise as it was.
+type tableGen struct{ r, edge *rand.Rand }
 
 func (g *tableGen) chance(p float64) bool { return g.r.Float64() < p }
 
@@ -680,12 +700,25 @@ func (g *tableGen) text() string {
 	return strings.Join(ws, " ")
 }
 
+// markText is text for inside a mark, sometimes with a space at an edge: the
+// editor leaves a space typed at the end of a bold run inside the run (#204).
+func (g *tableGen) markText() string {
+	s := g.text()
+	if g.edge.Float64() < 0.2 {
+		s += " "
+	}
+	if g.edge.Float64() < 0.1 {
+		s = " " + s
+	}
+	return s
+}
+
 func (g *tableGen) inline() string {
 	switch g.r.IntN(8) {
 	case 0:
-		return "<strong>" + g.text() + "</strong>"
+		return "<strong>" + g.markText() + "</strong>"
 	case 1:
-		return "<em>" + g.text() + "</em>"
+		return "<em>" + g.markText() + "</em>"
 	case 2:
 		return "<code>" + g.text() + "</code>"
 	case 3:
@@ -714,7 +747,15 @@ func (g *tableGen) paragraph(align string, cellStyle bool) string {
 	}
 	body := g.inline()
 	if g.chance(0.3) {
-		body += " " + g.inline()
+		// A mark that already ends in a space is followed directly, which is
+		// the shape #204 joined into one word; otherwise a space separates.
+		next := g.inline()
+		sep := " "
+		if strings.HasSuffix(body, " </strong>") || strings.HasSuffix(body, " </em>") ||
+			strings.HasPrefix(next, "<strong> ") || strings.HasPrefix(next, "<em> ") {
+			sep = ""
+		}
+		body += sep + next
 	}
 	if g.chance(0.1) {
 		body += "<br />" + g.text()

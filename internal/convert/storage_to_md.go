@@ -15,6 +15,7 @@ package convert
 // aclink.go.
 
 import (
+	"bytes"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -289,7 +290,10 @@ func (r *mdRenderer) renderBlock(n *snode, listIndent string) string {
 	switch n.name {
 	case "h1", "h2", "h3", "h4", "h5", "h6":
 		level := int(n.name[1] - '0')
-		return strings.Repeat("#", level) + " " + r.renderInlineChildren(n)
+		// A heading is one line, so a hard break would end it and publish the
+		// rest as a paragraph. The break stays as the <br /> it was.
+		text := strings.ReplaceAll(r.renderInlineChildren(n), hardBreak, "<br />")
+		return strings.Repeat("#", level) + " " + text
 	case "p":
 		return r.renderInlineChildren(n)
 	case "ul":
@@ -645,7 +649,7 @@ func (r *mdRenderer) renderInlineChildren(n *snode) string {
 // renderInlineRun is renderInlineChildren without the trim, for a mark, which
 // must see the whitespace at its own edges to move it outside its delimiters.
 func (r *mdRenderer) renderInlineRun(n *snode) string {
-	var s string
+	var buf []byte
 	for _, k := range coalesceSplitMarks(n.kids) {
 		part := r.renderInline(k)
 		// A mark moves its edge whitespace outside its delimiters, so a space
@@ -653,7 +657,7 @@ func (r *mdRenderer) renderInlineRun(n *snode) string {
 		// collapses a run of spaces anyway, so the second would only reach the
 		// Markdown on this read and be gone on the next, and the Markdown would
 		// not be a fixed point.
-		if strings.HasSuffix(s, " ") && strings.HasPrefix(part, " ") && !opensWithBreak(part) {
+		if bytes.HasSuffix(buf, []byte(" ")) && strings.HasPrefix(part, " ") && !opensWithBreak(part) {
 			part = strings.TrimLeft(part, " ")
 		}
 		// Likewise, whitespace before a hard break is gone on the next read,
@@ -661,7 +665,7 @@ func (r *mdRenderer) renderInlineRun(n *snode) string {
 		// "a   " (three spaces) and read back as two. The break is written as
 		// exactly the two spaces that make it one.
 		if opensWithBreak(part) {
-			s = strings.TrimRight(s, " \t")
+			buf = bytes.TrimRight(buf, " \t")
 			part = hardBreak + strings.TrimLeft(part, " \t")[1:]
 		}
 		// Storage is XHTML and its newlines are insignificant, so
@@ -674,12 +678,12 @@ func (r *mdRenderer) renderInlineRun(n *snode) string {
 		// *are* the next hard break. Found by the round-trip property test.
 		// Never trim a hard break itself: two of them in a row are two blank
 		// line-endings, and its own leading spaces are what make it one.
-		if !opensWithBreak(part) && strings.HasSuffix(s, hardBreak) {
+		if !opensWithBreak(part) && bytes.HasSuffix(buf, []byte(hardBreak)) {
 			part = strings.TrimLeft(part, " \t")
 		}
-		s += part
+		buf = append(buf, part...)
 	}
-	return s
+	return string(buf)
 }
 
 // opensWithBreak reports whether an inline part begins with a hard break --
@@ -698,15 +702,19 @@ func opensWithBreak(part string) bool {
 // CommonMark's flanking rule counts it: a trailing no-break space refuses the
 // delimiter as surely as a space does. A mark holding only whitespace has
 // nothing Markdown can mark, so it renders as that whitespace.
+//
+// This is the whitespace half of the flanking rule only. A mark whose text
+// starts or ends with punctuation against a letter outside it ("a**(b)**")
+// still fails the other half, and did before.
 func (r *mdRenderer) renderMark(n *snode, delim string) string {
 	s := r.renderInlineRun(n)
-	inner := strings.TrimFunc(s, unicode.IsSpace)
-	if inner == "" {
+	body := strings.TrimLeftFunc(s, unicode.IsSpace)
+	if body == "" {
 		return s
 	}
-	lead := s[:len(s)-len(strings.TrimLeftFunc(s, unicode.IsSpace))]
-	trail := s[len(strings.TrimRightFunc(s, unicode.IsSpace)):]
-	return lead + delim + inner + delim + trail
+	lead := s[:len(s)-len(body)]
+	inner := strings.TrimRightFunc(body, unicode.IsSpace)
+	return lead + delim + inner + delim + body[len(inner):]
 }
 
 // hardBreak is Markdown's two-space line break, as renderInline emits it for a
@@ -895,7 +903,11 @@ func (r *mdRenderer) renderInline(n *snode) string {
 		// would otherwise render the node and the fallback one after the other.
 		return serialize(adfPassthrough(n))
 	default:
-		return r.renderInlineChildren(n)
+		// A wrapper Markdown has no syntax for (a coloured <span>, <u>, <sup>)
+		// keeps its edge whitespace for the run around it to settle: trimming it
+		// here joined "<span><strong>bold </strong></span>next" into one word
+		// after renderMark had moved the space out.
+		return r.renderInlineRun(n)
 	}
 }
 
