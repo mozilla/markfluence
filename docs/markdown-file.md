@@ -635,6 +635,24 @@ gets to the stored page (measured; see
 Don't use HTML comments to leave notes on published pages that you will `read`
 or `export` in the future.
 
+### Backslash escapes
+
+A backslash before a punctuation character makes the character literal, as in
+any Markdown: `\*not emphasis\*` publishes as `*not emphasis*`, and `1\. not a
+list` publishes as a paragraph.
+
+`read` and `export` write these escapes wherever page text would otherwise read
+as Markdown. Without them, text such as `1. not a list`, `# not a heading`,
+`> 90 days` or `*not emphasis*` would turn into a list, a heading, a quote or
+emphasis the next time that you publish the file. markfluence escapes a
+character only where it can have an effect, so `snake_case`, `a * b`,
+`about ~5 min` and `AT&T` stay as they are.
+
+A URL or an email address that is plain text on the page, and not a link, is
+written as `https\://example.com` or `ops\@example.com`. Without the
+backslash, publishing would turn it into a link. You can remove the backslash
+if you want a link.
+
 ### Raw Confluence storage format
 
 You can paste Confluence

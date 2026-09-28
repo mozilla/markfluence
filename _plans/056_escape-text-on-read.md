@@ -271,6 +271,33 @@ not compound.
   list in a cell) are left as they are, although both are in the same
   functions.
 
+## Amended during implementation
+
+- **Raw storage written inline is escaped (D8 was wrong about it).** D8 held
+  that raw storage needs no escaping, which is true of a raw *block*: an HTML
+  block's content is not parsed. It is not true inline. The text between
+  inline HTML tags is Markdown, so `_x_` in a status macro's title, in a list
+  in a pipe-table cell, or in a passed-through `<ac:link>` published as
+  `<em>`. `serializeInline` escapes those text nodes (`escapeRawText`, which
+  leaves `<` and `&` to `xmlTextEscape`).
+- **Whitespace at a node's edge counts as unknown.** D2 treated only the
+  node's edge as unknown. But `renderMark` moves a mark's edge whitespace
+  outside it (#204), and publishing then stores that whitespace in the
+  neighbouring node, so a decision that trusted it changed between one read
+  and the next. The property test found it, with a backslash before a space
+  the mark gave away going unescaped and then escaping the closing
+  delimiter. For the same reason, adjacent text nodes (which
+  `coalesceSplitMarks` leaves when it merges two runs of one mark) are
+  merged before rendering.
+- **D3's thematic break repeats one character.** A pattern allowing a mix
+  matched `**---**`, bold markup markfluence emits, contradicting D4.
+- **D6 covers a heading that is only `#`**: `### #` is an empty heading with a
+  closing sequence.
+- **#216** was filed for the punctuation half of CommonMark's flanking rule
+  (`a**(b)**c`), which escaping cannot fix. The property test's generator
+  keeps a mark's text from starting or ending with punctuation, and it
+  keeps backticks out of code spans (the older gap listed in Not in scope).
+
 ## Commits
 
 Each commit passes `make check` on its own. So `escape.go` arrives with its
