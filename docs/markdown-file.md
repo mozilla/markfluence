@@ -646,7 +646,9 @@ as Markdown. Without them, text such as `1. not a list`, `# not a heading`,
 `> 90 days` or `*not emphasis*` would turn into a list, a heading, a quote or
 emphasis the next time that you publish the file. markfluence escapes a
 character only where it can have an effect, so `snake_case`, `a * b`,
-`about ~5 min` and `AT&T` stay as they are.
+`about ~5 min` and `AT&T` stay as they are. In a few places a character
+reference does the same job as a backslash, for example `&#126;` for a `~`
+next to strikethrough.
 
 A URL or an email address that is plain text on the page, and not a link, is
 written as `https\://example.com` or `ops\@example.com`. Without the

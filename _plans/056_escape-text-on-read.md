@@ -293,6 +293,26 @@ not compound.
   matched `**---**`, bold markup markfluence emits, contradicting D4.
 - **D6 covers a heading that is only `#`**: `### #` is an empty heading with a
   closing sequence.
+- **From the code review:**
+  - **Heading escapes reached anchor slugs.** `linkindex.extractHeadings`
+    builds a heading's slug from its Markdown source line, so
+    `## Setup \[beta]` made links point at `#Setup-\[beta]`, an anchor
+    Confluence never creates. It now removes backslash escapes first, since
+    Confluence builds the anchor from the published text.
+  - **Transparent wrappers are flattened before escaping.** A `<span>`,
+    `<u>` or `<sup>` renders as its children, so text it split was escaped
+    in pieces: an address, URL or entity split by one was missed, and
+    `<u>a_</u>b` escaped differently from the `a_b` read back next time.
+  - **A tilde at a node's end is written as `&#126;`.** It may meet a
+    del mark's `~~`, and goldmark counts `\~~~` as a run of three however
+    the first is escaped, so the strikethrough was lost. A character
+    reference is outside any run.
+  - **Raw storage written inline encodes a newline as `&#10;`**, and
+    escapes `]` inside link text. A real newline let goldmark start a
+    block at the next line, or read the element as an HTML block whose
+    escapes then published. A raw block's `hasLooseText` form is one line,
+    so at the top it is inline too and is escaped; nested in a wrapper it
+    is inside that wrapper's HTML block and is not.
 - **#216** was filed for the punctuation half of CommonMark's flanking rule
   (`a**(b)**c`), which escaping cannot fix. The property test's generator
   keeps a mark's text from starting or ending with punctuation, and it
