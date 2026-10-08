@@ -41,7 +41,7 @@ does a check of them with Confluence, and writes them to
 markfluence credentials-init
 ```
 
-When you're tying your API token, it'll be hidden.
+When you're typing your API token, it'll be hidden.
 
 Once you're done filling in information, markfluence will test your credentials
 and let you know if it works. If Confluence refuses the credentials, then
@@ -146,7 +146,7 @@ $ markfluence check hello.md
   ✗ 1 of 1 file(s) failed.
 ```
 
-Oops! There's an error with the file. 
+Oops! There's an error with the file.
 
 `check` exits with `1`, and the message tells you the values that are correct.
 Change the `page_width:` line in `hello.md` to:
