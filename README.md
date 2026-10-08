@@ -59,6 +59,7 @@ to use it. It also tells you where to find more documentation.
 | | |
 |---|---|
 | [README.md](README.md), this file | installation, configuration, and use |
+| [docs/tutorial.md](docs/tutorial.md) | a quick start: install, set up credentials, then create a page in your personal space and export it |
 | [docs/commands/](docs/commands/) | the `--help` text of every command, as Markdown. It is the same text that `markfluence CMD --help` prints, and it comes from the binary |
 | [docs/markdown-file.md](docs/markdown-file.md) | the page format: every frontmatter field, and what the converter does with each body construct |
 | [docs/credentials.md](docs/credentials.md) | where markfluence reads credentials from, how to set up your credentials file, and what each credentials error means |
