@@ -19,7 +19,7 @@ site URL, username, and token from the output if you do not want to share them.
 
 ## Development setup
 
-You need Go 1.25 or a later version.
+You need Go 1.26 or a later version.
 
 ```sh
 git clone https://github.com/mozilla/markfluence

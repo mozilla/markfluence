@@ -45,7 +45,7 @@ Do not add AI attribution to commits or pull requests — no `Co-Authored-By: Cl
 
 ## Architecture
 
-Module `github.com/mozilla/markfluence` (`go 1.25`). `main.go` is a shim to `cmd.Execute()`.
+Module `github.com/mozilla/markfluence` (`go 1.26`). `main.go` is a shim to `cmd.Execute()`.
 
 **Before changing anything that talks to Confluence, read [docs/confluence/](docs/confluence/)** — what we established by experiment, since Atlassian documents little of it. Two traps recorded there have each already produced a confident wrong conclusion: `body-format=view` is not what the browser renders, and `body.storage` proves only what was stored, never what takes effect.
 
