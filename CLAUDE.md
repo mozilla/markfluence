@@ -10,7 +10,7 @@ Tasks run through a `Makefile` (run `make` with no target for the annotated rule
 
 - `make build` — build `./bin/markfluence` (version stamped via ldflags)
 - `make test` — `go test ./...` (also runs the `go vet` subset)
-- `make lint` — golangci-lint (installs the pinned v2.6.0 into `./bin`; enables the default set plus `lll` at 120)
+- `make lint` — golangci-lint (installs the pinned v2.15.0 into `./bin`; enables the default set plus `lll` at 120)
 - `make check` — the pre-flight: vet, fmt-check, docs-check, test, build, lint, in CI's order (CI runs this exact target)
 - `make vet` / `make fmt` / `make fmt-check` (`fmt-check` reports without modifying anything)
 - `make regen-regressions` — regenerate the converter's golden outputs (`go test ./internal/convert -run TestRegression -update`)
