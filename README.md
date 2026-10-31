@@ -134,7 +134,7 @@ see [Shell completions](#shell-completions).
 
 ### Any platform, from source
 
-You need Go 1.25 or a later version.
+You need Go 1.26 or a later version.
 
 ```sh
 go install github.com/mozilla/markfluence@latest
